@@ -1,0 +1,42 @@
+name: retarus_email_security
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: field_extraction
+  - name: file_extraction
+stages:
+  field_extraction:
+    actions:
+      - set:
+          observer.version: "{{json_event.message.version}}"
+          observer.hostname: "{{json_event.message.host}}"
+          user.id: "{{json_event.message.customer}}"
+          action.name: "{{json_event.message.class}}"
+          action.type: "{{json_event.message.type}}"
+          action.outcome_reason: "{{json_event.message.status}}"
+          
+          labels.email_direction: "{{json_event.message.direction}}"
+          labels.mime_id: "{{json_event.message.mimeId}}"
+          labels.retarus_rmxId: "{{json_event.message.rmxId}}"          
+          labels.retarus_details: "{{json_event.message.metaData.details}}"
+          labels.retarus_threatType: "{{json_event.message.metaData.threatType}}"
+          
+          source.ip: "{{json_event.message.sourceIp}}"
+          email.to: "{{json_event.message.recipient}}"
+          email.from: "{{json_event.message.sender}}"
+
+          url.full: "{{json_event.message.metaData.uniformResourceLocator}}"
+      - set:
+          action.outcome: "success"
+        filter: "{{json_event.message.status == 'ACCEPTED'}}"
+      - delete:
+          - "action.outcome_reason"
+        filter: "{{json_event.message.status == 'ACCEPTED'}}"
+      - set:
+          action.outcome: "failure"
+        filter: "{{json_event.message.status != 'ACCEPTED'}}"
+  file_extraction:
+    actions:
+      - set:
+          file.mime_type: "{{json_event.message.metaData.mimeType}}"
