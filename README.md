@@ -1,11 +1,6 @@
 # Intakes
 
-Welcome to the SEKOIA.IO Intake repository! This repository contains all our intakes definitions, parsers.
-Currently, the folder contains all of this intakes.
-
-.   
-└── retarus  
-          └──  retarus_email_security
+Welcome to the SEKOIA.IO Intakes repository! This repository contains all our latest intakes definitions: parsers.
 
 # Contributing to the docs
 
@@ -16,7 +11,8 @@ Once your pull request is created, a SEKOIA.IO reviewer will take responsibility
 
 # What is an intake
 
-SEKOIA.IO generates events from several sources (transport and formats). It is a data source for the client. This could be a system like Linux or Windows or a firewall like Fortigate or Netfilter. Each source has a precise format, that is why we distinguish all of them. This lets us know the severity of an alert: suspicious traffic blocked by a Linux machine but not firstly by the firewall so we have to inform the customer of modifying his firewall configuration. To collect the client data, we created parsers. They are configuration files for the Logstash to format the input data into ECS format.
+SEKOIA.IO generates events from several sources (transport and formats). It is a data source for the client. This could be a system like Linux or Windows or a firewall like Fortigate or Netfilter.
 
-For questions and feedback, please contact support@sekoia.io 
-	
+Each source has a precise format, that is why we distinguish all of them. This lets us know the severity of an alert: suspicious traffic blocked by a Linux machine but not firstly by the firewall so we have to inform the customer of modifying his firewall configuration. To collect the client data, we created parsers.
+
+For questions and feedback, please contact support@sekoia.io
