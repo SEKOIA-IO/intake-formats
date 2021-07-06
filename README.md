@@ -48,4 +48,3 @@ An intake is made up of three directories:
 You can click the Fork button in the upper-right area of the screen to create a copy of this repository in your GitHub account. This copy is called a fork. Make any changes you want in your fork, and when you are ready to send those changes to us, go to your fork and create a new pull request to let us know about it.
 
 Once your pull request is created, a SEKOIA.IO reviewer will take responsibility for providing clear, actionable feedback. Once merged, your changes will be included in the next release to be deployed on SEKOIA.IO.
-
