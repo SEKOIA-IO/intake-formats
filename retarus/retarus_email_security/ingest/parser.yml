@@ -1,42 +1,90 @@
-name: retarus_email_security
+name: retarus email security
 pipeline:
   - name: json_event
     external:
       name: json.parse-json
-  - name: field_extraction
-  - name: file_extraction
+  - name: field_extraction 
+  - name: hash_extraction
+    filter: "{{final.retarus.class == 'THREAT'}}"
 stages:
   field_extraction:
     actions:
       - set:
           observer.version: "{{json_event.message.version}}"
           observer.hostname: "{{json_event.message.host}}"
-          user.id: "{{json_event.message.customer}}"
-          action.name: "{{json_event.message.class}}"
-          action.type: "{{json_event.message.type}}"
-          action.outcome_reason: "{{json_event.message.status}}"
-          
-          labels.email_direction: "{{json_event.message.direction}}"
-          labels.mime_id: "{{json_event.message.mimeId}}"
-          labels.retarus_rmxId: "{{json_event.message.rmxId}}"          
-          labels.retarus_details: "{{json_event.message.metaData.details}}"
-          labels.retarus_threatType: "{{json_event.message.metaData.threatType}}"
-          
-          source.ip: "{{json_event.message.sourceIp}}"
-          email.to: "{{json_event.message.recipient}}"
-          email.from: "{{json_event.message.sender}}"
 
-          url.full: "{{json_event.message.metaData.uniformResourceLocator}}"
+          organization.id: "{{json_event.message.customer}}"
+
+          source.ip: "{{json_event.message.sourceIp}}"
+          
+          retarus.timestamp: "{{json_event.message.ts}}"
+          retarus.email_direction: "{{json_event.message.direction}}"
+          retarus.mime_message_id: "{{json_event.message.mimeId}}"
+          retarus.message_id: "{{json_event.message.rmxId}}"          
+          retarus.recipient: "{{json_event.message.recipient}}"
+          retarus.sender: "{{json_event.message.sender}}"
+          retarus.status: "{{json_event.message.status}}"
+          retarus.class: "{{json_event.message.class}}"
+          retarus.type: "{{json_event.message.type}}"
+
       - set:
+          event.kind: "event"
+          action.name: "EVENT"
           action.outcome: "success"
-        filter: "{{json_event.message.status == 'ACCEPTED'}}"
-      - delete:
-          - "action.outcome_reason"
-        filter: "{{json_event.message.status == 'ACCEPTED'}}"
+          action.outcome_reason: "ACCEPTED"
+        filter: "{{json_event.message.class == 'EVENT'  and json_event.message.type == 'MTA' }}"
+
       - set:
+          event.kind: "alert"
+          action.name: "THREAT"
           action.outcome: "failure"
-        filter: "{{json_event.message.status != 'ACCEPTED'}}"
-  file_extraction:
+          action.outcome_reason: "{{retarus.status}}"
+        filter: "{{json_event.message.class == 'THREAT'}}"
+
+      - set:
+          event.category: "malware"
+          event.type: "info"
+          retarus.virus_name: "{{json_event.message.metaData.details}}"
+        filter: "{{json_event.message.type == 'MultiScan'}}"
+
+      - set:
+          event.category: "malware"
+          event.type: "info"
+        filter: "{{json_event.message.type == 'Sandboxing'}}"
+
+      - set:
+          event.category: "malware"
+          event.type: "info"
+        filter: "{{json_event.message.type == 'CxO'}}"
+
+      - set:
+          event.category: "web"
+          event.type: "info"
+          url.full: "{{json_event.message.metaData.uniformResourceLocator}}"
+          retarus.phishing_identifier: "{{json_event.message.metaData.details}}"
+        filter: "{{json_event.message.type == 'PZD' and json_event.message.metaData.threatType == 'URL'}}"
+
+      - set:
+          event.category: "malware"
+          event.type: "info"
+          file.mimeType: "{{json_event.message.metaData.mimeType}}"
+          retarus.virus_name: "{{json_event.message.metaData.details}}"
+        filter: "{{json_event.message.type == 'PZD' and json_event.message.metaData.threatType == 'VIRUS'}}"
+
+  hash_extraction:
     actions:
       - set:
-          file.mime_type: "{{json_event.message.metaData.mimeType}}"
+          file.hash.sha1: "{{json_event.message.metaData.hashFunction}}"
+        filter: "{{json_event.message.metaData.hashFunction == 'sha1'}}"
+      - set:
+          file.hash.sha256: "{{json_event.message.metaData.hashFunction}}"
+        filter: "{{json_event.message.metaData.hashFunction == 'sha256'}}"
+      - set:
+          file.hash.sha512: "{{json_event.message.metaData.hashFunction}}"
+        filter: "{{json_event.message.metaData.hashFunction == 'sha512'}}"
+      - set:
+          file.hash.md5: "{{json_event.message.metaData.hashFunction}}"
+        filter: "{{json_event.message.metaData.hashFunction == 'md5'}}"
+      - set:
+          file.hash.ssdeep: "{{json_event.message.metaData.hashFunction}}"
+        filter: "{{json_event.message.metaData.hashFunction == 'ssdeep'}}"
