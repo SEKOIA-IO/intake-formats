@@ -1,6 +1,8 @@
 # Intakes
 **Welcome to the SEKOIA.IO Intakes repository!**
 
+![Intakes](https://github.com/SEKOIA-IO/intakes/actions/workflows/main.yml/badge.svg)
+
 This repository contains all the community parsers of SEKOIA.IO. Parsers are fundamental parts of a cyber analysis and detection process. They extract useful information conveyed by events and make them understandable to decision-making processes. A poor quality parser does not allow informed decision making. Conversely, a good quality parser extracts and normalizes all the useful information present in an event to maximizes its decision making.
 
 We have created this space to ensure the quality of our parsers and allow our users to participate in their development. 
