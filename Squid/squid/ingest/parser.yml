@@ -1,0 +1,153 @@
+#
+# Squid’s default logging format (named `squid`) is the following:
+#     %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt
+#
+# Obvious, isn’t it?
+#
+# For SEKOIA.IO, we are recommanding to add two optional fields, the
+# referrer and the user agent. Which is will finally be the following:
+#
+#     %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt "%{Referer}>h" "%{User-Agent}>h"
+#
+# More information available on the documentation:
+# http://www.squid-cache.org/Doc/config/logformat/
+#
+# Which means:
+# - `%ts.%03tu`: timestamp (in seconds since epoch of the log).
+# - `%6tr`: response time (milliseconds).
+# - `%>a`: Client source IP address
+# - `%Ss`: Squid request status (TCP_MISS, etc.)
+# - `%03>Hs`: HTTP status code sent to the client
+# - `%<st` Total size of reply sent to client (after adaptation)
+# - `%rm` Request method (GET/POST etc)
+# - `%ru`: Request URL received (or computed) and sanitized
+# - `%[un`:  User name (any available)
+# - `%Sh`: Squid hierarchy status (DEFAULT_PARENT etc)
+# - `%<a`: Server IP address of the last server or peer connection
+# - `%mt`: MIME content type
+
+name: squid
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: original.message
+        output_field: message
+        pattern: '^%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}( "%{DATA:referrer}" "%{DATA:user_agent}")?$'
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: parsed_event.message.timestamp
+        output_field: start_date
+        format: timestamp
+
+  - name: url
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.url
+        output_field: message
+        pattern: '%{NOTSPACE:domain}:%{NUMBER:port}'
+    filter: '{{parsed_event.message.method == "CONNECT"}}'
+  - name: set_base_fields
+
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          http.request.method: '{{parsed_event.message.method}}'
+          http.response.bytes: '{{parsed_event.message.http_response_bytes}}'
+          http.response.status_code: '{{parsed_event.message.status}}'
+          network.direction: egress
+          event.kind: event
+          event.category:
+            - web
+            - network
+          event.start: '{{parsed_timestamp.start_date}}'
+          event.duration: '{{parsed_event.message.elapsed}}'
+          squid.hierarchy_code: '{{parsed_event.message.hierarchy_code}}'
+          observer.type: proxy
+          observer.vendor: Squid
+          observer.product: Squid
+
+      - set:
+          user_agent.original: '{{parsed_event.message.user_agent}}'
+        filter: '{{parsed_event.message.user_agent != "-"}}'
+
+      - set:
+           http.request.referrer: '{{parsed_event.message.referrer}}'
+        filter: '{{parsed_event.message.referrer != "-"}}'
+
+      - set:
+          http.response.mime_type: '{{parsed_event.message.mime_type}}'
+        filter: '{{parsed_event.message.mime_type != "-"}}'
+
+      - set:
+          source.ip: '{{parsed_event.message.source_ip}}'
+        filter: '{{parsed_event.message.source_ip != "-"}}'
+
+      - set:
+          user.name: '{{parsed_event.message.username}}'
+        filter: '{{parsed_event.message.username != "-"}}'
+
+      - set:
+          url.original: '{{parsed_event.message.url}}'
+        filter: '{{parsed_event.message.method != "CONNECT"}}'
+
+      #
+      # Manage Squid code. Result code is composed of several tags
+      # (separated by underscore characters) which describe the
+      # response sent to the client.
+      # https://wiki.squid-cache.org/SquidFaq/SquidLogs
+      #
+      - set:
+          network.transport: "tcp"
+        filter: '{{parsed_event.message.code.startswith("TCP_") }}'
+
+      - set:
+          network.transport: "udp"
+        filter: '{{parsed_event.message.code.startswith("UDP_") }}'
+
+      - set:
+          event.type:
+            - connection
+            - denied
+            - error
+          squid.cache_status: denied
+        filter: '{{"_DENIED" in parsed_event.message.code}}'
+
+      - set:
+          event.type:
+            - connection
+            - error
+        filter: '{{"_ABORTED" in parsed_event.message.code or "_TIMEOUT" in parsed_event.message.code or "_IGNORED" in parsed_event.message.code}}'
+
+      - set:
+          squid.cache_status: hit
+        filter: '{{"_HIT" in parsed_event.message.code}}'
+
+      - set:
+          squid.cache_status: miss
+        filter: '{{"_MISS" in parsed_event.message.code}}'
+
+      #
+      # When method is `CONNECT`, real URL isn’t available, we are facing a tunnel.
+      #
+      - set:
+          destination.domain: '{{parsed_event.message.peerhost}}'
+        filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.peerhost != "-"}}'
+
+      - set:
+          destination.ip: '{{parsed_event.message.peerhostip}}'
+        filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.peerhost != "-"}}'
+
+      - set:
+          url.full: '{{parsed_event.message.url}}'
+        filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.url.startswith("http")}}'
+
+      - set:
+          destination.domain: '{{url.message.domain}}'
+          destination.port: '{{url.message.port}}'
+        filter: '{{parsed_event.message.method == "CONNECT"}}'
