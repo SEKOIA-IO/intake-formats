@@ -5,7 +5,28 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+# convert timestamp from 'millisecondsSinceEpoch' to 'date'
+  - name: parse_timestamp
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.timestamp.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_timestamp.timestamp.date
+        output_field: start_date
+        format: timestamp
+  - name: set_timestamp_formated
+
   - name: rename_meta_fields
+
   - name: rename_dns_fields
     filter: "{{json_event.message.dns != null}}"
   - name: rename_fileCreation_fields
@@ -26,6 +47,11 @@ pipeline:
 
 
 stages:
+  set_timestamp_formated:
+    actions:
+      - set:
+          event.start: "{{convert_timestamp.start_date[:-6]}}.{{parse_timestamp.timestamp.milliseconds}}{{convert_timestamp.start_date[19:]}}"
+
   rename_meta_fields:
     actions:
     - set:
@@ -39,7 +65,6 @@ stages:
         agent.machine.name: "{{json_event.message.meta.computerName}}"
         agent.machine.type: "{{json_event.message.meta.machineType}}"
         deepvisibility.agent.managment_url: "{{json_event.message.meta.mgmtUrl}}"
-        event.created: "{{json_event.message.timestamp.millisecondsSinceEpoch}}"
 
   rename_dns_fields:
     actions:
