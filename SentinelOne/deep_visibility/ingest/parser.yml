@@ -29,6 +29,49 @@ pipeline:
 
   - name: rename_dns_fields
     filter: "{{json_event.message.dns != null}}"
+
+# time conversion for dns events
+  - name: parse_process_exec_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.dns.source.executable.creationTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_process_exec_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_process_exec_start_dns.timestamp.date
+        output_field: start_date
+        format: timestamp
+  - name: parse_process_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.dns.source.fullPid.startTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_process_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_process_start_dns.timestamp.date
+        output_field: start_date
+        format: timestamp
+
+  - name: set_datetime_fields_dns
+
   - name: rename_fileCreation_fields
     filter: "{{json_event.message.fileCreation != null}}"
   - name: set_fileCreation_filetype
@@ -51,6 +94,12 @@ stages:
     actions:
       - set:
           event.start: "{{convert_timestamp.start_date[:-6]}}.{{parse_timestamp.timestamp.milliseconds}}{{convert_timestamp.start_date[19:]}}"
+
+  set_datetime_fields_dns:
+    actions:
+      - set:
+          deepvisibility.process.executable.start: "{{convert_process_exec_start_dns.start_date[:-6]}}.{{parse_process_exec_start_dns.timestamp.milliseconds}}{{convert_process_exec_start_dns.start_date[19:]}}"
+          process.start: "{{convert_process_start_dns.start_date[:-6]}}.{{parse_process_start_dns.timestamp.milliseconds}}{{convert_process_start_dns.start_date[19:]}}"
 
   rename_meta_fields:
     actions:
