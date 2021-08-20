@@ -116,6 +116,25 @@ pipeline:
         input_field: parse_process_start_file_creation.timestamp.date
         output_field: start_date
         format: timestamp
+  - name: parse_file_created_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.fileCreation.targetFile.creationTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_file_created_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_file_created_file_creation.timestamp.date
+        output_field: start_date
+        format: timestamp
 
   - name: set_datetime_fields_file_creation
     filter: "{{json_event.message.fileCreation != null}}"
@@ -134,8 +153,6 @@ pipeline:
   - name: set_fileCreation_extension
     filter: '{{json_event.message.fileCreation != null and json_event.message.fileCreation.targetFile.isDir == "E_FALSE"}}'
 
-
-
 stages:
   set_timestamp_formated:
     actions:
@@ -153,6 +170,8 @@ stages:
       - set:
           deepvisibility.process.executable.start: "{{convert_process_exec_start_file_creation.start_date[:-6]}}.{{parse_process_exec_start_file_creation.timestamp.milliseconds}}{{convert_process_exec_start_file_creation.start_date[19:]}}"
           process.start: "{{convert_process_start_file_creation.start_date[:-6]}}.{{parse_process_start_file_creation.timestamp.milliseconds}}{{convert_process_start_file_creation.start_date[19:]}}"
+          file.created: "{{convert_file_created_file_creation.start_date[:-6]}}.{{parse_file_created_file_creation.timestamp.milliseconds}}{{convert_file_created_file_creation.start_date[19:]}}"
+
 
   rename_meta_fields:
     actions:
