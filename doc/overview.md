@@ -1,9 +1,11 @@
 # Overview
 
-An intake consists is a sequence of stages organized under a pipeline that modifies the event on the fly.
+## General
+
+An intake consists in a sequence of stages organized under a pipeline that modifies the event on the fly.
 
 The following pipeline is made of three stages (`stage1`, `stage2` and `stage3`)
-with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage1`.
+with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage2`.
 ```yaml
 pipeline:
  - name: stage1
@@ -16,9 +18,9 @@ pipeline:
 
 ## Stage
 
-A stage is a parsing step that denotes changes in the event that participate in the same semantic definition. A stage can create, update and delete fields by chaining the execution of actions.
+A stage is a parsing step that denotes changes in the event that participate in the same semantic definition. A stage can create, update and delete fields by chaining execution of actions.
 
-For example, the following snippet shows a stage named `my_stage` that consists in two actions.
+For example, the following snippet shows a stage named `my_stage` which consists in two actions.
 ```yaml
 my_stage:
   actions:
@@ -31,8 +33,8 @@ my_stage:
 
 ### Common stages
 
-Common stages are provided to ease the development of new intakes.
-The `external` attribute must be used to reference a common stage along with its optional properties.
+Common stages are provided to ease development of new intakes.
+`external` attribute must be used to reference a common stage along with its optional properties.
 
 ```yaml
 pipeline:
@@ -93,7 +95,7 @@ The following shows the produced event.
 #### Key-Value
 
 The `kv.parse-kv` stage can be used to deserialize a key-value string.
-Per default, the `message` field of the original event is parsed but this property can be overwritten to specify any field. Besides, the default field separator is any whitespace `\s` and the value separator is `=` however both can be overwritten with the respective properties: `item_sep` and `value_sep`.
+Per default, the `message` field of the original event is parsed but this property can be overwritten to specify any field. Besides, default field separator is any whitespace `\s` and value separator is `=` however both can be overwritten with respective properties: `item_sep` and `value_sep`.
 
 **Example**
 
@@ -140,7 +142,7 @@ The following shows the produced event.
 The `grok.match` stage can be used to match a field against a Grok pattern.
 The grok pattern must be specified by means of the `pattern` property.
 Per default, the `message` field is parsed but this property can be overwritten to specify any field.
-The result of the parsing replace the parsed content.
+Parsing's result replaces the parsed content.
 Custom patterns can be specified with the `custom_patterns` property.
 
 **Example**
@@ -162,8 +164,8 @@ pipeline:
       name: grok.match
       properties:
         input_field: original.message
-        output_field: message
-        pattern: '%{IP:client} took %{NUMBER:duration}'
+		output_field: message
+        pattern: '%{IP:client} took %{NUMBER:duration} ms'
   - name: set_ip
 stages:
   set_ip:
@@ -216,7 +218,7 @@ stages:
   set_date:
     actions:
       - set:
-          @timestamp: '{{parsed_date:date}}'
+          @timestamp: '{{parsed_date.date}}'
 ```
 
 The following shows the produced event.
@@ -257,6 +259,7 @@ pipeline:
             - action
             - username
             - user_id
+        delimiter: ";"
   - name: set_user_id
 stages:
   set_user_id:
@@ -290,7 +293,8 @@ Sets the value of one or more fields in the final version of the event.
 
 The field in the final version of the event can be specified with a dotted path (i.e. `field1`, `field1.sub-field1`, …).
 
-The value can either be a constant (i.e. `'my-constant'`, `42`, …) or a reference to the value of another field in the a stage (i.e. `{{stage1.my-field1.attribute2}}`). If the value cannot be computed or is empty, the field is not modified.
+The value can either be a constant (i.e. `'my-constant'`, `42`, …) or a reference to the value of another field in the stage (i.e. `{{stage1.my-field1.attribute2}}`).
+If the value cannot be computed or is empty, the field is not modified.
 
 Example:
 
@@ -303,12 +307,12 @@ Example:
 
 ### translate
 
-Sets the value of one or more fields according the value of a source field and a dictionary that connect the values.
+Sets value of one or more fields according the value of a source field and a dictionary that connect values.
 
-The field in the final version of the event can be specified with a dotted path (i.e. `field1`, `field1.sub-field1`, …).
+The field in event's final version can be specified with a dotted path (i.e. `field1`, `field1.sub-field1`, …).
 
 An optional fallback value can be defined.
-If the value of the source field doesn't match any entries of the mapping dictionary, this fallback value will be used to set the target field.
+If the value of the source field doesn't match any entry of the mapping dictionary, this fallback value will be used to set the target field.
 If no fallback value is defined and the value of the source field doesn't match any entries, the target field will not be created in the final event.
 
 
@@ -338,22 +342,27 @@ Example:
 
 #### filters
 
-The reference to another field can be extended with filters. Filters are separated from the field path by a pipe symbol (|). Multiple filters can be chained. The output of one filter is applied to the next.
+Reference to another field can be extended with filters.
+Filters are separated from the field path by a pipe symbol (|).
+Multiple filters can be chained. The output of a filter is applied to the next.
 
-For example, `{{stage1.username |strip |upper}}` remove the whitespace and return the uppercase value of the `username` variable computed in `stage1`.
+For example, `{{stage1.username |strip |upper}}` removes the whitespace and returns the uppercase value of the `username` variable computed in `stage1`.
 
 The following built-in filters are available:
 
-- `abs`: returns the absolute value of the variable.
-- `capitalize`: returns the first character uppercase, all others lowercase.
-- `float`: converts the variable in float
-- `int`: converts the variable in int
-- `length`: returns the number of items
-- `lower`: returns the value all lowercase
-- `max`: returns the largest item from the variable
-- `min`: returns the smallest item from the variable
-- `strip`: returns the variable removed from heading and leading whitespaces
-- `upper`: returns the value all uppercase
+| filter       |  description
+|---------------|------------------------------------------------
+|`abs`          | returns the absolute value of the variable.
+|`capitalize`   | returns the first character uppercase, all others lowercase.
+|`float`        | converts the variable in float
+|`int`| converts the variable in int
+|`length`| returns the number of items
+|`lower`| returns the value all lowercase
+|`max`| returns the largest item from the variable
+|`min`| returns the smallest item from the variable
+|`strip`| returns the variable removed from heading and leading whitespaces
+|`upper`| returns the value all uppercase
+
 
 
 ### delete
