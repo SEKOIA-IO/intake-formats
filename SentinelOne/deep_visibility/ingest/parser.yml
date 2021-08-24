@@ -7,62 +7,279 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+# convert timestamp from 'millisecondsSinceEpoch' to 'date'
+  - name: parse_timestamp
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.timestamp.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_timestamp.timestamp.date
+        output_field: start_date
+        format: timestamp
+  - name: set_timestamp_formated
+
   - name: rename_meta_fields
+
+# dns envents
   - name: rename_dns_fields
     filter: "{{json_event.message.dns != null}}"
 
+## time conversion for dns events
+  - name: parse_process_exec_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.dns.source.executable.creationTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_process_exec_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_process_exec_start_dns.timestamp.date
+        output_field: start_date
+        format: timestamp
+  - name: parse_process_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.dns.source.fullPid.startTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_process_start_dns
+    filter: "{{json_event.message.dns != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_process_start_dns.timestamp.date
+        output_field: start_date
+        format: timestamp
+
+  - name: set_datetime_fields_dns
+    filter: "{{json_event.message.dns != null}}"
+
+# fileCreation events
+  - name: rename_fileCreation_fields
+    filter: "{{json_event.message.fileCreation != null}}"
+## time conversion for fileCreation events
+  - name: parse_process_exec_start_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.fileCreation.source.executable.creationTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_process_exec_start_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_process_exec_start_file_creation.timestamp.date
+        output_field: start_date
+        format: timestamp
+  - name: parse_process_start_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.fileCreation.source.fullPid.startTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_process_start_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_process_start_file_creation.timestamp.date
+        output_field: start_date
+        format: timestamp
+  - name: parse_file_created_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.fileCreation.targetFile.creationTime.millisecondsSinceEpoch
+        output_field: timestamp
+        pattern: '^%{TEN_NUM:date}%{THREE_NUM:milliseconds}$'
+        custom_patterns:
+          TEN_NUM: '[0-9]{10}'
+          THREE_NUM: '[0-9]{3}'
+  - name: convert_file_created_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_file_created_file_creation.timestamp.date
+        output_field: start_date
+        format: timestamp
+
+  - name: set_datetime_fields_file_creation
+    filter: "{{json_event.message.fileCreation != null}}"
+
+  ## other modification for fileCreation
+  - name: set_fileCreation_filetype
+    filter: '{{json_event.message.fileCreation != null and json_event.message.fileCreation.targetFile.isDir != "E_FALSE"}}'
+  - name: find_fileCreation_extension
+    filter: '{{json_event.message.fileCreation != null and json_event.message.fileCreation.targetFile.isDir == "E_FALSE"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.fileCreation.targetFile.path
+        output_field: file_extension
+        pattern: '%{GREEDYDATA}.%{WORD:extension}'
+  - name: set_fileCreation_extension
+    filter: '{{json_event.message.fileCreation != null and json_event.message.fileCreation.targetFile.isDir == "E_FALSE"}}'
+
 stages:
-  rename_meta_fields:
-      actions:
+  set_timestamp_formated:
+    actions:
       - set:
-          agent.seq_id: "{{json_event.message.meta.seqId}}"
-          agent.uuid: "{{json_event.message.meta.uuid}}"
-          agent.trace_id: "{{json_event.message.meta.traceId}}"
-          agent.version: "{{json_event.message.meta.agentVersion}}"
-          agent.os.family: "{{json_event.message.meta.osFamily}}"
-          agent.os.name: "{{json_event.message.meta.osName}}"
-          agent.os.revision: "{{json_event.message.meta.osRevision}}"
-          agent.machine.name: "{{json_event.message.meta.computerName}}"
-          agent.machine.type: "{{json_event.message.meta.machineType}}"
-          agent.managment_url: "{{json_event.message.meta.mgmtUrl}}"
-          event.created: "{{json_event.message.timestamp.millisecondsSinceEpoch}}"
+          event.start: "{{convert_timestamp.start_date[:-6]}}.{{parse_timestamp.timestamp.milliseconds}}{{convert_timestamp.start_date[19:]}}"
+
+  set_datetime_fields_dns:
+    actions:
+      - set:
+          deepvisibility.process.executable.start: "{{convert_process_exec_start_dns.start_date[:-6]}}.{{parse_process_exec_start_dns.timestamp.milliseconds}}{{convert_process_exec_start_dns.start_date[19:]}}"
+          process.start: "{{convert_process_start_dns.start_date[:-6]}}.{{parse_process_start_dns.timestamp.milliseconds}}{{convert_process_start_dns.start_date[19:]}}"
+
+  set_datetime_fields_file_creation:
+    actions:
+      - set:
+          deepvisibility.process.executable.start: "{{convert_process_exec_start_file_creation.start_date[:-6]}}.{{parse_process_exec_start_file_creation.timestamp.milliseconds}}{{convert_process_exec_start_file_creation.start_date[19:]}}"
+          process.start: "{{convert_process_start_file_creation.start_date[:-6]}}.{{parse_process_start_file_creation.timestamp.milliseconds}}{{convert_process_start_file_creation.start_date[19:]}}"
+          file.created: "{{convert_file_created_file_creation.start_date[:-6]}}.{{parse_file_created_file_creation.timestamp.milliseconds}}{{convert_file_created_file_creation.start_date[19:]}}"
+
+
+  rename_meta_fields:
+    actions:
+    - set:
+        deepvisibility.agent.seq_id: "{{json_event.message.meta.seqId}}"
+        deepvisibility.agent.uuid: "{{json_event.message.meta.uuid}}"
+        deepvisibility.agent.trace_id: "{{json_event.message.meta.traceId}}"
+        agent.version: "{{json_event.message.meta.agentVersion}}"
+        deepvisibility.agent.os.family: "{{json_event.message.meta.osFamily}}"
+        agent.os.name: "{{json_event.message.meta.osName}}"
+        deepvisibility.agent.os.revision: "{{json_event.message.meta.osRevision}}"
+        agent.machine.name: "{{json_event.message.meta.computerName}}"
+        agent.machine.type: "{{json_event.message.meta.machineType}}"
+        deepvisibility.agent.managment_url: "{{json_event.message.meta.mgmtUrl}}"
 
   rename_dns_fields:
-      actions:
-          - set:
-              dns.trueContext.key: "{{json_event.message.dns.trueContext.key.value}}"
-              dns.source.node.key: "{{json_event.message.dns.source.node.key.value}}"
-              process.executable.node.key: "{{json_event.message.dns.source.executable.node.key.value}}"
-              process.executable.start: "{{json_event.message.dns.source.executable.creationTime.millisecondsSinceEpoch}}"
-              process.executable.name: "{{json_event.message.dns.source.executable.path}}"
-              process.executable.is_dir: "{{json_event.message.dns.source.executable.isDir}}"
-              process.executable.size_bytes: "{{json_event.message.dns.source.executable.sizeBytes}}"
-              process.executable.signature.signed.identity: "{{json_event.message.dns.source.executable.signature.signed.identity}}"
-              process.working_directory: "{{json_event.message.dns.source.executable.fileLocation}}"
-              process.command_line: "{{json_event.message.dns.source.commandLine}}"
-              process.pid: "{{json_event.message.dns.source.fullPid.pid}}"
-              process.start: "{{json_event.message.dns.source.fullPid.startTime.millisecondsSinceEpoch}}"
-              source.user.name: "{{json_event.message.dns.source.user.name}}"
-              source.user.sid: "{{json_event.message.dns.source.user.sid}}"
-              source.interactive: "{{json_event.message.dns.source.interactive}}"
-              process.parent.node.key: "{{json_event.message.dns.source.parent.node.key.value}}"
-              source.excluded: "{{json_event.message.dns.source.excluded}}"
-              source.name: "{{json_event.message.dns.source.name}}"
-              source.root: "{{json_event.message.dns.source.root}}"
-              os.family: "{{json_event.message.dns.source.subsystem}}"
-              source.session_id: "{{json_event.message.dns.source.sessionId}}"
-              source.integrity_level: "{{json_event.message.dns.source.integrityLevel}}"
-              source.is_wow64: "{{json_event.message.dns.source.isWow64}}"
-              source.is_redirected_command_processor: "{{json_event.message.dns.source.isRedirectedCommandProcessor}}"
-              source.trueContext.key: "{{json_event.message.dns.source.trueContext.key.value}}"
-              process.counters.moduleLoad: "{{json_event.message.dns.source.counters.moduleLoad}}"
-              process.counters.fileCreation: "{{json_event.message.dns.source.counters.fileCreation}}"
-              process.counters.fileDeletion: "{{json_event.message.dns.source.counters.fileDeletion}}"
-              process.counters.fileModification: "{{json_event.message.dns.source.counters.fileModification}}"
-              process.counters.netConnOut: "{{json_event.message.dns.source.counters.netConnOut}}"
-              process.counters.dnsLookups: "{{json_event.message.dns.source.counters.dnsLookups}}"
-              dns.question.name: "{{json_event.message.dns.query}}"
-              dns.answers.results: "{{json_event.message.dns.results}}"
+    actions:
+      - set:
+          deepvisibility.dns.trueContext.key: "{{json_event.message.dns.trueContext.key.value}}"
+          deepvisibility.dns.source.node.key: "{{json_event.message.dns.source.node.key.value}}"
+          deepvisibility.process.executable.node.key: "{{json_event.message.dns.source.executable.node.key.value}}"
+          deepvisibility.process.executable.start: "{{json_event.message.dns.source.executable.creationTime.millisecondsSinceEpoch}}"
+          process.executable.name: "{{json_event.message.dns.source.executable.path}}"
+          deepvisibility.process.executable.is_dir: "{{json_event.message.dns.source.executable.isDir}}"
+          deepvisibility.process.executable.size_bytes: "{{json_event.message.dns.source.executable.sizeBytes}}"
+          deepvisibility.process.executable.signature.signed.identity: "{{json_event.message.dns.source.executable.signature.signed.identity}}"
+          process.working_directory: "{{json_event.message.dns.source.executable.fileLocation}}"
+          process.command_line: "{{json_event.message.dns.source.commandLine}}"
+          process.pid: "{{json_event.message.dns.source.fullPid.pid}}"
+          process.start: "{{json_event.message.dns.source.fullPid.startTime.millisecondsSinceEpoch}}"
+          source.user.name: "{{json_event.message.dns.source.user.name}}"
+          deepvisibility.source.user.sid: "{{json_event.message.dns.source.user.sid}}"
+          deepvisibility.source.interactive: "{{json_event.message.dns.source.interactive}}"
+          deepvisibility.process.parent.node.key: "{{json_event.message.dns.source.parent.node.key.value}}"
+          deepvisibility.source.excluded: "{{json_event.message.dns.source.excluded}}"
+          source.name: "{{json_event.message.dns.source.name}}"
+          deepvisibility.source.root: "{{json_event.message.dns.source.root}}"
+          deepvisibility.os.family: "{{json_event.message.dns.source.subsystem}}"
+          deepvisibility.source.session_id: "{{json_event.message.dns.source.sessionId}}"
+          deepvisibility.source.integrity_level: "{{json_event.message.dns.source.integrityLevel}}"
+          deepvisibility.source.is_wow64: "{{json_event.message.dns.source.isWow64}}"
+          deepvisibility.source.is_redirected_command_processor: "{{json_event.message.dns.source.isRedirectedCommandProcessor}}"
+          deepvisibility.source.trueContext.key: "{{json_event.message.dns.source.trueContext.key.value}}"
+          deepvisibility.process.counters.moduleLoad: "{{json_event.message.dns.source.counters.moduleLoad}}"
+          deepvisibility.process.counters.fileCreation: "{{json_event.message.dns.source.counters.fileCreation}}"
+          deepvisibility.process.counters.fileDeletion: "{{json_event.message.dns.source.counters.fileDeletion}}"
+          deepvisibility.process.counters.fileModification: "{{json_event.message.dns.source.counters.fileModification}}"
+          deepvisibility.process.counters.netConnOut: "{{json_event.message.dns.source.counters.netConnOut}}"
+          deepvisibility.process.counters.dnsLookups: "{{json_event.message.dns.source.counters.dnsLookups}}"
+          # dns specific fields
+          dns.question.name: "{{json_event.message.dns.query}}"
+          deepvisibility.dns.answers.results: "{{json_event.message.dns.results}}"
+
+  rename_fileCreation_fields:
+    actions:
+      - set:
+          deepvisibility.source.node.key: "{{json_event.message.fileCreation.source.node.key.value}}"
+          deepvisibility.process.executable.node.key: "{{json_event.message.fileCreation.source.executable.node.key.value}}"
+          deepvisibility.process.executable.start: "{{json_event.message.fileCreation.source.executable.creationTime.millisecondsSinceEpoch}}"
+          process.executable.name: "{{json_event.message.fileCreation.source.executable.path}}"
+          deepvisibility.process.executable.is_dir: "{{json_event.message.fileCreation.source.executable.isDir}}"
+          deepvisibility.process.executable.size_bytes: "{{json_event.message.fileCreation.source.executable.sizeBytes}}"
+          deepvisibility.process.executable.signature.signed.identity: "{{json_event.message.fileCreation.source.executable.signature.signed.identity}}"
+          process.working_directory: "{{json_event.message.fileCreation.source.executable.fileLocation}}"
+          process.command_line: "{{json_event.message.fileCreation.source.commandLine}}"
+          process.pid: "{{json_event.message.fileCreation.source.fullPid.pid}}"
+          process.start: "{{json_event.message.fileCreation.source.fullPid.startTime.millisecondsSinceEpoch}}"
+          source.user.name: "{{json_event.message.fileCreation.source.user.name}}"
+          deepvisibility.source.user.sid: "{{json_event.message.fileCreation.source.user.sid}}"
+          deepvisibility.source.interactive: "{{json_event.message.fileCreation.source.interactive}}"
+          deepvisibility.process.parent.node.key: "{{json_event.message.fileCreation.source.parent.node.key.value}}"
+          deepvisibility.source.excluded: "{{json_event.message.fileCreation.source.excluded}}"
+          source.name: "{{json_event.message.fileCreation.source.name}}"
+          deepvisibility.source.root: "{{json_event.message.fileCreation.source.root}}"
+          deepvisibility.os.family: "{{json_event.message.fileCreation.source.subsystem}}"
+          deepvisibility.source.session_id: "{{json_event.message.fileCreation.source.sessionId}}"
+          deepvisibility.source.integrity_level: "{{json_event.message.fileCreation.source.integrityLevel}}"
+          deepvisibility.source.is_wow64: "{{json_event.message.fileCreation.source.isWow64}}"
+          deepvisibility.source.is_redirected_command_processor: "{{json_event.message.fileCreation.source.isRedirectedCommandProcessor}}"
+          deepvisibility.source.trueContext.key: "{{json_event.message.fileCreation.source.trueContext.key.value}}"
+          deepvisibility.process.counters.modelChildProcess: "{{json_event.message.fileCreation.source.counters.modelChildProcess}}"
+          deepvisibility.process.counters.osChildProcess: "{{json_event.message.fileCreation.source.counters.osChildProcess}}"
+          deepvisibility.process.counters.crossProcess: "{{json_event.message.fileCreation.source.counters.crossProcess}}"
+          deepvisibility.process.counters.moduleLoad: "{{json_event.message.fileCreation.source.counters.moduleLoad}}"
+          deepvisibility.process.counters.fileCreation: "{{json_event.message.fileCreation.source.counters.fileCreation}}"
+          deepvisibility.process.counters.fileDeletion: "{{json_event.message.fileCreation.source.counters.fileDeletion}}"
+          deepvisibility.process.counters.fileModification: "{{json_event.message.fileCreation.source.counters.fileModification}}"
+          deepvisibility.process.counters.registryModification: "{{json_event.message.fileCreation.source.counters.registryModification}}"
+          deepvisibility.process.counters.crossProcessDupThreadHandle: "{{json_event.message.fileCreation.source.counters.crossProcessDupThreadHandle}}"
+          deepvisibility.process.counters.crossProcessDupProcessHandle: "{{json_event.message.fileCreation.source.counters.crossProcessDupProcessHandle}}"
+        # fileCreation specific fields
+          deepvisibility.file.node.key: "{{json_event.message.fileCreation.targetFile.node.key.value}}"
+          file.created: "{{json_event.message.fileCreation.targetFile.creationTime.millisecondsSinceEpoch}}"
+          file.path: "{{json_event.message.fileCreation.targetFile.path}}"
+          deepvisibility.file.location: "{{json_event.message.fileCreation.targetFile.fileLocation}}"
+          file.type: "file"
+
+  set_fileCreation_filetype:
+     actions:
+       - set:
+           file.type: "dir"
+  set_fileCreation_extension:
+    actions:
+      - set:
+            file.extension: "{{find_fileCreation_extension.file_extension.extension}}"
+
 
 # TODO when ingest will be abble to manage lists, parse dns.answers.results with grok patern as follows :
 # example from intake-formats/SentinelOne/deep_visibility/tests/event_dns.json
