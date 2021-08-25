@@ -35,7 +35,7 @@ pipeline:
 
 ## time conversion for dns events
   - name: parse_process_exec_start_dns
-    filter: "{{json_event.message.dns != null}}"
+    filter: "{{json_event.message.dns != null and json_event.message.dns.source.executable.creationTime.millisecondsSinceEpoch != null }}"
     external:
       name: grok.match
       properties:
@@ -46,7 +46,7 @@ pipeline:
           TEN_NUM: '[0-9]{10}'
           THREE_NUM: '[0-9]{3}'
   - name: convert_process_exec_start_dns
-    filter: "{{json_event.message.dns != null}}"
+    filter: "{{parse_process_exec_start_dns != null and parse_process_exec_start_dns.timestamp is not none}}"
     external:
       name: date.parse
       properties:
@@ -54,7 +54,7 @@ pipeline:
         output_field: start_date
         format: timestamp
   - name: parse_process_start_dns
-    filter: "{{json_event.message.dns != null}}"
+    filter: "{{json_event.message.dns != null and json_event.message.dns.source.fullPid.startTime.millisecondsSinceEpoch != null}}"
     external:
       name: grok.match
       properties:
@@ -65,7 +65,7 @@ pipeline:
           TEN_NUM: '[0-9]{10}'
           THREE_NUM: '[0-9]{3}'
   - name: convert_process_start_dns
-    filter: "{{json_event.message.dns != null}}"
+    filter: "{{parse_process_start_dns != null and parse_process_start_dns.timestamp is not none}}"
     external:
       name: date.parse
       properties:
@@ -81,7 +81,7 @@ pipeline:
     filter: "{{json_event.message.fileCreation != null}}"
 ## time conversion for fileCreation events
   - name: parse_process_exec_start_file_creation
-    filter: "{{json_event.message.fileCreation != null}}"
+    filter: "{{json_event.message.fileCreation != null and json_event.message.fileCreation.source.executable.creationTime.millisecondsSinceEpoch != null}}"
     external:
       name: grok.match
       properties:
@@ -92,7 +92,7 @@ pipeline:
           TEN_NUM: '[0-9]{10}'
           THREE_NUM: '[0-9]{3}'
   - name: convert_process_exec_start_file_creation
-    filter: "{{json_event.message.fileCreation != null}}"
+    filter: "{{parse_process_exec_start_file_creation != null and parse_process_exec_start_file_creation.timestamp is not none}}"
     external:
       name: date.parse
       properties:
@@ -100,7 +100,7 @@ pipeline:
         output_field: start_date
         format: timestamp
   - name: parse_process_start_file_creation
-    filter: "{{json_event.message.fileCreation != null}}"
+    filter: "{{json_event.message.fileCreation != null and json_event.message.fileCreation.source.fullPid.startTime.millisecondsSinceEpoch != null}}"
     external:
       name: grok.match
       properties:
@@ -111,7 +111,7 @@ pipeline:
           TEN_NUM: '[0-9]{10}'
           THREE_NUM: '[0-9]{3}'
   - name: convert_process_start_file_creation
-    filter: "{{json_event.message.fileCreation != null}}"
+    filter: "{{parse_process_start_file_creation != null and parse_process_start_file_creation.timestamp is not none}}"
     external:
       name: date.parse
       properties:
@@ -119,7 +119,7 @@ pipeline:
         output_field: start_date
         format: timestamp
   - name: parse_file_created_file_creation
-    filter: "{{json_event.message.fileCreation != null}}"
+    filter: "{{json_event.message.fileCreation != null and json_event.message.fileCreation.targetFile.creationTime.millisecondsSinceEpoch != null}}"
     external:
       name: grok.match
       properties:
@@ -130,7 +130,7 @@ pipeline:
           TEN_NUM: '[0-9]{10}'
           THREE_NUM: '[0-9]{3}'
   - name: convert_file_created_file_creation
-    filter: "{{json_event.message.fileCreation != null}}"
+    filter: "{{parse_file_created_file_creation != null and parse_file_created_file_creation.timestamp is not none }}"
     external:
       name: date.parse
       properties:
@@ -165,14 +165,22 @@ stages:
     actions:
       - set:
           deepvisibility.process.executable.start: "{{convert_process_exec_start_dns.start_date[:-6]}}.{{parse_process_exec_start_dns.timestamp.milliseconds}}{{convert_process_exec_start_dns.start_date[19:]}}"
+        filter: '{{ convert_process_exec_start_dns != null }}'
+      - set:
           process.start: "{{convert_process_start_dns.start_date[:-6]}}.{{parse_process_start_dns.timestamp.milliseconds}}{{convert_process_start_dns.start_date[19:]}}"
+        filter: '{{ convert_process_start_dns != null }}'
 
   set_datetime_fields_file_creation:
     actions:
       - set:
           deepvisibility.process.executable.start: "{{convert_process_exec_start_file_creation.start_date[:-6]}}.{{parse_process_exec_start_file_creation.timestamp.milliseconds}}{{convert_process_exec_start_file_creation.start_date[19:]}}"
+        filter: '{{ convert_process_exec_start_file_creation != null }}'
+      - set:
           process.start: "{{convert_process_start_file_creation.start_date[:-6]}}.{{parse_process_start_file_creation.timestamp.milliseconds}}{{convert_process_start_file_creation.start_date[19:]}}"
+        filter: '{{convert_process_start_file_creation != null }}'
+      - set:
           file.created: "{{convert_file_created_file_creation.start_date[:-6]}}.{{parse_file_created_file_creation.timestamp.milliseconds}}{{convert_file_created_file_creation.start_date[19:]}}"
+        filter: '{{convert_file_created_file_creation != null }}'
 
 
   rename_meta_fields:
@@ -198,7 +206,6 @@ stages:
           deepvisibility.process.executable.name: "{{json_event.message.dns.source.executable.path}}"
           deepvisibility.process.executable.is_dir: "{{json_event.message.dns.source.executable.isDir}}"
           deepvisibility.process.executable.size_bytes: "{{json_event.message.dns.source.executable.sizeBytes}}"
-          deepvisibility.process.executable.signature.signed.identity: "{{json_event.message.dns.source.executable.signature.signed.identity}}"
           process.working_directory: "{{json_event.message.dns.source.executable.fileLocation}}"
           process.command_line: "{{json_event.message.dns.source.commandLine}}"
           process.pid: "{{json_event.message.dns.source.fullPid.pid}}"
@@ -226,6 +233,9 @@ stages:
           dns.question.name: "{{json_event.message.dns.query}}"
           deepvisibility.dns.answers.results: "{{json_event.message.dns.results}}"
           deepvisibility.dns.true_context.key: "{{json_event.message.dns.trueContext.key.value}}"
+      - set:
+          deepvisibility.process.executable.signature.signed.identity: "{{json_event.message.dns.source.executable.signature.signed.identity}}"
+        filter: '{{ json_event.message.dns.source.executable.signature != null }}'
 
   rename_fileCreation_fields:
     actions:
@@ -236,7 +246,6 @@ stages:
           deepvisibility.process.executable.name: "{{json_event.message.fileCreation.source.executable.path}}"
           deepvisibility.process.executable.is_dir: "{{json_event.message.fileCreation.source.executable.isDir}}"
           deepvisibility.process.executable.size_bytes: "{{json_event.message.fileCreation.source.executable.sizeBytes}}"
-          deepvisibility.process.executable.signature.signed.identity: "{{json_event.message.fileCreation.source.executable.signature.signed.identity}}"
           process.working_directory: "{{json_event.message.fileCreation.source.executable.fileLocation}}"
           process.command_line: "{{json_event.message.fileCreation.source.commandLine}}"
           process.pid: "{{json_event.message.fileCreation.source.fullPid.pid}}"
@@ -270,6 +279,9 @@ stages:
           file.path: "{{json_event.message.fileCreation.targetFile.path}}"
           deepvisibility.file.location: "{{json_event.message.fileCreation.targetFile.fileLocation}}"
           file.type: "file"
+      - set:
+          deepvisibility.process.executable.signature.signed.identity: "{{json_event.message.fileCreation.source.executable.signature.signed.identity}}"
+        filter: '{{ json_event.message.fileCreation.source.executable.signature != null }}'
 
   set_fileCreation_filetype:
      actions:
