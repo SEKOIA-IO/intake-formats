@@ -209,6 +209,24 @@ pipeline:
         output_field: file
         pattern: '%{GREEDYDATA}[\\\/]+%{GREEDYDATA:name}$'
 
+  - name: find_reg_value_key_name
+    filter: '{{json_event.message.regValue != null and json_event.message.regValue.path != null}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.regValue.path
+        output_field: key
+        pattern: '%{GREEDYDATA}[\\\/]+%{GREEDYDATA:name}$'
+  
+  - name: find_reg_key_name
+    filter: '{{json_event.message.regKey != null and json_event.message.regKey.path != null}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.regKey.path
+        output_field: key
+        pattern: '%{GREEDYDATA}[\\\/]+%{GREEDYDATA:name}$'
+
   - name: set_meta_fields
 
   - name: set_common_fields
@@ -251,6 +269,12 @@ pipeline:
   
   - name: set_target_file_fields
     filter: "{{json_event.message.targetFile != null}}"
+  
+  - name: set_reg_value_fields
+    filter: "{{json_event.message.regValue != null}}"
+
+  - name: set_reg_key_fields
+    filter: "{{json_event.message.regKey != null}}"
 
 stages:
 
@@ -623,8 +647,58 @@ stages:
       - set:
             deepvisibility.file.is_kernel_module: false
         filter: '{{ json_event.message.isKernelModule == "E_FALSE"  }}'
-
-
+  
+  set_reg_value_fields:
+    actions:
+      - set:
+            registry.path: "{{ json_event.message.regValue.path }}"
+            registry.value: "{{ find_reg_value_key_name.key.name }}"
+            # Sadly json doesn't support dict with int as keys so we have to convert them to string
+            deepvisibility.registry.value_type: "{{json_event.message.valueType | string() }}"
+            deepvisibility.registry.new.value_type: "{{json_event.message.newValueType | string() }}"
+            deepvisibility.registry.old.value_type: "{{json_event.message.oldValueType | string() }}"
+      - translate:
+        dictionary:
+          '0': 'REG_NONE'
+          '1': 'REG_SZ'
+          '2': 'REG_EXPAND_SZ'
+          '3': 'REG_BINARY'
+          '4': 'REG_DWORD'
+          '5': 'REG_DWORD_BIG_ENDIAN'
+          '6': 'REG_LINK'
+          '7': 'REG_MULTI_SZ'
+          '8': 'REG_RESOURCE_LIST'
+          '9': 'REG_QWORD'
+        mapping:
+          deepvisibility.registry.old.value_type: deepvisibility.registry.old.data.type
+          deepvisibility.registry.new.value_type: registry.data.type
+          deepvisibility.registry.value_type: registry.data.type          
+      - set:
+            registry.data.bytes: "{{ json_event.message.newValueData }}"
+        filter: '{{ json_event.message.newValueData != null and json_event.message.newValueType in [0, 3]  }}'
+      - set:
+            registry.data.strings: ["{{ json_event.message.newValueData | string() }}"]
+        filter: '{{ json_event.message.newValueData != null and json_event.message.newValueType not in [0, 3]  }}'
+      - set:
+            deepvisibility.registry.old.data.bytes: "{{ json_event.message.oldValueData }}"
+        filter: '{{ json_event.message.oldValueData != null and json_event.message.oldValueType in [0, 3]  }}'
+      - set:
+            deepvisibility.registry.old.data.strings: ["{{ json_event.message.oldValueData | string() }}"]
+        filter: '{{ json_event.message.oldValueData != null and json_event.message.oldValueType not in [0, 3]  }}'
+  
+  set_reg_key_fields:
+    actions:
+      - set:
+            registry.path: "{{ json_event.message.regKey.path }}"
+            registry.value: "{{ find_reg_key_name.key.name }}"
+            deepvisibility.registry.import_path: "{{ json_event.message.importPath }}"
+            deepvisibility.registry.export_path: "{{ json_event.message.exportPath }}"
+            deepvisibility.registry.security_information: "{{json_event.message.securityInformation}}"
+            deepvisibility.registry.old.key_name: "{{json_event.message.oldKeyName}}"
+      - set:
+            user.name: "{{json_event.message.owner.user.name}}"
+            user.id: "{{json_event.message.owner.user.sid}}"
+        filter: '{{ json_event.message.owner != null }}'
 
 # TODO when ingest will be abble to manage lists, parse dns.answers.results with grok patern as follows :
 # example from intake-formats/SentinelOne/deep_visibility/tests/event_dns.json
