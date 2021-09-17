@@ -8,6 +8,7 @@ pipeline:
   
   # Time conversions
   - name: parse_timestamp
+    filter: "{{ json_event.message.timestamp }}"
     external:
       name: grok.match
       properties:
@@ -18,6 +19,7 @@ pipeline:
           TEN_NUM: '[0-9]{10}'
           THREE_NUM: '[0-9]{3}'
   - name: convert_timestamp
+    filter: "{{ parse_timestamp }}"
     external:
       name: date.parse
       properties:
@@ -275,6 +277,12 @@ pipeline:
 
   - name: set_reg_key_fields
     filter: "{{json_event.message.regKey != null}}"
+
+  - name: set_script_fields
+    filter: '{{json_event.message.event_type == "scripts"}}'
+
+  - name: set_http_fields
+    filter: '{{json_event.message.event_type == "http"}}'
 
 stages:
 
@@ -576,10 +584,9 @@ stages:
           file.path: "{{json_event.message.targetFile.path}}"
           file.size: "{{json_event.message.targetFile.sizeBytes}}"
           file.uid: "{{json_event.message.targetFile.owner.sid}}"
-          file.type: "file"
       - set:
           file.type: "dir"
-        filter: '{{json_event.message.targetFile.isDir != "E_FALSE"}}'
+        filter: '{{json_event.message.targetFile.isDir != null and json_event.message.targetFile.isDir != "E_FALSE"}}'
       - set:
           file.type: "file"
         filter: '{{json_event.message.targetFile.isDir == "E_FALSE"}}'
@@ -700,6 +707,24 @@ stages:
             user.name: "{{json_event.message.owner.user.name}}"
             user.id: "{{json_event.message.owner.user.sid}}"
         filter: '{{ json_event.message.owner != null }}'
+  
+  set_script_fields:
+    actions:
+      - set:
+            file.size: "{{ json_event.message.originalSize }}"
+            deepvisibility.script.app_name: "{{ json_event.message.appName }}"
+      - set:
+            file.hash.md5: "{{ json_event.message.hashes.md5 }}"
+            file.hash.sha1: "{{ json_event.message.hashes.sha1 }}"
+            file.hash.sha256: "{{ json_event.message.hashes.sha256 }}"
+        filter: "{{json_event.message.contentHash != null }}"
+  
+  set_http_fields:
+    actions:
+      - set:
+            http.request.method: "{{ json_event.message.method }}"
+            url.original: "{{ json_event.message.url}}"
+
 
 # TODO when ingest will be abble to manage lists, parse dns.answers.results with grok patern as follows :
 # example from intake-formats/SentinelOne/deep_visibility/tests/event_dns.json
