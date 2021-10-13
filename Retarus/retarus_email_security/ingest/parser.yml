@@ -3,6 +3,22 @@ pipeline:
   - name: json_event
     external:
       name: json.parse-json
+  - name: parse_sender
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.sender
+        output_field: sender
+        pattern: '^%{GREEDYDATA:username}@%{GREEDYDATA:domain}$'
+    filter: "{{json_event.message.sender != null}}"
+  - name: parse_recipient
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.recipient
+        output_field: recipient
+        pattern: '^%{GREEDYDATA:username}@%{GREEDYDATA:domain}$'
+    filter: "{{json_event.message.recipient != null}}"
   - name: field_extraction 
   - name: hash_extraction
     filter: "{{final.retarus.class == 'THREAT'}}"
@@ -16,6 +32,8 @@ stages:
           organization.id: "{{json_event.message.customer}}"
 
           source.ip: "{{json_event.message.sourceIp}}"
+          source.domain: "{{parse_sender.sender.domain}}"
+          destination.domain: "{{parse_recipient.recipient.domain}}"
           
           retarus.timestamp: "{{json_event.message.ts}}"
           retarus.email_direction: "{{json_event.message.direction}}"
