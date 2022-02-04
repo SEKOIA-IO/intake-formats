@@ -1,0 +1,49 @@
+description: null
+name: vadesecure-m365
+pipeline:
+-   external:
+        name: json.parse-json
+        properties:
+            input_field: '{{original.message}}'
+            output_field: message
+    name: stage1
+-   name: categorization
+-   name: generic_email
+-   name: custom_vade
+stages:
+    categorization:
+        actions:
+        -   name: set
+            set:
+                event.category: email
+                event.kind: event
+                event.type: info
+        -   filter: '{{stage1.message.action=="MOVE"}}'
+            name: set
+            set:
+                event.type: change
+        -   filter: '{{stage1.message.action=="DELETE"}}'
+            name: set
+            set:
+                event.type: deletion
+        -   filter: '{{stage1.message.action=="STRIP_ATTACHMENT"}}'
+            name: set
+            set:
+                event.action: dropped
+                event.type: denied
+    custom_vade:
+        actions:
+        -   name: set
+            set:
+                vadesecure.folder: '{{stage1.message.folder}}'
+                vadesecure.from_header: '{{stage1.message.from_header}}'
+                vadesecure.id: '{{stage1.message.id}}'
+                vadesecure.message_id: '{{stage1.message.message_id}}'
+    generic_email:
+        actions:
+        -   name: set
+            set:
+                destination.user.email: '{{stage1.message.to}}'
+                source.ip: '{{stage1.message.sender_ip}}'
+                source.user.email: '{{stage1.message.from}}'
+
