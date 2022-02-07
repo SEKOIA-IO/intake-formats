@@ -1,0 +1,282 @@
+name: untitled-name
+pipeline:
+  - name: json_event
+    description: ''
+    filter: ''
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+  - name: stage2
+    description: ''
+    filter: ''
+    external: null
+  - name: grok_sshd
+    description: ''
+    filter: '{{json_event.message.properties.ident == "sshd"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.properties.Msg}}'
+        output_field: result
+        pattern: '%{SSHD_INFO}|%{SSHD_ERROR}'
+        custom_patterns:
+          SSHD_INFO: '%{SSHD_INFO_ACCEPTED}|%{SSHD_INFO_DISCONNECTION}'
+          SSHD_ERROR: >-
+            %{SSHD_ERROR_IDENTIFICATION}|%{SSHD_ERROR_INVALID_USER}|%{SSHD_ERROR_DISCONNECTING_USER}|%{SSHD_ERROR_FOR_USER}
+          SSHD_MESSAGE_USER: '%{SSHD_MESSAGE_USER_QUALITY} %{USERNAME:user_name}'
+          SSHD_INFO_ACCEPTED: >-
+            Accepted %{NOTSPACE} for %{USERNAME:user_name} from
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}%{GREEDYDATA}
+          SSHD_CLIENT_ADDRESS: '%{IP:source_ip}|%{HOSTNAME:source_domain}'
+          SSHD_ERROR_FOR_USER: >-
+            error: %{GREEDYDATA} for %{SSHD_MESSAGE_USER} from
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}%{GREEDYDATA}
+          SSHD_INFO_DISCONNECTED: >-
+            Disconnected from(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?
+          SSHD_ERROR_BAD_PROTOCOL: >-
+            %{SSHD_MESSAGE_BAD_PROTOCOL} identification '%{GREEDYDATA}' from
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}
+          SSHD_ERROR_INVALID_USER: >-
+            %{SSHD_MESSAGE_INVALID_USER} %{USERNAME:user_name} from
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}
+          SSHD_INFO_DISCONNECTION: >-
+            %{SSHD_INFO_CONNECTION_CLOSED}|%{SSHD_INFO_DISCONNECTED}|%{SSHD_INFO_RECEIVED_DISCONNECT}
+          SSHD_ERROR_IDENTIFICATION: '%{SSHD_ERROR_BAD_PROTOCOL}|%{SSHD_ERROR_IDENTIFICATION_NOT_RECEIVED}'
+          SSHD_MESSAGE_BAD_PROTOCOL: Bad protocol version
+          SSHD_MESSAGE_ILLEGAL_USER: (I|i)llegal user
+          SSHD_MESSAGE_INVALID_USER: (I|i)nvalid user
+          SSHD_MESSAGE_USER_QUALITY: >-
+            %{SSHD_MESSAGE_AUTHENTICATING_USER}|%{SSHD_MESSAGE_ILLEGAL_USER}|%{SSHD_MESSAGE_INVALID_USER}
+          SSHD_INFO_CONNECTION_CLOSED: >-
+            Connection closed by(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?
+          SSHD_ERROR_DISCONNECTING_USER: >-
+            Disconnecting %{SSHD_MESSAGE_USER} %{SSHD_CLIENT_ADDRESS} port
+            %{NUMBER:source_port}: %{GREEDYDATA} \[preauth\]
+          SSHD_INFO_RECEIVED_DISCONNECT: >-
+            Received disconnect from %{SSHD_CLIENT_ADDRESS} port
+            %{NUMBER:source_port}:%{INT}:%{GREEDYDATA}(\[preauth\])?
+          SSHD_MESSAGE_AUTHENTICATING_USER: (A|a)uthenticating user
+          SSHD_ERROR_IDENTIFICATION_NOT_RECEIVED: >-
+            %{SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED} string from
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}
+          SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED: Did not receive identification
+  - name: sshd
+    description: ''
+    filter: '{{json_event.message.properties.ident == "sshd"}}'
+    external: null
+  - name: grok_systemd
+    description: ''
+    filter: '{{json_event.message.properties.ident == "systemd"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.properties.Msg}}'
+        output_field: result
+        pattern: >-
+          %{GREEDYDATA:systemd_observation} %{INT} of user
+          %{USERNAME:user_name}.
+        custom_patterns: {}
+  - name: systemd
+    description: ''
+    filter: '{{json_event.message.properties.ident == "systemd"}}'
+    external: null
+  - name: grok_crond
+    description: ''
+    filter: '{{json_event.message.properties.ident == "CROND"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.properties.Msg}}'
+        output_field: result
+        pattern: >-
+          \(%{USERNAME:user_name}\) CMD
+          \((%{CMD_WITH_PATH}|%{GREEDYDATA:process_args})\)
+        custom_patterns:
+          CMD_WITH_PATH: '%{UNIXPATH:process_executable} %{GREEDYDATA:process_args}'
+  - name: crond
+    description: ''
+    filter: '{{json_event.message.properties.ident == "CROND"}}'
+    external: null
+  - name: grok_sudo
+    description: ''
+    filter: '{{json_event.message.properties.ident == "sudo"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.properties.Msg}}'
+        output_field: result
+        pattern: '%{SUDO_USER}|%{SUDO_WRONG_PASSWORD}|%{SUDO_CONV_FAILED}'
+        custom_patterns:
+          SUDO_USER: >-
+            pam_%{GREEDYDATA}\(%{GREEDYDATA:action_name}\):
+            %{GREEDYDATA:sudo_observation} for user
+            %{USERNAME:user_name}(%{GREEDYDATA})?
+          SUDO_CONV_FAILED: 'pam_%{GREEDYDATA}\(%{GREEDYDATA:action_name}\): conversation failed'
+          SUDO_WRONG_PASSWORD: >-
+            pam_%{GREEDYDATA}\(%{GREEDYDATA:action_name}\): auth could not
+            identify password for \[%{USERNAME:user_name}\]
+  - name: sudo
+    description: ''
+    filter: '{{json_event.message.properties.ident == "sudo"}}'
+    external: null
+  - name: grok_omsagent
+    description: ''
+    filter: ''
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.properties.Msg}}'
+        output_field: result
+        pattern: 'omsagent : %{GREEDYDATA:omsagent_message}'
+        custom_patterns: {}
+  - name: omsagent
+    description: ''
+    filter: '{{ grok_omsagent.result.omsagent_message != null }}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{ grok_omsagent.result.omsagent_message }}'
+        output_field: result
+        value_sep: '='
+        item_sep: \s;\s
+  - name: grok2_omsagent
+    description: ''
+    filter: '{{ grok_omsagent.result.omsagent_message != null }}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{omsagent.result.COMMAND }}'
+        output_field: result
+        pattern: '%{UNIXPATH:process_executable}( %{GREEDYDATA:process_args})?'
+        custom_patterns: {}
+  - name: omsagent2
+    description: ''
+    filter: '{{ grok_omsagent.result.omsagent_message != null }}'
+    external: null
+  - name: action-outcome
+    description: ''
+    filter: >-
+      {{json_event.message.properties.ident == "systemd" or
+      json_event.message.properties.ident == "sudo"}}
+    external: null
+stages:
+  stage2:
+    actions:
+      - set:
+          log.level: '{{json_event.message.level}}'
+          process.pid: '{{json_event.message.properties.pid}}'
+          process.id: '{{json_event.message.properties.pid}}'
+          log.hostname: '{{json_event.message.properties.hostname}}'
+          event.created: '{{json_event.message.time}}'
+          event.message: '{{json_event.message.properties.Msg}}'
+        filter: ''
+        name: set
+      - set:
+          os.family: linux
+          os.platform: linux
+        filter: ''
+        name: set
+      - dictionary:
+          err: error
+          crit: critical
+          info: info
+          warn: warn
+          error: error
+          notice: info
+          critical: critical
+        mapping:
+          log.level: log.level
+        filter: ''
+        name: translate
+  sshd:
+    actions:
+      - set:
+          source.ip: '{{ grok_sshd.result.source_ip }}'
+          user.name: '{{ grok_sshd.result.user_name }}'
+          source.port: '{{ grok_sshd.result.source_port }}'
+          source.domain: '{{ grok_sshd.result.source_domain }}'
+        filter: ''
+        name: set
+  systemd:
+    actions:
+      - set:
+          user.name: '{{ grok_systemd.result.user_name }}'
+          action.type: '{{ grok_systemd.result.systemd_observation }}'
+        filter: ''
+        name: set
+      - set:
+          action.name: systemd:session
+          action.type: open
+        filter: '{{ grok_systemd.result.systemd_observation == "Started Session" }}'
+        name: set
+      - set:
+          action.target: user
+        filter: '{{ grok_systemd.result.user_name != null }}'
+        name: set
+  crond:
+    actions:
+      - set:
+          user.name: '{{ grok_crond.result.user_name }}'
+          process.args: '{{ grok_crond.result.process_args.split() }}'
+          process.executable: '{{ grok_crond.result.process_executable }}'
+        filter: ''
+        name: set
+      - set:
+          process.executable: /bin/sh
+        filter: '{{ grok_crond.result.process_executable == none }}'
+        name: set
+  sudo:
+    actions:
+      - set:
+          action.name: '{{ grok_sudo.result.action_name }}'
+        filter: ''
+        name: set
+      - set:
+          user.name: '{{ grok_sudo.result.user_name }}'
+          action.target: user
+        filter: '{{ grok_sudo.result.user_name != None and grok_sudo.result.user_name != null }}'
+        name: set
+      - set:
+          action.type: '{{ grok_sudo.result.sudo_observation }}'
+        filter: '{{ grok_sudo.result.sudo_observation != null}}'
+        name: set
+      - dictionary:
+          session closed: close
+          session opened: open
+        mapping:
+          action.type: action.type
+        filter: '{{ grok_sudo.result.sudo_observation != null}}'
+        name: translate
+      - set:
+          action.type: open
+        filter: '{{ grok_sudo.result.action_name == "sudo:auth" }}'
+        name: set
+  omsagent2:
+    actions:
+      - set:
+          user.name: '{{ omsagent.result.USER}}'
+          process.args: '{{ grok2_omsagent.result.process_args.split() }}'
+          process.executable: '{{ grok2_omsagent.result.process_executable }}'
+          process.working_directory: '{{ omsagent.result.PWD }}'
+        filter: ''
+        name: set
+  action-outcome:
+    actions:
+      - set:
+          action.outcome: '{{json_event.message.level}}'
+        filter: ''
+        name: set
+      - fallback: success
+        dictionary:
+          crit: failure
+          critical: failure
+          err: failure
+          error: failure
+        mapping:
+          action.outcome: action.outcome
+        filter: ''
+        name: translate
