@@ -4,43 +4,63 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
-        input_field: '{{original.message}}'
+        input_field: '{{ original.message }}'
         output_field: result
         value_sep: '='
         item_sep: \s
   - name: stage2
-    external: null
+  - name: translate-event-outcome
+
 stages:
   stage2:
     actions:
       - set:
+          event.kind: 'event'
+          event.category: 'network'
+          event.type: 'connection'
           '@timestamp': '{{ kv.result.time }}'
-          event.duration: '{{ kv.result.duration }}'
+          stormshield.fw: '{{ kv.result.fw }}'
           event.timezone: '{{ kv.result.tz }}'
-        name: set
-      - set:
-          destination.ip: '{{ kv.result.dst }}'
-          destination.port: '{{ kv.result.dstport }}'
-          destination.geo.continent_name: '{{ kv.result.dstcontinent }}'
-          destination.geo.country_iso_code: '{{ kv.result.dstcountry }}'
-        name: set
-      - set:
+          event.start: '{{ kv.result.startime }}'
+          event.risk_score: '{{ kv.result.pri }}'
+          stormshield.confid: '{{ kv.result.confid }}'
+          stormshield.slotlevel: '{{ kv.result.slotlevel }}'
+          observer.ingress.interface.name: '{{ kv.result.srcif }}'
+          observer.ingress.interface.alias: '{{ kv.result.srcifname }}'
+          network.transport: '{{ kv.result.ipproto }}'
           source.ip: '{{ kv.result.src }}'
           source.port: '{{ kv.result.srcport }}'
+          stormshield.srcportname: '{{ kv.result.srcportname }}'
           source.mac: '{{ kv.result.srcmac }}'
           source.geo.continent_name: '{{ kv.result.srccontinent }}'
           source.geo.country_iso_code: '{{ kv.result.srccountry }}'
-        name: set
-      - set:
-          stormshield.fw: '{{ kv.result.fw }}'
-          stormshield.filter.action: '{{ kv.result.action }}'
-        name: set
-      - set:
-          network.protocol: '{{ kv.result.proto }}'
-          network.transport: '{{ kv.result.ipproto }}'
-          network.type: '{{ kv.result.ipv }}'
+          stormshield.scirep: '{{ kv.result.scirep }}'
+          destination.ip: '{{ kv.result.dst }}'
+          destination.port: '{{ kv.result.dstport }}'
+          stormshield.dstportname: '{{ kv.result.dstportname }}'
+          destination.geo.continent_name: '{{ kv.result.dstcontinent }}'
+          destination.geo.country_iso_code: '{{ kv.result.dstcountry }}'
+          observer.egress.interface.name: '{{ kv.result.dstif }}'
+          observer.egress.interface.alias: '{{ kv.result.dstifname }}'
+          stormshield.dstname: '{{ kv.result.dstname }}'
+          host.network.ingress.bytes: '{{ kv.result.rcvd }}'
+          host.network.egress.bytes: '{{ kv.result.sent }}'
           network.bytes: '{{ kv.result.sent + kv.result.rcvd }}'
-          observert.ingress.interface.alias
-      - set:
+          # Duration of the connection in seconds converted in nanoseconds.
+          event.duration: '{{ kv.result.duration | float * 1000000000 }}'
+          stormshield.logtype: '{{ stormshield.logtype }}'
+          network.protocol: '{{ kv.result.proto }}'
+          network.type: '{{ kv.result.ipv }}'
           rule.id: '{{ kv.result.ruleid }}'
+          stormshield.filter.action: '{{ kv.result.action }}'
           rule.category: '{{ kv.result.slotlevel }}'
+
+  translate-event-outcome:
+    actions:
+      - translate:
+        dictionary:
+          "pass": 'success'
+          "block": 'failure'
+        mapping:
+          stormshield.filter.action: event.outcome
+        fallback: 'unknown'
