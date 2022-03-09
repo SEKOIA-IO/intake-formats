@@ -1,0 +1,36 @@
+name: Pulse Connect Secure
+pipeline:
+  - name: kv_event
+    external:
+      name: kv.parse-kv
+      properties:
+        item_sep: '\s'
+  - name: field_extraction
+  - name: msg_parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{kv_event.message.msg}}'
+        output_field: details
+        pattern: '(AUT31556: Unauthenticated request url %{URIPATHPARAM:url} %{GREEDYDATA}|%{GREEDYDATA})'
+      filter: "{{field_extraction.action.name == 'AUT31556'}}"
+  - name: url_extraction
+stages:
+  field_extraction:
+    actions:
+      - set:
+          action.name: "{{kv_event.message.msg.split(':')[0]}}"
+          event.code: "{{kv_event.message.msg.split(':')[0]}}"
+          network.forwarded_ip: "{{kv_event.message.fw}}"
+          service.name: "{{kv_event.message.vpn}}"
+          user.name: "{{kv_event.message.user}}"
+          user.domain: "{{kv_event.message.realm}}"
+          user.roles: "{{kv_event.message.roles.split(',') if kv_event.message.roles}}"
+          event.provider: "{{kv_event.message.proto}}"
+          source.ip: "{{kv_event.message.src}}"
+          service.type: "{{kv_event.message.type}}"
+  url_extraction:
+    actions:
+      - set:
+          url.path: "{{msg_parsing.details.url}}"
+          
