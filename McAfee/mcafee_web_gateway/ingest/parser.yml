@@ -1,0 +1,77 @@
+name: mcafee-web-gateway
+pipeline:
+  - name: parse_kv
+    external:
+          name: kv.parse-kv
+          properties:
+            input_field: '{{original.message}}'
+            output_field: message
+            value_sep: '='
+            item_sep: \s
+  - name: parse_first_line
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parse_kv.message.http_request_first_line}}'
+        output_field: message
+        pattern: '%{WORD:http_method} %{URL:url} HTTP/%{NUMBER:http_version}'
+        custom_patterns:
+          URL: '(?:%{URI}|%{URIHOST}|%{URIPATHPARAM})'
+  - name: set_ecs_fields
+    external: null
+  - name: set_mcafee_fields
+    external: null
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.start: '{{parse_kv.timestamp}}'
+          event.category: 'network'
+          source.ip: '{{parse_kv.message.source_ip}}'
+          destination.ip: '{{parse_kv.message.destination_ip}}'
+          url.original: '{{parse_first_line.message.url}}'
+          http.request.method: '{{parse_first_line.message.http_method}}'
+          http.request.bytes: '{{parse_kv.message.source_bytes}}'
+          http.response.bytes: '{{parse_kv.message.destination_bytes}}'
+          http.response.status_code: '{{parse_kv.message.http_status_code}}'
+          observer.hostname: '{{parse_kv.message.hostname}}'
+          rule.ruleset: '{{parse_kv.message.ruleset_name}}'
+          rule.name: '{{parse_kv.message.rule_name}}'
+          event.code: '{{parse_kv.message.block_id}}'
+          event.reason: '{{parse_kv.message.block_reason}}'
+      - set:
+          user_agent.original: '{{parse_kv.message.user_agent}}'
+        filter: '{{parse_kv.message.user_agent != null and parse_kv.message.user_agent != "-" and parse_kv.message.user_agent != ""}}'
+      - set:
+          user.name: '{{parse_kv.message.username}}'
+        filter: '{{parse_kv.message.username != null and parse_kv.message.username != "-" and parse_kv.message.username != ""}}'
+      - set:
+          http.request.referrer: '{{parse_kv.message.http_referrer}}'
+        filter: '{{parse_kv.message.http_referrer != null and parse_kv.message.http_referrer != "-" and parse_kv.message.http_referrer != ""}}'
+      - set:
+          http.response.mime_type: '{{parse_kv.message.media_type}}'
+        filter: '{{parse_kv.message.media_type != null and parse_kv.message.media_type != "-" and parse_kv.message.media_type != ""}}'
+      - translate:
+        dictionary:
+          '0': 'allowed'
+          '1': 'error'
+          '2': 'change'
+          '3': 'error'
+        mapping:
+          event.code: event.action
+        fallback: 'denied'
+  set_mcafee_fields:
+    actions:
+      - set:
+          mcafee.webgateway.application.reputation: '{{parse_kv.message.application_reputation}}'
+          mcafee.webgateway.url.reputation: '{{parse_kv.message.url_reputation_string}}'
+          mcafee.webgateway.url.reputation_code: '{{parse_kv.message.url_reputation_code}}'
+          mcafee.webgateway.url.categories: '{{parse_kv.message.url_categories.split(", ")}}'
+          mcafee.webgateway.http.body.infected: '{{parse_kv.message.body_infected}}'
+          mcafee.webgateway.http.body.modified: '{{parse_kv.message.body_modified}}'
+      - set:
+          mcafee.webgateway.application.name: '{{parse_kv.message.application_name}}'
+        filter: '{{parse_kv.message.application_name != null and parse_kv.message.application_name != "-" and parse_kv.message.application_name != ""}}'
+      - set:
+          mcafee.webgateway.viruses: '{{parse_kv.message.virus_names.split(", ")}}'
+        filter: '{{parse_kv.message.virus_names != null and parse_kv.message.virus_names != "-" and parse_kv.message.virus_names != ""}}'
