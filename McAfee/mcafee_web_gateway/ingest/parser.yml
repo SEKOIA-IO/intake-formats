@@ -1,18 +1,23 @@
 name: mcafee-web-gateway
 pipeline:
-  - name: parse_access_log
+  - name: parse_kv
+    external:
+          name: kv.parse-kv
+          properties:
+            input_field: '{{original.message}}'
+            output_field: message
+            value_sep: '='
+            item_sep: \s
+  - name: parse_first_line
     external:
       name: grok.match
       properties:
-        input_field: '{{original.message}}'
+        input_field: '{{parse_kv.message.http_request_first_line}}'
         output_field: message
-        pattern: '(%{ACCESS_LOG}|%{ACCESS_DENIED_LOG})'
+        pattern: '%{WORD:http_method} %{URL:url} HTTP/%{NUMBER:http_version}'
         custom_patterns:
-          ACCESS_LOG: '%{TIMESTAMP_ISO8601:timestamp} "%{GREEDYDATA:username}" %{IP:source_ip} %{NUMBER:http_status_code} "%{REQUEST_LINE:request_line}" "%{GREEDYDATA:categories}" "%{GREEDYDATA:url_reputation}" "%{GREEDYDATA:media_type}" %{NUMBER:server_to_client_bytes} %{NUMBER:client_to_server_bytes} "%{GREEDYDATA:user_agent}" "%{GREEDYDATA:virus_names}" "%{GREEDYDATA:block_id}" "%{GREEDYDATA:application_name}"'
-          ACCESS_DENIED_LOG: '%{TIMESTAMP_ISO8601:timestamp} "%{HOSTNAME:hostname}" "%{GREEDYDATA:username}" %{IP:source_ip} %{IP:destination_ip} "%{URIHOST:requested_host}" %{NUMBER:http_status_code} "%{GREEDYDATA:media_type}" %{NUMBER:server_to_client_bytes} %{NUMBER:client_to_server_bytes} "%{REQUEST_LINE:request_line}" "%{GREEDYDATA:categories}" "%{GREEDYDATA:url_reputation}" %{NUMBER:url_reputation_code} "%{GREEDYDATA:ruleset_name}" %{NUMBER:block_id} "%{GREEDYDATA:block_reason}" %{BOOLEAN:body_infected} "%{GREEDYDATA:virus_names}" %{BOOLEAN:body_modified} "%{GREEDYDATA:application_reputation}" "%{GREEDYDATA:application_name}" "%{GREEDYDATA:http_referrer}" "%{GREEDYDATA:user_agent}"'
           REQUEST_LINE: '%{WORD:http_method} %{URL:url} HTTP/%{NUMBER:http_version}'
           URL: '(?:%{URI}|%{URIHOST}|%{URIPATHPARAM})'
-          BOOLEAN: '(?:true|false)'
   - name: set_ecs_fields
     external: null
   - name: set_mcafee_fields
@@ -21,50 +26,52 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          event.start: '{{parse_access_log.timestamp}}'
-          user.name: '{{parse_access_log.message.username}}'
-          source.ip: '{{parse_access_log.message.source_ip}}'
-          destination.ip: '{{parse_access_log.message.destination_ip}}'
-          url.original: '{{parse_access_log.message.url}}'
-          url.domain: '{{parse_access_log.message.requested_host}}'
-          http.request.method: '{{parse_access_log.message.http_method}}'
-          http.request.bytes: '{{parse_access_log.message.client_to_server_bytes}}'
-          http.response.status_code: '{{parse_access_log.message.http_status_code}}'
-          http.response.bytes: '{{parse_access_log.message.server_to_client_bytes}}'
-          observer.hostname: '{{parse_access_log.message.hostname}}'
-          rule.ruleset: '{{parse_access_log.message.ruleset_name}}'
-          event.code: '{{parse_access_log.message.block_id}}'
-          event.reason: '{{parse_access_log.message.block_reason}}'
+          event.start: '{{parse_kv.timestamp}}'
+          source.ip: '{{parse_kv.message.source_ip}}'
+          destination.ip: '{{parse_kv.message.destination_ip}}'
+          url.original: '{{parse_first_line.message.url}}'
+          http.request.method: '{{parse_first_line.message.http_method}}'
+          http.request.bytes: '{{parse_kv.message.source_bytes}}'
+          http.response.bytes: '{{parse_kv.message.destination_bytes}}'
+          http.response.status_code: '{{parse_kv.message.http_status_code}}'
+          observer.hostname: '{{parse_kv.message.hostname}}'
+          rule.ruleset: '{{parse_kv.message.ruleset_name}}'
+          rule.name: '{{parse_kv.message.rule_name}}'
+          event.code: '{{parse_kv.message.block_id}}'
+          event.reason: '{{parse_kv.message.block_reason}}'
       - set:
-          user_agent.original: '{{parse_access_log.message.user_agent}}'
-        filter: '{{parse_access_log.message.user_agent != null and parse_access_log.message.user_agent != "-" and parse_access_log.message.user_agent != ""}}'
+          user_agent.original: '{{parse_kv.message.user_agent}}'
+        filter: '{{parse_kv.message.user_agent != null and parse_kv.message.user_agent != "-" and parse_kv.message.user_agent != ""}}'
       - set:
-          http.request.referrer: '{{parse_access_log.message.http_referrer}}'
-        filter: '{{parse_access_log.message.http_referrer != null and parse_access_log.message.http_referrer != "-" and parse_access_log.message.http_referrer != ""}}'
+          user.name: '{{parse_kv.message.username}}'
+        filter: '{{parse_kv.message.username != null and parse_kv.message.username != "-" and parse_kv.message.username != ""}}'
       - set:
-          http.response.mime_type: '{{parse_access_log.message.media_type}}'
-        filter: '{{parse_access_log.message.media_type != null and parse_access_log.message.media_type != "-" and parse_access_log.message.media_type != ""}}'
+          http.request.referrer: '{{parse_kv.message.http_referrer}}'
+        filter: '{{parse_kv.message.http_referrer != null and parse_kv.message.http_referrer != "-" and parse_kv.message.http_referrer != ""}}'
+      - set:
+          http.response.mime_type: '{{parse_kv.message.media_type}}'
+        filter: '{{parse_kv.message.media_type != null and parse_kv.message.media_type != "-" and parse_kv.message.media_type != ""}}'
       - translate:
         dictionary:
-          0: 'allow'
-          1: 'fail'
-          2: 'apply template'
-          3: 'fail'
+          '0': 'allow'
+          '1': 'fail'
+          '2': 'apply template'
+          '3': 'fail'
         mapping:
           event.code: event.action
         fallback: 'block'
   set_mcafee_fields:
     actions:
       - set:
-          mcafee.webgateway.application.reputation: '{{parse_access_log.message.application_reputation}}'
-          mcafee.webgateway.url.reputation: '{{parse_access_log.message.url_reputation}}'
-          mcafee.webgateway.url.reputation_code: '{{parse_access_log.message.url_reputation_code}}'
-          mcafee.webgateway.categories: '{{parse_access_log.message.categories.split(", ")}}'
-          mcafee.webgateway.body.infected: '{{parse_access_log.message.body_infected}}'
-          mcafee.webgateway.body.modified: '{{parse_access_log.message.body_modified}}'
+          mcafee.webgateway.application.reputation: '{{parse_kv.message.application_reputation}}'
+          mcafee.webgateway.url.reputation: '{{parse_kv.message.url_reputation_string}}'
+          mcafee.webgateway.url.reputation_code: '{{parse_kv.message.url_reputation_code}}'
+          mcafee.webgateway.categories: '{{parse_kv.message.url_categories.split(", ")}}'
+          mcafee.webgateway.body.infected: '{{parse_kv.message.body_infected}}'
+          mcafee.webgateway.body.modified: '{{parse_kv.message.body_modified}}'
       - set:
-          mcafee.webgateway.application.name: '{{parse_access_log.message.application_name}}'
-        filter: '{{parse_access_log.message.application_name != null and parse_access_log.message.application_name != "-" and parse_access_log.message.application_name != ""}}'
+          mcafee.webgateway.application.name: '{{parse_kv.message.application_name}}'
+        filter: '{{parse_kv.message.application_name != null and parse_kv.message.application_name != "-" and parse_kv.message.application_name != ""}}'
       - set:
-          mcafee.webgateway.viruses: '{{parse_access_log.message.virus_names.split(", ")}}'
-        filter: '{{parse_access_log.message.virus_names != null and parse_access_log.message.virus_names != "-" and parse_access_log.message.virus_names != ""}}'
+          mcafee.webgateway.viruses: '{{parse_kv.message.virus_names.split(", ")}}'
+        filter: '{{parse_kv.message.virus_names != null and parse_kv.message.virus_names != "-" and parse_kv.message.virus_names != ""}}'
