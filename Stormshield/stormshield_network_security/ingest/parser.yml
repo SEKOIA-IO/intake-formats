@@ -31,11 +31,12 @@ pipeline:
         format: "%Y-%m-%d %H:%M:%S%z"
     filter: '{{kv.result.startime != "" }}'
 
-  - name: stage2
   - name: set_startime
+  - name: action_field_is_empty
+  - name: set_fields
 
 stages:
-  stage2:
+  set_fields:
     actions:
       - set:
           event.kind: 'event'
@@ -67,7 +68,7 @@ stages:
           stormshield.dstname: '{{ kv.result.dstname }}'
           host.network.ingress.bytes: '{{ kv.result.rcvd }}'
           host.network.egress.bytes: '{{ kv.result.sent }}'
-          network.bytes: '{{ kv.result.sent + kv.result.rcvd }}'
+          network.bytes: '{{ kv.result.sent|float + kv.result.rcvd|float }}'
           # Duration of the connection in seconds converted in nanoseconds.
           event.duration: '{{ kv.result.duration | float * 1000000000 }}'
           stormshield.logtype: '{{ stormshield.logtype }}'
@@ -82,3 +83,13 @@ stages:
       - set:
          event.start: '{{parsed_startime.date}}'
     filter: '{{kv.result.startime != "" }}'
+
+
+  # from Stormshield documentation:
+  # action Behavior associated with the filter rule.
+  # Value: “pass” or “block” (empty field for “Log” action)
+  action_field_is_empty:
+    actions:
+      - set:
+         stormshield.filter.action: 'log'
+    filter: '{{stormshield.filter.action == "" }}'
