@@ -1,0 +1,76 @@
+name: imperva-waf
+pipeline:
+  - name: parse_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{ original.message.split("| ")[1] }}'
+        output_field: message
+        value_sep: '='
+        item_sep: \s
+  - name: parser_start
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_kv.message.start
+        output_field: date
+        format: timestamp
+  - name: parse_end
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_kv.message.end
+        output_field: date
+        format: timestamp
+  - name: set_ecs_fields
+  - name: set_imperva_fields
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          user_agent.original: '{{ parse_kv.message.requestClientApplication }}'
+          user_agent.name: '{{ parse_kv.message.cs6 }}'
+          client.geo.country_iso_code: '{{ parse_kv.message.ccode }}'
+          client.geo.city_name: '{{ parse_kv.message.cicode }}'
+          client.geo.location: '{"lat": {{ parse_kv.message.cs7 }}, "lon": {{ parse_kv.message.cs8 }}}'
+          url.full: '{{ parse_kv.message.request }}'
+          url.original: '{{ parse_kv.message.request }}'
+          url.query: '{{ parse_kv.message.qstr }}'
+          http.request.referrer: '{{ parse_kv.message.ref }}'
+          http.request.method: '{{ parse_kv.message.requestmethod }}'
+          http.response.status_code: '{{ parse_kv.message.cn1 }}'
+          http.request.bytes: '{{ parse_kv.message.in }}'
+          http.request.id: '{{ parse_kv.message.deviceExternalID }}'
+          network.protocol: '{{ parse_kv.message.app | lower }}'
+          source.port: '{{ parse_kv.message.cpt }}'
+          source.ip: '{{ parse_kv.message.src }}'
+          tls.version: '{{ parse_kv.message.ver.split("v")[1].split(" ")[0] }}'
+          tls.version_protocol: '{{ parse_kv.message.ver.split("v")[0] | lower }}'
+          tls.cipher: '{{ parse_kv.message.ver.split(" ")[1] }}'
+          event.action: '{{ parse_kv.message.act }}'
+          event.start: '{{ parser_start.date }}'
+          event.end: '{{ parse_end.date }}'
+          event.duration: '{{ (parse_kv.message.end | int - parse_kv.message.start | int) | float }}'
+  set_imperva_fields:
+    actions:
+      - set:
+          imperva.site.name: '{{ parse_kv.message.sourceServiceName }}'
+          imperva.site.id: '{{ parse_kv.message.siteid }}'
+          imperva.account.id: '{{ parse_kv.message.suid }}'
+          imperva.account.name: '{{ parse_kv.message.Customer }}'
+          imperva.account.reference_id: '{{ parse_kv.message.tag }}'
+          imperva.pop: '{{ parse_kv.message.deviceFacility }}'
+          imperva.site.reference_id: '{{ parse_kv.message.siteTag }}'
+          imperva.request.headers: '{{ parse_kv.message.additionalReqHeaders }}'
+          imperva.request.x_forwarded_for: '{{ parse_kv.message.xff }}'
+          imperva.response.headers: '{{ parse_kv.message.additionalResHeaders }}'
+          imperva.session.id: '{{ parse_kv.message.fileid }}'
+          imperva.client.js_support: '{{ parse_kv.message.cs2 }}'
+          imperva.client.cookie_support: '{{ parse_kv.message.cs3 }}'
+          imperva.client.captcha_support: '{{ parse_kv.message.cs1 }}'
+          imperva.visitor.id: '{{ parse_kv.message.cs4 }}'
+          imperva.user_agent.type: '{{ parse_kv.message.dproc }}'
+          imperva.attack.type: '{{ parse_kv.message.filetype }}'
+          imperva.attack.id: '{{ parse_kv.message.filepermission }}'
+          imperva.rule.name: '{{ parse_kv.message.cs9 }}'
+          imperva.rule.additional_info: '{{ parse_kv.message.cs11 }}'
