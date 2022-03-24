@@ -1,0 +1,83 @@
+name: azure-ad
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+  - name: azuread
+  - name: azuread-filters
+  - name: set_action_properties
+    filter: '{{ parsed_event.message.properties != null }}'
+  - name: set_if_message_properties
+    filter: '{{ parsed_event.message.properties != null }}'
+
+stages:
+  azuread:
+    actions:
+      - set:
+          service.type: "ldap"
+          service.name: "active directory"
+          log.hostname: "azureactivedirectory"
+          action.name: '{{parsed_event.message.operationName}}'
+          user.id: '{{ parsed_event.message.userId}}'
+          user.name: '{{ parsed_event.message.userPrincipalName}}'
+          action.outcome: '{{parsed_event.message.properties.result}}'
+          source.ip: '{{parsed_event.message.ipAddress}}'
+          source.address: '{{parsed_event.message.ipAddress}}'
+          user_agent.original: '{{parsed_event.message.userAgent}}'
+          action.type: "{{parsed_event.message.properties.operationType |lower}}"
+
+      - set:
+          action.target: "user"
+        filter: "{{parsed_event.message.userId != null}}"
+
+  azuread-filters:
+    actions:
+      - set:
+          action.name: "authentication"
+        filter: "{{parsed_event.message.authenticationDetails != null}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.callerIpAddress}}"
+        filter: "{{parsed_event.message.callerIpAddress != '<null>' and parsed_event.message.callerIpAddress != null }}"
+
+  set_if_message_properties:
+    actions:
+      - set:
+          action.outcome_reason: "{{parsed_event.message.properties.resultReason}}"
+        filter: "{{azuread.action.outcome == 'failure'}}"
+      - set:
+          user.id: '{{ parsed_event.message.properties.initiatedBy.user.id}}'
+          user.name: '{{ parsed_event.message.properties.initiatedBy.user.userPrincipalName}}'
+          action.target: "user"
+        filter: "{{parsed_event.message.properties.initiatedBy.user != null}}"
+
+      - set:
+          user.id: '{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalId}}'
+          user.name: '{{ parsed_event.message.properties.initiatedBy.app.displayName}}'
+          action.target: "user"
+        filter: "{{parsed_event.message.properties.initiatedBy.app != null}}"
+
+  set_action_properties:
+    actions:
+      - set:
+          action.properties: >
+            [
+            {% for targetResource in parsed_event.message.properties.targetResources %}
+            {% if targetResource.modifiedProperties != null %}
+            {% for modifiedProperty in targetResource.modifiedProperties %}
+            {% if modifiedProperty.displayName != "Included Updated Properties"%}
+            {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% if targetResource.type == "User" %}
+            {'name': '{{targetResource.userPrincipalName | lower }}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
+            {% endif %}
+            {% endfor %}
+            ]
+        filter: '{{parsed_event.message.properties.targetResources != [] }}'
+
+      - set:
+          action.properties: [ ]
+        filter: '{{ parsed_event.message.properties.targetResources == [] }}'
+
