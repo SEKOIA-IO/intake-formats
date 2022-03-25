@@ -4,11 +4,14 @@ pipeline:
     external:
       name: json.parse-json
   - name: azuread
-  - name: azuread-filters
-  - name: set_action_properties
-    filter: '{{ parsed_event.message.properties != null }}'
-  - name: set_if_message_properties
-    filter: '{{ parsed_event.message.properties != null }}'
+  - name: log_type_authentication
+    filter: "{{parsed_event.message.authenticationDetails != null}}"
+  - name: log_type_auditlogs
+    filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
+  - name: log_type_auditlogs_has_message_properties
+    filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
+  - name: log_type_risk_detection
+    filter: '{{ parsed_event.message.category == "UserRiskEvents" }}'
 
 stages:
   azuread:
@@ -30,19 +33,11 @@ stages:
           action.target: "user"
         filter: "{{parsed_event.message.userId != null}}"
 
-  azuread-filters:
-    actions:
-      - set:
-          action.name: "authentication"
-          event.category: "authentication"
-          event.type: ["start"]
-        filter: "{{parsed_event.message.authenticationDetails != null}}"
-
       - set:
           source.ip: "{{parsed_event.message.callerIpAddress}}"
         filter: "{{parsed_event.message.callerIpAddress != '<null>' and parsed_event.message.callerIpAddress != null }}"
 
-  set_if_message_properties:
+  log_type_auditlogs_has_message_properties:
     actions:
       - set:
           action.outcome_reason: "{{parsed_event.message.properties.resultReason}}"
@@ -60,7 +55,7 @@ stages:
           action.target: "user"
         filter: "{{parsed_event.message.properties.initiatedBy.app != null}}"
 
-  set_action_properties:
+  log_type_auditlogs:
     actions:
       - set:
           action.properties: >
@@ -84,3 +79,30 @@ stages:
           action.properties: [ ]
         filter: '{{ parsed_event.message.properties.targetResources == [] }}'
 
+
+  log_type_risk_detection:
+    actions:
+      - set:
+          event.category: "authentication"
+          client.geo.country_iso_code: "{{ parsed_event.message.location}}"
+          client.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
+          client.geo.region_name: "{{ parsed_event.message.properties.location.state }}"
+          client.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
+
+      - set:
+          event.type: [ "connection" ]
+        filter: '{{ parsed_event.message.properties.activity == "signin" }}'
+
+      - set:
+          event.reason: '{{ parsed_event.message.properties.riskType }}'
+          client.user.full_name: '{{ parsed_event.message.properties.userDisplayName }}'
+          client.user.email: '{{ parsed_event.message.properties.userPrincipalName }}'
+        filter: '{{ parsed_event.message.properties != null }}'
+
+  log_type_authentication:
+    actions:
+      - set:
+          action.name: "authentication"
+          event.category: "authentication"
+          event.type: [ "start" ]
+          host.os.name: '{{parsed_event.message.deviceDetail.operatingSystem}}'
