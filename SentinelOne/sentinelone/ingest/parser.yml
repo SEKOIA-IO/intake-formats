@@ -6,6 +6,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
   - name: read_threat_info
+    filter: '{{json_event.message.threatInfo != null }}'
   - name: read_agent_info
   - name: read_agent_detection_info
     filter: '{{json_event.message.agentRealtimeInfo != null }}'
@@ -14,23 +15,53 @@ pipeline:
   - name: read_data
     filter: '{{json_event.message.data != null }}'
   - name: translate_action_type
+  - name: set_ecs_categorization_fields
+    filter: '{{json_event.message.activityType != null }}'
 
 stages:
+
+  set_ecs_categorization_fields:
+    actions:
+      # Set default values
+      - set:
+          event.kind: event
+          event.category: intrusion_detection
+
+      # 90: Agent started full disk scan
+      # 91: Agent aborted full disk scan
+      # 92: Agent completed full disk scan
+      - set:
+          event.kind: event
+          event.category: intrusion_detection
+          event.type: info
+        filter: "{{json_event.message.activityType == 90 or json_event.message.activityType == 91 or json_event.message.activityType == 92 }}"
+
+      # 5126: Device control approved event
+      - set:
+          event.kind: event
+          event.category: host
+          event.type: allowed
+        filter: "{{json_event.message.activityType == 5126 }}"
+
 
   read_agent_info:
     actions:
       - set:
-          sentinelone.eventid: "{{json_event.message.id}}"
+          # fix : sentinelone.eventid: "{{json_event.message.id}}"
+          event.id: "{{json_event.message.id}}"
+          # fix: sentinelone.primaryDescription: "{{json_event.message.primaryDescription}}"
+          event.reason: "{{json_event.message.primaryDescription}}"
           organization.id: "{{json_event.message.accountId}}"
           organization.name: "{{json_event.message.accountName}}"
           action.type: "{{json_event.message.activityType}}"
           user.id: "{{json_event.message.userId}}"
-          sentinelone.primaryDescription: "{{json_event.message.primaryDescription}}"
           sentinelone.secondaryDescription: "{{json_event.message.secondaryDescription}}"
           sentinelone.siteId: "{{json_event.message.siteId}}"
           sentinelone.description: "{{json_event.message.description}}"
-          sentinelone.groupId: "{{json_event.message.groupId}}"
-          sentinelone.groupname: "{{json_event.message.groupName}}"
+          # fix: sentinelone.groupId: "{{json_event.message.groupId}}"
+          group.id: "{{json_event.message.groupId}}"
+          # fix: sentinelone.groupname: "{{json_event.message.groupName}}"
+          group.name: "{{json_event.message.groupName}}"
           sentinelone.hash: "{{json_event.message.hash}}"
           
           agent.id: "{{json_event.message.agentId}}"
@@ -45,6 +76,11 @@ stages:
   read_data:
     actions:
       - set:
+          rule.id: "{{ json_event.message.data.ruleId |int }}"
+        filter: "{{ json_event.message.data.ruleId != null }}"
+
+      - set:
+          sentinelone.data.accountName: "{{json_event.message.data.accountName}}"
           sentinelone.data.accessPermissionsentinelone.data.: "{{json_event.message.data.accessPermission}}"
           sentinelone.data.action: "{{json_event.message.data.action}}"
           sentinelone.data.activatedEngines: "{{json_event.message.data.activatedEngines}}"
@@ -66,7 +102,9 @@ stages:
           sentinelone.data.enabledReason: "{{json_event.message.data.enabledReason}}"
           sentinelone.data.exclusionType: "{{json_event.message.data.exclusionType}}"
           sentinelone.data.expiration: "{{json_event.message.data.expiration}}"
-          sentinelone.data.externalIp: "{{json_event.message.data.externalIp}}"
+          # Fix sentinelone.data.externalIp: "{{json_event.message.data.externalIp}}"
+          # host.ip is used for consistence with the other fields but we could have use could be client.nat.ip
+          host.ip: "{{json_event.message.data.externalIp}}"
           sentinelone.data.fileContentHash: "{{json_event.message.data.fileContentHash}}"
 
           file.name: "{{json_event.message.data.filename}}"
@@ -86,7 +124,6 @@ stages:
           sentinelone.data.profileUuids: "{{json_event.message.data.profileUuids}}"
           sentinelone.data.reason: "{{json_event.message.data.reason}}"
           sentinelone.data.role: "{{json_event.message.data.role}}"
-          rule.id: "{{json_event.message.data.ruleId}}"
           rule.name: "{{json_event.message.data.rulename}}"
           sentinelone.data.ruleType: "{{json_event.message.data.ruleType}}"
           sentinelone.data.scopeLevel: "{{json_event.message.data.scopeLevel}}"
@@ -146,7 +183,7 @@ stages:
 
           sentinelone.data.sourceparentprocessintegritylevel: "{{json_event.message.data.sourceparentprocessintegritylevel}}"
           sentinelone.data.sourceparentprocesskey: "{{json_event.message.data.sourceparentprocesskey}}"
-
+          
           
           process.parent.hash.md5: "{{json_event.message.data.sourceparentprocessmd5}}"
           process.parent.name: "{{json_event.message.data.sourceparentprocessname}}"
@@ -159,6 +196,7 @@ stages:
 
           sentinelone.data.sourceparentprocessstoryline: "{{json_event.message.data.sourceparentprocessstoryline}}"
           sentinelone.data.sourceparentprocesssubsystem: "{{json_event.message.data.sourceparentprocesssubsystem}}"
+          # TODO: Should be replaced by process.parent.user.name when supported
           sentinelone.data.sourceparentprocessusername: "{{json_event.message.data.sourceparentprocessusername}}"
 
           process.command_line: "{{json_event.message.data.sourceprocesscommandline}}"
@@ -178,7 +216,9 @@ stages:
 
           sentinelone.data.sourceprocessstoryline: "{{json_event.message.data.sourceprocessstoryline}}"
           sentinelone.data.sourceprocesssubsystem: "{{json_event.message.data.sourceprocesssubsystem}}"
+          # TODO: Should be replaced by process.user.name when supported
           sentinelone.data.sourceprocessusername: "{{json_event.message.data.sourceprocessusername}}"
+          # TODO: Should *probably* be replaced by process.user.id when supported
           sentinelone.data.systemUser: "{{json_event.message.data.systemUser}}"
 
   read_agent_realtime_info:
@@ -209,23 +249,28 @@ stages:
   read_threat_info:
     actions:
       - set:
-          sentinelone.data.accountName: "{{json_event.message.data.accountName}}"
           sentinelone.threatInfo.analystVerdict: "{{json_event.message.threatInfo.analystVerdict}}"
           sentinelone.threatInfo.analystVerdictDescription: "{{json_event.message.threatInfo.analystVerdictDescription}}"
           sentinelone.threatInfo.AuthenticationPackageName: "{{json_event.message.threatInfo.AuthenticationPackageName}}"
           sentinelone.threatInfo.automaticallyResolved: "{{json_event.message.threatInfo.automaticallyResolved}}"
           sentinelone.threatInfo.browserType: "{{json_event.message.threatInfo.browserType}}"
-          sentinelone.threatInfo.certificateId: "{{json_event.message.threatInfo.certificateId}}"
-          sentinelone.threatInfo.classification: "{{json_event.message.threatInfo.classification}}"
+          # Fix: sentinelone.threatInfo.certificateId: "{{json_event.message.threatInfo.certificateId}}"
+          threat.indicator.file.code_signature.signing_id: "{{json_event.message.threatInfo.certificateId}}"
+          # TODO: use threat.software.type when supported
+          threat.software.type: "{{json_event.message.threatInfo.classification}}"
           sentinelone.threatInfo.classificationSource: "{{json_event.message.threatInfo.classificationSource}}"
           sentinelone.threatInfo.cloudFilesHashVerdict: "{{json_event.message.threatInfo.cloudFilesHashVerdict}}"
-          sentinelone.threatInfo.confidenceLevel: "{{json_event.message.threatInfo.confidenceLevel}}"
-          sentinelone.threatInfo.createdAt: "{{json_event.message.threatInfo.createdAt}}"
+          # Fix: sentinelone.threatInfo.confidenceLevel: "{{json_event.message.threatInfo.confidenceLevel}}"
+          threat.indicator.confidence: "{{json_event.message.threatInfo.confidenceLevel}}"
+          # Fix: sentinelone.threatInfo.createdAt: "{{json_event.message.threatInfo.createdAt}}"
+          threat.indicator.file.created: "{{json_event.message.threatInfo.createdAt}}"
           sentinelone.threatInfo.detectionType: "{{json_event.message.threatInfo.detectionType}}"
           sentinelone.threatInfo.failedActions: "{{json_event.message.threatInfo.failedActions}}"
-          sentinelone.threatInfo.fileSize: "{{json_event.message.threatInfo.fileSize}}"
+          # Fix: sentinelone.threatInfo.fileSize: "{{json_event.message.threatInfo.fileSize}}"
+          threat.indicator.file.size: "{{json_event.message.threatInfo.fileSize}}"
           sentinelone.threatInfo.fileVerificationType: "{{json_event.message.threatInfo.fileVerificationType}}"
-          sentinelone.threatInfo.identifiedAt: "{{json_event.message.threatInfo.identifiedAt}}"
+          # Fix: sentinelone.threatInfo.identifiedAt: "{{json_event.message.threatInfo.identifiedAt}}"
+          threat.enrichments.matched.occurred: "{{json_event.message.threatInfo.identifiedAt}}"
           sentinelone.threatInfo.incidentStatus: "{{json_event.message.threatInfo.incidentStatus}}"
           sentinelone.threatInfo.incidentStatusDescription: "{{json_event.message.threatInfo.incidentStatusDescription}}"
           sentinelone.threatInfo.initiatedBy: "{{json_event.message.threatInfo.initiatedBy}}"
@@ -236,13 +281,18 @@ stages:
           sentinelone.threatInfo.isFileless: "{{json_event.message.threatInfo.isFileless}}"
           sentinelone.threatInfo.isValidCertificate: "{{json_event.message.threatInfo.isValidCertificate}}"
           sentinelone.threatInfo.maliciousProcessArguments: "{{json_event.message.threatInfo.maliciousProcessArguments}}"
-          sentinelone.threatInfo.md5: "{{json_event.message.threatInfo.md5}}"
+          # Fix: sentinelone.threatInfo.md5: "{{json_event.message.threatInfo.md5}}"
+          # not sure if this is about a file
+          threat.enrichments.indicator.file.hash.md5: "{{json_event.message.threatInfo.md5}}"
           sentinelone.threatInfo.mitigationStatusDescription: "{{json_event.message.threatInfo.mitigationStatusDescription}}"
           sentinelone.threatInfo.originatorProcess: "{{json_event.message.threatInfo.originatorProcess}}"
           sentinelone.threatInfo.pendingActions: "{{json_event.message.threatInfo.pendingActions}}"
           sentinelone.threatInfo.processUser: "{{json_event.message.threatInfo.processUser}}"
           sentinelone.threatInfo.rebootRequired: "{{json_event.message.threatInfo.rebootRequired}}"
           sentinelone.threatInfo.threatId: "{{json_event.message.threatInfo.threatId}}"
+          # Fix: sentinelone.threatInfo.threatName: "{{json_event.message.threatInfo.threatName}}"
+          threat.enrichments.indicator.file.name: "{{json_event.message.threatInfo.threatName}}"
+          # TODO: use threat.enrichments.indicator.modified_at when supported
           sentinelone.threatInfo.updatedAt: "{{json_event.message.threatInfo.updatedAt}}"
           file.extension: "{{json_event.message.threatInfo.fileExtension |lower}}"
           file.path: "{{json_event.message.threatInfo.filePath}}"
