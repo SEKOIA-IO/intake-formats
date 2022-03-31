@@ -10,24 +10,56 @@ pipeline:
     filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
   - name: log_type_auditlogs_has_message_properties
     filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
-  - name: log_type_risk_detection
-    filter: '{{ parsed_event.message.category == "UserRiskEvents" }}'
+  - name: read_message_properties
+    filter: '{{ parsed_event.message.properties != null }}'
+  - name: read_device_details
+    filter: '{{ parsed_event.message.deviceDetail != null }}'
+
 
 stages:
+  read_device_details:
+    actions:
+      - set:
+          host.os.name: '{{ parsed_event.message.deviceDetail.operatingSystem }}'
+          user_agent.name: '{{ parsed_event.message.deviceDetail.browser }}'
+
+  read_message_properties:
+    actions:
+      - set:
+          action.outcome: '{{parsed_event.message.properties.result}}'
+          action.type: "{{parsed_event.message.properties.operationType |lower}}"
+          client.geo.country_iso_code: "{{ parsed_event.message.location}}"
+          client.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
+          client.geo.region_name: "{{ parsed_event.message.properties.location.state }}"
+          client.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
+          event.reason: '{{ parsed_event.message.properties.riskType }}'
+          client.user.full_name: '{{ parsed_event.message.properties.userDisplayName }}'
+          client.user.email: '{{ parsed_event.message.properties.userPrincipalName }}'
+          user_agent.original: '{{ parsed_event.message.properties.userAgent }}'
+          service.name: '{{ parsed_event.message.properties.resourceDisplayName }}'
+
+      - set:
+          event.type: [ "connection" ]
+        filter: '{{ parsed_event.message.properties.activity == "signin" }}'
+      - set:
+          event.reason: '{{parsed_event.message.properties.status.failureReason}}'
+        filter: '{{ parsed_event.message.properties.status != null }}'
+      - set:
+          event.category: ["iam", "change"]
+        filter: '{{ parsed_event.message.properties.category == "DirectoryManagement" or parsed_event.message.properties.category == "AuditLogs" }}'
+
   azuread:
     actions:
       - set:
           service.type: "ldap"
-          service.name: "active directory"
+          service.name: '{{ parsed_event.message.resourceDisplayName or "Azure Active Directory"}}'
           log.hostname: "azureactivedirectory"
           host.hostname: "azureactivedirectory"
           action.name: '{{parsed_event.message.operationName}}'
           user.id: '{{ parsed_event.message.userId}}'
           user.name: '{{ parsed_event.message.userPrincipalName}}'
-          action.outcome: '{{parsed_event.message.properties.result}}'
-          source.ip: '{{parsed_event.message.ipAddress}}'
-          user_agent.original: '{{parsed_event.message.userAgent}}'
-          action.type: "{{parsed_event.message.properties.operationType |lower}}"
+          client.ip: '{{parsed_event.message.ipAddress}}'
+          user_agent.original: '{{ parsed_event.message.userAgent }}'
 
       - set:
           action.target: "user"
@@ -42,7 +74,7 @@ stages:
       - set:
           action.outcome_reason: "{{parsed_event.message.properties.resultReason}}"
           event.reason: "{{parsed_event.message.properties.resultReason}}"
-        filter: "{{azuread.action.outcome == 'failure'}}"
+        filter: "{{parsed_event.message.properties.result == 'failure'}}"
       - set:
           user.id: '{{ parsed_event.message.properties.initiatedBy.user.id}}'
           user.name: '{{ parsed_event.message.properties.initiatedBy.user.userPrincipalName}}'
@@ -79,30 +111,9 @@ stages:
           action.properties: [ ]
         filter: '{{ parsed_event.message.properties.targetResources == [] }}'
 
-
-  log_type_risk_detection:
-    actions:
-      - set:
-          event.category: "authentication"
-          client.geo.country_iso_code: "{{ parsed_event.message.location}}"
-          client.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
-          client.geo.region_name: "{{ parsed_event.message.properties.location.state }}"
-          client.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
-
-      - set:
-          event.type: [ "connection" ]
-        filter: '{{ parsed_event.message.properties.activity == "signin" }}'
-
-      - set:
-          event.reason: '{{ parsed_event.message.properties.riskType }}'
-          client.user.full_name: '{{ parsed_event.message.properties.userDisplayName }}'
-          client.user.email: '{{ parsed_event.message.properties.userPrincipalName }}'
-        filter: '{{ parsed_event.message.properties != null }}'
-
   log_type_authentication:
     actions:
       - set:
           action.name: "authentication"
           event.category: "authentication"
           event.type: [ "start" ]
-          host.os.name: '{{parsed_event.message.deviceDetail.operatingSystem}}'
