@@ -47,8 +47,7 @@ stages:
   read_agent_info:
     actions:
       - set:
-          # fix : sentinelone.eventid: "{{json_event.message.id}}"
-          event.id: "{{json_event.message.id}}"
+          sentinelone.eventid: "{{json_event.message.id}}"
           # fix: sentinelone.primaryDescription: "{{json_event.message.primaryDescription}}"
           event.reason: "{{json_event.message.primaryDescription}}"
           organization.id: "{{json_event.message.accountId}}"
@@ -80,6 +79,12 @@ stages:
         filter: "{{ json_event.message.data.ruleId != null }}"
 
       - set:
+          # Fix sentinelone.data.externalIp: "{{json_event.message.data.externalIp}}"
+          # host.ip is used for consistence with the other fields but we could have use could be client.nat.ip
+          host.ip: [ "{{json_event.message.data.externalIp}}" ]
+        filter: "{{json_event.message.data.externalIp != null }}"
+
+      - set:
           sentinelone.data.accountName: "{{json_event.message.data.accountName}}"
           sentinelone.data.accessPermissionsentinelone.data.: "{{json_event.message.data.accessPermission}}"
           sentinelone.data.action: "{{json_event.message.data.action}}"
@@ -102,9 +107,6 @@ stages:
           sentinelone.data.enabledReason: "{{json_event.message.data.enabledReason}}"
           sentinelone.data.exclusionType: "{{json_event.message.data.exclusionType}}"
           sentinelone.data.expiration: "{{json_event.message.data.expiration}}"
-          # Fix sentinelone.data.externalIp: "{{json_event.message.data.externalIp}}"
-          # host.ip is used for consistence with the other fields but we could have use could be client.nat.ip
-          host.ip: "{{json_event.message.data.externalIp}}"
           sentinelone.data.fileContentHash: "{{json_event.message.data.fileContentHash}}"
 
           file.name: "{{json_event.message.data.filename}}"
@@ -236,6 +238,23 @@ stages:
   read_agent_detection_info:
     actions:
       - set:
+          # agentIpV4, agentIpV6 can contain multiples values separated by comma
+          host.ip: >
+           [
+            {% for ip in json_event.message.agentDetectionInfo.agentIpV4.split(',') %}
+            '{{ip}}',
+            {% endfor %}
+            {% for ip in json_event.message.agentDetectionInfo.agentIpV6.split(',') %}
+            '{{ip}}',
+            {% endfor %}
+            {% for ip in json_event.message.agentDetectionInfo.externalIp.split(',') %}
+            '{{ip}}',
+            {% endfor %}
+            ]
+
+        filter: "{{json_event.message.agentDetectionInfo.agentIpV4 != null or json_event.message.agentDetectionInfo.agentIpV6 != null or json_event.message.agentDetectionInfo.externalIp != null}}"
+
+      - set:
           event.kind: "alert"
           event.category: "malware"
           event.type: ["info"]
@@ -245,11 +264,6 @@ stages:
           sentinelone.agentDetectionInfo.mitigationStatus: "{{json_event.message.agentDetectionInfo.agentLastLoggedInUserName}}"
           sentinelone.sitename: "{{json_event.message.agentDetectionInfo.siteName}}"
           sentinelone.groupname: "{{json_event.message.agentDetectionInfo.groupName}}"
-          host.ip:
-            - "{{json_event.message.agentDetectionInfo.agentIpV4}}"
-            - "{{json_event.message.agentDetectionInfo.agentIpV6}}"
-            - "{{json_event.message.agentDetectionInfo.externalIp}}"
-
   read_threat_info:
     actions:
       - set:
