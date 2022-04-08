@@ -11,35 +11,23 @@ pipeline:
   - name: threats_by_av_counters
   - name: pups_counters
   - name: main_stage
-  - name: translate_event_type
-  - name: translate_action_for_attack
-  - name: translate_action_for_detection
-  - name: translate_protection_mode
-  - name: translate_reclassified_to_type
-  - name: translate_like_lihood_of_being_malicious
-  - name: translate_discard_motive
-  - name: translate_lock_plus_rule_id
-  - name: translate_detected_by
-  - name: translate_platform_id
-  - name: translate_malware_category
-  - name: translate_malware_type
-  - name: translate_network_activity_type
-  - name: translate_direction
-  - name: translate_local_endpoint
-  - name: translate_type
-  - name: translate_rule_risk
-  - name: translate_status
-  - name: translate_device_type
-
 
 stages:
 
   ecs_categorization_fields:
     actions:
       - set:
+          event.kind: "metric"
+          event.category: [ "host" ]
+          event.type: [ "info" ]
+        filter: '{{json_event.message.exploit_counters != null}}'
+
+      - set:
           event.kind: "event"
           event.category: [ "host" ]
           event.type: [ "info" ]
+        filter: '{{json_event.message.action != null }}'
+
 
   main_stage:
     actions:
@@ -105,51 +93,6 @@ stages:
           aether.user_name: "{{json_event.message.user_name}}"
           aether.was_run: "{{json_event.message.was_run}}"
 
-  read_exploit_counters:
-    actions:
-      - set:
-          aether.exploit_counters.total_affected_devices: "{{json_event.message.exploit_counters.total_affected_devices}}"
-          aether.exploit_counters.total_alerts: "{{json_event.message.exploit_counters.total_alerts}}"
-          aether.exploit_counters.total_data_access: "{{json_event.message.exploit_counters.total_data_access}}"
-          aether.exploit_counters.total_executed: "{{json_event.message.exploit_counters.total_executed}}"
-          aether.exploit_counters.total_external_communications: "{{json_event.message.exploit_counters.total_external_communications}}"
-
-  malware_counters:
-    actions:
-      - set:
-          aether.malware_counters.total_affected_devices: "{{json_event.message.malware_counters.total_affected_devices}}"
-          aether.malware_counters.total_alerts: "{{json_event.message.malware_counters.total_alerts}}"
-          aether.malware_counters.total_data_access: "{{json_event.message.malware_counters.total_data_access}}"
-          aether.malware_counters.total_executed: "{{json_event.message.malware_counters.total_executed}}"
-          aether.malware_counters.total_external_communications: "{{json_event.message.malware_counters.total_external_communications}}"
-
-  program_blocked_counters:
-    actions:
-      - set:
-          aether.program_blocked_counters.total_programs_blocked: "{{json_event.message.program_blocked_counters.total_programs_blocked}}"
-
-  threats_by_av_counters:
-    actions:
-      - set:
-          aether.threats_by_av_counters.total_dangerous_actions_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_dangerous_actions_blocked_by_av}}"
-          aether.threats_by_av_counters.total_devices_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_devices_blocked_by_av}}"
-          aether.threats_by_av_counters.total_intrusion_attempted_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_intrusion_attempted_blocked_by_av}}"
-          aether.threats_by_av_counters.total_malware_urls_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_malware_urls_blocked_by_av}}"
-          aether.threats_by_av_counters.total_phishing_detected_by_av: "{{json_event.message.threats_by_av_counters.total_phishing_detected_by_av}}"
-          aether.threats_by_av_counters.total_tracking_cookies_detected_by_av: "{{json_event.message.threats_by_av_counters.total_tracking_cookies_detected_by_av}}"
-
-  pups_counters:
-    actions:
-      - set:
-          aether.pups_counters.total_affected_devices: "{{json_event.message.pups_counters.total_affected_devices}}"
-          aether.pups_counters.total_alerts: "{{json_event.message.pups_counters.total_alerts}}"
-          aether.pups_counters.total_data_access: "{{json_event.message.pups_counters.total_data_access}}"
-          aether.pups_counters.total_executed: "{{json_event.message.pups_counters.total_executed}}"
-          aether.pups_counters.total_external_communications: "{{json_event.message.pups_counters.total_external_communications}}"
-
-  translate_action_for_attack:
-    # Indicates the action performed.
-    actions:
       - translate:
         dictionary:
           # For indicators of attack, this can be one of these values:
@@ -158,11 +101,8 @@ stages:
           2: Attack Blocked
         mapping:
           aether.action: aether.action_translated
-        filter: '{{json_event.message.action != null }}'
+        filter: '{{json_event.message.security_event_type == 18 }}'
 
-  translate_action_for_detection:
-    # Indicates the action performed.
-    actions:
       - translate:
         dictionary:
           # For other detections, this can be one of these values:
@@ -192,11 +132,8 @@ stages:
 
         mapping:
           aether.action: aether.action_translated
-        filter: '{{json_event.message.action != null }}'
+        filter: '{{json_event.message.security_event_type != 18 }}'
 
-
-  translate_event_type:
-    actions:
       - translate:
         dictionary:
           0: Malware
@@ -210,8 +147,6 @@ stages:
           aether.event_type: aether.event_type_translated
         filter: '{{json_event.message.event_type != null }}'
 
-  translate_protection_mode:
-    actions:
       - translate:
         dictionary:
           0: Undefined
@@ -222,9 +157,6 @@ stages:
           aether.protection_mode: aether.protection_mode_translated
         filter: '{{json_event.message.protection_mode != null }}'
 
-  translate_reclassified_to_type:
-    # Indicates the type to which it has been reclassified.
-    actions:
       - translate:
         dictionary:
           0: Blocked
@@ -236,9 +168,6 @@ stages:
           aether.reclassified_to_type: aether.reclassified_to_type_translated
         filter: '{{json_event.message.reclassified_to_type != null }}'
 
-  translate_like_lihood_of_being_malicious:
-    # Indicates the action performed.
-    actions:
       - translate:
         dictionary:
           0: Low
@@ -249,9 +178,6 @@ stages:
           aether.like_lihood_of_being_malicious: aether.like_lihood_of_being_malicious_translated
         filter: '{{json_event.message.like_lihood_of_being_malicious != null }}'
 
-  translate_discard_motive:
-    # Reason for discarding the knowledge sample.
-    actions:
       - translate:
         dictionary:
           0: Unknown
@@ -261,9 +187,7 @@ stages:
           aether.discard_motive: aether.discard_motive_translated
         filter: '{{json_event.message.discard_motive != null }}'
 
-  translate_lock_plus_rule_id:
-    # Reason for discarding the knowledge sample.
-    actions:
+
       - translate:
         dictionary:
           1: Obfuscated Params Powershell
@@ -278,9 +202,7 @@ stages:
           aether.lock_plus_rule_id: aether.lock_plus_rule_id_translated
         filter: '{{json_event.message.lock_plus_rule_id != null }}'
 
-  translate_detected_by:
-    # Protection or technology in antivirus detections.
-    actions:
+
       - translate:
         dictionary:
           1: On Demand Scan
@@ -309,9 +231,6 @@ stages:
           aether.detected_by: aether.detected_by_translated
         filter: '{{json_event.message.detected_by != null }}'
 
-  translate_device_type:
-    # Device type in antivirus and firewall detections.
-    actions:
       - translate:
         dictionary:
           0: Undefined
@@ -323,9 +242,6 @@ stages:
           aether.device_type: aether.device_type_translated
         filter: '{{json_event.message.device_type != null }}'
 
-  translate_platform_id:
-    # Platform of the affected device.
-    actions:
       - translate:
         dictionary:
           0: Undefined
@@ -338,9 +254,6 @@ stages:
           aether.platform_id: aether.platform_id_translated
         filter: '{{json_event.message.platform_id != null }}'
 
-  translate_malware_category:
-    # Malware category in antivirus detections.
-    actions:
       - translate:
         dictionary:
           1: Virus
@@ -356,9 +269,6 @@ stages:
           aether.malware_category: aether.malware_category_translated
         filter: '{{json_event.message.malware_category != null }}'
 
-  translate_malware_type:
-    # Malware type in antivirus detections.
-    actions:
       - translate:
         dictionary:
           21: Nereus Heuritic
@@ -408,9 +318,6 @@ stages:
           aether.malware_type: aether.malware_type_translated
         filter: '{{json_event.message.malware_type != null }}'
 
-  translate_network_activity_type:
-    # Network activity type in firewall detections.
-    actions:
       - translate:
         dictionary:
           1: IcmpAttack
@@ -432,9 +339,6 @@ stages:
           aether.network_activity_type: aether.network_activity_type_translated
         filter: '{{json_event.message.network_activity_type != null }}'
 
-  translate_direction:
-    # Direction of firewall blocked connections.
-    actions:
       - translate:
         dictionary:
           1: Incoming
@@ -445,10 +349,6 @@ stages:
           aether.direction: aether.direction_translated
         filter: '{{json_event.message.direction != null }}'
 
-  translate_local_endpoint:
-    # Firewall blocked connections for a local endpoint, in JSON format: Mac Address, IP Address, Port, and IP Type. IP type can be one of these values:
-
-    actions:
       - translate:
         dictionary:
           0: Unknown
@@ -458,9 +358,7 @@ stages:
           aether.local_endpoint: aether.local_endpoint_translated
         filter: '{{json_event.message.local_endpoint != null }}'
 
-  translate_type:
-    # Type of device for device control detections.
-    actions:
+
       - translate:
         dictionary:
           0: Undefined
@@ -474,9 +372,6 @@ stages:
           aether.type: aether.type_translated
         filter: '{{json_event.message.type != null }}'
 
-  translate_rule_risk:
-    # Indicates the rule risk for indicators of attack detections.
-    actions:
       - translate:
         dictionary:
           0: Undefined
@@ -489,9 +384,6 @@ stages:
           aether.rule_risk: aether.rule_risk_translated
         filter: '{{json_event.message.rule_risk != null }}'
 
-  translate_status:
-    # Indicates the status in indicators of attack detections..
-    actions:
       - translate:
         dictionary:
           0: Undefined
@@ -500,3 +392,45 @@ stages:
         mapping:
           aether.status: aether.status_translated
         filter: '{{json_event.message.status != null }}'
+
+  read_exploit_counters:
+    actions:
+      - set:
+          aether.exploit_counters.total_affected_devices: "{{json_event.message.exploit_counters.total_affected_devices}}"
+          aether.exploit_counters.total_alerts: "{{json_event.message.exploit_counters.total_alerts}}"
+          aether.exploit_counters.total_data_access: "{{json_event.message.exploit_counters.total_data_access}}"
+          aether.exploit_counters.total_executed: "{{json_event.message.exploit_counters.total_executed}}"
+          aether.exploit_counters.total_external_communications: "{{json_event.message.exploit_counters.total_external_communications}}"
+
+  malware_counters:
+    actions:
+      - set:
+          aether.malware_counters.total_affected_devices: "{{json_event.message.malware_counters.total_affected_devices}}"
+          aether.malware_counters.total_alerts: "{{json_event.message.malware_counters.total_alerts}}"
+          aether.malware_counters.total_data_access: "{{json_event.message.malware_counters.total_data_access}}"
+          aether.malware_counters.total_executed: "{{json_event.message.malware_counters.total_executed}}"
+          aether.malware_counters.total_external_communications: "{{json_event.message.malware_counters.total_external_communications}}"
+
+  program_blocked_counters:
+    actions:
+      - set:
+          aether.program_blocked_counters.total_programs_blocked: "{{json_event.message.program_blocked_counters.total_programs_blocked}}"
+
+  threats_by_av_counters:
+    actions:
+      - set:
+          aether.threats_by_av_counters.total_dangerous_actions_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_dangerous_actions_blocked_by_av}}"
+          aether.threats_by_av_counters.total_devices_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_devices_blocked_by_av}}"
+          aether.threats_by_av_counters.total_intrusion_attempted_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_intrusion_attempted_blocked_by_av}}"
+          aether.threats_by_av_counters.total_malware_urls_blocked_by_av: "{{json_event.message.threats_by_av_counters.total_malware_urls_blocked_by_av}}"
+          aether.threats_by_av_counters.total_phishing_detected_by_av: "{{json_event.message.threats_by_av_counters.total_phishing_detected_by_av}}"
+          aether.threats_by_av_counters.total_tracking_cookies_detected_by_av: "{{json_event.message.threats_by_av_counters.total_tracking_cookies_detected_by_av}}"
+
+  pups_counters:
+    actions:
+      - set:
+          aether.pups_counters.total_affected_devices: "{{json_event.message.pups_counters.total_affected_devices}}"
+          aether.pups_counters.total_alerts: "{{json_event.message.pups_counters.total_alerts}}"
+          aether.pups_counters.total_data_access: "{{json_event.message.pups_counters.total_data_access}}"
+          aether.pups_counters.total_executed: "{{json_event.message.pups_counters.total_executed}}"
+          aether.pups_counters.total_external_communications: "{{json_event.message.pups_counters.total_external_communications}}"
