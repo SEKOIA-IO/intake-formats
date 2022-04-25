@@ -1,0 +1,75 @@
+name: sophos
+pipeline:
+  - name: kv_event
+    external:
+      name: kv.parse-kv
+      properties:
+        value_sep: "="
+
+  - name: core
+
+stages:
+  core:
+    actions:
+
+      - set:
+          log.level: "{{kv_event.message.severity}}"
+          log.level: "{{kv_event.message.priority}}"
+          observer.name: "{{kv_event.message.device_name}}"
+
+          sophos.action: "{{kv_event.message.action}}"
+          sophos.status: "{{kv_event.message.status}}"
+          sophos.sub: "{{kv_event.message.sub}}"
+
+          sophos.log_subtype: "{{kv_event.message.log_subtype}}"
+          
+          # HTTP
+          http.request.referrer: "{{kv_event.message.referer}}"
+          http.response.status_code: "{{kv_event.message.httpresponsecode}}"
+          http.request.method: "{{kv_event.message.method}}"
+          url.original: "{{kv_event.message.url}}"          
+          url.query: "{{kv_event.message.query}}"
+          user_agent.original: "{{kv_event.user_agent}}"
+
+          # General Network
+          source.bytes: "{{kv_event.message.sent_bytes}}"
+          source.packets: "{{kv_event.message.sent_pkts}}"
+          destination.bytes: "{{kv_event.message.recv_bytes}}"
+          destination.packets: "{{kv_event.message.recv_pkts}}"
+          destination.domain: "{{kv_event.message.domain}}"
+          
+          # Network L2
+          source.mac: "{{kv_event.message.srcmac or kv_event.message.src_mac}}"
+          destination.mac: "{{kv_event.message.dstmac or kv_event.message.dst_mac}}"
+
+          # Network L3
+          source.ip: "{{kv_event.message.srcip or kv_event.message.src_ip}}"
+          destination.ip: "{{kv_event.message.dstip or kv_event.message.dst_ip}}"
+          network.transport: "{{kv_event.message.protocol}}"
+          
+          # Network L4
+          source.port: "{{kv_event.message.srcport or kv_event.message.src_port}}"
+          destination.port: "{{kv_event.message.dstport or kv_event.message.dst_port}}"
+
+          # NAT
+          source.nat.ip: "{{kv_event.message.tran_src_ip}}"
+          source.nat.port: "{{kv_event.message.tran_src_port}}"
+          destination.nat.ip: "{{kv_event.message.tran_dst_ip}}"
+          destination.nat.port: "{{kv_event.message.tran_dst_port}}"
+          
+          # User
+          user.name: "{{kv_event.message.user or kv_event.message.user_name}}"
+          user.group.name: "{{kv_event.message.group or kv_event.message.user_group}}"
+
+      - translate:
+        dictionary:
+          Allowed: "allow"
+          Denied: "deny"
+          Dropped: "deny"
+          Drop: "deny"
+        mapping:
+          sophos.log_subtype: action.name
+
+      - set:
+          event.kind: "event"
+          event.category: "network"
