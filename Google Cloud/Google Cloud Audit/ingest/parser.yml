@@ -1,0 +1,82 @@
+name: google_cloud_audit
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: google_cloud_audit
+
+stages:
+  google_cloud_audit:
+    actions:
+      - set:
+          '@timestamp': "{{json_event.message.timestamp}}"
+          google_cloud_audit.receiveTimestamp: "{{json_event.message.receiveTimestamp}}"
+          google_cloud_audit.insertId: "{{json_event.message.insertId}}"
+          google_cloud_audit.logName: "{{json_event.message.logName}}"
+          google_cloud_audit.severity: "{{json_event.message.severity}}"
+
+      # log entry's protoPayload field contains an AuditLog object that stores the audit logging data.
+      - set:
+          user.email: "{{json_event.message.protoPayload.authenticationInfo.principalEmail}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null}}"
+
+      - set:
+          google_cloud_audit.resource.type: "{{json_event.message.resource.type}}"
+        filter: "{{json_event.message.resource != null}}"
+
+      - set:
+          google_cloud_audit.resource.labels.method: "{{json_event.message.resource.labels.method}}"
+          google_cloud_audit.resource.labels.project_id: "{{json_event.message.resource.labels.project_id}}"
+          google_cloud_audit.resource.labels.service: "{{json_event.message.resource.labels.service}}"
+          google_cloud_audit.resource.labels.topic_id: "{{json_event.message.resource.labels.topic_id}}"
+        filter: "{{json_event.message.resource != null and json_event.message.resource.labels != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.metadata.type: "{{json_event.message.protoPayload.metadata.get('@type')}}"
+          google_cloud_audit.protoPayload.metadata.event: "{{json_event.message.protoPayload.metadata.event}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.metadata != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.metadata.activityId.timeUsec: "{{json_event.message.protoPayload.metadata.activityId.timeUsec}}"
+          google_cloud_audit.protoPayload.metadata.activityId.uniqQualifier: "{{json_event.message.protoPayload.metadata.activityId.uniqQualifier}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.metadata != null and json_event.message.protoPayload.metadata.activityId != null}}"
+
+      - set:
+          user.email: '{% for entry in json_event.message.protoPayload.metadata.event %}{% if entry.parameter | length > 0 %}{% for parameter in entry.parameter %}{% if parameter.name == "affected_email_address" and parameter.value | length > 0 %}{{ parameter.value }}{% endif %}{% endfor %}{% endif %}{% endfor %}'
+        filter: "{{json_event.message.protoPayload != null and (json_event.message.protoPayload.authenticationInfo == null or json_event.message.protoPayload.authenticationInfo.principalEmail == null) and json_event.message.protoPayload.metadata != null and json_event.message.protoPayload.metadata.activityId != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.request.type: "{{json_event.message.protoPayload.request.get('@type')}}"
+          google_cloud_audit.protoPayload.request.resource: "{{json_event.message.protoPayload.request.resource}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.request != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.request.policy.bindings: "{{json_event.message.protoPayload.request.policy.bindings}}"
+          google_cloud_audit.protoPayload.request.policy.etag: "{{json_event.message.protoPayload.request.policy.etag}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.request != null and json_event.message.protoPayload.request.policy != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.response.type: "{{json_event.message.protoPayload.response.get('@type')}}"
+          google_cloud_audit.protoPayload.response.bindings: "{{json_event.message.protoPayload.response.bindings}}"
+          google_cloud_audit.protoPayload.response.etag: "{{json_event.message.protoPayload.response.etag}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.response != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.type: "{{json_event.message.protoPayload.get('@type')}}"
+          google_cloud_audit.protoPayload.authorizationInfo: "{{json_event.message.protoPayload.authorizationInfo}}"
+          google_cloud_audit.protoPayload.methodName: "{{json_event.message.protoPayload.methodName}}"
+          google_cloud_audit.protoPayload.resourceName: "{{json_event.message.protoPayload.resourceName}}"
+          service.name: "{{json_event.message.protoPayload.serviceName}}"
+        filter: "{{json_event.message.protoPayload != null}}"
+
+
+      - set:
+          source.ip: "{{json_event.message.protoPayload.requestMetadata.callerIp}}"
+          user_agent.original: "{{json_event.message.protoPayload.requestMetadata.callerSuppliedUserAgent}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.requestMetadata != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.requestMetadata.requestAttributes.time: "{{json_event.message.protoPayload.requestMetadata.requestAttributes.time}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.requestMetadata != null and json_event.message.protoPayload.requestMetadata.requestAttributes != null}}"
