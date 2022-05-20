@@ -1,0 +1,77 @@
+name: sophos-edr
+pipeline:
+-   external:
+        name: json.parse-json
+        properties:
+            input_field: '{{original.message}}'
+            output_field: message
+    name: parse_json
+-   external:
+        name: grok.match
+        properties:
+            input_field: '{{parse_json.message.name}}'
+            output_field: message
+            pattern: 'Access was blocked to "%{URL:url}" because of "%{WORD:rulename}".'
+            custom_patterns:
+              URL: '(?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})'
+    filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
+    name: parse_webfiltering
+-   name: set_ecs_fields
+-   name: set_sophos_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+    - set:
+        '@timestamp': '{{parse_json.message.rt}}'
+    - set:
+        event.end: '{{parse_json.message.end}}'
+        event.kind: 'event'
+        event.reason: '{{parse_json.message.name}}'
+        event.code: '{{parse_json.message.type}}'
+        event.type: ['info']
+    - set:
+        user.id: '{{parse_json.message.duid}}'
+        host.hostname: '{{parse_json.message.dhost}}'
+        observer.ip: '{{parse_json.message.source_info.ip}}'
+    - set:
+        source.user.name: '{{parse_json.message.suser.split("\\") | last}}'
+        source.user.domain: '{{parse_json.message.suser.split("\\")[0:-1] | join("\\")}}'
+      filter: '{{parse_json.message.suser != null and parse_json.message.suser != "n/a"}}'
+    - set:
+        rule.name: '{{parse_webfiltering.message.rulename}}'
+        url.original: '{{parse_webfiltering.message.url}}'
+      filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
+    - set:
+        log.level: '{{parse_json.message.severity}}'
+    - set:
+        event.category: ['file']
+        event.type: ['info']
+    - translate:
+      dictionary:
+        'Event::Endpoint::Registered': ['host']
+        'Event::Endpoint::SavScanComplete': ['file', 'process']
+      mapping:
+        event.code: event.category
+    - translate:
+      dictionary:
+        'Event::Endpoint::UserAutoCreated': ['creation']
+        'Event::Endpoint::WebFilteringBlocked': ['denied']
+      mapping:
+        event.code: event.type
+    - set:
+        event.category: ['file', 'process']
+      filter: '{{parse_json.message.type.startswith("Event::Endpoint::Enc") or parse_json.message.type.startswith("Event::Endpoint::Denc") or parse_json.message.type.startswith("Event::Endpoint::Update")}}'
+    - set:
+        event.category: ['iam']
+      filter: '{{parse_json.message.type.startswith("Event::Endpoint::User")}}'
+    - set:
+        event.category: ['network']
+      filter: '{{parse_json.message.type.startswith("Event::Endpoint::Web")}}'
+  set_sophos_fields:
+    actions:
+    - set:
+        sophos.endpoint.type: '{{parse_json.message.endpoint_type}}'
+        sophos.endpoint.id: '{{parse_json.message.endpoint_id}}'
+        sophos.customer.id: '{{parse_json.message.customer_id}}'
+        sophos.event.group: '{{parse_json.message.group}}'
