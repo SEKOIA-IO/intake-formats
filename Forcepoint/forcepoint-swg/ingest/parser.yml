@@ -1,0 +1,524 @@
+name: forcepoint-swg
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+    filter: '{{original.message.startswith("CEF")}}'
+  - name: parsed_event
+    external:
+      properties:
+        input_field: 'CEF:{{original.message}}'
+      name: cef.parse-cef
+    filter: '{{original.message.startswith("CEF") == False}}'
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.rt | float / 1000}}'
+        output_field: datetime
+        format: timestamp
+    filter: '{{parsed_event.message.rt != null}}'
+  - name: set_ecs_fields
+  - name: set_forcepoint_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_timestamp.datetime}}'
+        filter: '{{parsed_event.message.rt != null}}' 
+      - set:
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: 'Secure Web Gateway'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+      - set:
+          event.action: '{{parsed_event.message.Name}}'
+          event.severity: '{{parsed_event.message.Severity}}'
+          event.code: '{{parsed_event.message.DispositionCode}}'
+          event.category: ['network']
+          event.kind: 'event'
+          event.duration: '{{parsed_event.ScanDuration}}'
+      - set:
+          host.ip: '{{parsed_event.message.dvc}}'
+      - set:
+          network.protocol: '{{parsed_event.message.app}}'
+      - set:
+          destination.ip: '{{parsed_event.message.dst}}'
+          destination.port: '{{parsed_event.message.dpt}}'
+          destination.domain: '{{parsed_event.message.dhost}}'
+      - set:
+          destination.nat.port: '{{parsed_event.message.destinationTranslatedPort}}'
+        filter: '{{parsed_event.message.destinationTranslatedPort != "0"}}' 
+      - set:
+          source.ip: '{{parsed_event.message.src}}'
+          source.port: '{{parsed_event.message.spt}}'
+      - set:
+          rule.id: '{{parsed_event.message.DeviceEventClassID}}'
+      - set:
+          url.original: '{{parsed_event.message.request}}'
+      - set:
+          http.request.method: '{{parsed_event.message.requestMethod}}'
+      - set:
+          http.request.bytes: '{{parsed_event.message.out}}'
+        filter: '{{parsed_event.message.out != "0"}}' 
+      - set:
+          http.request.mime_type: '{{parsed_event.message.ContentType}}'
+        filter: '{{parsed_event.message.ContentType != "-"}}' 
+      - set:
+          http.response.bytes: '{{parsed_event.message.in}}'
+        filter: '{{parsed_event.message.in != "0"}}' 
+      - set:
+          user.name: '{{parsed_event.message.suser}}'
+        filter: '{{parsed_event.message.suser != "-"}}' 
+      - set:
+          user.id: '{{parsed_event.message.loginID}}'
+        filter: '{{parsed_event.message.loginID != "-"}}' 
+      - set:
+          user_agent.original: '{{parsed_event.message.requestClientApplication}}'
+        filter: '{{parsed_event.message.requestClientApplication != "-"}}' 
+      - translate:
+        dictionary:
+          '1024': ['access', 'allowed']
+          '1025': ['access', 'denied']
+          '1026': ['access', 'allowed']
+          '1027': ['access', 'denied']
+          '1028': ['access', 'allowed']
+          '1029': ['access', 'denied']
+          '1030': ['access', 'allowed']
+          '1031': ['access', 'denied']
+          '1032': ['access', 'denied']
+          '1033': ['access', 'denied']
+          '1034': ['access', 'allowed']
+          '1035': ['access', 'denied']
+          '1037': ['access', 'allowed']
+          '1040': ['access', 'allowed']
+          '1041': ['access', 'denied']
+          '1042': ['access', 'allowed']
+          '1043': ['access', 'allowed']
+          '1044': ['access', 'allowed']
+          '1045': ['access', 'denied']
+          '1046': ['access', 'denied']
+          '1047': ['access', 'denied']
+          '1048': ['access', 'allowed']
+          '1049': ['access', 'denied']
+          '1050': ['access', 'allowed']
+          '1051': ['access', 'allowed']
+          '1052': ['access', 'allowed']
+          '1053': ['access', 'denied']
+          '1054': ['access', 'denied']
+          '1055': ['access', 'denied']
+          '1056': ['access', 'allowed']
+          '1057': ['access', 'denied']
+          '1058': ['access', 'denied']
+          '1059': ['access', 'denied']
+          '1060': ['access', 'allowed']
+          '1061': ['access', 'denied']
+          '1062': ['access', 'allowed']
+          '1063': ['access', 'allowed']
+          '1064': ['access', 'denied']
+          '1065': ['access', 'allowed']
+          '1066': ['access', 'denied']
+          '1067': ['access', 'allowed']
+          '1068': ['access', 'denied']
+          '1069': ['access', 'allowed']
+          '1281': ['access', 'denied']
+          '1282': ['access', 'allowed']
+          '1293': ['access', 'allowed']
+          '1296': ['access', 'allowed']
+          '1299': ['access', 'allowed']
+          '1301': ['access', 'denied']
+          '1302': ['access', 'denied']
+          '1303': ['access', 'denied']
+          '1304': ['access', 'allowed']
+          '1310': ['access', 'denied']
+          '1311': ['access', 'denied']
+          '1313': ['access', 'denied']
+          '1314': ['access', 'denied']
+          '1315': ['access', 'denied']
+          '1316': ['access', 'allowed']
+          '1317': ['access', 'denied']
+          '1537': ['access', 'allowed']
+          '1538': ['access', 'allowed']
+          '1539': ['access', 'allowed']
+          '1553': ['access', 'denied']
+          '1554': ['access', 'denied']
+          '1555': ['access', 'denied']
+          '1556': ['access', 'allowed']
+          '1557': ['access', 'denied']
+        mapping:
+          event.code: event.type
+      - translate:
+        dictionary:
+          '1024': 'Category permitted, not set'
+          '1025': 'Category blocked'
+          '1026': 'Category permitted'
+          '1027': 'Custom URL, category blocked'
+          '1028': 'Custom URL, category permitted'
+          '1029': 'Always blocked'
+          '1030': 'Never blocked'
+          '1031': 'Blocked by limited access filter'
+          '1032': 'Blocked by keyword'
+          '1033': 'Blocked \u2013 subscription level exceeded'
+          '1034': 'Permitted \u2013 subscription level exceeded'
+          '1035': 'Password override page'
+          '1037': 'Permitted by password override'
+          '1040': 'Permitted with Confirm option'
+          '1041': 'Blocked \u2013 authentication required'
+          '1042': 'Permitted \u2013 category not purchased'
+          '1043': 'Permitted by quota'
+          '1044': 'Permitted with keyword match'
+          '1045': 'Blocked due to network bandwidth'
+          '1046': 'Blocked due to protocol bandwidth'
+          '1047': 'File type blocked'
+          '1048': 'File type permitted'
+          '1049': 'Protocol blocked'
+          '1050': 'Protocol permitted'
+          '1051': 'Protocol permitted, not set'
+          '1052': 'Permitted by limited access filter'
+          '1053': 'Redirected by search filtering'
+          '1054': 'Blocked with Confirm option'
+          '1055': 'Blocked by quota'
+          '1056': 'Permitted \u2013 protocol not purchased'
+          '1057': 'Blocked by security override'
+          '1058': 'Blocked by Hosted Anti-Virus Scanning - Inbound'
+          '1059': 'Blocked by Hosted Anti-Virus Scanning - Outbound'
+          '1060': 'Permitted by Policy Exception'
+          '1061': 'Blocked by Policy Exception'
+          '1062': 'Permitted by Tunneled Protocol Quota'
+          '1063': 'Permitted by Tunneled Protocol Continue'
+          '1064': 'Blocked by Web DLP'
+          '1065': 'Permitted by Referer'
+          '1066': 'File Blocked: Over Max Scan Size'
+          '1067': 'Cloud app permitted'
+          '1068': 'Cloud app blocked'
+          '1069': 'Protected cloud app request forwarded'
+          '1281': 'Category blocked real time'
+          '1282': 'Category permitted real time'
+          '1293': 'Permitted by password override real time'
+          '1296': 'Permitted with confirm option real time'
+          '1299': 'Permitted by quota real time'
+          '1301': 'Blocked due to network bandwidth real time'
+          '1302': 'Blocked due to protocol bandwidth real time'
+          '1303': 'File type blocked real time'
+          '1304': 'File type permitted real time'
+          '1310': 'Blocked with confirm option real time'
+          '1311': 'Blocked by quota real time'
+          '1313': 'Blocked by security override real time'
+          '1314': 'Blocked Inbound: Cloud Antivirus'
+          '1315': 'Blocked Outbound: Cloud Antivirus'
+          '1316': 'Permitted by Exception: Real Time'
+          '1317': 'Blocked by Exception: Real Time'
+          '1537': 'Permitted by scanning link analysis'
+          '1538': 'Web 2.0 request permitted'
+          '1539': 'Permitted after Web 2.0 scanning and link analysis'
+          '1553': 'Blocked by scanning link analysis'
+          '1554': 'Web 2.0 request blocked'
+          '1555': 'Blocked after Web 2.0 scanning and link analysis'
+          '1556': 'Zipbomb permitted Real Time'
+          '1557': 'Zipbomb blocked Real Time'
+        mapping:
+          event.code: event.reason
+      - translate:
+        dictionary:
+          "1": "Adult Material"
+          "2": "Business and Economy"
+          "3": "Education"
+          "4": "Government"
+          "5": "News and Media"
+          "6": "Religion"
+          "7": "Society and Lifestyles"
+          "8": "Special Events"
+          "9": "Information Technology"
+          "10": "Abortion"
+          "11": "Advocacy Groups"
+          "12": "Entertainment"
+          "13": "Gambling"
+          "14": "Games"
+          "15": "Illegal or Questionable"
+          "16": "Job Search"
+          "17": "Shopping"
+          "18": "Sports"
+          "19": "Tasteless"
+          "20": "Travel"
+          "21": "Vehicles"
+          "22": "Violence"
+          "23": "Weapons"
+          "24": "Drugs"
+          "25": "Militancy and Extremist"
+          "26": "Intolerance"
+          "27": "Health"
+          "28": "Information technology Website"
+          "29": "Productivity"
+          "64": "User-Defined"
+          "65": "Adult Material"
+          "66": "Adult Material"
+          "67": "Adult Material"
+          "68": "Business and Economy"
+          "69": "Education"
+          "70": "Entertainment"
+          "72": "Government"
+          "73": "Government"
+          "74": "Internet Communication"
+          "75": "Information Technology"
+          "76": "Information Technology"
+          "78": "Information Technology"
+          "79": "Internet Communication"
+          "80": "Information Technology"
+          "81": "News and Media"
+          "82": "Religion"
+          "83": "Religion"
+          "84": "Society and Lifestyles"
+          "85": "Society and Lifestyles"
+          "86": "Society and Lifestyles"
+          "87": "Society and Lifestyles"
+          "88": "Drugs"
+          "89": "Drugs"
+          "90": "Drugs"
+          "91": "Internet Communication"
+          "92": "Abortion"
+          "93": "Abortion"
+          "94": "Adult Material"
+          "95": "Adult Material"
+          "96": "Productivity"
+          "97": "Education"
+          "98": "Productivity"
+          "99": "Productivity"
+          "100": "Productivity"
+          "101": "Shopping"
+          "102": "Shopping"
+          "103": "Society and Lifestyles"
+          "107": "Sport"
+          "108": "Bandwidth"
+          "109": "Bandwidth"
+          "110": "Productivity"
+          "111": "Drugs"
+          "112": "Productivity"
+          "113": "Bandwidth"
+          "114": "Bandwidth"
+          "115": "Bandwidth"
+          "116": "Bandwidth"
+          "117": "Society and Lifestyles"
+          "118": "Education"
+          "121": "Education"
+          "122": "Social Organizations"
+          "123": "Social Organizations"
+          "124": "Social Organizations"
+          "125": "Social Organizations"
+          "126": "Security"
+          "128": "Security"
+          "138": "Information Technology"
+          "146": "Miscellaneous"
+          "147": "Miscellaneous"
+          "148": "Miscellaneous"
+          "149": "Miscellaneous"
+          "150": "Miscellaneous"
+          "151": "Miscellaneous"
+          "152": "Miscellaneous"
+          "153": "Miscellaneous"
+          "154": "Security"
+          "156": "Miscellaneous"
+          "164": "Security"
+          "166": "Security"
+          "167": "Security"
+          "172": "Security"
+          "191": "Extended Protection"
+          "192": "Extended Protection"
+          "193": "Extended Protection"
+          "194": "Extended Protection"
+          "195": "Internet Communication"
+          "196": "Internet Communication"
+          "200": "Information Technology"
+          "201": "Information Technology"
+          "202": "Parked Domain"
+          "203": "Business and Economy"
+          "204": "Society and Lifestyles"
+          "205": "Security"
+          "206": "Security"
+          "207": "Security"
+          "208": "Bandwidth"
+          "209": "Bandwidth"
+          "210": "Bandwidth"
+          "211": "Bandwidth"
+          "212": "Extended Protection"
+          "213": "Security"
+          "214": "Security"
+          "215": "Information Technology"
+          "216": "Security"
+          "217": "Security"
+          "218": "Security"
+          "219": "Security"
+          "220": "Security"
+          "221": "Extended Protection"
+          "222": "Collaboration - Office"
+          "223": "Collaboration - Office"
+          "224": "Collaboration - Office"
+          "225": "Collaboration - Office"
+          "226": "Collaboration - Office"
+          "227": "Information Technology"
+          "228": "Information Technology"
+          "1500": "Social Web - Facebook"
+          "1501": "Social Web - LinkedIn"
+          "1502": "Social Web - LinkedIn"
+          "1503": "Social Web - LinkedIn"
+          "1504": "Social Web - LinkedIn"
+          "1505": "Social Web - Facebook"
+          "1506": "Social Web - Facebook"
+          "1507": "Social Web - Facebook"
+          "1508": "Social Web - Facebook"
+          "1509": "Social Web - Facebook"
+          "1510": "Social Web - Facebook"
+          "1511": "Social Web - YouTube"
+          "1512": "Social Web - YouTube"
+          "1513": "Social Web - Facebook"
+          "1514": "Social Web - Facebook"
+          "1516": "Social Web - Facebook"
+          "1517": "Social Web - Facebook"
+          "1518": "Social Web - Facebook"
+          "1519": "Social Web - Twitter"
+          "1520": "Social Web - Twitter"
+          "1521": "Social Web - Twitter"
+          "1523": "Social Web - YouTube"
+          "1524": "Social Web - Facebook"
+          "1525": "Social Web - YouTube"
+          "1526": "Social Web - Twitter"
+          "1527": "Social Web - LinkedIn"
+          "1528": "Social Web - Various"
+          "1529": "Social Web - Various"
+          "1530": "Social Web - Various"
+          "1531": "Social Web - Various"
+          "1801": "Non-HTTP"
+        mapping:
+          rule.id: rule.ruleset
+      - translate:
+        dictionary:
+          "65": "Nudity"
+          "66": "Adult Content"
+          "67": "Sex"
+          "68": "Financial Data and Services"
+          "69": "Cultural Institutions"
+          "70": "Media File Download"
+          "72": "Military"
+          "73": "Political Organizations"
+          "74": "General Email"
+          "75": "Proxy Avoidance"
+          "76": "Search Engines and Portals"
+          "78": "Web Hosting"
+          "79": "Web Chat"
+          "80": "Hacking"
+          "81": "Alternative Journals"
+          "82": "Non-Traditional Religions"
+          "83": "Traditional Religions"
+          "84": "Restaurants and Dining"
+          "85": "Gay or Lesbian or Bisexual Interest"
+          "86": "Personals and Dating"
+          "87": "Alcohol and Tobacco"
+          "88": "Prescribed Medications"
+          "89": "Nutrition"
+          "90": "Abused Drugs"
+          "92": "Pro-Choice"
+          "93": "Pro-Life"
+          "94": "Sex Education"
+          "95": "Lingerie and Swimsuit"
+          "96": "Online Brokerage and Trading"
+          "97": "Educational Institutions"
+          "98": "Instant Messaging"
+          "99": "Application and Software Download"
+          "100": "Pay-to-Surf"
+          "101": "Internet Auctions"
+          "102": "Real Estate"
+          "103": "Hobbies"
+          "107": "Sport Hunting and Gun Clubs"
+          "108": "Internet Telephony"
+          "109": "Streaming Media"
+          "111": "Marijuana"
+          "112": "Message Boards and Forums"
+          "113": "Personal Network Storage and Backup"
+          "114": "Internet Radio and TV"
+          "115": "Peer-to-Peer File Sharing"
+          "117": "Social Networking"
+          "118": "Educational Materials"
+          "121": "Reference Materials"
+          "123": "Service and Philanthropic Organizations"
+          "124": "Social and Affiliation Organizations"
+          "125": "Professional and Worker Organizations"
+          "128": "Malicious Websites"
+          "138": "Computer Security"
+          "147": "Web Infrastructure"
+          "148": "Web Images"
+          "149": "Private IP Addresses"
+          "150": "Content Delivery Networks"
+          "151": "Dynamic Content"
+          "152": "Network Errors"
+          "153": "Uncategorized"
+          "154": "Spyware"
+          "156": "File Download Servers"
+          "164": "Phishing and Other Frauds"
+          "166": "Keyloggers"
+          "167": "Potentially Unwanted Software"
+          "172": "Bot Networks"
+          "192": "Elevated Exposure"
+          "193": "Emerging Exploits"
+          "194": "Suspicious Content"
+          "195": "Organizational Email"
+          "196": "Text and Media Messaging"
+          "200": "Web and Email Spam"
+          "201": "Web Collaboration"
+          "203": "Hosted Business Applications"
+          "204": "Blogs and Personal Sites"
+          "205": "Malicious Embedded Link"
+          "206": "Malicious Embedded iFrame"
+          "207": "Suspicious Embedded Link"
+          "208": "Surveillance"
+          "209": "Educational Video"
+          "210": "Entertainment Video"
+          "211": "Viral Video"
+          "212": "Dynamic DNS"
+          "213": "Potentially Exploited Documents"
+          "214": "Mobile Malware"
+          "215": "Unauthorized Mobile Marketplaces"
+          "216": "Custom-Encrypted Uploads"
+          "217": "Files Containing Passwords"
+          "218": "Advanced Malware Command and Control"
+          "219": "Advanced Malware Payloads"
+          "220": "Compromised Websites"
+          "221": "Newly Registered Websites"
+          "223": "Office - Mail"
+          "224": "Office - Drive"
+          "225": "Office - Documents"
+          "226": "Office - Apps"
+          "227": "Web Analytics"
+          "228": "Web and Email Marketing"
+          "1501": "LinkedIn Updates"
+          "1502": "LinkedIn Mail"
+          "1503": "LinkedIn Connections"
+          "1504": "LinkedIn Jobs"
+          "1505": "Facebook Posting"
+          "1506": "Facebook Commenting"
+          "1507": "Facebook Friends"
+          "1508": "Facebook Photo Upload"
+          "1509": "Facebook Mail"
+          "1510": "Facebook Events"
+          "1511": "YouTube Commenting"
+          "1512": "YouTube Video Upload"
+          "1513": "Facebook Apps"
+          "1514": "Facebook Chat"
+          "1516": "Facebook Questions"
+          "1517": "Facebook Video Upload"
+          "1518": "Facebook Groups"
+          "1519": "Twitter Posting"
+          "1520": "Twitter Mail"
+          "1521": "Twitter Follow"
+          "1523": "YouTube Sharing"
+          "1524": "Facebook Games"
+          "1529": "Classifieds Posting"
+          "1530": "Blog Posting"
+          "1531": "Blog Commenting"
+        mapping:
+          rule.id: rule.category
+  set_forcepoint_fields:
+    actions:
+      - set:
+          forcepoint.webgateway.policies: '{{parsed_event.message.Policy.split(",")}}'
+          forcepoint.webgateway.category: '{{parsed_event.message.DynCat}}'
+          forcepoint.webgateway.log.source: '{{parsed_event.message.logRecordSource}}'
+          forcepoint.cef.version: '{{parsed_event.message.CEFVersion}}'
