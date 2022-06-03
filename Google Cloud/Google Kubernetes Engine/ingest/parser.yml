@@ -1,0 +1,129 @@
+name: google_kubernetes_engine
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: parse_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{ json_event.message.jsonPayload.MESSAGE }}'
+        value_sep: '='
+        item_sep: \s
+    filter: "{{json_event.message.jsonPayload.MESSAGE != null}}"
+  
+  - name: google_kubernetes_engine
+  - name: parse_jsonPayload
+  - name: parse_involvedObject
+  - name: parse_metadata
+  - name: parse_resource_labels
+  - name: parse_resource
+  - name: parse_source
+  - name: parse_kv_data
+
+stages:
+
+  google_kubernetes_engine:
+    actions:
+      - set:
+          '@timestamp': "{{json_event.message.timestamp}}"
+          event.kind: "event"
+          event.category: "process"
+          event.type: ['change']
+          orchestrator.type: 'kubernetes'
+          google_kubernetes_engine.insertId: "{{json_event.message.insertId}}"
+          google_kubernetes_engine.logName: "{{json_event.message.logName}}"
+          google_kubernetes_engine.receiveTimestamp: "{{json_event.message.receiveTimestamp}}"
+          google_kubernetes_engine.severity: "{{json_event.message.severity}}"
+
+  parse_kv_data:
+    actions:
+      - set:
+          event.reason: "{{parse_kv.message.msg }}"
+    filter: "{{json_event.message.jsonPayload.SYSLOG_IDENTIFIER != 'containerd'}}"
+
+  parse_jsonPayload:
+    actions:
+      - set:
+          event.reason: "{{json_event.message.jsonPayload.message}}"
+          google_kubernetes_engine.jsonPayload.apiVersion: "{{json_event.message.jsonPayload.apiVersion}}"
+          google_kubernetes_engine.jsonPayload.eventTime: "{{json_event.message.jsonPayload.eventTime}}"
+          google_kubernetes_engine.jsonPayload.kind: "{{json_event.message.jsonPayload.kind}}"
+          google_kubernetes_engine.jsonPayload.reason: "{{json_event.message.jsonPayload.reason}}"
+          google_kubernetes_engine.jsonPayload.reportingComponent: "{{json_event.message.jsonPayload.reportingComponent}}"
+          google_kubernetes_engine.jsonPayload.reportingInstance: "{{json_event.message.jsonPayload.reportingInstance}}"
+          google_kubernetes_engine.jsonPayload.type: "{{json_event.message.jsonPayload.type}}"
+          google_kubernetes_engine.jsonPayload.MESSAGE: "{{json_event.message.jsonPayload.MESSAGE}}"
+          log.syslog.priority: "{{json_event.message.jsonPayload.PRIORITY}}"
+          log.syslog.facility.code: "{{json_event.message.jsonPayload.SYSLOG_FACILITY}}"
+          # Should be replaced by log.syslog.msgid when available
+          google_kubernetes_engine.jsonPayload.SYSLOG_IDENTIFIER: "{{json_event.message.jsonPayload.SYSLOG_IDENTIFIER}}"
+          # Should be replaced by host.boot.id when available
+          google_kubernetes_engine.jsonPayload._BOOT_ID: "{{json_event.message.jsonPayload._BOOT_ID}}"
+          google_kubernetes_engine.jsonPayload._CAP_EFFECTIVE: "{{json_event.message.jsonPayload._CAP_EFFECTIVE}}"
+          process.command_line: "{{json_event.message.jsonPayload._CMDLINE}}"
+          google_kubernetes_engine.jsonPayload._COMM: "{{json_event.message.jsonPayload._COMM}}"
+          process.executable: "{{json_event.message.jsonPayload._EXE}}"
+          process.group.id: "{{json_event.message.jsonPayload._GID}}"
+          host.name: "{{json_event.message.jsonPayload._HOSTNAME}}"
+          host.id: "{{json_event.message.jsonPayload._MACHINE_ID}}"
+          process.pid: "{{json_event.message.jsonPayload._PID}}"
+          google_kubernetes_engine.jsonPayload._STREAM_ID: "{{json_event.message.jsonPayload._STREAM_ID}}"
+          google_kubernetes_engine.jsonPayload._SYSTEMD_CGROUP: "{{json_event.message.jsonPayload._SYSTEMD_CGROUP}}"
+          google_kubernetes_engine.jsonPayload._SYSTEMD_INVOCATION_ID: "{{json_event.message.jsonPayload._SYSTEMD_INVOCATION_ID}}"
+          google_kubernetes_engine.jsonPayload._SYSTEMD_SLICE: "{{json_event.message.jsonPayload._SYSTEMD_SLICE}}"
+          google_kubernetes_engine.jsonPayload._SYSTEMD_UNIT: "{{json_event.message.jsonPayload._SYSTEMD_UNIT}}"
+          google_kubernetes_engine.jsonPayload._TRANSPORT: "{{json_event.message.jsonPayload._TRANSPORT}}"
+          google_kubernetes_engine.jsonPayload._UID: "{{json_event.message.jsonPayload._UID}}"
+    filter: "{{json_event.message.jsonPayload != null}}"
+
+  parse_involvedObject:
+    actions:
+      - set:
+          #
+          orchestrator.api_version: "{{json_event.message.jsonPayload.involvedObject.apiVersion}}"
+          google_kubernetes_engine.jsonPayload.involvedObject.fieldPath: "{{json_event.message.jsonPayload.involvedObject.fieldPath}}"
+          google_kubernetes_engine.jsonPayload.involvedObject.kind: "{{json_event.message.jsonPayload.involvedObject.kind}}"
+          google_kubernetes_engine.jsonPayload.involvedObject.name: "{{json_event.message.jsonPayload.involvedObject.name}}"
+          orchestrator.namespace: "{{json_event.message.jsonPayload.involvedObject.namespace}}"
+          google_kubernetes_engine.jsonPayload.involvedObject.resourceVersion: "{{json_event.message.jsonPayload.involvedObject.resourceVersion}}"
+          google_kubernetes_engine.jsonPayload.involvedObject.uid: "{{json_event.message.jsonPayload.involvedObject.uid}}"
+    filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.involvedObject != null}}"
+
+  parse_metadata:
+    actions:
+      - set:
+          google_kubernetes_engine.jsonPayload.metadata.creationTimestamp: "{{json_event.message.jsonPayload.metadata.creationTimestamp}}"
+          google_kubernetes_engine.jsonPayload.metadata.managedFields: "{{json_event.message.jsonPayload.metadata.managedFields}}"
+          host.name: "{{json_event.message.jsonPayload.metadata.name}}"
+          orchestrator.namespace: "{{json_event.message.jsonPayload.metadata.namespace}}"
+          google_kubernetes_engine.jsonPayload.metadata.resourceVersion: "{{json_event.message.jsonPayload.metadata.resourceVersion}}"
+          google_kubernetes_engine.jsonPayload.metadata.uid: "{{json_event.message.jsonPayload.metadata.uid}}"
+    filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.metadata!= null}}"
+
+
+  parse_resource:
+    actions:
+      - set:
+          orchestrator.resource.type: "{{json_event.message.resource.type}}"
+    filter: "{{json_event.message.jsonPayload != null and json_event.message.resource != null}}"
+
+  parse_resource_labels:
+    actions:
+      - set:
+          orchestrator.cluster.name: "{{json_event.message.resource.labels.cluster_name}}"
+          server.geo.name: "{{json_event.message.resource.labels.location}}"
+          host.name: "{{json_event.message.resource.labels.node_name}}"
+          cloud.project.id: "{{json_event.message.resource.labels.project_id}}"
+          orchestrator.namespace: "{{json_event.message.resource.labels.namespace_name}}"
+          orchestrator.resource.name: "{{json_event.message.resource.labels.pod_name}}"
+    filter: "{{json_event.message.jsonPayload != null and json_event.message.resource != null and json_event.message.resource.labels != null}}"
+
+  parse_source:
+    actions:
+      - set:
+          google_kubernetes_engine.jsonPayload.source.component: "{{json_event.message.jsonPayload.source.component}}"
+          google_kubernetes_engine.jsonPayload.source.host: "{{json_event.message.jsonPayload.source.host}}"
+    filter: "{{json_event.message.jsonPayload != null and google_kubernetes_engine.jsonPayload.source != null}}"
