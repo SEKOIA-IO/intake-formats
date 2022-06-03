@@ -1,0 +1,92 @@
+name: google_vpc_flow_logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: parse_jsonPayload
+  - name: parse_labels
+  - name: google_vpc_flow_logs
+  - name: parse_connection
+  - name: parse_src_location
+  - name: parse_dest_pvc
+  - name: parse_dest_instance
+  - name: dest_gke_details
+
+stages:
+  parse_jsonPayload:
+    actions:
+      - set:
+          network.bytes: "{{json_event.message.jsonPayload.bytes_sent}}"
+          google_vpc_flow_logs.jsonPayload.end_time: "{{json_event.message.jsonPayload.end_time}}"
+          network.packets: "{{json_event.message.jsonPayload.packets_sent}}"
+          google_vpc_flow_logs.jsonPayload.reporter: "{{json_event.message.jsonPayload.reporter}}"
+          event.start: "{{json_event.message.jsonPayload.start_time}}"
+        filter: "{{json_event.message.jsonPayload != null}}"
+
+  parse_src_location:
+    actions:
+      - set:
+          source.as.number: "{{json_event.message.jsonPayload.src_location.asn}}"
+          source.geo.continent_name: "{{json_event.message.jsonPayload.src_location.continent}}"
+          source.geo.country_name: "{{json_event.message.jsonPayload.src_location.country}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.src_location != null}}"
+
+  parse_dest_pvc:
+    actions:
+      - set:
+          cloud.project.id: "{{json_event.message.jsonPayload.dest_vpc.project_id}}"
+          network.name: "{{json_event.message.jsonPayload.dest_vpc.subnetwork_name}}"
+          google_vpc_flow_logs.jsonPayload.dest_vpc.vpc_name: "{{json_event.message.jsonPayload.dest_vpc.vpc_name}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.dest_vpc != null}}"
+
+  parse_dest_instance:
+    actions:
+      - set:
+          cloud.project.id: "{{json_event.message.jsonPayload.dest_instance.project_id}}"
+          cloud.region: "{{json_event.message.jsonPayload.dest_instance.region}}"
+          host.name: "{{json_event.message.jsonPayload.dest_instance.vm_name}}"
+          cloud.availability_zone: "{{json_event.message.jsonPayload.dest_instance.zone}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.dest_instance != null}}"
+
+  parse_labels:
+    actions:
+      - set:
+          server.geo.name: "{{json_event.message.resource.labels.location}}"
+          cloud.project.id: "{{json_event.message.resource.labels.project_id}}"
+          google_vpc_flow_logs.resource.labels.subnetwork_id: "{{json_event.message.resource.labels.subnetwork_id}}"
+          google_vpc_flow_logs.resource.labels.subnetwork_name: "{{json_event.message.resource.labels.subnetwork_name}}"
+        filter: "{{json_event.message.resource != null and json_event.message.resource.labels != null}}"
+
+  parse_connection:
+    actions:
+      - set:
+          destination.ip: "{{json_event.message.jsonPayload.connection.dest_ip}}"
+          destination.port: "{{json_event.message.jsonPayload.connection.dest_port}}"
+          network.iana_number: "{{json_event.message.jsonPayload.connection.protocol|string}}"
+          source.ip: "{{json_event.message.jsonPayload.connection.src_ip}}"
+          source.port: "{{json_event.message.jsonPayload.connection.src_port}}"
+          google_vpc_flow_logs.jsonPayload.connection.protocol: "{{json_event.message.jsonPayload.connection.protocol}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.connection != null}}"
+
+  dest_gke_details:
+    actions:
+      - set:
+          google_vpc_flow_logs.jsonPayload.dest_gke_details.cluster.cluster_location: "{{json_event.message.jsonPayload.dest_gke_details.cluster.cluster_location}}"
+          orchestrator.cluster.name: "{{json_event.message.jsonPayload.dest_gke_details.cluster.cluster_name}}"
+          orchestrator.type: 'kubernetes'
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.dest_gke_details != null and  json_event.message.jsonPayload.dest_gke_details.cluster != null  }}"
+
+  google_vpc_flow_logs:
+    actions:
+      - set:
+          '@timestamp': "{{json_event.message.timestamp}}"
+          event.kind: "event"
+          event.category: "network"
+          event.type: ['info']
+
+          google_vpc_flow_logs.insertId: "{{json_event.message.insertId}}"
+          google_vpc_flow_logs.logName: "{{json_event.message.logName}}"
+          google_vpc_flow_logs.receiveTimestamp: "{{json_event.message.receiveTimestamp}}"
+          google_vpc_flow_logs.resource.type: "{{json_event.message.resource.type}}"
