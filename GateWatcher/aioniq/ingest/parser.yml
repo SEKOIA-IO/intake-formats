@@ -1,0 +1,101 @@
+name: aioniq
+pipeline:
+  - name: json_load
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+  - name: common
+  - name: malcore
+    filter: '{{json_load.message.type == "malcore"}}'
+  - name: codebreaker
+    filter: '{{json_load.message.type == "codebreaker"}}'
+  - name: suricata
+    filter: '{{json_load.message.type == "suricata"}}'
+
+stages:
+
+  common:
+    actions:
+      - set:
+          source.ip: '{{json_load.message.src_ip}}'
+          source.port: '{{json_load.message.src_port}}'
+          observer.name: '{{json_load.message.gcap}}'
+          gatewatcher.type: '{{json_load.message.type}}'
+          observer.version: '0.2'
+          gatewatcher.state: '{{json_load.message.state}}'
+          observer.hostname: '{{json_load.message.host}}'
+          gatewatcher.gcenter: '{{json_load.message.gcenter}}'
+          gatewatcher.severity: '{{json_load.message.severity}}'
+          gatewatcher.timestamp_analyzed: '{{json_load.message.timestamp_analyzed}}'
+          gatewatcher.timestamp_detected: '{{json_load.message.timestamp_detected}}'
+
+  malcore:
+    actions:
+      - set:
+          file.name: '{{json_load.message.filename}}'
+          file.size: '{{json_load.message.size}}'
+          file.hash.md5: '{{json_load.message.MD5}}'
+          destination.ip: '{{json_load.message.dest_ip}}'
+          destination.port: '{{json_load.message.dest_port}}'
+          file.hash.sha256: '{{json_load.message.SHA256}}'
+          network.protocol: '{{json_load.message.app_proto}}'
+          gatewatcher.retroact: '{{json_load.message.retroact}}'
+          gatewatcher.event_type: '{{json_load.message.event_type}}'
+          gatewatcher.nb_rescans: '{{json_load.message.nb_rescans}}'
+          gatewatcher.malcore.code: '{{json_load.message.code|string}}'
+          gatewatcher.malcore.file: '{{json_load.message.file}}'
+          gatewatcher.malcore.magic: '{{json_load.message.magic}}'
+          gatewatcher.malcore.replica: '{{json_load.message.replica}}'
+          gatewatcher.reporting_token: '{{json_load.message.reporting_token}}'
+          gatewatcher.malcore.detail_threat_found: '{{json_load.message.detail_threat_found}}'
+      - name: translate
+        dictionary:
+          alert: alert
+        mapping:
+          gatewatcher.event_type: event.kind
+        fallback: event
+
+  suricata:
+    actions:
+      - set:
+          network.transport: '{{json_load.message.proto}}'
+      - set:
+          url.path: '{{json_load.message.http.url}}'
+          url.domain: '{{json_load.message.http.hostname}}'
+          http.version: '{{json_load.message.http.version}}'
+          http.request.method: '{{json_load.message.http.http_method}}'
+          user_agent.original: '{{json_load.message.http.http_user_agent}}'
+          http.response.status_code: '{{json_load.message.http.status}}'
+        filter: '{{json_load.message.http != null}}'
+      - set:
+          dns.id: '{{json_load.message.dns.id}}'
+          dns.type: '{{json_load.message.dns.type}}'
+          dns.question.name: '{{json_load.message.dns.rrname}}'
+          dns.question.type: '{{json_load.message.dns.rrtype}}'
+        filter: '{{json_load.message.dns != null}}'
+      - set:
+          rule.name: '{{json_load.message.alert.signature}}'
+          rule.id: '{{json_load.message.alert.signature_id|string}}'
+          rule.version: '{{json_load.message.alert.rule.version}}'
+          rule.category: '{{json_load.message.alert.category}}'
+        filter: '{{json_load.message.alert != null}}'
+
+  codebreaker:
+    actions:
+      - set:
+          file.hash.md5: '{{json_load.message.MD5}}'
+          destination.ip: '{{json_load.message.dest_ip}}'
+          destination.port: '{{json_load.message.dest_port}}'
+          file.hash.sha256: '{{json_load.message.SHA256}}'
+          gatewatcher.flow_id: '{{json_load.message.flow_id}'
+          gatewatcher.event_type: '{{json_load.message.event_type}}'
+          gatewatcher.codebreaker.file_id: '{{json_load.message.file_id}'
+          gatewatcher.malcore.detail_threat_found: '{{json_load.message.detail_threat_found}}'
+      - name: translate
+        dictionary:
+          alert: alert
+        mapping:
+          gatewatcher.event_type: event.kind
+        fallback: event
