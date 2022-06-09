@@ -1,0 +1,102 @@
+name: office 365
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parse_email
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.UserId}}'
+        output_field: message
+        pattern: '%{EMAILADDRESS:email}'
+  - name: parse_client_ip
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.ClientIP}}'
+        output_field: result
+        pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?'
+    filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+  - name: set_common_fields
+  - name: parse_azure_ad_account_logon
+    filter: '{{json_event.message.RecordType == 15}}'
+  - name: parse_sharepoint_file_operation
+    filter: '{{json_event.message.RecordType == 6}}'
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          '@timestamp': '{{json_event.message.CreateTime}}'
+          service.name: '{{json_event.message.Workload}}'
+          action.id: '{{json_event.message.RecordType}}'
+          action.name: '{{json_event.message.Operation}}'
+          event.action: '{{json_event.message.Operation}}'
+          user.name: '{{json_event.message.UserId}}'
+          user.email: '{{parse_email.message.email}}'
+      - set:
+          action.properties: >
+            [
+            {% for modifiedProperty in json_event.message.ModifiedProperties %}
+            {% if modifiedProperty.Name != "Included Updated Properties"%}
+            {% if modifiedProperty.Value != null and modifiedProperty.Value != "<Null>"%}
+            {'name': '{{modifiedProperty.Name or Null}}', 'value': '{{modifiedProperty.Value}}'},
+            {% else %}
+            {'name': '{{modifiedProperty.Name or Null}}', 'value': None},
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+            ]
+        filter: '{{json_event.message.get("ModifiedProperties", []) != []}}'
+      - set:
+          source.ip: '{{parse_client_ip.result.ip}}'
+          source.port: '{{parse_client_ip.result.port}}'
+        filter: '{{json_event.message.get("ClientIP") != None and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+      - set:
+          action.target: 'user'
+        filter: '{{json_event.message.get("UserId") != None}}'
+      - translate:
+        dictionary:
+          'Succeeded': 'success'
+          'critical': 'failure'
+        mapping:
+          json_event.message.ResultStatus: action.outcome
+        fallback: 'success'
+  parse_azure_ad_account_logon:
+    actions:
+      - set:
+          action.target: 'network-traffic'
+      - set:
+          action.properties: >
+            [
+            {% for extendedProperty in json_event.message.ExtendedProperties %}
+            {% if extendedProperty.Name != "targetIncludedUpdatedProperties"%}
+            {% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}
+            {'name': '{{extendedProperty.Name or Null}}', 'value': '{{extendedProperty.Value}}'},
+            {% else %}
+            {'name': '{{extendedProperty.Name or Null}}', 'value': None},
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+            ]
+        filter: '{{json_event.message.get("ExtendedProperties", []) != []}}'
+
+  parse_sharepoint_file_operation:
+    actions:
+      - set:
+          file.name: '{{json_event.message.SourceFileName}}'
+          file.directory: '{{json_event.message.SourceRelativeUrl}}'
+          user_agent.original: '{{json_event.message.UserAgent}}'
+          action.outcome: 'success'
+          url.full: '{{json_event.message.ObjectId}}'
+          url.original: '{{json_event.message.ObjectId}}'
+          action.properties: >
+            [
+              {
+                {% if json_event.message.get("SourceFileName") != None %}"SourceFileName": "{{json_event.message.SourceFileName}}",{% endif %}
+                {% if json_event.message.get("SourceRelativeUrl") != None %}"SourceRelativeUrl": "{{json_event.message.SourceRelativeUrl}}",{% endif %}
+                {% if json_event.message.get("SiteUrl") != None %}"SiteUrl": "{{json_event.message.SiteUrl}}",{% endif %}
+                {% if json_event.message.get("UserAgent") != None %}"UserAgent": "{{json_event.message.UserAgent}}",{% endif %}
+              }
+            ]
