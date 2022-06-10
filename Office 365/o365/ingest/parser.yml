@@ -20,10 +20,12 @@ pipeline:
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
   - name: set_common_fields
   - name: set_office365_fields
-  - name: parse_azure_ad_account_logon
-    filter: '{{json_event.message.RecordType == 15}}'
+  - name: parse_network_traffic
+    filter: '{{json_event.message.RecordType in [15, 25]}}'
   - name: parse_sharepoint_file_operation
     filter: '{{json_event.message.RecordType == 6}}'
+  - name: parse_team
+    filter: '{{json_event.message.RecordType == 25}}'
 
 stages:
   set_common_fields:
@@ -101,7 +103,7 @@ stages:
           office365.context.correlation.id: '{{json_event.message.AppAccessContext.CorrelationId}}'
         filter: '{{json_event.message.get("AppAccessContext") != None}}'
 
-  parse_azure_ad_account_logon:
+  parse_network_traffic:
     actions:
       - set:
           action.target: 'network-traffic'
@@ -138,3 +140,36 @@ stages:
                 {% if json_event.message.get("UserAgent") != None %}"UserAgent": "{{json_event.message.UserAgent}}",{% endif %}
               }
             ]
+
+  parse_team:
+    actions:
+      - set:
+          office365.teams.action: '{{json_event.message.Action}}'
+          office365.teams.communication.type: '{{json_event.message.CommunicationType}}'
+          office365.teams.channel.id: '{{json_event.message.ChannelGuid}}'
+          office365.teams.channel.name: '{{json_event.message.ChannelName}}'
+          office365.teams.channel.type: '{{json_event.message.ChannelType}}'
+          office365.teams.message.id: '{{json_event.message.MessageId}}'
+          office365.teams.message.version: '{{json_event.message.MessageVersion}}'
+          office365.teams.message.size: '{{json_event.message.MessageSizeInBytes}}'
+          office365.teams.message.urls: '{{json_event.message.MessageURLs}}'
+          office365.teams.team.id: '{{json_event.message.TeamGuid}}'
+          office365.teams.team.name: '{{json_event.message.TeamName}}'
+          office365.teams.invitee: '{{json_event.message.Invitee}}'
+      - set:
+          office365.teams.team.members: >
+            {%
+              set mapping = {
+                0: "Member",
+                1: "Owner",
+                2: "Guest"
+              }
+            %}[
+              {%for member in json_event.message.Members %}
+              {"id": "{{member.UPN}}", "role": "{{mapping.get(member.Role)}}"},
+              {% endfor %}
+            ]
+        filter: '{{json_event.message.get("Members", []) != []}}'
+      - set:
+          url.original: '{{json_event.message.MessageURLs[0]}}'
+        filter: '{{json_event.message.get("MessageURLs", []) | length >= 1}}'
