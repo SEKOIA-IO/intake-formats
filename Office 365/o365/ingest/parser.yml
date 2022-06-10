@@ -19,6 +19,7 @@ pipeline:
         pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?'
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
   - name: set_common_fields
+  - name: set_office365_fields
   - name: parse_azure_ad_account_logon
     filter: '{{json_event.message.RecordType == 15}}'
   - name: parse_sharepoint_file_operation
@@ -35,6 +36,7 @@ stages:
           event.action: '{{json_event.message.Operation}}'
           user.name: '{{json_event.message.UserId}}'
           user.email: '{{parse_email.message.email}}'
+          organization.id: '{{json_event.message.OrganizationId}}'
       - set:
           action.properties: >
             [
@@ -63,6 +65,42 @@ stages:
         mapping:
           json_event.message.ResultStatus: action.outcome
         fallback: 'success'
+
+  set_office365_fields:
+    actions:
+      - set:
+          office365.record_type: '{{json_event.message.RecordType}}'
+          office365.result_status: '{{json_event.message.ResultStatus}}'
+          office365.user_type.code: '{{json_event.message.UserType}}'
+          office365.scope.code: '{{json_event.message.Scope}}'
+      - translate:
+        dictionary:
+          0: 'Regular'
+          1: 'Reserved'
+          2: 'Admin'
+          3: 'DcAdmin'
+          4: 'System'
+          5: 'Application'
+          6: 'ServicePrincipal'
+          7: 'CustomPolicy'
+          8: 'SystemPolicy'
+        mapping:
+          office365.user_type.code: office365.user_type.name
+      - translate:
+        dictionary:
+          0: 'Online'
+          1: 'Onprem'
+        mapping:
+          office365.scope.code: office365.scope.name
+        filter: '{{json_event.message.Scope != null}}'
+      - set:
+          office365.context.aad_session_id: '{{json_event.message.AppAccessContext.AADSessionId}}'
+          office365.context.api_id: '{{json_event.message.AppAccessContext.APIId}}'
+          office365.context.client.id: '{{json_event.message.AppAccessContext.ClientAppId}}'
+          office365.context.client.name: '{{json_event.message.AppAccessContext.ClientAppName}}'
+          office365.context.correlation.id: '{{json_event.message.AppAccessContext.CorrelationId}}'
+        filter: '{{json_event.message.get("AppAccessContext") != None}}'
+
   parse_azure_ad_account_logon:
     actions:
       - set:
