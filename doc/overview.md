@@ -5,7 +5,7 @@
 An intake consists in a sequence of stages organized under a pipeline that modifies the event on the fly.
 
 The following pipeline is made of three stages (`stage1`, `stage2` and `stage3`)
-with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage2`.
+with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage1`.
 ```yaml
 pipeline:
  - name: stage1
