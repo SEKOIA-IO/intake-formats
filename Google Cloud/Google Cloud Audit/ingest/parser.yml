@@ -5,7 +5,20 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+  - name: parse_email
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.protoPayload.authenticationInfo.principalEmail}}'
+        output_field: message
+        pattern: '%{EMAILADDRESS:email}'
+    filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null and json_event.message.protoPayload.authenticationInfo.principalEmail != null}}"
   - name: google_cloud_audit
+  - name: read_jsonPayload
+  - name: parse_metadata
+  - name: parse_source
+  - name: parse_involvedObject
+  - name: parse_operation
 
 stages:
   google_cloud_audit:
@@ -19,18 +32,27 @@ stages:
 
       # log entry's protoPayload field contains an AuditLog object that stores the audit logging data.
       - set:
-          user.email: "{{json_event.message.protoPayload.authenticationInfo.principalEmail}}"
-        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null}}"
+          user.email: "{{parse_email.message.email}}"
+        filter: "{{parse_email != null and parse_email.message.email != null}}"
+      - set:
+          user.name: "{{json_event.message.protoPayload.authenticationInfo.principalEmail}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null }}"
 
       - set:
           google_cloud_audit.resource.type: "{{json_event.message.resource.type}}"
         filter: "{{json_event.message.resource != null}}"
+      - set:
+          orchestrator.type: "kubernetes"
+        filter: "{{json_event.message.resource != null and json_event.message.resource.type == 'k8s_node' }}"
 
       - set:
           google_cloud_audit.resource.labels.method: "{{json_event.message.resource.labels.method}}"
           google_cloud_audit.resource.labels.project_id: "{{json_event.message.resource.labels.project_id}}"
           google_cloud_audit.resource.labels.service: "{{json_event.message.resource.labels.service}}"
           google_cloud_audit.resource.labels.topic_id: "{{json_event.message.resource.labels.topic_id}}"
+          google_cloud_audit.resource.labels.cluster_name: "{{json_event.message.resource.labels.cluster_name}}"
+          google_cloud_audit.resource.labels.location: "{{json_event.message.resource.labels.location}}"
+          google_cloud_audit.resource.labels.node_name: "{{json_event.message.resource.labels.node_name}}"
         filter: "{{json_event.message.resource != null and json_event.message.resource.labels != null}}"
 
       - set:
@@ -80,3 +102,52 @@ stages:
       - set:
           google_cloud_audit.protoPayload.requestMetadata.requestAttributes.time: "{{json_event.message.protoPayload.requestMetadata.requestAttributes.time}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.requestMetadata != null and json_event.message.protoPayload.requestMetadata.requestAttributes != null}}"
+
+  read_jsonPayload:
+    actions:
+      - set:
+          google_cloud_audit.jsonPayload.apiVersion: "{{json_event.message.jsonPayload.apiVersion}}"
+          google_cloud_audit.jsonPayload.eventTime: "{{json_event.message.jsonPayload.eventTime}}"
+          google_cloud_audit.jsonPayload.kind: "{{json_event.message.jsonPayload.kind}}"
+          google_cloud_audit.jsonPayload.message: "{{json_event.message.jsonPayload.message}}"
+          event.reason: "{{json_event.message.jsonPayload.reason}}"
+          google_cloud_audit.jsonPayload.reportingComponent: "{{json_event.message.jsonPayload.reportingComponent}}"
+          google_cloud_audit.jsonPayload.reportingInstance: "{{json_event.message.jsonPayload.reportingInstance}}"
+          google_cloud_audit.jsonPayload.type: "{{json_event.message.jsonPayload.type}}"
+        filter: "{{json_event.message.jsonPayload != null}}"
+
+  parse_source:
+    actions:
+      - set:
+          host.name: "{{json_event.message.jsonPayload.source.host}}"
+          google_cloud_audit.jsonPayload.source.component: "{{json_event.message.jsonPayload.source.component}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.source != null}}"
+
+  parse_metadata:
+    actions:
+      - set:
+          google_cloud_audit.jsonPayload.metadata.creationTimestamp: "{{json_event.message.jsonPayload.metadata.creationTimestamp}}"
+          google_cloud_audit.jsonPayload.metadata.managedFields: "{{json_event.message.jsonPayload.metadata.managedFields}}"
+          host.name: "{{json_event.message.jsonPayload.metadata.name}}"
+          orchestrator.namespace: "{{json_event.message.jsonPayload.metadata.namespace}}"
+          google_cloud_audit.jsonPayload.metadata.resourceVersion: "{{json_event.message.jsonPayload.metadata.resourceVersion}}"
+          google_cloud_audit.jsonPayload.metadata.uid: "{{json_event.message.jsonPayload.metadata.uid}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.metadata != null}}"
+
+  parse_involvedObject:
+    actions:
+      - set:
+          google_cloud_audit.jsonPayload.involvedObject.kind: "{{json_event.message.jsonPayload.involvedObject.kind}}"
+          google_cloud_audit.jsonPayload.involvedObject.name: "{{json_event.message.jsonPayload.involvedObject.name}}"
+          google_cloud_audit.jsonPayload.involvedObject.uid: "{{json_event.message.jsonPayload.involvedObject.uid}}"
+        filter: "{{json_event.message.jsonPayload != null and json_event.message.jsonPayload.involvedObject != null}}"
+
+
+  parse_operation:
+    actions:
+      - set:
+          google_cloud_audit.operation.id: "{{json_event.message.operation.id}}"
+          google_cloud_audit.operation.first: "{{json_event.message.operation.first}}"
+          google_cloud_audit.operation.last: "{{json_event.message.operation.last}}"
+          google_cloud_audit.operation.producer: "{{json_event.message.operation.producer}}"
+        filter: "{{json_event.message.operation != null}}"
