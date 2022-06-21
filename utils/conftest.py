@@ -145,6 +145,13 @@ def pytest_addoption(parser):
         help="only check formats that were modified",
     )
 
+    parser.addoption(
+        "--fix-expectations",
+        action="store_true",
+        default=False,
+        help="update test files to replace expected with the actual result",
+    )
+
 
 def pytest_configure(config):
     modules = config.getoption("module")
