@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 
@@ -18,8 +19,38 @@ constant_fields = {
 # See `pytest_generate_tests` in conftest.py for details
 
 
-def test_intakes_produce_expected_messages(manager, intakes_root, test_path):
-    with open(os.path.join(intakes_root, test_path)) as f:
+def pop_field(event: dict, dotted_field: str):
+    """Remove a field from an event, also removing intermediate objects if needed"""
+    parts = dotted_field.split(".")
+
+    if parts[0] in event:
+        if len(parts) == 1:
+            event.pop(parts[0])
+        else:
+            pop_field(event[parts[0]], ".".join(parts[1:]))
+
+            if event[parts[0]] == {}:
+                event.pop(parts[0])
+
+
+def build_fixed_expectation(parsed_message):
+    """Build a new and improved expectation from the parsed message"""
+    new_expectation = copy.deepcopy(parsed_message)
+
+    pop_field(new_expectation, "sekoiaio.intake.coverage")
+    pop_field(new_expectation, "sekoiaio.intake.parsing_status")
+    pop_field(new_expectation, "sekoiaio.intake.dialect")
+    pop_field(new_expectation, "sekoiaio.intake.dialect_uuid")
+    pop_field(new_expectation, "event.id")
+    pop_field(new_expectation, "event.outcome")
+    pop_field(new_expectation, "ecs.version")
+
+    return new_expectation
+
+
+def test_intakes_produce_expected_messages(request, manager, intakes_root, test_path):
+    test_fullpath = os.path.join(intakes_root, test_path)
+    with open(test_fullpath) as f:
         testcase = json.load(f)
 
     parsed = manager.get_parsed_message(test_path)
@@ -30,7 +61,8 @@ def test_intakes_produce_expected_messages(manager, intakes_root, test_path):
     if testcase["expected"].get("event"):
         merge_dict(parsed, {"event": testcase["expected"]["event"]})
 
-    parsed.pop("message")
+    # Ignore the message field
+    testcase["expected"]["message"] = parsed["message"]
 
     # The order inside `related` is not guaranteed, sort it to make it consistent
     if "related" in parsed:
@@ -39,9 +71,16 @@ def test_intakes_produce_expected_messages(manager, intakes_root, test_path):
                 parsed["related"][related_field] = sorted(
                     parsed["related"][related_field]
                 )
-                print(parsed["related"][related_field])
 
-    assert parsed == testcase["expected"]
+    expected = testcase["expected"]
+
+    if request.config.getoption("fix_expectations") and parsed != expected:
+        testcase["expected"] = build_fixed_expectation(parsed)
+
+        with open(test_fullpath, "w") as out:
+            json.dump(testcase, out, indent=2)
+
+    assert parsed == expected
 
 
 def test_intake_format_coverage(manager, module, intake_format):
