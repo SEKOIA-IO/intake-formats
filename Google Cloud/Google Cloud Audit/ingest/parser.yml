@@ -5,7 +5,17 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+  - name: parse_email
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.protoPayload.authenticationInfo.principalEmail}}'
+        output_field: message
+        pattern: '%{EMAILADDRESS:email}'
+    filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null and json_event.message.protoPayload.authenticationInfo.principalEmail != null}}"
   - name: google_cloud_audit
+  - name: parse_operation
+  - name: parse_resourceLocation
 
 stages:
   google_cloud_audit:
@@ -19,23 +29,33 @@ stages:
 
       # log entry's protoPayload field contains an AuditLog object that stores the audit logging data.
       - set:
-          user.email: "{{json_event.message.protoPayload.authenticationInfo.principalEmail}}"
-        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null}}"
+          user.email: "{{parse_email.message.email}}"
+        filter: "{{parse_email != null and parse_email.message.email != null}}"
+      - set:
+          user.name: "{{json_event.message.protoPayload.authenticationInfo.principalEmail}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null }}"
 
       - set:
           google_cloud_audit.resource.type: "{{json_event.message.resource.type}}"
         filter: "{{json_event.message.resource != null}}"
+      - set:
+          orchestrator.type: "kubernetes"
+        filter: "{{json_event.message.resource != null and json_event.message.resource.type == 'k8s_node' }}"
 
       - set:
           google_cloud_audit.resource.labels.method: "{{json_event.message.resource.labels.method}}"
           google_cloud_audit.resource.labels.project_id: "{{json_event.message.resource.labels.project_id}}"
           google_cloud_audit.resource.labels.service: "{{json_event.message.resource.labels.service}}"
           google_cloud_audit.resource.labels.topic_id: "{{json_event.message.resource.labels.topic_id}}"
+          google_cloud_audit.resource.labels.cluster_name: "{{json_event.message.resource.labels.cluster_name}}"
+          google_cloud_audit.resource.labels.location: "{{json_event.message.resource.labels.location}}"
+          google_cloud_audit.resource.labels.node_name: "{{json_event.message.resource.labels.node_name}}"
         filter: "{{json_event.message.resource != null and json_event.message.resource.labels != null}}"
 
       - set:
           google_cloud_audit.protoPayload.metadata.type: "{{json_event.message.protoPayload.metadata.get('@type')}}"
           google_cloud_audit.protoPayload.metadata.event: "{{json_event.message.protoPayload.metadata.event}}"
+          google_cloud_audit.protoPayload.metadata.operationType: "{{json_event.message.protoPayload.metadata.operationType}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.metadata != null}}"
 
       - set:
@@ -80,3 +100,18 @@ stages:
       - set:
           google_cloud_audit.protoPayload.requestMetadata.requestAttributes.time: "{{json_event.message.protoPayload.requestMetadata.requestAttributes.time}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.requestMetadata != null and json_event.message.protoPayload.requestMetadata.requestAttributes != null}}"
+
+  parse_operation:
+    actions:
+      - set:
+          google_cloud_audit.operation.id: "{{json_event.message.operation.id}}"
+          google_cloud_audit.operation.first: "{{json_event.message.operation.first}}"
+          google_cloud_audit.operation.last: "{{json_event.message.operation.last}}"
+          google_cloud_audit.operation.producer: "{{json_event.message.operation.producer}}"
+        filter: "{{json_event.message.operation != null}}"
+
+  parse_resourceLocation:
+    actions:
+      - set:
+          google_cloud_audit.protoPayload.resourceLocation.currentLocations: "{{json_event.message.protoPayload.resourceLocation.currentLocations}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.resourceLocation != null}}"
