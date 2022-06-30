@@ -1,4 +1,4 @@
-# Intake Parsers
+# SEKOIA.IO Intake Parsers
 **Welcome to the SEKOIA.IO Intakes repository!**
 
 ![Intakes](https://github.com/SEKOIA-IO/intakes/actions/workflows/main.yml/badge.svg)
