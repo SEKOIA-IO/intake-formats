@@ -5,6 +5,22 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+  - name: date_start
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.EdgeStartTimestamp | float / 1000000000}}'
+        output_field: datetime
+        format: timestamp
+    filter: '{{json_event.message.get("EdgeStartTimestamp") != None}}'
+  - name: date_end
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.EdgeEndTimestamp | float / 1000000000}}'
+        output_field: datetime
+        format: timestamp
+    filter: '{{json_event.message.get("EdgeEndTimestamp") != None}}'
   - name: set_ecs_fields
   - name: set_custom_fields
 
@@ -35,11 +51,15 @@ stages:
           event.category: ["web"]
           event.type: ["access"]
           event.dataset: "http_requests"
+      - set:
+          event.start: "{{date_start.datetime}}"
+        filter: '{{json_event.message.get("EdgeStartTimestamp") != None}}'
+      - set:
+          event.end: "{{date_end.datetime}}"
+        filter: '{{json_event.message.get("EdgeEndTimestamp") != None}}'
   set_custom_fields:
     actions:
       - set:
-          cloudflare.EdgeEndTimestamp: "{{json_event.message.EdgeEndTimestamp}}"
-          cloudflare.EdgeStartTimestamp: "{{json_event.message.EdgeStartTimestamp}}"
           cloudflare.RayID: "{{json_event.message.RayID}}"
           cloudflare.EdgeResponseBytes: "{{json_event.message.EdgeResponseBytes}}"
           cloudflare.EdgeResponseStatus: "{{json_event.message.EdgeResponseStatus}}"
