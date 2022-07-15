@@ -1,0 +1,139 @@
+name: 'crowdstrike falcon edr'
+pipeline:
+  - name: stage1
+    description: ''
+    filter: ''
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+  - name: read_event_date
+    description: ''
+    filter: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{stage1.message.metadata.eventCreationTime/1000}}'
+        output_field: test
+        format: timestamp
+        timezone: UTC
+  - name: set_event_date
+    description: ''
+    filter: ''
+    external: null
+  - name: streamstarted
+    description: ''
+    filter: '{{stage1.message.event.OperationName == "streamStarted"}}'
+    external: null
+  - name: streamstopped
+    description: ''
+    filter: '{{stage1.message.event.OperationName == "streamStopped"}}'
+    external: null
+  - name: detectionsummaryevent
+    description: ''
+    filter: '{{stage1.message.metadata.eventType == "DetectionSummaryEvent"}}'
+    external: null
+  - name: useractivityauditevent
+    description: ''
+    filter: '{{stage1.message.metadata.eventType == "UserActivityAuditEvent"}}'
+    external: null
+  - name: authactivityauditevent
+    description: ''
+    filter: '{{stage1.message.metadata.eventType == "AuthActivityAuditEvent"}}'
+    external: null
+  - name: incidentsummaryevent
+    description: ''
+    filter: '{{stage1.message.metadata.eventType == "IncidentSummaryEvent"}}'
+    external: null
+stages:
+  set_event_date:
+    actions:
+      - set:
+          '@timestamp': '{{read_event_date.test}}'
+          crowdstrike.event_type: '{{stage1.message.metadata.eventType}}'
+        filter: ''
+        name: set
+  streamstarted:
+    actions:
+      - set:
+          source.ip: '{{stage1.message.event.UserIp}}'
+          event.kind: event
+          event.type: ['start']
+          service.name: '{{stage1.message.event.ServiceName}}'
+          event.category: ['session']
+          user.id: '{{stage1.message.event.UserId}}'
+        name: set
+  streamstopped:
+    actions:
+      - set:
+          source.ip: '{{stage1.message.event.UserIp}}'
+          event.kind: event
+          event.type: ['stop']
+          service.name: '{{stage1.message.event.ServiceName}}'
+          event.category: ['session']
+          user.id: '{{stage1.message.event.UserId}}'
+        name: set
+  detectionsummaryevent:
+    actions:
+      - set:
+          host.ip: '{{stage1.message.event.LocalIP}}'
+          agent.id: '{{stage1.message.event.AgentIdString}}'
+          host.mac: '{{stage1.message.event.MACAddress}}'
+          file.name: '{{stage1.message.event.FileName}}'
+          file.path: '{{stage1.message.event.FilePath}}'
+          host.name: '{{stage1.message.event.ComputerName}}'
+          log.hostname: '{{stage1.message.event.ComputerName}}'
+          user.name: '{{stage.message.event.UserName}}'
+          event.kind: alert
+          event.type: ['info']
+          process.end: '{{stage.message.event.ProcessEndTime}}'
+          process.pid: '{{stage1.message.event.ProcessId}}'
+          file.hash.md5: '{{stage1.message.event.MD5String}}'
+          process.start: '{{stage.message.event.ProcessStartTime}}'
+          event.category: ['intrusion_detection']
+          process.parent.pid: '{{stage1.message.event.ParentProcessId}}'
+          threat.tactic.name: '{{stage1.message.event.Tactic}}'
+          process.hash.sha256: '{{stage1.message.event.SHA256String}}'
+          process.command_line: '{{stage1.message.event.CommandLine}}'
+          crowdstrike.detect_id: '{{stage1.message.event.DetectId}}'
+          threat.technique.name: '{{stage1.message.event.Technique}}'
+          crowdstrike.customer_id: '{{stage1.message.event.CustomerIDString}}'
+          process.parent.executable: '{{stage1.message.event.ParentImageFileName}}'
+          process.parent.command_line: '{{stage1.message.event.ParentCommandLine}}'
+          crowdstrike.detect_description: '{{stage1.message.event.DetectDescription}}'
+        name: set
+  useractivityauditevent:
+    actions:
+      - set:
+          source.ip: '{{stage1.message.event.UserIp}}'
+          event.kind: event
+          event.type: ['change']
+          service.name: '{{stage1.message.event.ServiceName}}'
+          event.category: ['configuration']
+          user.id: '{{stage1.message.event.UserId}}'
+          crowdstrike.operation_name: '{{stage1.message.event.OperationName}}'
+        name: set
+  authactivityauditevent:
+    actions:
+      - set:
+          source.ip: '{{stage1.message.event.UserIp}}'
+          event.kind: event
+          event.type: ['change']
+          service.name: '{{stage1.message.event.ServiceName}}'
+          event.category: ['configuration']
+          user.id: '{{stage1.message.event.UserId}}'
+          crowdstrike.operation_name: '{{stage1.message.event.OperationName}}'
+        name: set
+  incidentsummaryevent:
+    actions:
+      - set:
+          event.kind: alert
+          event.type: ['info']
+          event.category: ['intrusion_detection']
+          crowdstrike.state: '{{stage1.message.event.State}}'
+          crowdstrike.host_id: '{{stage1.message.event.HostID}}'
+          crowdstrike.incident_id: '{{stage1.message.event.IncidentID}}'
+          crowdstrike.incident_end: '{{stage1.message.event.IncidentEndTime}}'
+          crowdstrike.incident_start: '{{stage1.message.event.IncidentStartTime}}'
+        name: set
