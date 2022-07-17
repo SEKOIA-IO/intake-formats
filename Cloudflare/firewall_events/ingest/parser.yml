@@ -1,0 +1,87 @@
+name: Cloudflare HTTP requests
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.Datetime | float / 1000000000}}'
+        output_field: datetime
+        format: timestamp
+  - name: set_ecs_fields
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_date.datetime}}"
+          source.ip: "{{json_event.message.ClientIP}}"
+          source.as.number: "{{jjson_event.message.ClientASN}}"
+          source.geo.country_name: "{{json_event.message.ClientCountry}}"
+          destination.domain: "{{json_event.message.ClientRequestHost}}"
+          http.request.method: "{{json_event.message.ClientRequestMethod}}"
+          http.version: "{{json_event.message.ClientRequestProtocol}}"
+          url.domain: "{{json_event.message.ClientRequestHost}}"
+          url.path: "{{json_event.message.ClientRequestPath}}"
+          url.scheme: "{{json_event.message.ClientRequestScheme}}"
+          url.query: "{{json_event.message.ClientRequestQuery}}"
+          user_agent.original: "{{json_event.message.ClientRequestUserAgent}}"
+          http.response.status_code: "{{json_event.message.EdgeResponseStatus}}"
+          event.action: "{{json_event.message.Action}}"
+          rule.id: "{{json_event.message.RuleId}}"
+          network.protocol: "{{json_event.message.clientRequestHTTPProtocol or json_event.message.ClientRequestProtocol}}"
+          rule.ruleset: "{{json_event.message.rulesetId}}"
+          http.request.bytes: "{{json_event.message.ClientRequestBytes}}"
+          http.request.referrer: "{{json_event.message.ClientRequestReferer}}"
+          tls.cipher: "{{json_event.message.ClientSSLCipher}}"
+          tls.version_protocol: "{{json_event.message.ClientSSLProtocol}}"
+          source.port: "{{json_event.message.ClientSrcPort}}"
+          event.kind: "event"
+          event.category: ["network"]
+          event.dataset: "firewall-events"
+      - translate:
+        dictionary:
+          unknown: ["info"]
+          allow: ["allowed"]
+          block: ["denied"]
+          challenge: ["info"]
+          jschallenge: ["info"]
+          log: ["info"]
+          connectionclose: ["end"]
+          challengesolved: ["allowed"]
+          challengefailed: ["denied"]
+          challengebypassed: ["allowed"]
+          jschallengesolved: ["allowed"]
+          jschallengefailed: ["denied"]
+          jschallengebypassed: ["allowed"]
+          bypass: ["allowed"]
+          managedchallenge: ["info"]
+          managedchallengeskipped: ["allowed"]
+          managedchallengenoninteractivesolved: ["allowed"]
+          managedchallengeinteractivesolved: ["allowed"]
+          managedchallengebypassed: ["allowed"]
+        mapping:
+          event.action: event.type
+  set_custom_fields:
+    actions:
+      - set:
+          cloudflare.RayID: "{{json_event.message.RayID}}"
+          cloudflare.EdgeColoCode: "{{json_event.message.EdgeColoCode}}"
+          cloudflare.EdgeResponseStatus: "{{json_event.message.EdgeResponseStatus}}"
+          cloudflare.clientASNDescription: "{{json_event.message.clientASNDescription}}"
+          cloudflare.matchIndex: "{{json_event.message.matchIndex}}"
+          cloudflare.metadata: "{{json_event.message.metadata}}"
+          cloudflare.ClientIPClass: "{{json_event.message.ClientIPClass}}"
+          cloudflare.Source: "{{json_event.message.Source}}"
+          cloudflare.OriginResponseStatus: "{{json_event.message.OriginResponseStatus}}"
+          cloudflare.OriginatorRayID: "{{json_event.message.OriginatorRayID}}"
+          cloudflare.Kind: "{{json_event.message.Kind}}"
+          cloudflare.ClientRefererHost: "{{json_event.message.ClientRefererHost}}"
+          cloudflare.ClientRefererPath: "{{json_event.message.ClientRefererPath}}"
+          cloudflare.ClientRefererQuery: "{{json_event.message.ClientRefererQuery}}"
+          cloudflare.ClientRefererScheme: "{{json_event.message.ClientRefererScheme}}"
