@@ -1,4 +1,4 @@
 # Microsoft Defender
 
 ## Description
-Microsoft Defender is an offer from Microsoft for individuals, business and enterprise to protect their digital assets (endpoints, accounts, emails, ...)
+Microsoft Defender for Endpoint is an enterprise endpoint security platform designed to help enterprise networks prevent, detect, investigate, and respond to advanced threats.
