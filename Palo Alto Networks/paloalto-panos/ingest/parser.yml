@@ -1,0 +1,90 @@
+name: palo-alto-prisma-access
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+  - name: parsed_rt
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.rt}}'
+        output_field: datetime
+        timezone: '{{parsed_event.message.dtz}}'
+    filter: '{{parsed_event.message.get("rt") is not None}}'
+  - name: parsed_start
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.start}}'
+        output_field: datetime
+        timezone: '{{parsed_event.message.dtz}}'
+    filter: '{{parsed_event.message.get("start") is not None}}'
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_rt.datetime}}'
+        filter: '{{parsed_event.message.get("rt") is not None}}'
+      - set:
+          event.start: '{{parsed_start.datetime}}'
+        filter: '{{parsed_event.message.get("start") is not None}}'
+      - set:
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: 'PAN-OS'
+          observer.version: '{{parsed_event.message.PanOSConfigVersion}}'
+          observer.ingress.interface.name: '{{parsed_event.message.deviceInboundInterface}}'
+          observer.ingress.interface.id: '{{parsed_event.message.deviceInboundInterface.split("/") | last}}'
+          observer.ingress.interface.alias: '{{parsed_event.message.FromZone}}'
+          observer.egress.interface.name: '{{parsed_event.message.deviceOutboundInterface}}'
+          observer.egress.interface.id: '{{parsed_event.message.deviceOutboundInterface.split("/") | last}}'
+          observer.egress.interface.alias: '{{parsed_event.message.ToZone}}'
+          event.action: '{{parsed_event.message.act}}'
+          event.severity: '{{parsed_event.message.Severity}}'
+          event.category: ['network']
+          event.kind: 'event'
+          event.duration: '{{parsed_event.message.SessionDuration}}'
+          event.dataset: '{{parsed_event.message.DeviceEventClassID | lower}}'
+          event.reason: '{{parsed_event.message.reason}}'
+          source.address: '{{parsed_event.message.src}}'
+          source.ip: '{{parsed_event.message.src}}'
+          source.port: '{{parsed_event.message.spt}}'
+          source.nat.ip: '{{parsed_event.message.sourceTranslatedAddress}}'
+          source.nat.port: '{{parsed_event.message.sourceTranslatedPort}}'
+          source.bytes: '{{parsed_event.message.in}}'
+          source.packets: '{{parsed_event.message.PanOSPacketsSent}}'
+          user.name: '{{parsed_event.message.suser}}'
+          source.user.name: '{{parsed_event.message.suser}}'
+          destination.address: '{{parsed_event.message.dst}}'
+          destination.ip: '{{parsed_event.message.dst}}'
+          destination.port: '{{parsed_event.message.dpt}}'
+          destination.nat.ip: '{{parsed_event.message.destinationTranslatedAddress}}'
+          destination.nat.port: '{{parsed_event.message.destinationTranslatedPort}}'
+          destination.bytes: '{{parsed_event.message.out}}'
+          destination.packets: '{{parsed_event.message.PanOSPacketsReceived}}'
+          destination.user.name: '{{parsed_event.message.duser}}'
+          destination.geo.country_iso_code: '{{parsed_event.message.PanOSDestinationLocation}}'
+          network.application: '{{parsed_event.message.app}}'
+          network.packets: '{{parsed_event.message.PacketsTotal}}'
+          network.bytes: '{{parsed_event.message.PanOSBytes}}'
+          network.transport: '{{parsed_event.message.proto}}'
+          host.id: '{{parsed_event.message.deviceExternalId}}'
+          host.name: '{{parsed_event.message.dvchost}}'
+          host.hostname: '{{parsed_event.message.dvchost}}'
+          host.os.family: '{{parsed_event.message.PanOSSourceDeviceOSFamily}}'
+          host.os.version: '{{parsed_event.message.PanOSSourceDeviceOSVersion}}'
+          host.mac: '{{parsed_event.message.PanOSSourceDeviceMac}}'
+          host.type: '{{parsed_event.message.PanOSSourceDeviceCategory}}'
+          log.hostname: '{{parsed_event.message.dvchost}}'
+          rule.name: '{{parsed_event.message.Rule}}'
+          rule.uuid: '{{parsed_event.message.PanOSRuleUUID}}'
+      - translate:
+        dictionary:
+          'start': ['start']
+          'end': ['end']
+          'drop': ['denied']
+          'denied': ['denied']
+        mapping:
+          parsed_event.message.Name: event.type
+        fallback: ['denied']
