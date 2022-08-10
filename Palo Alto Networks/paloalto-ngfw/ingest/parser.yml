@@ -1,7 +1,13 @@
-name: palo alto networks
+name: Palo Alto networks next-generation firewall
 pipeline:
-  # Just use to get the column format
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+    filter: '{{original.message.startswith("CEF")}}'
+
+  # Just used to get the column format
   - name: parsed_dsv
+    filter: '{{original.message.startswith("CEF") == False}}'
     external:
       name: dsv.parse-dsv
       properties:
@@ -12,11 +18,11 @@ pipeline:
             - Type
         delimiter: ","
 
-  # TRAFFIC
-  - name: parsed_dsv_traffic
+  # TRAFFIC CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'TRAFFIC'}}"
     external:
       name: dsv.parse-dsv
-      filter: "{{parsed_dsv.message.Type == 'TRAFFIC'}}"
       properties:
         input_field: original.message
         output_field: message
@@ -69,11 +75,11 @@ pipeline:
           - pkts_received
         delimiter: ","
 
-  # USERID
-  - name: parsed_dsv_userid
+  # USERID CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'USERID'}}"
     external:
       name: dsv.parse-dsv
-      filter: "{{parsed_dsv.message.Type == 'USERID'}}"
       properties:
         input_field: original.message
         output_field: message
@@ -114,11 +120,11 @@ pipeline:
           - UserbySource
         delimiter: ","
 
-  # GLOBALPROTECT
-  - name: parsed_dsv_globalprotect
+  # GLOBALPROTECT CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'GLOBALPROTECT'}}"
     external:
       name: dsv.parse-dsv
-      filter: "{{parsed_dsv.message.Type == 'GLOBALPROTECT'}}"
       properties:
         input_field: original.message
         output_field: message
@@ -161,11 +167,11 @@ pipeline:
           - ActionFlags
         delimiter: ","
 
-  # SYSTEM
-  - name: parsed_dsv_system
+  # SYSTEM CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'SYSTEM'}}"
     external:
       name: dsv.parse-dsv
-      filter: "{{parsed_dsv.message.Type == 'SYSTEM'}}"
       properties:
         input_field: original.message
         output_field: message
@@ -195,11 +201,11 @@ pipeline:
           - DeviceName
         delimiter: ","
 
-  # THREAT
-  - name: parsed_dsv_threat
+  # THREAT CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'THREAT'}}"
     external:
       name: dsv.parse-dsv
-      filter: "{{parsed_dsv.message.Type == 'THREAT'}}"
       properties:
         input_field: original.message
         output_field: message
@@ -281,114 +287,138 @@ pipeline:
           - HttpHeaders
         delimiter: ","
 
-  - name: field_extraction_traffic
-    filter: "{{parsed_dsv.message.Type == 'TRAFFIC'}}"
-  - name: field_extraction_userid
-    filter: "{{parsed_dsv.message.Type == 'USERID'}}"
-  - name: field_extraction_globalprotect
-    filter : "{{parsed_dsv.message.Type == 'GLOBALPROTECT'}}"
-  - name: field_extraction_system
-    filter: "{{parsed_dsv.message.Type == 'SYSTEM'}}"
-  - name: field_extraction_threat
-    filter: "{{parsed_dsv.message.Type == 'THREAT'}}"
-    
+
+  - name: parsed_rt
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.rt}}'
+        output_field: datetime
+        # ingest does not allow this stage to resolve Jinja template ATM
+        #timezone: '{{parsed_event.message.dtz}}'
+    filter: '{{parsed_event.message.get("rt") != None}}'
+
+  - name: parsed_start
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.start}}'
+        output_field: datetime
+        # ingest does not allow this stage to resolve Jinja template ATM
+        #timezone: '{{parsed_event.message.dtz}}'
+    filter: '{{parsed_event.message.get("start") != None}}'
+
+  - name: set_extracted_fields
+  - name: set_ecs_deviceOutboundInterface
+    filter: '{{parsed_event.message.get("deviceOutboundInterface") != None}}'
+  - name: set_ecs_deviceInboundInterface
+    filter: '{{parsed_event.message.get("deviceInboundInterface") != None}}'
+  - name: set_action_outcome
+  - name: set_csv_severity
+
 stages:
-  field_extraction_traffic:
+  set_csv_severity:
     actions:
       - set:
-          destination.address: '{{parsed_dsv_traffic.message.DestinationAddress}}'
-          destination.port: '{{parsed_dsv_traffic.message.DestinationPort}}'
-          destination.nat.ip: '{{parsed_dsv_traffic.message.NATDestinationIP}}'
-          destination.nat.port: '{{parsed_dsv_traffic.message.NATDestinationPort}}'
-          destination.bytes: '{{parsed_dsv_traffic.message.BytesReceived}}'
-          destination.packets: '{{parsed_dsv_traffic.message.pkts_received}}'
-          source.address: '{{parsed_dsv_traffic.message.SourceAddress}}'
-          source.port: '{{parsed_dsv_traffic.message.SourcePort}}'
-          source.nat.ip: '{{parsed_dsv_traffic.message.NATSourceIP}}'
-          source.nat.port: '{{parsed_dsv_traffic.message.NATSourcePort}}'
-          source.bytes: '{{parsed_dsv_traffic.message.BytesSent}}'
-          source.packets: '{{parsed_dsv_traffic.message.pkts_sent}}'
-          network.packets: '{{parsed_dsv_traffic.message.Packets}}'
-          network.bytes: '{{parsed_dsv_traffic.message.Bytes}}'
-          network.transport: '{{parsed_dsv_traffic.message.IPProtocol}}'
-          event.category: '{{parsed_dsv_traffic.message.Type | lower}}'
-          action.type: '{{parsed_dsv_traffic.message.Threat_ContentType}}'
-          action.name: '{{parsed_dsv_traffic.message.Action}}'
-          event.duration: '{{parsed_dsv_traffic.message.ElapsedTimeInSec}}'
-          user.name: '{{parsed_dsv_traffic.message.SourceUser}}'
-          source.ip: '{{parsed_dsv_traffic.message.SourceAddress}}'
-          destination.ip: '{{parsed_dsv_traffic.message.DestinationAddress}}'
+          event.severity: '{{parsed_event.message.Severity}}'
+        filter: '{{original.message.startswith("CEF")}}'
+
+  set_ecs_deviceOutboundInterface:
+    actions:
+      - set:
+          observer.egress.interface.name: '{{parsed_event.message.deviceOutboundInterface}}'
+          observer.egress.interface.id: '{{parsed_event.message.deviceOutboundInterface.split("/") | last}}'
+
+  set_ecs_deviceInboundInterface:
+    actions:
+      - set:
+          observer.ingress.interface.name: '{{parsed_event.message.deviceInboundInterface | last}}'
+          observer.ingress.interface.id: '{{parsed_event.message.deviceOutboundInterface.split("/") | last}}'
+
+  set_action_outcome:
+    actions:
+      - set:
+          action.outcome: '{{parsed_event.message.Status}}'
+        filter: "{{parsed_event.message.Status != None}}"
       - set:
           action.outcome: "success"
-        filter: '{{parsed_dsv_traffic.message.Action != null}}'
+        filter: "{{parsed_event.message.Action != null}}"
 
-  field_extraction_userid:
+  set_extracted_fields:
     actions:
       - set:
-          destination.port: '{{parsed_dsv_userid.message.DestinationPort}}'
-          source.address: '{{parsed_dsv_userid.message.SourceIP}}'
-          source.port: '{{parsed_dsv_userid.message.SourcePort}}'
-          event.category: '{{parsed_dsv_userid.message.Type | lower}}'
-          action.type: '{{parsed_dsv_userid.message.Threat_ContentType}}'
-          log.logger: '{{parsed_dsv_userid.message.DataSourceName}}'
-          log.hostname: '{{parsed_dsv_userid.message.DeviceName}}'
-          source.ip: '{{parsed_dsv_userid.message.SourceIP}}'
-          user.name: '{{parsed_dsv_userid.message.User}}'
-
-  field_extraction_globalprotect:
-    actions:
+          '@timestamp': '{{parsed_rt.datetime}}'
+        filter: '{{parsed_event.message.get("rt")  != None}}'
       - set:
-          source.address: '{{parsed_dsv_globalprotect.message.PublicIP}}'
-          event.category: '{{parsed_dsv_globalprotect.message.Type | lower}}'
-          action.type: '{{parsed_dsv_globalprotect.message.Threat_ContentType}}'
-          action.outcome: '{{parsed_dsv_globalprotect.message.Status}}'
-          user.name: '{{parsed_dsv_globalprotect.message.SourceUser}}'
-          action.outcome_reason: '{{parsed_dsv_globalprotect.message.Description}}'
-          user_agent.os.name: '{{parsed_dsv_globalprotect.message.ClientOS}}'
-          user_agent.os.version: '{{parsed_dsv_globalprotect.message.ClientOSVersion}}'
-          geo.country_iso_code: '{{parsed_dsv_globalprotect.message.SourceRegion}}'
-          source.ip: '{{parsed_dsv_globalprotect.message.PublicIP}}'
-
-  field_extraction_system:
-    actions:
+          event.start: '{{parsed_start.datetime}}'
+        filter: '{{parsed_event.message.get("start") != None}}'
       - set:
-          event.category: '{{parsed_dsv_system.message.Type | lower}}'
-          action.type: '{{parsed_dsv_system.message.Threat_ContentType}}'
-          action.outcome_reason: '{{parsed_dsv_system.message.Description}}'
-          log.hostname: '{{parsed_dsv_system.message.DeviceName}}'
-          log.level: '{{parsed_dsv_system.message.Severity}}'
-
-  field_extraction_threat:
-    actions:
-      - set:
-          destination.address: '{{parsed_dsv_threat.message.DestinationAddress}}'
-          destination.port: '{{parsed_dsv_threat.message.DestinationPort}}'
-          destination.nat.ip: '{{parsed_dsv_threat.message.NATDestinationIP}}'
-          destination.nat.port: '{{parsed_dsv_threat.message.NATDestinationPort}}'
-          source.address: '{{parsed_dsv_threat.message.SourceAddress}}'
-          source.port: '{{parsed_dsv_threat.message.SourcePort}}'
-          source.nat.ip: '{{parsed_dsv_threat.message.NATSourceIP}}'
-          source.nat.port: '{{parsed_dsv_threat.message.NATSourcePort}}'
-          network.transport: '{{parsed_dsv_threat.message.IPProtocol}}'
-          event.category: '{{parsed_dsv_threat.message.Type | lower}}'
-          action.type: '{{parsed_dsv_threat.message.Threat_ContentType}}'
-          action.name: '{{parsed_dsv_threat.message.Action}}'
-          user.name: '{{parsed_dsv_threat.message.SourceUser}}'
-          log.hostname: '{{parsed_dsv_threat.message.DeviceName}}'
-          log.level: '{{parsed_dsv_threat.message.Severity}}'
-          file.path: '{{parsed_dsv_threat.message.URLFilename}}'
-          event.reason: '{{parsed_dsv_threat.message.Threat_ContentName}}'
-          paloalto.content_type: '{{parsed_dsv_threat.message.ContentType}}'
-          user_agent.name: '{{parsed_dsv_threat.message.UserAgent}}'
-          http.request.method: '{{parsed_dsv_threat.message.HttpMethod}}'
-          http.request.referrer: '{{parsed_dsv_threat.message.Referer}}'
-          email.subject: '{{parsed_dsv_threat.message.Subject}}'
-          email.from.address: '{{parsed_dsv_threat.message.Sender}}'
-          email.to.address: '{{parsed_dsv_threat.message.Recipient}}'
-          event.action: '{{parsed_dsv_threat.message.Threat_Category}}'
-          source.ip: '{{parsed_dsv_threat.message.SourceAddress}}'
-          destination.ip: '{{parsed_dsv_threat.message.DestinationAddress}}'
-      - set:
-          action.outcome: "success"
-        filter: '{{parsed_dsv_threat.message.Action != null}}'
-
+          action.name: '{{parsed_event.message.Action}}'
+          action.outcome_reason: '{{parsed_event.message.Description}}'
+          action.type: '{{parsed_event.message.Threat_ContentType}}'
+          destination.address: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
+          destination.bytes: '{{parsed_event.message.BytesReceived or parsed_event.message.out}}'
+          destination.geo.country_iso_code: '{{parsed_event.message.PanOSDestinationLocation}}'
+          destination.ip: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
+          destination.nat.ip: '{{parsed_event.message.destinationTranslatedAddress or parsed_event.message.NATDestinationIP}}'
+          destination.nat.port: '{{parsed_event.message.destinationTranslatedPort or parsed_event.message.NATDestinationPort}}'
+          destination.packets: '{{parsed_event.message.PanOSPacketsReceived or parsed_event.message.pkts_received}}'
+          destination.port: '{{parsed_event.message.DestinationPort or parsed_event.message.dpt}}'
+          destination.user.name: '{{parsed_event.message.duser}}'
+          email.from.address: '{{parsed_event.message.Sender}}'
+          email.subject: '{{parsed_event.message.Subject}}'
+          email.to.address: '{{parsed_event.message.Recipient}}'
+          event.action: '{{parsed_event.message.act or parsed_event.message.Threat_Category}}'
+          event.category: ['network']
+#          event.category: '{{parsed_event.message.Type | lower}}'
+          event.dataset: '{{parsed_event.message.DeviceEventClassID | lower}}'
+          event.duration: '{{parsed_event.message.ElapsedTimeInSec or parsed_event.message.SessionDuration}}'
+          event.kind: 'event'
+          event.reason: '{{parsed_event.message.reason or parsed_event.message.Threat_ContentName}}'
+          file.path: '{{parsed_event.message.URLFilename}}'
+          host.hostname: '{{parsed_event.message.dvchost}}'
+          host.id: '{{parsed_event.message.deviceExternalId}}'
+          host.mac: '{{parsed_event.message.PanOSSourceDeviceMac}}'
+          host.name: '{{parsed_event.message.dvchost}}'
+          host.os.family: '{{parsed_event.message.PanOSSourceDeviceOSFamily}}'
+          host.os.version: '{{parsed_event.message.PanOSSourceDeviceOSVersion}}'
+          host.type: '{{parsed_event.message.PanOSSourceDeviceCategory}}'
+          http.request.method: '{{parsed_event.message.HttpMethod}}'
+          http.request.referrer: '{{parsed_event.message.Referer}}'
+          log.hostname: '{{parsed_event.message.DeviceName or parsed_event.message.dvchost}}'
+          log.logger: '{{parsed_event.message.DataSourceName}}'
+          log.level: '{{parsed_event.message.Severity}}'
+          network.application: '{{parsed_event.message.app}}'
+          network.bytes: '{{parsed_event.message.Bytes or parsed_event.message.PanOSBytes}}'
+          network.packets: '{{parsed_event.message.Packets or parsed_event.message.PacketsTotal}}'
+          network.transport: '{{parsed_event.message.IPProtocol or parsed_event.message.proto}}'
+          observer.egress.interface.alias: '{{parsed_event.message.ToZone}}'
+          observer.ingress.interface.alias: '{{parsed_event.message.FromZone}}'
+          observer.product: 'PAN-OS'
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.version: '{{parsed_event.message.PanOSConfigVersion}}'
+          rule.name: '{{parsed_event.message.Rule}}'
+          rule.uuid: '{{parsed_event.message.PanOSRuleUUID}}'
+          source.address: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src}}'
+          source.bytes: '{{parsed_event.message.BytesSent or parsed_event.message.in}}'
+          source.geo.country_iso_code: '{{parsed_event.message.SourceRegion}}'
+          source.ip: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src}}'
+          source.nat.ip: '{{parsed_event.message.NATSourceIP or parsed_event.message.sourceTranslatedAddress}}'
+          source.nat.port: '{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}'
+          source.packets: '{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}'
+          source.port: '{{parsed_event.message.SourcePort or parsed_event.message.spt}}'
+          source.user.name: '{{parsed_event.message.suser}}'
+          user_agent.name: '{{parsed_event.message.UserAgent}}'
+          user_agent.os.name: '{{parsed_event.message.ClientOS}}'
+          user_agent.os.version: '{{parsed_event.message.ClientOSVersion}}'
+          user.name: '{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser}}'
+          paloalto: '{{parsed_event.message}}'
+      - translate:
+        dictionary:
+          'start': ['start']
+          'end': ['end']
+          'drop': ['denied']
+          'denied': ['denied']
+        mapping:
+          parsed_event.message.Name: event.type
+        fallback: ['denied']
