@@ -1,0 +1,152 @@
+name: proofpoint-tap
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: parse_message_id
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.messageID}}'
+        output_field: message
+        pattern: '<%{MESSAGE_ID}>|%{MESSAGE_ID}'
+        custom_patterns:
+          MESSAGE_ID: '%{GREEDYDATA:id}'
+  - name: set_common_fields
+  - name: set_fields_for_messages
+    filter: '{{json_event.message.type == "message"}}'
+  - name: set_fields_for_clicks
+    filter: '{{json_event.message.type == "click"}}'
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          email.local_id: '{{json_event.message.GUID}}'
+          email.message_id: '{{parse_message_id.message.id}}'
+          source.ip: '{{json_event.message.senderIP}}'
+          event.action: '{{json_event.message.status | lower}}'
+          event.dataset: '{{json_event.message.type | lower}}'
+          event.kind: 'event'
+          observer.vendor: 'ProofPoint'
+          observer.product: 'Targeted Attack Protection'
+      - set:
+          email.sender.address: '["{{json_event.message.sender}}"]'
+        filter: '{{json_event.message.get("sender") != None}}'
+  set_fields_for_messages:
+    actions:
+      - set:
+          '@timestamp': '{{json_event.message.messageTime}}'
+          event.type: ["info"]
+          event.category: ["email"]
+          email.x_mailer: '{{json_event.message.xmailer}}'
+          email.subject: '{{json_event.message.subject}}'
+          rule.name: '{{json_event.message.quarantineRule}}'
+      - set:
+          email.to.address: '{{json_event.message.recipient}}'
+        filter: '{{json_event.message.get("recipient", []) != []}}'
+      - set:
+          email.reply_to.address: '{{json_event.message.replyToAddress}}'
+        filter: '{{json_event.message.get("replyToAddress", []) != []}}'
+      - set:
+          email.from.address: '{{json_event.message.fromAddress}}'
+        filter: '{{json_event.message.get("fromAddress", []) != []}}'
+      - set:
+          email.cc.address: '{{json_event.message.ccAddresses}}'
+        filter: '{{json_event.message.get("ccAddresses", []) != []}}'
+      - set:
+          email.attachments: >
+            [
+              {% for attachment in json_event.message.messageParts %}
+              {
+                "file": {
+                  {% if attachment.filename != null %}"name": "{{attachment.filename}}",{% endif %}
+                  {% if attachment.contentType != null %}"mime_type": "{{attachment.contentType}}",{% endif %}
+                  {% if attachment.sha256 != null or attachment.md5 != null %}"hash": {
+                    {% if attachment.sha256 != null %}"sha256": "{{attachment.sha256}}",{% endif %}
+                    {% if attachment.md5 != null %}"md5": "{{attachment.md5}}",{% endif %}
+                  },{% endif %}
+                }
+              },
+              {% endfor %}
+            ]
+        filter: '{{json_event.message.get("messageParts", []) != []}}'
+      - set:
+          threat.enrichments: >
+            [
+              {% for threat in json_event.message.threatsInfoMap %}
+              {
+                "indicator": {
+                  {% if threat.get("threatTime") != None %}"first_seen": "{{threat.threatTime}}","last_seen": "{{threat.threatTime}}",{% endif %}
+                  {% if threat.get("threatUrl") != None %}"reference": "{{threat.threatUrl}}",{% endif %}
+                  {% if threat.get("threatType", "").lower() == "attachment" %}
+                  "type": "file",
+                  "file": {
+                    "hash": {
+                      "sha256": "{{threat.threat}}"
+                    },
+                  },
+                  {% elif threat.get("threatType", "").lower() == "url" %}
+                  "type": "domain-name",
+                  "url": {
+                    "domain": "{{threat.threat}}"
+                  },
+                  {% elif threat.get("threatType", "").lower() == "message" %}
+                  "type": "email-addr",
+                  "email": {
+                    "address": "{{threat.threat}}"
+                  },
+                  {% endif %}
+                }
+              },
+              {% endfor %}
+            ]
+          proofpoint.tap.threat.classifications: >
+            [
+              "{{json_event.message.threatsInfoMap | map(attribute="classification") | reject("none") | map("lower") | unique | join(', ')}}",
+            ]
+        filter: '{{json_event.message.get("threatsInfoMap", []) != []}}'
+      - set:
+          proofpoint.tap.modules: '{{json_event.message.modulesRun}}'
+          proofpoint.tap.cluster.id: '{{json_event.message.clusterId}}'
+          proofpoint.tap.threat.scores.spam: '{{json_event.message.spamScore}}'
+          proofpoint.tap.threat.scores.impostor: '{{json_event.message.impostorScore}}'
+          proofpoint.tap.threat.scores.malware: '{{json_event.message.malwareScore}}'
+          proofpoint.tap.threat.scores.phish: '{{json_event.message.phishScore}}'
+      - set:
+          proofpoint.tap.email.to.address: '{{json_event.message.toAddresses}}'
+        filter: '{{json_event.message.get("toAddresses", []) != []}}'
+  set_fields_for_clicks:
+    actions:
+      - set:
+          '@timestamp': '{{json_event.message.clickTime}}'
+          event.category: ["network"]
+          user_agent.original: '{{json_event.message.userAgent}}'
+          url.original: '{{json_event.message.url}}'
+          threat.enrichments: >
+            [
+              {
+                "indicator": {
+                  {% if json_event.message.get("threatTime") != None %}"first_seen": "{{json_event.message.threatTime}}","last_seen": "{{json_event.message.threatTime}}",{% endif %}
+                  {% if json_event.message.get("threatURL") != None %}"reference": "{{json_event.message.threatURL}}",{% endif %}
+                  {% if json_event.message.get("url") != None %}
+                  "type": "domain-name",
+                  "url": {
+                    "original": "{{json_event.message.url}}"
+                  },
+                  {% endif %}
+                }
+              }
+            ]
+          proofpoint.tap.threat.classifications: '["{{json_event.message.classification | lower}}"]'
+      - set:
+          email.to.address: '["{{json_event.message.recipient}}"]'
+        filter: '{{json_event.message.get("recipient") != None}}'
+      - translate:
+        dictionary:
+          "permitted": ["allowed"]
+          "blocked": ["denied"]
+        mapping:
+          json_event.message.status: event.type

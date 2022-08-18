@@ -5,6 +5,22 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+  - name: parsed_process_start
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.data.sourceprocessstarttime | float / 1000}}"
+        output_field: datetime
+        format: "timestamp"
+    filter: "{{json_event.message.get('data', {}).get('sourceprocessstarttime', 0) != 0}}"
+  - name: parsed_process_parent_start
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.data.sourceparentprocessstarttime | float / 1000}}"
+        output_field: datetime
+        format: "timestamp"
+    filter: "{{json_event.message.get('data', {}).get('sourceparentprocessstarttime', 0) != 0}}"
   - name: read_threat_info
     filter: '{{json_event.message.threatInfo != null }}'
   - name: read_agent_info
@@ -472,7 +488,6 @@ stages:
 
       - set:
           sentinelone.data.accountName: "{{json_event.message.data.accountName}}"
-          sentinelone.data.accessPermission: "{{json_event.message.data.accessPermission}}"
           sentinelone.data.action: "{{json_event.message.data.action}}"
           sentinelone.data.activatedEngines: "{{json_event.message.data.activatedEngines}}"
           sentinelone.data.bluetoothAddress: "{{json_event.message.data.bluetoothAddress}}"
@@ -497,6 +512,7 @@ stages:
           sentinelone.data.fileDisplayName: "{{json_event.message.data.fileDisplayName}}"
           file.name: "{{ json_event.message.data.filename or json_event.message.data.fileDisplayName or json_event.message.data.sourceprocessname }}"
           file.path: "{{json_event.message.data.filePath or  json_event.message.data.value}}"
+          file.hash.sha1: '{{json_event.message.data.fileContentHash}}'
 
           sentinelone.data.fullScopeDetails: "{{json_event.message.data.fullScopeDetails}}"
           sentinelone.data.fullScopeDetailsPath: "{{json_event.message.data.fullScopeDetailsPath}}"
@@ -529,7 +545,7 @@ stages:
           sentinelone.data.uploadedFilename: "{{json_event.message.data.uploadedFilename}}"
           sentinelone.data.uuid: "{{json_event.message.data.uuid}}"
 
-          user.full_name: "{{json_event.message.data.userName or json_event.message.data.username}}"
+          user.name: "{{json_event.message.data.userName or json_event.message.data.username}}"
           user.id: "{{json_event.message.data.userId}}"
 
           sentinelone.data.userscope: "{{json_event.message.data.userscope}}"
@@ -585,7 +601,6 @@ stages:
           process.parent.hash.sha1: "{{json_event.message.data.sourceparentprocesssha1}}"
           process.parent.hash.sha256: "{{json_event.message.data.sourceparentprocesssha256}}"
           process.parent.code_signature.subject_name: "{{json_event.message.data.sourceparentprocesssigneridentity}}"
-          process.parent.start: "{{json_event.message.data.sourceparentprocessstarttime}}"
 
           sentinelone.data.sourceparentprocessstoryline: "{{json_event.message.data.sourceparentprocessstoryline}}"
           sentinelone.data.sourceparentprocesssubsystem: "{{json_event.message.data.sourceparentprocesssubsystem}}"
@@ -605,7 +620,6 @@ stages:
           process.hash.md5: "{{json_event.message.data.sourceprocessmd5}}"
           process.hash.sha1: "{{json_event.message.data.sourceprocesssha1}}"
           process.hash.sha256: "{{json_event.message.data.sourceprocesssha256}}"
-          process.start: "{{json_event.message.data.sourceprocessstarttime}}"
 
           sentinelone.data.sourceprocessstoryline: "{{json_event.message.data.sourceprocessstoryline}}"
           sentinelone.data.sourceprocesssubsystem: "{{json_event.message.data.sourceprocesssubsystem}}"
@@ -655,7 +669,6 @@ stages:
           sentinelone.data.registryvalue: "{{json_event.message.data.registryvalue}}"
           sentinelone.data.confidenceLevel: "{{json_event.message.data.confidenceLevel}}"
           sentinelone.data.escapedMaliciousProcessArguments: "{{json_event.message.data.escapedMaliciousProcessArguments}}"
-          sentinelone.data.fileContentHash: "{{json_event.message.data.fileContentHash}}"
           sentinelone.data.globalStatus: "{{json_event.message.data.globalStatus}}"
           sentinelone.data.newGroupId: "{{json_event.message.data.newGroupId}}"
           sentinelone.data.newGroupName: "{{json_event.message.data.newGroupName}}"
@@ -738,6 +751,12 @@ stages:
           destination.port: "{{json_event.message.data.reportedRemotePort}}"
           sentinelone.data.ruleScopeLevel: "{{json_event.message.data.ruleScopeLevel}}"
           sentinelone.data.tagNames: "{{json_event.message.data.tagNames}}"
+      - set:
+          process.parent.start: "{{parsed_process_parent_start.datetime}}"
+        filter: "{{json_event.message.get('data', {}).get('sourceparentprocessstarttime') != None}}"
+      - set:
+          process.start: "{{parsed_process_start.datetime}}"
+        filter: "{{json_event.message.get('data', {}).get('sourceprocessstarttime') != None}}"
 
 
   read_agent_realtime_info:
@@ -844,9 +863,6 @@ stages:
           # Fix: sentinelone.threatInfo.identifiedAt: "{{json_event.message.threatInfo.identifiedAt}}"
           threat.enrichments.matched.occurred: "{{json_event.message.threatInfo.identifiedAt}}"
           sentinelone.threatInfo.NewTargetUserName: "{{json_event.message.threatInfo.NewTargetUserName}}"
-          # Fix: sentinelone.threatInfo.md5: "{{json_event.message.threatInfo.md5}}"
-          # not sure if this is about a file
-          threat.enrichments.indicator.file.hash.md5: "{{json_event.message.threatInfo.md5}}"
           # Fix: sentinelone.threatInfo.threatName: "{{json_event.message.threatInfo.threatName}}"
           # TODO: use threat.enrichments.indicator.modified_at when supported
 
@@ -854,6 +870,9 @@ stages:
           file.extension: "{{json_event.message.threatInfo.fileExtension |lower}}"
           file.path: "{{json_event.message.threatInfo.filePath}}"
           file.size: "{{json_event.message.threatInfo.fileSize}}"
+          file.hash.md5: "{{json_event.message.threatInfo.md5}}"
+          file.hash.sha1: "{{json_event.message.threatInfo.sha1}}"
+          file.hash.sha256: "{{json_event.message.threatInfo.sha256}}"
 
           sentinelone.threatInfo.analystVerdict: "{{json_event.message.threatInfo.analystVerdict}}"
           sentinelone.threatInfo.analystVerdictDescription: "{{json_event.message.threatInfo.analystVerdictDescription}}"
@@ -889,8 +908,6 @@ stages:
           sentinelone.threatInfo.publisherName: "{{json_event.message.threatInfo.publisherName}}"
           sentinelone.threatInfo.reachedEventsLimit: "{{json_event.message.threatInfo.reachedEventsLimit}}"
           sentinelone.threatInfo.rebootRequired: "{{json_event.message.threatInfo.rebootRequired}}"
-          sentinelone.threatInfo.sha1: "{{json_event.message.threatInfo.sha1}}"
-          sentinelone.threatInfo.sha256: "{{json_event.message.threatInfo.sha256}}"
           sentinelone.threatInfo.storyline: "{{json_event.message.threatInfo.storyline}}"
           sentinelone.threatInfo.threatId: "{{json_event.message.threatInfo.threatId}}"
           sentinelone.threatInfo.updatedAt: "{{json_event.message.threatInfo.updatedAt}}"
