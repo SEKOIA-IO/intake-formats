@@ -17,6 +17,22 @@ pipeline:
     filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
     name: parse_webfiltering
 -   external:
+        name: grok.match
+        properties:
+            input_field: '{{parse_json.message.name}}'
+            output_field: message
+            pattern: 'Controlled application %{WORD}: %{GREEDYDATA:process_title}'
+    filter: '{{parse_json.message.group == "APPLICATION_CONTROL"}}'
+    name: parse_application_control
+-   external:
+        name: grok.match
+        properties:
+            input_field: '{{parse_json.message.name}}'
+            output_field: message
+            pattern: 'An ″%{GREEDYDATA:action}″ action was taken. Username: %{GREEDYDATA} Rule names: ′%{GREEDYDATA:rule_name}′ User action: %{GREEDYDATA} Application Name: %{GREEDYDATA} Data Control action: %{WORD} File type: %{GREEDYDATA} File size: %{NUMBER:file_size} Source path: %{GREEDYDATA:file_path}'
+    filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
+    name: parse_dlp
+-   external:
       name: date.parse
       properties:
         input_field: parse_json.message.rt
@@ -49,6 +65,15 @@ stages:
         rule.name: '{{parse_webfiltering.message.rulename}}'
         url.original: '{{parse_webfiltering.message.url}}'
       filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
+    - set:
+        process.title: '{{parse_application_control.message.process_title}}'
+      filter: '{{parse_json.message.group == "APPLICATION_CONTROL"}}'
+    - set:
+        file.path: '{{parse_dlp.message.file_path}}'
+        file.size: '{{parse_dlp.message.file_size}}'
+        event.action: '{{parse_dlp.message.action}}'
+        rule.name: '{{parse_dlp.message.rule_name}}'
+      filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
     - translate:
       dictionary:
         'Event::Endpoint::Registered': ['host']
@@ -59,6 +84,8 @@ stages:
       dictionary:
         'Event::Endpoint::UserAutoCreated': ['creation']
         'Event::Endpoint::WebFilteringBlocked': ['denied']
+        'Event::Endpoint::DataLossPreventionAutomaticallyAllowed': ['allowed']
+        'Event::Endpoint::Application::Blocked': ['denied']
       mapping:
         event.code: event.type
     - set:
