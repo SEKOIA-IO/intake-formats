@@ -33,6 +33,14 @@ pipeline:
     filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
     name: parse_dlp
 -   external:
+        name: grok.match
+        properties:
+            input_field: '{{parse_json.message.name}}'
+            output_field: message
+            pattern: "PUA %{GREEDYDATA:action}: '%{GREEDYDATA:threat}' at '%{GREEDYDATA:file_path}'"
+    filter: '{{parse_json.message.group == "PUA"}}'
+    name: parse_pua
+-   external:
       name: date.parse
       properties:
         input_field: parse_json.message.rt
@@ -74,10 +82,17 @@ stages:
         event.action: '{{parse_dlp.message.action}}'
         rule.name: '{{parse_dlp.message.rule_name}}'
       filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
+    - set:
+        file.path: '{{parse_pua.message.file_path}}'
+        event.action: '{{parse_pua.message.action}}'
+        rule.name: '{{parse_pua.message.threat}}'
+      filter: '{{parse_json.message.group == "PUA"}}'
     - translate:
       dictionary:
         'Event::Endpoint::Registered': ['host']
         'Event::Endpoint::SavScanComplete': ['file', 'process']
+        'Event::Endpoint::CorePuaClean': ['file']
+        'Event::Endpoint::CorePuaDetection': ['file']
       mapping:
         event.code: event.category
     - translate:
@@ -86,8 +101,10 @@ stages:
         'Event::Endpoint::WebFilteringBlocked': ['denied']
         'Event::Endpoint::DataLossPreventionAutomaticallyAllowed': ['allowed']
         'Event::Endpoint::Application::Blocked': ['denied']
+        'Event::Endpoint::CorePuaClean': ['deletion']
       mapping:
         event.code: event.type
+      fallback: ['info']
     - set:
         event.category: ['file', 'process']
       filter: '{{parse_json.message.type.startswith("Event::Endpoint::Enc") or parse_json.message.type.startswith("Event::Endpoint::Denc") or parse_json.message.type.startswith("Event::Endpoint::Update")}}'
