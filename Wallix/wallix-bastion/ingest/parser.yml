@@ -1,0 +1,33 @@
+name: wallix-bastion
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+  - name: set_extracted_fields
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: 'event'
+          event.category: 'authentication'
+
+      - translate:
+        dictionary:
+          'sessionlog': 'authentication'
+        mapping:
+          parsed_event.message.type: event.category
+
+      - set:
+          event.type: end
+        filter: '{{parsed_event.message.infos.startswith("\"Closed")}}'
+
+  set_extracted_fields:
+    actions:
+      - set:
+          wallix: '{{ parsed_event.message}}'
+          action.type: '{{ parsed_event.message.type}}'
+          user.name: '{{ parsed_event.message.user}}'
+          source.ip: '{{ parsed_event.message.client_ip}}'
+          event.reason: '{{ parsed_event.message.infos }}'
