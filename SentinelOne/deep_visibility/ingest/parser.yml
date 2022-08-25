@@ -88,31 +88,6 @@ pipeline:
         input_field: json_event.message.targetFile.path
         output_field: file
         pattern: '%{GREEDYDATA}[\\\/]+%{GREEDYDATA:name}$'
-  - name: find_target_file_extension
-    filter: '{{find_target_file_name != null and find_target_file_name.file != null}}'
-    external:
-      name: grok.match
-      properties:
-        input_field: find_target_file_name.file.name
-        output_field: file
-        pattern: '%{GREEDYDATA}\.%{WORD:extension}$'
-
-  - name: find_file_name
-    filter: '{{json_event.message.file != null and json_event.message.file.isDir == "E_FALSE"}}'
-    external:
-      name: grok.match
-      properties:
-        input_field: json_event.message.file.path
-        output_field: file
-        pattern: '%{GREEDYDATA}[\\\/]+%{GREEDYDATA:name}$'
-  - name: find_file_extension
-    filter: '{{find_file_name != null and find_file_name.file != null}}'
-    external:
-      name: grok.match
-      properties:
-        input_field: find_file_name.file.name
-        output_field: extension
-        pattern: '%{GREEDYDATA}\.%{WORD:extension}$'
 
   - name: find_dll_name
     filter: '{{json_event.message.path != null}}'
@@ -286,7 +261,7 @@ stages:
       - set:
           process.name: "{{json_event.message.source.executable.path.split('\\\\') | last | lower}}"
         filter: '{{json_event.message.source.executable != null and json_event.message.source.executable.path  != null}}'
-  
+
   set_process_fields:
     actions:
       - set:
@@ -336,7 +311,7 @@ stages:
       - set:
           process.name: "{{json_event.message.process.executable.path.split('\\\\') | last | lower}}"
         filter: '{{json_event.message.process.executable != null and json_event.message.process.executable.path != null}}'
-  
+
   set_parent_fields:
     actions:
       - set:
@@ -385,7 +360,7 @@ stages:
           process.parent.name: "{{json_event.message.parent.executable.path.split('\\\\') | last | lower}}"
           process.parent.working_directory: '{{json_event.message.parent.executable.path.split("\\")[0:-1] | join("\\") }}'
         filter: '{{json_event.message.parent.executable != null and json_event.message.parent.executable.path != null}}'
-  
+
   set_target_fields:
     actions:
       - set:
@@ -430,7 +405,7 @@ stages:
       - set:
           deepvisibility.process.target.start: "{{convert_target_process_start.start_date}}"
         filter: '{{ convert_target_process_start != null }}'
-  
+
   set_source_parent_fields:
     actions:
       - set:
@@ -495,13 +470,13 @@ stages:
       - set:
           network.direction: "outbound"
         filter: '{{ json_event.message.direction == "OUTGOING" }}'
-  
+
   set_dns_fields:
     actions:
       - set:
           dns.question.name: "{{json_event.message.query}}"
           deepvisibility.dns.answers.results: "{{json_event.message.results}}"
-  
+
   set_module_load_fields:
     actions:
       - set:
@@ -524,14 +499,15 @@ stages:
           file.type: "file"
         filter: '{{json_event.message.targetFile.isDir == "E_FALSE"}}'
       - set:
-          file.name: "{{find_target_file_name.file.name}}"
-          file.extension: "{{find_target_file_extension.file.extension}}"
-        filter: "{{ find_target_file_extension != null }}"
+          file.name: '{{json_event.message.targetFile.path.split("\\") | last }}'
+          file.extension: "{{json_event.message.targetFile.path.split('.')|last}}"
+        filter: '{{json_event.message.targetFile != null and json_event.message.targetFile.isDir == "E_FALSE"}}'
+
       - set:
           file.created: "{{convert_target_file_creation_time.start_date}}"
         filter: '{{convert_target_file_creation_time != null }}'
-  
-  
+
+
   set_process_signature:
     actions:
       - set:
@@ -573,9 +549,9 @@ stages:
           file.type: "dir"
         filter: '{{ json_event.message.file.isDir != "E_FALSE"  }}'
       - set:
-          file.name: "{{find_file_name.file.name}}"
-          file.extension: "{{find_file_extension.file.extension}}"
-        filter: '{{ find_file_extension != null  }}'
+          file.name: '{{json_event.message.file.path.split("\\") | last }}'
+          file.extension: "{{json_event.message.file.path.split('.')|last}}"
+        filter: '{{json_event.message.file != null and json_event.message.file.isDir == "E_FALSE"}}'
       - set:
           file.created: "{{convert_file_creation_time.start_date}}"
         filter: '{{ convert_file_creation_time != null }}'

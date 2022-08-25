@@ -1,3 +1,0 @@
-# Palo Alto Networks
- 
-## Description
