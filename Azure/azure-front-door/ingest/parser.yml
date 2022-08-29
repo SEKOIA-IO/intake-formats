@@ -1,0 +1,54 @@
+name: azure-front-door
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: set_ecs_fields
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.time}}"
+          event.kind: "event"
+          event.category: ["network"]
+          event.type: ["info"]
+          event.action: "{{json_event.message.operationName}}"
+          observer.vendor: "Microsoft"
+          observer.product: "Azure Front Door"
+          observer.hostname: "{{json_event.message.properties.endpoint}}"
+          source.ip: "{{json_event.message.properties.originIP or json_event.message.properties.clientIp}}"
+          source.port: "{{json_event.message.properties.clientPort}}"
+          http.request.method: "{{json_event.message.properties.httpVerb or json_event.message.properties.httpMethod}}"
+          http.request.bytes: "{{json_event.message.properties.requestBytes}}"
+          http.request.referrer: "{{json_event.message.properties.referer}}"
+          http.response.status_code: "{{json_event.message.properties.httpStatusCode}}"
+          http.response.bytes: "{{json_event.message.properties.responseBytes}}"
+          url.original: "{{json_event.message.properties.probeURL or json_event.message.properties.requestUri}}"
+          user_agent.original: "{{json_event.message.properties.userAgent}}"
+          network.protocol: "{{json_event.message.properties.requestProtocol}}"
+          tls.cipher: "{{json_event.message.properties.securityCipher}}"
+          error.code: "{{json_event.message.properties.errorInfo}}"
+      - set:
+          http.version: "{{json_event.message.properties.httpVersion.split('.')[0:2] | join('.')}}"
+        filter: "{{json_event.message.properties.get('httpVersion') != None}}"
+      - set:
+          tls.version_protocol: "{{json_event.message.properties.securityProtocol.split('v')[0]}}"
+          tls.version: "{{json_event.message.properties.securityProtocol.split('v')[1]}}"
+        filter: "{{json_event.message.properties.get('securityProtocol') != None}}"
+      - translate:
+        dictionary:
+          FrontDoorHealthProbeLog: health
+        mapping:
+          json_event.message.category: event.dataset
+        fallback: access
+  set_custom_fields:
+    actions:
+      - set:
+          azure_front_door.resource_id: "{{json_event.message.resourceId}}"
+          azure_front_door.health_probe_id: "{{json_event.message.properties.healthProbeId}}"
+          azure_front_door.category: "{{json_event.message.category}}"
+          azure_front_door.cache_status: "{{json_event.message.propertiescacheStatus}}"
+          azure_front_door.route_name: "{{json_event.message.properties.routeName}}"
+          azure_front_door.rule.names: "{{json_event.message.properties.matchedRulesSetName.split(',')}}"
