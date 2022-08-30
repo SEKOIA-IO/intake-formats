@@ -7,26 +7,13 @@ pipeline:
         input_field: "{{original.message}}"
 
   # Example of date field # '\\/Date(1658579297628)\\/'
-  - name: parse_start_date
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{json_event.message.StartDate | replace("/Date(","") | replace(")/","") | int / 1000}}'
-        output_field: datetime
-        format: 'timestamp'
-  - name: parse_end_date
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{json_event.message.EndDate | replace("/Date(","") | replace(")/","") | int / 1000}}'
-        output_field: datetime
-        format: 'timestamp'
+
   - name: parse_received_date
     external:
       name: date.parse
       properties:
         input_field: '{{json_event.message.Received | replace("/Date(","") | replace(")/","") | int / 1000}}'
-        output_field: datetime
+        output_field: date
         format: 'timestamp'
 
   - name: extract_fields
@@ -35,15 +22,16 @@ stages:
   extract_fields:
     actions:
       - set:
+          event.kind: "event"
+          event.category: "email"
+          event.type: "info"
+          '@timestamp': "{{parse_received_date.date}}"
           office365.message_trace.MessageTraceId: "{{json_event.message.MessageTraceId}}"
           office365.message_trace.Size: "{{json_event.message.Size}}"
-          office365.message_trace.Status: "{{json_event.message.Status}}"
-          event.start: "{{parse_start_date.datetime}}"
-          event.end: "{{parse_end_date.datetime}}"
-          email.delivery_timestamp: "{{parse_received_date.datetime}}"
+          event.action: "{{json_event.message.Status}}"
           source.ip: "{{json_event.message.FromIP}}"
           email.message_id: "{{json_event.message.MessageId}}"
-          email.from.address: "{{json_event.message.SenderAddress}}"
-          email.to.address: "{{json_event.message.RecipientAddress}}"
+          email.from.address: ["{{json_event.message.SenderAddress}}"]
+          email.to.address: ["{{json_event.message.RecipientAddress}}"]
           organization.name: "{{json_event.message.Organization}}"
           email.subject: "{{json_event.message.Subject}}"
