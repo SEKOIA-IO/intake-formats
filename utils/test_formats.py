@@ -58,9 +58,6 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     # Make tests simpler to write by removing some default values
     merge_dict(testcase["expected"], constant_fields)
 
-    if testcase["expected"].get("event"):
-        merge_dict(parsed, {"event": testcase["expected"]["event"]})
-
     # Ignore the message field
     testcase["expected"]["message"] = parsed["message"]
 
