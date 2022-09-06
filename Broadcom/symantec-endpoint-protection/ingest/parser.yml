@@ -4,9 +4,13 @@ pipeline:
     external:
       name: grok.match
       properties:
-        pattern: '%{SCAN_RESULT}'
+        pattern: '%{SCAN_RESULT}|%{AGENT_ACTIVITIES}|%{AGENT_SYSTEM}|%{AGENT_BEHAVIOR}'
         custom_patterns:
-          SCAN_RESULT: '%{DATA:reason},IP Address: %{IP:host_ip},Computer name: %{DATA:host_name},Source: %{DATA:source},Risk name: %{DATA:risk_name},Occurrences: %{NUMBER:sightings},File path: %{DATA:file_path},Description: %{DATA:description},Actual action: %{DATA:main_action},Requested action: %{DATA:action},Secondary action: %{DATA:secondary_action},Event time: %{TIMESTAMP_ISO8601:first_seen},Event Insert Time: %{TIMESTAMP_ISO8601},End Time: %{TIMESTAMP_ISO8601:last_seen},Last update time: %{TIMESTAMP_ISO8601:modification_date},Domain Name: %{DATA:domain_name},Group Name: %{DATA:group_name},Server Name: %{DATA:server_name},User Name: %{DATA:username},Source Computer Name: %{DATA:source_computer_name},Source Computer IP: %{IP:source_computer_ip}?,Disposition: %{WORD:disposition},Download site: %{DATA:url},Web domain: %{DATA:site_domain},Downloaded by: %{DATA:downloaded_by},Prevalence: %{DATA:prevalence},Confidence: %{DATA:confidence},URL Tracking Status: %{WORD:url_tracking},First Seen: %{DATA:discovery_at},Sensitivity: %{DATA:sensitivity},Allowed application reason: %{DATA:application_reason},Application hash: %{BASE16NUM:application_hash},Hash type: %{DATA:application_hash_type},Company name: %{DATA:company_name},Application name: %{DATA:application_name},Application version: %{DATA:application_version},Application type: %{INT:application_type},File size \(bytes\): %{INT:file_size},Category set: %{DATA:rule_category},Category type: %{DATA:rule_type},Location: %{DATA:location},Intensive Protection Level: %{NUMBER:protection_level},Certificate issuer: %{DATA:cert_issuer},Certificate signer: %{DATA:cert_signer},Certificate thumbprint: %{DATA:cert_thumbprint},Signing timestamp: %{NUMBER:cert_timestamp}?,Certificate serial number: %{BASE16NUM:cert_serial_number}?'
+          SCAN_RESULT: '%{DATA:reason},IP Address: %{IP:host_ip},Computer name: %{HOSTNAME:host_hostname},Source: %{DATA:source},Risk name: %{DATA:risk_name},Occurrences: %{NUMBER:sightings},File path: %{DATA:file_path},Description: %{DATA:description},Actual action: %{DATA:main_action},Requested action: %{DATA:action},Secondary action: %{DATA:secondary_action},Event time: %{TIMESTAMP_ISO8601:first_seen},Event Insert Time: %{TIMESTAMP_ISO8601},End Time: %{TIMESTAMP_ISO8601:last_seen},Last update time: %{TIMESTAMP_ISO8601:modification_date},Domain Name: %{DATA:domain_name},Group Name: %{DATA:group_name},Server Name: %{DATA:server_name},User Name: %{DATA:username},Source Computer Name: %{DATA:source_computer_name},Source Computer IP: %{IP:source_computer_ip}?,Disposition: %{WORD:disposition},Download site: %{DATA:url},Web domain: %{DATA:site_domain},Downloaded by: %{DATA:downloaded_by},Prevalence: %{DATA:prevalence},Confidence: %{DATA:confidence},URL Tracking Status: %{WORD:url_tracking},First Seen: %{DATA:discovery_at},Sensitivity: %{DATA:sensitivity},Allowed application reason: %{DATA:application_reason},Application hash: %{BASE16NUM:application_hash},Hash type: %{DATA:application_hash_type},Company name: %{DATA:company_name},Application name: %{DATA:application_name},Application version: %{DATA:application_version},Application type: %{INT:application_type},File size \(bytes\): %{INT:file_size},Category set: %{DATA:rule_category},Category type: %{DATA:rule_type},Location: %{DATA:location},Intensive Protection Level: %{NUMBER:protection_level},Certificate issuer: %{DATA:cert_issuer},Certificate signer: %{DATA:cert_signer},Certificate thumbprint: %{DATA:cert_thumbprint},Signing timestamp: %{NUMBER:cert_timestamp}?,Certificate serial number: %{BASE16NUM:cert_serial_number}?'
+          AGENT_ACTIVITIES: 'Site: %{DATA:site_name},Server Name: %{DATA:server_name},Domain Name: %{DATA:domain_name},%{DATA:reason},%{DATA:host_hostname},%{DATA:username},%{HOSTNAME:host_name}'
+          AGENT_SYSTEM: '%{HOSTNAME:host_hostname},Category: %{NUMBER:event_category},%{DATA:source},Event Description: %{DATA:reason},Event time: %{TIMESTAMP_ISO8601:start_date},Group Name: %{DATA:group_name}'
+          AGENT_BEHAVIOR: '%{HOSTNAME:host_hostname},%{IP:host_ip}?,%{DATA:action},%{DATA},%{DATA:api_name}?,Begin: %{DATA:start_date},End Time: %{DATA:end_date},Rule: %{DATA:rule_name}?,%{NUMBER:process_id}?,%{PATH:process_path}?,%{NUMBER:return_code},%{DATA:module_name}?,%{DATA:process_params}?,User Name: %{DATA:username}?,Domain Name: %{DATA:domain_name}?,Action Type: %{NUMBER:action_type}?,File size \(bytes\): %{NUMBER:file_size}?,Device ID: %{DATA:device_id}?'
+          
   - name: parse_first_seen
     external:
       name: date.parse
@@ -21,6 +25,20 @@ pipeline:
         input_field: '{{parsed_event.message.last_seen}}'
         output_field: datetime
     filter: '{{parsed_event.message.get("last_seen") != None}}'
+  - name: parse_start_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.start_date}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.get("start_date") != None}}'
+  - name: parse_end_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.end_date}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.get("end_date") != None}}'
   - name: parse_modification_date
     external:
       name: date.parse
@@ -47,13 +65,28 @@ stages:
           observer.product: "Symantec Endpoint Protection"
           event.kind: "event"
           event.category: ["malware"]
-          event.type: ["info"]
           event.reason: "{{parsed_event.message.reason}}"
           event.action: "{{parsed_event.message.action}}"
           host.ip: "{{parsed_event.message.host_ip}}"
-          host.hostname: "{{parsed_event.message.host_name}}"
-          host.name: "{{parsed_event.message.host_name}}"
+          host.hostname: "{{parsed_event.message.host_hostname}}"
+          host.name: "{{parsed_event.message.host_name or parsed_event.message.host_hostname}}"
           user.name: "{{parsed_event.message.username}}"
+          file.path: "{{parsed_event.message.file_path}}"
+          file.size: "{{parsed_event.message.file_size}}"
+          process.pid: "{{parsed_event.message.process_id}}"
+          process.executable: "{{parsed_event.message.process_path}}"
+          process.name: "{{parsed_event.message.process_path | basename}}"
+          process.working_directory: "{{parsed_event.message.process_path | dirname}}"
+      - translate:
+        dictionary:
+          "Blocked": ["denied"]
+        mapping:
+          event.action: event.type
+        fallback: ["info"]
+      - set:
+          process.args: "{{parsed_event.message.process_params.split(' ')}}"
+        filter: "{{parsed_event.message.get('process_params') != None}}"
+      - set:
           threat.enrichments: >
             [{
               "indicator": {
@@ -63,16 +96,18 @@ stages:
                 {% if parsed_event.message.get('modification_date') != None %}"modified_at": "{{parse_modification_date.datetime}}",{% endif %}
                 {% if parsed_event.message.get('sightings') != None %}"sightings": {{parsed_event.message.sightings}},{% endif %}
                 {% if parsed_event.message.get('risk_name') != None %}"description": "{{parsed_event.message.risk_name}}",{% endif %}
+                {% if parsed_event.message.get('file_path') != None or parsed_event.message.get('file_size') != None %}
                 "file": {
                   {% if parsed_event.message.get('file_path') != None %}
                   "path": r"{{parsed_event.message.file_path}}",
                   {% endif %}
                   {% if parsed_event.message.get('file_size') != None %}"size": {{parsed_event.message.file_size}},{% endif %}
                 }
+                {% endif %}
               }
             }]
-          file.path: "{{parsed_event.message.file_path}}"
-          file.size: "{{parsed_event.message.file_size}}"
+        filter: '{{parsed_event.message.get("first_seen") != None or parsed_event.message.get("last_seen") != None or parsed_event.message.get("modification_date") != None or parsed_event.message.get("sightings") != None or parsed_event.message.get("risk_name") != None or parsed_event.message.get("file_path") != None}}'
+
   set_broadcom_fields:
     actions:
       - set:
@@ -80,7 +115,6 @@ stages:
           broadcom.endpoint_protection.server.domain: "{{parsed_event.message.domain_name}}"
           broadcom.endpoint_protection.server.group: "{{parsed_event.message.group_name}}"
           broadcom.endpoint_protection.server.name: "{{parsed_event.message.server_name}}"
-          broadcom.endpoint_protection.application.code_signature.digest_algorithm: "{{parsed_event.message.application_hash_type | lower()}}"
           broadcom.endpoint_protection.application.code_signature.certificate.serial_number: "{{parsed_event.message.cert_serial_number}}"
           broadcom.endpoint_protection.application.code_signature.certificate.thumbprint: "{{parsed_event.message.cert_thumbprint}}"
           broadcom.endpoint_protection.application.code_signature.signer: "{{parsed_event.message.cert_signer}}"
@@ -95,6 +129,9 @@ stages:
           broadcom.endpoint_protection.downloaded_by.file.path: "{{parsed_event.message.downloaded_by}}"
           broadcom.endpoint_protection.threat.type: "{{parsed_event.message.rule_type}}"
           broadcom.endpoint_protection.threat.category: "{{parsed_event.message.rule_category}}"
+      - set:
+          broadcom.endpoint_protection.application.code_signature.digest_algorithm: "{{parsed_event.message.application_hash_type | lower()}}"
+        filter: '{{parsed_event.message.get("application_hash_type") != None}}'
       - set:
           broadcom.endpoint_protection.application.code_signature.timestamp: "{{parse_cert_timestamp.datetime}}"
         filter: '{{parsed_event.message.get("cert_timestamp") != None}}'
