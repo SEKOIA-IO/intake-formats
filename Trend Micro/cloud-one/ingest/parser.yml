@@ -8,21 +8,28 @@ pipeline:
   - name: set_cef_header_fields
   - name: set_cef_extension_fields
   - name: set_cloud_one_custom_fields
+  - name: set_cef_extension_fields_cef
 
 stages:
   set_ecs_categorization_fields:
     actions:
       - set:
           event.kind: 'event'
-          event.category: 'intrusion_detection'
+          event.category: ['intrusion_detection']
+
+      - set:
+          event.kind: 'event'
+          event.category: ['authentication']
+          event.type: ['start']
+        filter: "{{parsed_event.message.Name.endswith('Signed In')}}"
 
       - translate:
         dictionary:
           "blocked": ["denied"]
           "Deny": ["denied"]
-          "Block": ["Deny"]
+          "Block": ["denied"]
         mapping:
-          parsed_event.message.act: trendmicro.ResourceType
+          parsed_event.message.act: event.type
         fallback: ['info']
 
   set_cloud_one_custom_fields:
@@ -33,8 +40,9 @@ stages:
           trendmicro.IntrusionPreventionStreamPosition: '{{parsed_event.message.get("Intrusion Prevention Stream Position")}}'
           trendmicro.IntrusionPreventionFlags: '{{parsed_event.message.get("Intrusion Prevention Flags")}}'
           trendmicro.FragmentationBits: '{{parsed_event.message.get("Fragmentation Bits")}}'
-          trendmicro.TCPFlags: '{{parsed_event.message.get("TCP Flags")}}'
-          container.name:  '{{parsed_event.message.get("Container)}}'
+          trendmicro.TCPFlags: '{{parsed_event.message.get("TCP Flags").split(" ")}}'
+          trendmicro.TrendMicroDsRelevantDetectionNames: '{{parsed_event.message.TrendMicroDsRelevantDetectionNames.split(";")}}'
+          container.name:  '{{parsed_event.message.get("Container")}}'
           file.name: '{{parsed_event.message.get("Infected Resource")}}'
           host.id: '{{parsed_event.message.get("Host ID")}}'
           event.reason: '{{parsed_event.message.get("actionReason")}}'
@@ -173,3 +181,8 @@ stages:
           host.hostname: "{{parsed_event.message.shost}}"
           source.mac: "{{parsed_event.message.smac}}"
           source.port: "{{parsed_event.message.spt}}"
+
+  set_cef_extension_fields_cef:
+    actions:
+      - set:
+          cef: '{{parsed_event.message}}'
