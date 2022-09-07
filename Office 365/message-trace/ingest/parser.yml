@@ -1,0 +1,37 @@
+name: message-trace
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+
+  # Example of date field # '\\/Date(1658579297628)\\/'
+
+  - name: parse_received_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.Received | replace("/Date(","") | replace(")/","") | int / 1000}}'
+        output_field: date
+        format: 'timestamp'
+
+  - name: extract_fields
+
+stages:
+  extract_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          event.category: "email"
+          event.type: "info"
+          '@timestamp': "{{parse_received_date.date}}"
+          office365.message_trace.MessageTraceId: "{{json_event.message.MessageTraceId}}"
+          office365.message_trace.Size: "{{json_event.message.Size}}"
+          event.action: "{{json_event.message.Status}}"
+          source.ip: "{{json_event.message.FromIP}}"
+          email.message_id: "{{json_event.message.MessageId}}"
+          email.from.address: ["{{json_event.message.SenderAddress}}"]
+          email.to.address: ["{{json_event.message.RecipientAddress}}"]
+          organization.name: "{{json_event.message.Organization}}"
+          email.subject: "{{json_event.message.Subject}}"
