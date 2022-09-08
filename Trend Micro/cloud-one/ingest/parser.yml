@@ -1,0 +1,188 @@
+name: cloud-one
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: set_ecs_categorization_fields
+  - name: set_cef_header_fields
+  - name: set_cef_extension_fields
+  - name: set_cloud_one_custom_fields
+  - name: set_cef_extension_fields_cef
+
+stages:
+  set_ecs_categorization_fields:
+    actions:
+      - set:
+          event.kind: 'event'
+          event.category: ['intrusion_detection']
+
+      - set:
+          event.kind: 'event'
+          event.category: ['authentication']
+          event.type: ['start']
+        filter: "{{parsed_event.message.Name.endswith('Signed In')}}"
+
+      - translate:
+        dictionary:
+          "blocked": ["denied"]
+          "Deny": ["denied"]
+          "Block": ["denied"]
+        mapping:
+          parsed_event.message.act: event.type
+        fallback: ['info']
+
+  set_cloud_one_custom_fields:
+    actions:
+      - set:
+          trendmicro: '{{parsed_event.message}}'
+          trendmicro.LogInspectionDescription: '{{parsed_event.message.get("LI Description")}}'
+          trendmicro.IntrusionPreventionStreamPosition: '{{parsed_event.message.get("Intrusion Prevention Stream Position")}}'
+          trendmicro.IntrusionPreventionFlags: '{{parsed_event.message.get("Intrusion Prevention Flags")}}'
+          trendmicro.FragmentationBits: '{{parsed_event.message.get("Fragmentation Bits")}}'
+          trendmicro.TCPFlags: '{{parsed_event.message.get("TCP Flags").split(" ")}}'
+          trendmicro.TrendMicroDsRelevantDetectionNames: '{{parsed_event.message.TrendMicroDsRelevantDetectionNames.split(";")}}'
+          container.name:  '{{parsed_event.message.get("Container")}}'
+          file.name: '{{parsed_event.message.get("Infected Resource")}}'
+          host.id: '{{parsed_event.message.get("Host ID")}}'
+          event.reason: '{{parsed_event.message.get("actionReason")}}'
+          file.hash.sha256: '{{ parsed_event.message.TrendMicroDsFileSHA256 }}'
+          file.hash.sha1: '{{ parsed_event.message.get("sha1") or parsed_event.message.TrendMicroDsFileSHA1 }}'
+          file.hash.md5: '{{ parsed_event.message.get("md5") or parsed_event.message.TrendMicroDsFileMD5 }}'
+          file.size: '{{parsed_event.message.get("Quarantine File Size")}}'
+          process.name: '{{parsed_event.message.get("TrendMicroDsProcess") ot parsed_event.message.sproc}}'
+          process.command_line: '{{parsed_event.message.TrendMicroDsCommandLine}}'
+          file.path: '{{parsed_event.message.filePath}}'
+          host.name: '{{parsed_event.message.dvchost}}'
+
+
+      # Resource Type - This field is only for spyware detection events.
+      - translate:
+        dictionary:
+          "10": "Files and Directories"
+          "11": "System Registry"
+          "12": "Internet Cookies"
+          "13": "Internet URL Shortcut"
+          "14": "Programs in Memory"
+          "15": "Program Startup Areas"
+          "16": "Browser Helper Object"
+          "17": "Layered Service Provider"
+          "18": "Hosts File"
+          "19": "Windows Policy Settings"
+          "20": "Browser"
+          "23": "Windows Shell Setting"
+          "24": "IE Downloaded Program Files"
+          "25": "Add/Remove Programs"
+          "26": "Services"
+        mapping:
+          parsed_event.message.cs4: trendmicro.ResourceType
+        fallback: 'Other'
+
+
+      # Risk Level - This field is only for spyware detection events.
+      - translate:
+        dictionary:
+          "0": "Very Low"
+          "25": "Low"
+          "50": "Medium"
+          "75": "High"
+          "100": "Very High"
+        mapping:
+          parsed_event.message.cs5: event.risk_score_norm
+
+
+
+      # This field is only for spyware detection events.
+      - translate:
+        dictionary:
+          "10": "Custom Intrusion Prevention (IPS) rule"
+          "20": "Log-only Firewall rule"
+          "21": "Deny Firewall rule"
+          "30": "Custom Integrity Monitoring rule"
+          "40": "Custom Log Inspection rule"
+          #          "100-7499": "System events"
+          #          "100-199": "Policy Firewall rule and Firewall stateful configuration"
+          #          "200-299": "IPS internal errors"
+          #          "300-399": "SSL/TLS events"
+          #          "500-899": "IPS normalization"
+          #          "1,000,000-1,999,999": "Trend Micro IPS rule. The signature ID is the same as the IPS rule ID."
+          #          "2,000,000-2,999,999": "Integrity Monitoring rule. The signature ID is the Integrity Monitoring rule ID + 1,000,000."
+          #          "3,000,000-3,999,999": "Log Inspection rule. The signature ID is the Log Inspection rule ID + 2,000,000."
+          #          "4,000,000-4,999,999": "Anti-Malware events. Currently, only these signature IDs are used:"
+          "4,000,000": "Anti-Malware - Real-Time Scan"
+          "4,000,001": "Anti-Malware - Manual Scan"
+          "4,000,002": "Anti-Malware - Scheduled Scan"
+          "4,000,003": "Anti-Malware - Quick Scan"
+          "4,000,010": "Anti-Spyware - Real-Time Scan"
+          "4,000,011": "Anti-Spyware - Manual Scan"
+          "4,000,012": "Anti-Spyware - Scheduled Scan"
+          "4,000,013": "Anti-Spyware - Quick Scan"
+          "4,000,020": "Suspicious Activity - Real-Time Scan"
+          "4,000,030": "Unauthorized Change - Real-Time Scan"
+          "5,000,000": "Web Reputation - Blocked"
+          "5,000,001": "Web Reputation - Detect Only"
+          "6,001,100": "Application Control - Detect Only, in block list"
+          "6,001,200": "Application Control - Detect Only, not in allow list"
+          "6,002,100": "Application Control - Blocked, in block list"
+          "6,002,200": "Application Control – Blocked, not in allow list"
+          "7,000,000": "Device Control - access unknown device was blocked"
+          "7,000,200": "Device Control - write unknown device was blocked"
+          "7,001,000": "Device Control - access USB device was blocked"
+          "7,001,200": "Device Control - write USB device was blocked"
+          "7,002,000": "Device Control - access mobile device was blocked"
+          "7,002,200": "Device Control - write mobile device was blocked"
+        mapping:
+          parsed_event.message.DeviceEventClassID: rule.name
+
+  # --- CEF GENERIC
+  set_cef_header_fields:
+    # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
+    actions:
+      - set:
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.type: '{{parsed_event.message.DeviceProduct}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          rule.id: '{{parsed_event.message.DeviceEventClassID}}'
+
+      - set:
+          # Match only for agentSeverity of type int
+          event.severity: '{{parsed_event.message.Severity}}'
+        filter: "{{parsed_event.message.Severity | re_match('[1-9]|10')}}"
+
+
+  set_cef_extension_fields:
+    actions:
+      - set:
+          event.action: '{{parsed_event.message.act}}'
+          network.protocol: '{{parsed_event.message.app}}'
+          event.reason: '{{parsed_event.message.msg}}'
+          file.name: '{{parsed_event.message.fname}}'
+          file.size: '{{parsed_event.message.fsize}}'
+          source.ip: '{{parsed_event.message.src}}'
+          source.user.name: '{{parsed_event.message.suser}}'
+
+      - translate:
+        dictionary:
+          0: 'inbound'
+          1: 'outbound'
+        mapping:
+          parsed_event.message.deviceDirection: network.direction
+
+      - set:
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          destination.user.name: "{{parsed_event.message.duser}}"
+          host.ip: "{{parsed_event.message.dvc}}"
+          destination.mac: "{{parsed_event.message.dmac}}"
+          host.network.ingress.bytes: "{{parsed_event.message.in}}"
+          host.network.egress.bytes: "{{parsed_event.message.out}}"
+          event.action: "{{parsed_event.message.reason}}"
+          url.original: "{{parsed_event.message.request}}"
+          host.hostname: "{{parsed_event.message.shost}}"
+          source.mac: "{{parsed_event.message.smac}}"
+          source.port: "{{parsed_event.message.spt}}"
+
+  set_cef_extension_fields_cef:
+    actions:
+      - set:
+          cef: '{{parsed_event.message}}'
