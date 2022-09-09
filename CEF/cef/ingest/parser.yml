@@ -20,12 +20,49 @@ pipeline:
         input_field:  "{{parsed_event.message.end or parsed_event.message.endTime}}"
         output_field: date
 
+  # Parse 'rt': '1629701622409'
+  - name: parse_receipt_time_unix
+    filter: '{{parsed_event.message.rt  != null and parsed_event.message.rt  | re_match("\d{10,13}")}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt | float / 1000}}"
+        output_field: date
+        format: 'timestamp'
 
+  # Parse 'rt': 'Feb 28 2021 18:20:54'
+  - name: parse_receipt_time_date
+    filter: '{{parsed_event.message.rt  != null and parse_receipt_time_unix==null}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt }}"
+        output_field: date
+
+
+  - name: set_timestamp
   - name: set_cef_header_fields
   - name: set_cef_extension_fields
   - name: set_cef_extension_fields_cef
 
 stages:
+  set_timestamp:
+    actions:
+
+      # Default timestamp is the start or startTime field
+      - set:
+          '@timestamp': "{{parse_start_date.date}}"
+
+      # Second choice is the receipt time (rc) field
+      - set:
+          '@timestamp': "{{parse_receipt_time_unix.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time_unix != null}}"
+
+      # Last choice is the end or endTime field
+      - set:
+          '@timestamp': "{{parse_end_date.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time_unix == null and parse_end_date != null}}"
+
   set_cef_header_fields:
   # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
     actions:
@@ -100,11 +137,6 @@ stages:
           source.nat.ip: "{{parsed_event.message.get('source Translated Address')}}"
           source.nat.port: "{{parsed_event.message.get('source TranslatedPort')}}"
           event.start:  "{{parse_start_date.date}}"
-          '@timestamp': "{{parse_start_date.date}}"
-
-      - set:
-          '@timestamp': "{{parse_end_date.date}}"
-        filter: "{{parsed_event.message.start == null and parsed_event.message.startTime == null and (parsed_event.message.end != null or parsed_event.message.endTime != null)}}"
 
       - translate:
         dictionary:
