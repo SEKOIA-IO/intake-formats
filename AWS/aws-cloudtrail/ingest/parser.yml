@@ -1,0 +1,80 @@
+name: aws-cloudtrail
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.eventTime}}'
+        output_field: datetime
+  - name: parsed_source
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.sourceIPAddress
+        output_field: source
+        pattern: '(%{IP:ip}|%{HOSTNAME:domain})'
+  - name: set_ecs_fields
+  - name: set_action_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.datetime}}'
+          event.kind: 'event'
+          event.category: ['network']
+          event.type: ['access']
+          event.dataset: 'cloudtrail'
+          event.action: '{{json_event.message.eventName}}'
+          event.code: '{{json_event.message.errorCode}}'
+          event.reason: '{{json_event.message.errorMessage}}'
+          event.provider: '{{json_event.message.eventSource}}'
+          cloud.provider: 'aws'
+          cloud.service.name: 'cloudtrail'
+          cloud.region: '{{json_event.message.awsRegion}}'
+          cloud.account.id: '{{json_event.message.userIdentity.accountId}}'
+          cloud.instance.id: '{{json_event.message.requestParameters.instanceId}}'
+          source.address: '{{json_event.message.sourceIPAddress}}'
+          source.ip: '{{parsed_source.source.ip}}'
+          source.domain: '{{parsed_source.source.domain}}'
+          action.type: '{{json_event.message.eventType}}'
+          action.name: '{{json_event.message.eventName}}'
+          action.outcome: 'success'
+          action.target: 'network-traffic'
+          user_agent.original: '{{json_event.message.userAgent}}'
+          user.id: '{{json_event.message.userIdentity.accountId}}'
+      - set:
+          user.name: '{{json_event.message.responseElements.user.userId}}'
+        filter: '{{json_event.message.get("responseElements") != None}}'
+      - set:
+          tls.cipher: '{{json_event.message.tlsDetails.cipherSuite}}'
+          tls.version: '{{json_event.message.tlsDetails.tlsVersion}}'
+        filter: '{{json_event.message.get("tlsDetails") != None}}'
+      - set:
+          event.category: ['iam']
+          event.type: ['change']
+        filter: '{{json_event.message.eventName in ("PasswordUpdated", "EnableMFADevice")}}'
+      - set:
+          event.category: ['authentication']
+        filter: '{{json_event.message.eventName == "ConsoleLogin"}}'
+      - translate:
+        dictionary:
+          Success: ['allowed']
+          Failure: ['denied']
+        mapping:
+          json_event.message.responseElements.ConsoleLogin: event.type
+        filter: '{{json_event.message.eventName == "ConsoleLogin"}}'
+
+  set_action_fields:
+    actions:
+      - set:
+          action.properties.requestParameters: '{{json_event.message.requestParameters}}'
+          action.properties.responseElements: '{{json_event.message.responseElements}}'
+          action.properties.errorCode: '{{json_event.message.errorCode}}'
+          action.properties.errorMessage: '{{json_event.message.errorMessage}}'
+          action.properties.recipientAccountId: '{{json_event.message.recipientAccountId}}'
+          action.properties.userIdentity: '{{json_event.message.userIdentity}}'
+          action.properties.resources: '{{json_event.message.resources}}'
