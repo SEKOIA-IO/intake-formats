@@ -5,21 +5,24 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\d %{NUMBER:account_id} %{DATA:interface_id} (%{IP:src}|-) (%{IP:dst}|-) (%{INT:srcport}|-) (%{INT:dstport}|-) (%{INT:protocol}|-) (%{INT:packets}|-) (%{INT:bytes}|-) %{NUMBER:start} %{NUMBER:end} (-|%{DATA:action}) %{WORD:log_status}.*'
+        pattern: '\d %{NUMBER:account_id} %{DATA:interface_id} (%{IP:srcaddr}|-) (%{IP:dstaddr}|-) (%{INT:srcport}|-) (%{INT:dstport}|-) (%{INT:protocol}|-) (%{INT:packets}|-) (%{INT:bytes}|-) %{NUMBER:start} %{NUMBER:end} (-|%{DATA:action}) %{WORD:log_status}.*'
+    filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$") == False}}'
+  - name: parse_event
+    external:
+      name: json.parse-json
+    filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$")}}'
   - name: parse_start_date
     external:
       name: date.parse
       properties:
-        input_field: '{{parse_event.message.start}}'
+        input_field: '{{parse_event.message.start | string}}'
         output_field: datetime
-        format: 'timestamp'
   - name: parse_end_date
     external:
       name: date.parse
       properties:
-        input_field: '{{parse_event.message.end}}'
+        input_field: '{{parse_event.message.end | string}}'
         output_field: datetime
-        format: 'timestamp'
   - name: set_ecs_fields
 
 stages:
@@ -31,7 +34,7 @@ stages:
           cloud.provider: 'aws'
           cloud.service.name: 'vpc'
           cloud.account.id: '{{parse_event.message.account_id}}'
-          destination.ip: '{{parse_event.message.dst}}'
+          destination.ip: '{{parse_event.message.dstaddr}}'
           destination.port: '{{parse_event.message.dstport}}'
           event.kind: 'event'
           event.category: '["network"]'
@@ -39,7 +42,7 @@ stages:
           event.end: '{{parse_end_date.datetime}}'
           network.iana_number: '{{parse_event.message.protocol}}'
           observer.ingress.interface.name: '{{parse_event.message.interface_id}}'
-          source.ip: '{{parse_event.message.src}}'
+          source.ip: '{{parse_event.message.srcaddr}}'
           source.port: '{{parse_event.message.srcport}}'
           source.bytes: '{{parse_event.message.bytes}}'
           source.packets: '{{parse_event.message.packets}}'
