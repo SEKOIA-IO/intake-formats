@@ -14,10 +14,10 @@ And here is the part of the JSON file responsible for this description:
 {
   "windows": [
     {
-      "value": "{user.domain}\\{user.name} logged on to {log.hostname} with special privileges",
+      "value": "{user.domain}\\{user.name} logged on to {host.name} with special privileges",
       "relationships": [{
         "source": "user.name",
-        "target": "log.hostname",
+        "target": "host.name",
         "type": "logged on to"
       }],
       "conditions": [{
