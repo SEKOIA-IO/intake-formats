@@ -1,0 +1,98 @@
+name: proofpoint-pod
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: parse_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.ts}}"
+        output_field: date
+  - name: set_common_fields
+  - name: set_fields_for_messages
+    filter: '{{json_event.message.type == "message"}}'
+  - name: set_fields_for_maillog
+    filter: '{{json_event.message.type == "maillog"}}'
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parse_datetime.date}}'
+          event.kind: 'event'
+          event.type: ["info"]
+          event.category: ["email"]
+          observer.vendor: 'ProofPoint'
+          observer.product: 'ProofPoint On Demand'
+  set_fields_for_messages:
+    actions:
+      - set:
+          event.dataset: 'message'
+          email.local_id: '{{json_event.message.guid}}'
+          email.message_id: '{{json_event.message.msg.normalizedHeader["message-id"][0]}}'
+          email.subject: '{{json_event.message.msg.normalizedHeader.subject[0]}}'
+          email.from.address: '{{json_event.message.msg.parsedAddresses.from}}'
+          email.to.address: '{{json_event.message.msg.parsedAddresses.to}}'
+          email.cc.address: '{{json_event.message.msg.parsedAddresses.cc}}'
+          email.reply_to.address: '{{json_event.message.msg.parsedAddresses["reply-to"]}}'
+          email.attachments: >
+            [
+              {% for part in json_event.message.msgParts %}{
+                "file": {
+                  "mime_type": "{{part.detectedMime}}",
+                  "name": "{{part.labeledName}}",
+                  "extension": "{{part.labeledExt}}",
+                  "size": "{{part.detectedSizeBytes}}",
+                  "hash": {
+                    "md5": "{{part.md5}}",
+                    "sha256": "{{part.sha256}}",
+                  }
+                }
+              }{% endfor %}
+            ]
+          source.ip: '{{json_event.message.connection.ip}}'
+          source.domain: '{{json_event.message.connection.host}}'
+          source.geo.country_iso_code: '{{json_event.message.connection.country}}'
+          tls.cipher: '{{json_event.message.connection.tls.inbound.cipher}}'
+          tls.version: '{{json_event.message.connection.tls.inbound.version}}'
+          network.transport: 'tcp'
+          proofpoint.pod.cluster.id: '{{json_event.message.metadata.origin.data.cid}}'
+          proofpoint.pod.threat.scores: '{{json_event.message.filter.modules.spam.scores.classifiers}}'
+          proofpoint.pod.urls: >
+            [
+              {% for part in json_event.message.msgParts %}
+              {% for url in part.urls %}
+              "{{url.url}}",
+              {% endfor %}
+              {% endfor %}
+            ]
+      - set:
+          network.protocol: '{{json_event.message.connection.protocol.split(":")[0]}}'
+        filter: '{{json_event.message.connection.protocol != None}}'
+      - set:
+          proofpoint.pod.modules: '{{json_event.message.filter.modules.keys() | list}}'
+        filter: '{{json_event.message.filter.get("modules") != None}}'
+  set_fields_for_maillog:
+    actions:
+      - set:
+          event.dataset: 'maillog'
+          error.code: '{{json_event.message.sm.dsn}}'
+          email.local_id: '{{json_event.message.sm.qid}}'
+          email.message_id: '{{json_event.message.sm.msgid}}'
+          email.x_mailer: '{{json_event.message.sm.mailer}}'
+          email.from.address: '{{json_event.message.sm.from}}'
+          email.to.address: '{{json_event.message.sm.to}}'
+          network.transport: 'tcp'
+          proofpoint.pod.cluster.id: '{{json_event.message.pps.cid}}'
+      - set:
+          email.from.address: '[{{json_event.message.sm.from}}]'
+        filter: '{{json_event.message.sm.get("from") != None}}'
+      - set:
+          tls.cipher: '{{json_event.message.tls.cipher}}'
+        filter: '{{json_event.message.tls.cipher != "NONE"}}'
+      - set:
+          tls.version: '{{json_event.message.tls.version}}'
+        filter: '{{json_event.message.tls.version != "NONE"}}'
