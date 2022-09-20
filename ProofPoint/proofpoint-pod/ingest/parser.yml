@@ -23,14 +23,14 @@ stages:
       - set:
           '@timestamp': '{{parse_datetime.date}}'
           event.kind: 'event'
-          event.type: ["info"]
-          event.category: ["email"]
           observer.vendor: 'ProofPoint'
           observer.product: 'ProofPoint On Demand'
   set_fields_for_messages:
     actions:
       - set:
           event.dataset: 'message'
+          event.category: ["email", "network"]
+          event.action: '{{json_event.message.filter.disposition}}'
           email.local_id: '{{json_event.message.guid}}'
           email.message_id: '{{json_event.message.msg.normalizedHeader["message-id"][0]}}'
           email.subject: '{{json_event.message.msg.normalizedHeader.subject[0]}}'
@@ -75,10 +75,19 @@ stages:
       - set:
           proofpoint.pod.modules: '{{json_event.message.filter.modules.keys() | list}}'
         filter: '{{json_event.message.filter.get("modules") != None}}'
+      - translate:
+        dictionary:
+          'continue': ['allowed']
+          'discard': ['denied']
+        mapping:
+          event.action: event.type
+        fallback: ["info"]
   set_fields_for_maillog:
     actions:
       - set:
           event.dataset: 'maillog'
+          event.type: ["info"]
+          event.category: ["email"]
           error.code: '{{json_event.message.sm.dsn}}'
           email.local_id: '{{json_event.message.sm.qid}}'
           email.message_id: '{{json_event.message.sm.msgid}}'
