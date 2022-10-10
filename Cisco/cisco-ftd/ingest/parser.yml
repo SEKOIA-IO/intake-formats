@@ -1,0 +1,164 @@
+name: cisco-ftd
+pipeline:
+  - name: pre_parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: "original.message"
+        output_field: pre_message
+        pattern: '(<[0-9]+>)?(%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp})?(%{IP:log_ip})?(%{SPACE}%{DATA:log_hostname}%{SPACE})?(\:)?\%(FTD|ASA|NGIPS)\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{DATA:raw_message}'
+        custom_patterns: 
+          MESSAGE_NUMBER: '[0-9]{6}'
+
+  - name: parsed_event
+    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003","106006","106007","106010","106012","106014", "302020", "302021", "716058","716059", "722011", "722012"]}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: message
+        pattern: '%{CISCO_106001}|%{CISCO_106006_106007_106010}|%{CISCO_106012}|%{CISCO_106014}|%{CISCO_110003}|%{CISCO_302020_302021}|%{CISCO_716058}|%{CISCO_716059}|%{CISCO_722011}|%{CISCO_722012}'
+        custom_patterns:
+          CISCO_106001: '%{DATA}%{CISCO_DIRECTION:network_direction} %{DATA:network_transport} connection %{CISCO_ACTION:action_name} from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port} flags %{GREEDYDATA:tmp_tcp_flags} on interface %{GREEDYDATA:destination_address}' # Add parsing action.type= connection
+          CISCO_106006_106007_106010: '%{DATA}%{CISCO_ACTION:action_name} %{CISCO_DIRECTION:network_direction} %{DATA:network_transport} (?:from|src) %{IP:source_ip}/%{INT:source_port}(\(%{DATA}\))? (?:to|dst) %{IP:destination_ip}/%{INT:destination_port}(\(%{DATA}\))? (?:on interface %{DATA:destination_address}|due to %{CISCO_REASON:action_outcome_reason})'
+          CISCO_106014: '%{DATA}%{CISCO_ACTION:action_name} %{CISCO_DIRECTION:network_direction} %{DATA:network_transport} src %{DATA:source_address}:%{IP:source_ip}(\(%{DATA}\))? dst %{DATA:destination_address}:%{IP:destination_ip}(\(%{DATA}\))? \(type %{INT:tmp_icmp_type}, code %{INT:tmp_icmp_code}\)'
+          CISCO_106012: '%{DATA}%{CISCO_ACTION:action_name} IP from %{IP:source_ip} to %{IP:destination_ip}, %{GREEDYDATA:action_outcome_reason}'
+          CISCO_110003: '%{GREEDYDATA:action_name} from %{WORD}\:%{IP:source_ip}\/([1-2]?[0-9]|3[0-2]) to %{WORD}\:%{IP:destination_ip}\/([1-2]?[0-9]|3[0-2])(, %{GREEDYDATA:action_outcome_reason})?'
+          CISCO_302020_302021: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection for faddr %{IP:destination_ip}/%{INT:destination_port}(?:\(%{DATA}\))? gaddr %{IP}/%{INT} laddr %{IP:source_ip}/%{INT}(?: type %{INT:tmp_icmp_type} code %{INT})?( \(%{DATA:user_name}\))?'
+          CISCO_716058: Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:action_name}\. Waiting to resume.
+          CISCO_716059: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{DATA:action_name} connection from IP <%{IP}>.'
+          CISCO_722011: 'Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}'
+          CISCO_722012: 'Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}'
+
+          
+  - name: parse_kv2
+    filter: '{{pre_parsing.pre_message.message_number_grok in ["430001","430002","430003","430004","430005"]}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{pre_parsing.pre_message.raw_message}}'
+        output_field: parse_kv2_field
+        value_sep: ':\s'
+        item_sep: ","
+
+  - name: set_ecs_fields
+    # To add filter no ?
+  - name: set_ecs_fields_from_kv
+    filter: '{{pre_parsing.pre_message.message_number_grok in ["430001","430002","430003","430004","430005"]}}'
+  - name: set_ecs_fields_from_condition
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+
+          '@timestamp': '{{pre_parsing.pre_message.timestamp}}'
+          action.name: '{{parsed_event.message.action_name|lower }}'
+          action.target: 'network-traffic'
+          #Add default action.target = 'network-traffic' to be compliant with STIX2
+          destination.bytes: '{{parsed_event.message.server_to_client_bytes}}'
+          destination.domain: '{{parsed_event.message.destination_host or parsed_event.message.requested_host }}'
+          destination.ip: '{{parsed_event.message.destination_ip}}'
+          destination.port: '{{parsed_event.message.destination_port}}'
+          event.action: '{{parsed_event.message.result}}'
+          event.category: ['network']
+          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
+          event.kind: 'event'
+          event.reason: '{{parsed_event.message.block_reason}}'
+          file.name: '{{parsed_event.message.filename}}'
+          host.name: '{{parsed_event.message.client_system_name}}'
+          http.request.bytes: '{{parsed_event.message.source_bytes}}'
+          http.request.method: '{{parse_first_line.message.http_method or parsed_event.message.http_action}}'
+          http.request.mime_type: '{{parsed_event.message.media_type}}'
+          http.response.bytes: '{{parsed_event.message.destination_bytes}}'
+          http.response.status_code: '{{parsed_event.message.http_status_code}}'
+          network.direction: '{{parsed_event.message.network_direction}}'
+          network.transport: '{{parsed_event.message.network_transport}}'
+          observer.hostname: '{{parsed_event.message.hostname}}'
+          observer.vendor: 'Cisco'
+          process.name: '{{parsed_event.message.process_name}}'
+          rule.category: '{{parsed_event.message.category}}'
+          rule.name: '{{parsed_event.message.rule_name or parsed_event.message.last_rule}}'
+          rule.ruleset: '{{parsed_event.message.ruleset_name}}'
+          source.bytes: '{{parsed_event.message.client_to_server_bytes}}'
+          source.ip:  '{{parsed_event.message.source_ip}}'
+          url.original: '{{parsed_event.message.uri}}'
+          url.path: '{{parsed_event.message.requested_path}}'
+          url.scheme: '{{parsed_event.message.uri_scheme}}'
+          user.domain: '{{parsed_event.message.user_group}}'
+          user.name: '{{parsed_event.message.user_name}}'
+
+          # Temp_debug: '{{pre_parsing.pre_message.timestamp}}'
+          
+
+  set_ecs_fields_from_kv:
+    actions:
+      - set:
+          '@timestamp': '{{pre_parsing.pre_message.timestamp}}'
+          action.name: '{{parse_kv2.parse_kv2_field.action_name}}'
+          action.target: 'network-traffic'
+          cisco.ftd.file_sandbox_status: '{{parse_kv2.parse_kv2_field.FileSandboxStatus}}'
+          cisco.ftd.file_storage_status: '{{parse_kv2.parse_kv2_field.FileStorageStatus}}'
+          cisco.ftd.sha_disposition: '{{parse_kv2.parse_kv2_field.SHA_Disposition}}'
+          cisco.ftd.spero_disposition: '{{parse_kv2.parse_kv2_field.SperoDisposition}}'
+          cisco.ftd.threat_name: '{{parse_kv2.parse_kv2_field.ThreatName}}'
+          destination.bytes: '{{parse_kv2.parse_kv2_field.ResponderBytes}}'
+          destination.bytes: '{{parse_kv2.parse_kv2_field.ResponderBytes}}'
+          destination.domain: '{{parse_kv2.parse_kv2_field.destination_host or parse_kv2.parse_kv2_field.requested_host }}'
+          destination.ip: '{{parse_kv2.parse_kv2_field.DstIP}}'
+          destination.packets: '{{parse_kv2.parse_kv2_field.ResponderPackets}}'
+          destination.port: '{{parse_kv2.parse_kv2_field.DstPort}}'
+          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
+          event.kind: 'event'
+          file.extension: '{{ parse_kv2.parse_kv2_field.FileType|lower }}'
+          file.hash.sha256: '{{parse_kv2.parse_kv2_field.FileSHA256}}' 
+          file.name: '{{parse_kv2.parse_kv2_field.FileName}}' 
+          file.size: '{{parse_kv2.parse_kv2_field.FileSize}}'
+          host.hostname: '{{pre_parsing.pre_message.log_hostname}}'
+          host.ip: '{{pre_parsing.pre_message.log_ip}}'
+          log.level: '{{parse_kv2.parse_kv2_field.EventPriority}}'
+          network.application: '{{parse_kv2.parse_kv2_field.Client|lower }}'
+          network.direction: '{{parse_kv2.parse_kv2_field.network_direction}}'
+          network.protocol: '{{parse_kv2.parse_kv2_field.ApplicationProtocol}}'
+          network.transport: '{{parse_kv2.parse_kv2_field.Protocol}}'
+          rule.name: '{{parse_kv2.parse_kv2_field.AccessControlRuleName}}'
+          rule.ruleset: '{{parse_kv2.parse_kv2_field.ACPolicy}}'
+          source.bytes: '{{parse_kv2.parse_kv2_field.InitiatorBytes}}'
+          source.ip: '{{parse_kv2.parse_kv2_field.SrcIP}}'
+          source.packets: '{{parse_kv2.parse_kv2_field.InitiatorPackets}}'
+          source.port: '{{parse_kv2.parse_kv2_field.SrcPort}}'
+          threat.software.name: '{{parse_kv2.parse_kv2_field.ThreatName}}'
+          url.original: '{{parse_kv2.parse_kv2_field.URI}}'
+          user.name: '{{parse_kv2.parse_kv2_field.User}}'
+          user_agent.original: '{{parse_kv2.parse_kv2_field.UserAgent}}'
+          
+          
+          # Temp_debug: '{{pre_parsing.pre_message.log_hostname}}'
+          # Temp_debug: '{{pre_parsing.pre_message.timestamp}}'
+          # Temp_debug: '{{parse_kv2.parse_kv2_field}}'
+          
+  set_ecs_fields_from_condition:
+    actions:
+    # ideas from https://gist.github.com/adriansr/902dea2b92f1ea8624714c1bc97a3c78
+      - set: 
+          event.action: 'intrusion-detected'
+        filter: '{{pre_parsing.pre_message.message_number_grok == "430001"}}'
+      - set: 
+          event.action: 'connection-started'
+        filter: '{{pre_parsing.pre_message.message_number_grok == "430002"}}'
+      - set: 
+          event.action: 'connection-finished'
+        filter: '{{pre_parsing.pre_message.message_number_grok == "430003"}}'
+      - set: 
+          event.action: 'file-detected'
+        filter: '{{pre_parsing.pre_message.message_number_grok == "430004"}}'
+      - set: 
+          event.action: 'malware-detected'
+          event.kind: 'alert'
+        filter: '{{pre_parsing.pre_message.message_number_grok == "430005"}}'
+      - set:
+          network.transport: '{{parsed_event.message.network_transport|lower }}'
+        filter: '{{parsed_event.message.get("network_transport") != None}}'
+      - set: 
+          hash.sha256: '{{parse_kv2.parse_kv2_field.FileSHA256}}'
+        filter: '{{parse_kv2.parse_kv2_field.FileSize != None}}'
