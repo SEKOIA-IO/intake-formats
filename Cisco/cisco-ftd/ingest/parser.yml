@@ -11,24 +11,42 @@ pipeline:
           MESSAGE_NUMBER: '[0-9]{6}'
 
   - name: parsed_event
-    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003","106006","106007","106010","106012","106014", "302020", "302021", "716058","716059", "722011", "722012"]}}'
+    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106023", "106100", "302013", "302014", "302015", "302016", "302020", "302021", "313001", "313004", "313008", "716058", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016"]}}'
     external:
       name: grok.match
       properties:
         input_field: "{{pre_parsing.pre_message.raw_message}}"
         output_field: message
-        pattern: '%{CISCO_106001}|%{CISCO_106006_106007_106010}|%{CISCO_106012}|%{CISCO_106014}|%{CISCO_110003}|%{CISCO_302020_302021}|%{CISCO_716058}|%{CISCO_716059}|%{CISCO_722011}|%{CISCO_722012}'
+        pattern: '%{CISCO_106001}|%{CISCO_106006_106007_106010}|%{CISCO_106012}|%{CISCO_106014}|%{CISCO_106015}|%{CISCO_110003}|%{CISCO_106023}|%{CISCO_106100}|%{CISCO_302013_302014_302015_302016}|%{CISCO_302020_302021}|%{CISCO_313001_313004_313008}|%{CISCO_716058}|%{CISCO_716059}|%{CISCO_722011}|%{CISCO_722012}|%{CISCO_722028}|%{CISCO_722032_722034}|%{CISCO_722033}|%{CISCO_722022_722023}|%{CISCO_722037}|%{CISCO_725001}|%{CISCO_733100}|%{CISCO_725002}|%{CISCO_725003}|%{CISCO_725006}|%{CISCO_725007}|%{CISCO_737016}'
         custom_patterns:
           CISCO_106001: '%{DATA}%{CISCO_DIRECTION:network_direction} %{DATA:network_transport} connection %{CISCO_ACTION:action_name} from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port} flags %{GREEDYDATA:tmp_tcp_flags} on interface %{GREEDYDATA:destination_address}' # Add parsing action.type= connection
           CISCO_106006_106007_106010: '%{DATA}%{CISCO_ACTION:action_name} %{CISCO_DIRECTION:network_direction} %{DATA:network_transport} (?:from|src) %{IP:source_ip}/%{INT:source_port}(\(%{DATA}\))? (?:to|dst) %{IP:destination_ip}/%{INT:destination_port}(\(%{DATA}\))? (?:on interface %{DATA:destination_address}|due to %{CISCO_REASON:action_outcome_reason})'
           CISCO_106014: '%{DATA}%{CISCO_ACTION:action_name} %{CISCO_DIRECTION:network_direction} %{DATA:network_transport} src %{DATA:source_address}:%{IP:source_ip}(\(%{DATA}\))? dst %{DATA:destination_address}:%{IP:destination_ip}(\(%{DATA}\))? \(type %{INT:tmp_icmp_type}, code %{INT:tmp_icmp_code}\)'
           CISCO_106012: '%{DATA}%{CISCO_ACTION:action_name} IP from %{IP:source_ip} to %{IP:destination_ip}, %{GREEDYDATA:action_outcome_reason}'
+          CISCO_106015: '%{CISCO_ACTION:action_name} %{DATA:network_transport} \(%{DATA:action_outcome_reason}\) from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port} flags %{DATA} on interface %{GREEDYDATA:destination_address}'
+          CISCO_106023: '%{CISCO_ACTION:action_name}( protocol)? %{DATA:network_transport} src %{DATA:source_address}:%{DATA:source_ip}(/%{INT:source_port})?(\(%{DATA}\))? dst %{DATA:destination_address}:%{DATA:destination_ip}(/%{INT:destination_port})?(\(%{DATA}\))?( \(type %{INT:tmp_icmp_type}, code %{INT:tmp_icmp_code}\))? by access-group "?%{DATA:action_outcome_reason}"? \[%{DATA}, %{DATA}\]'
+          CISCO_106100: 'access-list %{NOTSPACE:action_outcome_reason} %{CISCO_ACTION:action_name} %{DATA:network_transport} %{DATA:source_address}/%{IP:source_ip}\(%{INT:source_port}\)(\(%{DATA}\))? -> %{DATA:destination_address}/%{IP:destination_ip}\(%{INT:destination_port}\)(\(%{DATA}\))? hit-cnt %{INT:network_packets} %{CISCO_INTERVAL:network_duration} \[%{DATA}, %{DATA}\]'
           CISCO_110003: '%{GREEDYDATA:action_name} from %{WORD}\:%{IP:source_ip}\/([1-2]?[0-9]|3[0-2]) to %{WORD}\:%{IP:destination_ip}\/([1-2]?[0-9]|3[0-2])(, %{GREEDYDATA:action_outcome_reason})?'
+          CISCO_302013_302014_302015_302016: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection %{INT} for %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}( \(%{IP:source_nat_ip}/%{INT:source_nat_port}\))?(\(%{DATA}\))? to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}( \(%{IP:destination_nat_ip}/%{INT:destination_nat_port}\))?(\(%{DATA}\))?( duration %{TIME:network_duration} bytes %{INT:network_bytes})?(?: %{CISCO_REASON:action_outcome_reason})?( \(%{DATA:user_name}\))?'
           CISCO_302020_302021: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection for faddr %{IP:destination_ip}/%{INT:destination_port}(?:\(%{DATA}\))? gaddr %{IP}/%{INT} laddr %{IP:source_ip}/%{INT}(?: type %{INT:tmp_icmp_type} code %{INT})?( \(%{DATA:user_name}\))?'
+          CISCO_313001_313004_313008: '%{CISCO_ACTION:action_name} %{DATA:network_transport} type=%{INT:tmp_icmp_type}, code=%{INT:tmp_icmp_code} from %{IP:source_ip} on interface %{DATA:destination_address}( to %{IP:destination_ip})?'
           CISCO_716058: Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:action_name}\. Waiting to resume.
           CISCO_716059: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{DATA:action_name} connection from IP <%{IP}>.'
           CISCO_722011: 'Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}'
           CISCO_722012: 'Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}'
+          CISCO_722022_722023: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{WORD:network_protocol} %{GREEDYDATA:action_name} (with|without) compression'
+          CISCO_722028: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> Stale SVC %{GREEDYDATA:action_name}'
+          CISCO_722032_722034: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> New %{WORD:network_protocol} SVC %{GREEDYDATA:action_name}'
+          CISCO_722033: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> First %{WORD:network_protocol} SVC %{GREEDYDATA:action_name}'
+          CISCO_722037: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> SVC %{GREEDYDATA:action_name}: %{GREEDYDATA:action_outcome_reason}.'
+          CISCO_725001: '%{DATA:action_name} with (client|server) %{DATA:source_address}\:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)?( for %{NOTSPACE} session|).'
+          CISCO_733100: '\[%{DATA:action_name}\] drop %{DATA} exceeded. Current burst rate is %{INT} per second, max configured rate is %{INT}; Current average rate is %{INT} per second, max configured rate is %{INT}; Cumulative total count is %{INT}'
+          CISCO_725002: '%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)?( for %{NOTSPACE} session|)'
+          CISCO_725003: '%{DATA:action_name} (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|) request to resume previous session.'
+          CISCO_725006: '%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)'
+          CISCO_725007: '%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|) %{WORD:action_outcome_reason}.'
+          CISCO_737016: 'IPAA: %{GREEDYDATA:action_name} %{IP:source_ip}'
+
 
           
   - name: parse_kv2
