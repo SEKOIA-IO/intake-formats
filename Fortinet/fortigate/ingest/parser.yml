@@ -58,8 +58,59 @@ pipeline:
         timezone: '{{parsed_event.message.tz}}'
 
   - name: field_extraction
+  - name: ecs_categorization_fields
+  - name: set_event_dataset
 
 stages:
+  set_event_dataset:
+      # This stage is used so harmonize the value
+      # of event.dataset between every supported event formats (cef, kv, standard)
+      # the formats kv and standard types are translated to CEF events "cat" field
+    actions:
+      - set:
+          event.dataset: "{{ parsed_event.message.cat}}"
+        filter: '{{original.message.startswith("CEF")}}'
+
+      - translate:
+        dictionary:
+          "vpn": "event:vpn"
+          "system": "event:system"
+          "wad": "utm:wad"
+          "anomaly": "utm:anomaly"
+          "app-ctrl": "utm:app-ctrl"
+          "forward": "traffic:forward"
+          "local": "traffic:local"
+          "dns-response": "dns:dns-response"
+        mapping:
+          parsed_event.message.subtype: event.dataset
+        filter: '{{parsed_event.message.get("subtype") != None}}'
+
+
+  ecs_categorization_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          event.category: ["network"]
+          
+      - set:
+          event.type: ["allowed", "connection"]
+        filter: '{{parsed_event.message.action == "accept"
+         or parsed_event.message.act in ["pass", "permit", "passthrough", "log-only", "ssl-new-con", "accept", "dns"]
+         or parsed_event.message.action in ["pass", "ip-conn"] 
+         or parsed_event.message.FortinetFortiGateaction in ["accept"] }}'
+
+      - set:
+          event.type: ["connection", "end"]
+        filter: '{{parsed_event.message.act == "close"
+         or parsed_event.message.action in ["server-rst"]
+         or parsed_event.message.FortinetFortiGateaction in ["timeout"]}}'
+
+      - set:
+          event.type: ["denied", "connection", "end"]
+        filter: '{{parsed_event.message.act in ["block", "blocked", "clear_session", "reset"]
+         or parsed_event.message.action in ["clear_session"]}}'
+
+
   field_extraction:
     actions:
       - set:
