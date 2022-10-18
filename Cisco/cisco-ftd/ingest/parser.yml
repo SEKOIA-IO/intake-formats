@@ -6,9 +6,12 @@ pipeline:
       properties:
         input_field: "original.message"
         output_field: pre_message
-        pattern: '(<[0-9]+>)?(%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp})?(%{IP:log_ip})?(%{SPACE}%{DATA:log_hostname}%{SPACE})?(\:)?\%(FTD|ASA|NGIPS)\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{DATA:raw_message}'
+        pattern: '\%(%{FTD:product}|%{ASA:product}|%{NGIPS:product})\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{DATA:raw_message}'
         custom_patterns: 
           MESSAGE_NUMBER: '[0-9]{6}'
+          FTD: 'FTD'
+          ASA: 'ASA'
+          NGIPS: 'NGIPS'
 
   - name: parsed_event
     filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "305012", "313001", "313004", "313005", "313008", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016"]}}'
@@ -72,6 +75,7 @@ pipeline:
         value_sep: ':\s'
         item_sep: ","
 
+  - name: set_common_fields
   - name: set_ecs_fields
     filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "313001", "313004", "313005", "313008", "305012", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016"]}}'
   - name: set_ecs_fields_from_kv
@@ -79,13 +83,22 @@ pipeline:
   - name: set_ecs_fields_from_condition
 
 stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
+          event.kind: 'event'
+          event.category: ['network']
+          observer.vendor: 'Cisco'
+          action.target: 'network-traffic'
+          #Add default action.target = 'network-traffic' to be compliant with STIX2
+          
   set_ecs_fields:
     actions:
       - set:
           '@timestamp': '{{pre_parsing.pre_message.timestamp}}'
           action.name: '{{parsed_event.message.action_name|lower }}'
-          action.target: 'network-traffic'
-          #Add default action.target = 'network-traffic' to be compliant with STIX2
+
           cisco.ftd.icmp_code: '{{parsed_event.message.icmp_code}}'
           cisco.ftd.icmp_type: '{{parsed_event.message.icmp_type}}'
           destination.bytes: '{{parsed_event.message.server_to_client_bytes}}'
@@ -95,9 +108,6 @@ stages:
           destination.nat.ip: '{{parsed_event.message.destination_nat_ip}}'
           destination.nat.port: '{{parsed_event.message.destination_nat_port}}'
           event.action: '{{parsed_event.message.result}}'
-          event.category: ['network']
-          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
-          event.kind: 'event'
           event.reason: '{{parsed_event.message.block_reason}}'
           file.name: '{{parsed_event.message.filename}}'
           host.name: '{{parsed_event.message.client_system_name}}'
@@ -109,7 +119,6 @@ stages:
           network.direction: '{{parsed_event.message.network_direction}}'
           network.transport: '{{parsed_event.message.network_transport}}'
           observer.hostname: '{{parsed_event.message.hostname}}'
-          observer.vendor: 'Cisco'
           process.name: '{{parsed_event.message.process_name}}'
           rule.category: '{{parsed_event.message.category}}'
           rule.name: '{{parsed_event.message.rule_name or parsed_event.message.last_rule}}'
@@ -130,21 +139,15 @@ stages:
       - set:
           '@timestamp': '{{pre_parsing.pre_message.timestamp}}'
           action.name: '{{parse_kv2.parse_kv2_field.action_name}}'
-          action.target: 'network-traffic'
           cisco.ftd.file_sandbox_status: '{{parse_kv2.parse_kv2_field.FileSandboxStatus}}'
           cisco.ftd.file_storage_status: '{{parse_kv2.parse_kv2_field.FileStorageStatus}}'
           cisco.ftd.sha_disposition: '{{parse_kv2.parse_kv2_field.SHA_Disposition}}'
           cisco.ftd.spero_disposition: '{{parse_kv2.parse_kv2_field.SperoDisposition}}'
-          cisco.ftd.threat_name: '{{parse_kv2.parse_kv2_field.ThreatName}}'
-          destination.bytes: '{{parse_kv2.parse_kv2_field.ResponderBytes}}'
           destination.bytes: '{{parse_kv2.parse_kv2_field.ResponderBytes}}'
           destination.domain: '{{parse_kv2.parse_kv2_field.destination_host or parse_kv2.parse_kv2_field.requested_host }}'
           destination.ip: '{{parse_kv2.parse_kv2_field.DstIP}}'
           destination.packets: '{{parse_kv2.parse_kv2_field.ResponderPackets}}'
           destination.port: '{{parse_kv2.parse_kv2_field.DstPort}}'
-          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
-          event.kind: 'event'
-          event.category: ['network']
           file.extension: '{{ parse_kv2.parse_kv2_field.FileType|lower }}'
           file.hash.sha256: '{{parse_kv2.parse_kv2_field.FileSHA256}}' 
           file.name: '{{parse_kv2.parse_kv2_field.FileName}}' 
@@ -156,7 +159,6 @@ stages:
           network.direction: '{{parse_kv2.parse_kv2_field.network_direction}}'
           network.protocol: '{{parse_kv2.parse_kv2_field.ApplicationProtocol}}'
           network.transport: '{{parse_kv2.parse_kv2_field.Protocol}}'
-          observer.vendor: 'Cisco'
           rule.name: '{{parse_kv2.parse_kv2_field.AccessControlRuleName}}'
           rule.ruleset: '{{parse_kv2.parse_kv2_field.ACPolicy}}'
           source.bytes: '{{parse_kv2.parse_kv2_field.InitiatorBytes}}'
@@ -173,29 +175,36 @@ stages:
     # ideas from https://gist.github.com/adriansr/902dea2b92f1ea8624714c1bc97a3c78
       - set: 
           event.action: 'intrusion-detected'
+          event.category: ['intrusion_detection']
         filter: '{{pre_parsing.pre_message.message_number_grok == "430001"}}'
       - set: 
           event.action: 'connection-started'
+          event.category: ['network']
+          event.type: ['connection', 'start']
         filter: '{{pre_parsing.pre_message.message_number_grok == "430002"}}'
       - set: 
           event.action: 'connection-finished'
+          event.category: ['network']
+          event.type: ['connection', 'end']
         filter: '{{pre_parsing.pre_message.message_number_grok == "430003"}}'
       - set: 
           event.action: 'file-detected'
+          event.category: ['file']
+          event.type: ['change']
         filter: '{{pre_parsing.pre_message.message_number_grok == "430004"}}'
       - set: 
           event.action: 'malware-detected'
           event.kind: 'alert'
+          event.category: ['malware']
+          event.type: ['info']
         filter: '{{pre_parsing.pre_message.message_number_grok == "430005"}}'
       - set:
           network.transport: '{{parsed_event.message.network_transport|lower }}'
         filter: '{{parsed_event.message.get("network_transport") != None}}'
-      # - set:
-      #     action.name: 'built'
-      #   filter: '{{pre_parsing.pre_message.message_number_grok == "305011"}}'
-      # - set:
-      #     action.name: 'Teardown'
-      #   filter: '{{pre_parsing.pre_message.message_number_grok == "305012"}}'
-      - set: 
-          hash.sha256: '{{parse_kv2.parse_kv2_field.FileSHA256}}'
-        filter: '{{parse_kv2.parse_kv2_field.FileSize != None}}'
+      - translate:
+        dictionary:
+            'ASA': 'Adaptive Security Appliance'
+            'FTD': 'Firepower Threat Defense'
+            'NGIPS': 'Secure IPS'
+        mapping:
+          pre_parsing.pre_message.product: observer.product
