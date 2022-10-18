@@ -1,0 +1,96 @@
+name: watchguard-firebox
+pipeline:
+  - name: parsed_event
+    external:
+      name: leef.parse-leef
+  - name: dhcp_event
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_event.message.msg}}'
+        output_field: message
+        pattern: 'DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?'
+        custom_patterns:
+          DHCPD_VIA: "via (%{IP:dhcp_relay_ip}|(?<dhcp_device>[^: ]+))"
+          DHCPD_DISCOVER: (?<dhcp_operation>DISCOVER) from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_OFFER_ACK: (?<dhcp_operation>(OFFER|N?ACK)) on %{IP:dhcp_client_ip} to %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_REQUEST: (?<dhcp_operation>REQUEST) for %{IP:dhcp_client_ip}( \(%{DATA:dhcp_server_ip}\))? from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_DECLINE: (?<dhcp_operation>DECLINE) of %{IP:dhcp_client_ip} from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_RELEASE: (?<dhcp_operation>RELEASE) of %{IP:dhcp_client_ip} from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA} \((?<dhcpd_release>(not )?found)\)
+          DHCPD_INFORM: (?<dhcp_operation>INFORM) from %{IP:dhcp_client_ip}? %{DHCPD_VIA}
+  - name: set_ecs_fields
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.type: 'firewall'
+          observer.product: '{{parsed_event.message.DeviceProduct}}'
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          observer.serial_number: '{{parsed_event.message.serial}}'
+          observer.ingress.interface.name: '{{parsed_event.message.in_if}}'
+          observer.egress.interface.name: '{{parsed_event.message.out_if}}'
+          event.kind: 'event'
+          event.category: ['network']
+          event.type: ['info']
+          event.code: '{{parsed_event.message.DeviceEventClassID}}'
+          event.action: '{{parsed_event.message.disp}}'
+          event.reason: '{{parsed_event.message.msg}}'
+          rule.category: '{{parsed_event.message.proxy_act}}'
+          rule.ruleset: '{{parsed_event.message.policy}}'
+          rule.name: '{{parsed_event.message.rule_name}}'
+          source.ip: '{{parsed_event.message.src or dhcp_event.message.dhcp_client_ip}}'
+          source.mac: '{{dhcp_event.message.dhcp_client_mac}}'
+          source.domain: '{{parsed_event.message.srcname or dhcp_event.message.dhcp_client_name}}'
+          source.port: '{{parsed_event.message.srcPort}}'
+          source.nat.ip: '{{parsed_event.message.srcPostNAT}}'
+          source.nat.port: '{{parsed_event.message.srcPostNATPORT}}'
+          source.geo.country_iso_code: '{{parsed_event.message.geo_src}}'
+          source.bytes: '{{parsed_event.message.sent_bytes}}'
+          destination.ip: '{{parsed_event.message.dst or dhcp_event.message.dhcp_relay_ip}}'
+          destination.domain: '{{parsed_event.message.dstname}}'
+          destination.port: '{{parsed_event.message.dstPort}}'
+          destination.nat.ip: '{{parsed_event.message.srcPreNAT}}'
+          destination.nat.port: '{{parsed_event.message.srcPreNATPORT}}'
+          destination.geo.country_iso_code: '{{parsed_event.message.geo_dst}}'
+          destination.bytes: '{{parsed_event.message.rcvd_bytes}}'
+          network.transport: '{{parsed_event.message.proto}}'
+          network.application: '{{parsed_event.message.app}}'
+          user.email: '{{parsed_event.message.src_user}}'
+          http.request.method: '{{parsed_event.message.op}}'
+          http.response.mime_type: '{{parsed_event.message.content_type}}'
+          url.path: '{{parsed_event.message.arg}}'
+          url.domain: '{{parsed_event.message.dstname}}'
+          tls.cipher: '{{parsed_event.message.server_ssl or parsed_event.message.client_ssl}}'
+          tls.version: '{{parsed_event.message.tls_version}}'
+      - translate:
+        dictionary:
+          'Allow': ['connection', 'allowed']
+          'Deny': ['connection', 'denied']
+        mapping:
+          event.action: event.type
+      - set:
+          event.category: ['malware']
+          event.type: ['info']
+        filter: '{{"ProxyAvScan" in parsed_event.message.msg}}'
+  set_custom_fields:
+    actions:
+      - set:
+          watchguard.firebox.network.ip.len: '{{parsed_event.message.ip_len}}'
+          watchguard.firebox.network.ip.ttl: '{{parsed_event.message.ip_TTL}}'
+          watchguard.firebox.network.tcp.offset: '{{parsed_event.message.tcp_offset}}'
+          watchguard.firebox.network.tcp.flag: '{{parsed_event.message.tcp_flag}}'
+          watchguard.firebox.network.tcp.sequence: '{{parsed_event.message.tcp_seq}}'
+          watchguard.firebox.network.tcp.window: '{{parsed_event.message.tcp_window}}'
+          watchguard.firebox.network.duration: '{{parsed_event.message.duration}}'
+          watchguard.firebox.application.duration: '{{parsed_event.message.elapsed_time}}'
+          watchguard.firebox.application.id: '{{parsed_event.message.app_id}}'
+          watchguard.firebox.application.name: '{{parsed_event.message.app_name or parsed_event.message.app}}'
+          watchguard.firebox.application.category.id: '{{parsed_event.message.app_cat_id}}'
+          watchguard.firebox.application.category.name: '{{parsed_event.message.app_cat_name or parsed_event.message.app_cat}}'
+          watchguard.firebox.application.reputation: '{{parsed_event.message.reputation}}'
+          watchguard.firebox.application.behavior: '{{parsed_event.message.app_behavior}}'
+          watchguard.firebox.tls.profile: '{{parsed_event.message.tls_profile}}'
+          watchguard.firebox.dhcp.operation: '{{dhcp_event.message.dhcp_operation | lower}}'
