@@ -61,7 +61,7 @@ it consists of a pipeline, setting up the sequence of data extraction, and stage
 
 The parser is written in [YAML](https://www.yaml.org) dialect.
 
-Refer to [parser](parser.yml) to understand the vocabulary.
+Refer to [parser](parser.md) to understand the vocabulary.
 
 
 #### Test files
