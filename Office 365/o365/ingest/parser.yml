@@ -32,6 +32,8 @@ pipeline:
     filter: '{{json_event.message.RecordType == 25}}'
   - name: parse_microsoft_defender_email
     filter: '{{json_event.message.RecordType in [28, 41, 47]}}'
+  - name: parse_yammer
+    filter: '{{json_event.message.RecordType == 22}}'
 
 stages:
   set_common_fields:
@@ -49,20 +51,6 @@ stages:
           organization.id: '{{json_event.message.OrganizationId}}'
           action.id: '{{json_event.message.RecordType}}'
           action.name: '{{json_event.message.Operation}}'
-      - set:
-          action.properties: >
-            [
-            {% for modifiedProperty in json_event.message.ModifiedProperties %}
-            {% if modifiedProperty.Name != "Included Updated Properties"%}
-            {% if modifiedProperty.Value != null and modifiedProperty.Value != "<Null>"%}
-            {'name': '{{modifiedProperty.Name or Null}}', 'value': '{{modifiedProperty.Value}}'},
-            {% else %}
-            {'name': '{{modifiedProperty.Name or Null}}', 'value': None},
-            {% endif %}
-            {% endif %}
-            {% endfor %}
-            ]
-        filter: '{{json_event.message.get("ModifiedProperties", []) != []}}'
       - set:
           source.ip: '{{parse_client_ip.result.ip}}'
           source.port: '{{parse_client_ip.result.port}}'
@@ -85,6 +73,7 @@ stages:
           office365.result_status: '{{json_event.message.ResultStatus}}'
           office365.user_type.code: '{{json_event.message.UserType}}'
           office365.scope.code: '{{json_event.message.Scope}}'
+          office365.audit.object_id: '{{json_event.message.ObjectId}}'
       - translate:
         dictionary:
           0: 'Regular'
@@ -141,19 +130,14 @@ stages:
           action.target: 'network-traffic'
           event.category: ['network']
           event.type: ['info']
+          office365.logon_error: '{{json_event.message.LogonError}}'
+          office365.error_number: '{{json_event.message.ErrorNumber}}'
       - set:
-          action.properties: >
-            [
-            {% for extendedProperty in json_event.message.ExtendedProperties %}
-            {% if extendedProperty.Name != "targetIncludedUpdatedProperties"%}
-            {% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}
-            {'name': '{{extendedProperty.Name or Null}}', 'value': '{{extendedProperty.Value}}'},
-            {% else %}
-            {'name': '{{extendedProperty.Name or Null}}', 'value': None},
-            {% endif %}
-            {% endif %}
-            {% endfor %}
-            ]
+          user_agent.original: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "UserAgent" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.auth.user_authentication_method: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "UserAuthenticationMethod" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.auth.request_type: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "RequestType" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.auth.result_status_detail: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "ResultStatusDetail" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.auth.keep_me_signed_in: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "KeepMeSignedIn" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}' 
         filter: '{{json_event.message.get("ExtendedProperties", []) != []}}'
 
   parse_azure_active_directory_operation:
@@ -294,3 +278,8 @@ stages:
               {% endfor %}
             ]
         filter: '{{json_event.message.get("AttachmentData", []) != []}}'
+  parse_yammer:
+    actions:
+      - set:
+          file.name: '{{json_event.message.FileName}}'
+          event.category: ['file']

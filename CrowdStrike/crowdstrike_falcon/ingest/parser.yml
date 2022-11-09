@@ -1,139 +1,313 @@
 name: 'crowdstrike falcon edr'
 pipeline:
-  - name: stage1
-    description: ''
-    filter: ''
+  - name: parsed_event
     external:
       name: json.parse-json
       properties:
         input_field: '{{original.message}}'
         output_field: message
   - name: read_event_date
-    description: ''
-    filter: ''
     external:
       name: date.parse
       properties:
-        input_field: '{{stage1.message.metadata.eventCreationTime/1000}}'
-        output_field: test
-        format: timestamp
+        input_field: '{{parsed_event.message.metadata.eventCreationTime | string}}'
+        output_field: datetime
         timezone: UTC
-  - name: set_event_date
-    description: ''
-    filter: ''
-    external: null
-  - name: streamstarted
-    description: ''
-    filter: '{{stage1.message.event.OperationName == "streamStarted"}}'
-    external: null
-  - name: streamstopped
-    description: ''
-    filter: '{{stage1.message.event.OperationName == "streamStopped"}}'
-    external: null
+    filter: '{{parsed_event.message.metadata.eventType != "Vertex"}}'
+  - name: read_event_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.event.timestamp}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.metadata.eventType == "Vertex"}}'
+  - name: set_common_fields
   - name: detectionsummaryevent
-    description: ''
-    filter: '{{stage1.message.metadata.eventType == "DetectionSummaryEvent"}}'
-    external: null
+    filter: '{{parsed_event.message.metadata.eventType == "DetectionSummaryEvent"}}'
   - name: useractivityauditevent
-    description: ''
-    filter: '{{stage1.message.metadata.eventType == "UserActivityAuditEvent"}}'
-    external: null
+    filter: '{{parsed_event.message.metadata.eventType == "UserActivityAuditEvent"}}'
   - name: authactivityauditevent
-    description: ''
-    filter: '{{stage1.message.metadata.eventType == "AuthActivityAuditEvent"}}'
-    external: null
+    filter: '{{parsed_event.message.metadata.eventType == "AuthActivityAuditEvent"}}'
   - name: incidentsummaryevent
-    description: ''
-    filter: '{{stage1.message.metadata.eventType == "IncidentSummaryEvent"}}'
-    external: null
+    filter: '{{parsed_event.message.metadata.eventType == "IncidentSummaryEvent"}}'
+  - name: vertex
+    filter: '{{parsed_event.message.metadata.eventType == "Vertex"}}'
 stages:
-  set_event_date:
+  set_common_fields:
     actions:
       - set:
-          '@timestamp': '{{read_event_date.test}}'
-          crowdstrike.event_type: '{{stage1.message.metadata.eventType}}'
-        filter: ''
-        name: set
-  streamstarted:
-    actions:
-      - set:
-          source.ip: '{{stage1.message.event.UserIp}}'
-          event.kind: event
-          event.type: ['start']
-          service.name: '{{stage1.message.event.ServiceName}}'
-          event.category: ['session']
-          user.id: '{{stage1.message.event.UserId}}'
-        name: set
-  streamstopped:
-    actions:
-      - set:
-          source.ip: '{{stage1.message.event.UserIp}}'
-          event.kind: event
-          event.type: ['stop']
-          service.name: '{{stage1.message.event.ServiceName}}'
-          event.category: ['session']
-          user.id: '{{stage1.message.event.UserId}}'
-        name: set
+          '@timestamp': '{{read_event_date.datetime}}'
+          crowdstrike.event_type: '{{parsed_event.message.metadata.eventType}}'
   detectionsummaryevent:
     actions:
       - set:
-          host.ip: '{{stage1.message.event.LocalIP}}'
-          agent.id: '{{stage1.message.event.AgentIdString}}'
-          host.mac: '{{stage1.message.event.MACAddress}}'
-          file.name: '{{stage1.message.event.FileName}}'
-          file.path: '{{stage1.message.event.FilePath}}'
-          host.name: '{{stage1.message.event.ComputerName}}'
-          log.hostname: '{{stage1.message.event.ComputerName}}'
+          host.ip: '{{parsed_event.message.event.LocalIP}}'
+          agent.id: '{{parsed_event.message.event.AgentIdString}}'
+          host.mac: '{{parsed_event.message.event.MACAddress}}'
+          host.name: '{{parsed_event.message.event.ComputerName}}'
+          log.hostname: '{{parsed_event.message.event.ComputerName}}'
           user.name: '{{stage.message.event.UserName}}'
           event.kind: alert
           event.type: ['info']
           process.end: '{{stage.message.event.ProcessEndTime}}'
-          process.pid: '{{stage1.message.event.ProcessId}}'
-          file.hash.md5: '{{stage1.message.event.MD5String}}'
+          process.pid: '{{parsed_event.message.event.ProcessId}}'
+          file.hash.md5: '{{parsed_event.message.event.MD5String}}'
+          file.hash.sha256: '{{parsed_event.message.event.SHA256String}}'
           process.start: '{{stage.message.event.ProcessStartTime}}'
           event.category: ['intrusion_detection']
-          process.parent.pid: '{{stage1.message.event.ParentProcessId}}'
-          threat.tactic.name: '{{stage1.message.event.Tactic}}'
-          process.hash.sha256: '{{stage1.message.event.SHA256String}}'
-          process.command_line: '{{stage1.message.event.CommandLine}}'
-          crowdstrike.detect_id: '{{stage1.message.event.DetectId}}'
-          threat.technique.name: '{{stage1.message.event.Technique}}'
-          crowdstrike.customer_id: '{{stage1.message.event.CustomerIDString}}'
-          process.parent.executable: '{{stage1.message.event.ParentImageFileName}}'
-          process.parent.command_line: '{{stage1.message.event.ParentCommandLine}}'
-          crowdstrike.detect_description: '{{stage1.message.event.DetectDescription}}'
+          process.parent.pid: '{{parsed_event.message.event.ParentProcessId}}'
+          threat.tactic.name: '{{parsed_event.message.event.Tactic}}'
+          process.command_line: '{{parsed_event.message.event.CommandLine}}'
+          process.name: '{{parsed_event.message.event.FileName}}'
+          process.working_directory: '{{parsed_event.message.event.FilePath}}'
+          crowdstrike.detect_id: '{{parsed_event.message.event.DetectId}}'
+          threat.technique.name: '{{parsed_event.message.event.Technique}}'
+          crowdstrike.customer_id: '{{parsed_event.message.event.CustomerIDString}}'
+          process.parent.executable: '{{parsed_event.message.event.ParentImageFileName}}'
+          process.parent.name: '{{parsed_event.message.event.ParentImageFileName | basename}}'
+          process.parent.working_directory: '{{parsed_event.message.event.ParentImageFileName | dirname}}'
+          process.parent.command_line: '{{parsed_event.message.event.ParentCommandLine}}'
+          crowdstrike.detect_description: '{{parsed_event.message.event.DetectDescription}}'
         name: set
   useractivityauditevent:
     actions:
       - set:
-          source.ip: '{{stage1.message.event.UserIp}}'
+          source.ip: '{{parsed_event.message.event.UserIp}}'
           event.kind: event
           event.type: ['change']
-          service.name: '{{stage1.message.event.ServiceName}}'
+          service.name: '{{parsed_event.message.event.ServiceName}}'
           event.category: ['configuration']
-          user.id: '{{stage1.message.event.UserId}}'
-          crowdstrike.operation_name: '{{stage1.message.event.OperationName}}'
+          user.id: '{{parsed_event.message.event.UserId}}'
+          crowdstrike.operation_name: '{{parsed_event.message.event.OperationName}}'
         name: set
   authactivityauditevent:
     actions:
       - set:
-          source.ip: '{{stage1.message.event.UserIp}}'
+          source.ip: '{{parsed_event.message.event.UserIp}}'
           event.kind: event
-          event.type: ['change']
-          service.name: '{{stage1.message.event.ServiceName}}'
-          event.category: ['configuration']
-          user.id: '{{stage1.message.event.UserId}}'
-          crowdstrike.operation_name: '{{stage1.message.event.OperationName}}'
+          service.name: '{{parsed_event.message.event.ServiceName}}'
+          user.id: '{{parsed_event.message.event.UserId}}'
+          crowdstrike.operation_name: '{{parsed_event.message.event.OperationName}}'
         name: set
+      - translate:
+        dictionary:
+          'streamStarted': ['session']
+          'streamStopped': ['session']
+        mapping:
+          crowdstrike.operation_name: event.category
+        fallback: ['configuration']
+      - translate:
+        dictionary:
+          'streamStarted': ['start']
+          'streamStopped': ['stop']
+        mapping:
+          crowdstrike.operation_name: event.type
+        fallback: ['change']
   incidentsummaryevent:
     actions:
       - set:
           event.kind: alert
           event.type: ['info']
           event.category: ['intrusion_detection']
-          crowdstrike.state: '{{stage1.message.event.State}}'
-          crowdstrike.host_id: '{{stage1.message.event.HostID}}'
-          crowdstrike.incident_id: '{{stage1.message.event.IncidentID}}'
-          crowdstrike.incident_end: '{{stage1.message.event.IncidentEndTime}}'
-          crowdstrike.incident_start: '{{stage1.message.event.IncidentStartTime}}'
+          crowdstrike.state: '{{parsed_event.message.event.State}}'
+          crowdstrike.host_id: '{{parsed_event.message.event.HostID}}'
+          crowdstrike.incident_id: '{{parsed_event.message.event.IncidentID}}'
+          crowdstrike.incident_end: '{{parsed_event.message.event.IncidentEndTime}}'
+          crowdstrike.incident_start: '{{parsed_event.message.event.IncidentStartTime}}'
         name: set
+  vertex:
+    actions:
+      - set:
+          event.kind: event
+          event.reason: '{{parsed_event.message.event.properties.EventName}}'
+          crowdstrike.detect_id: '{{parsed_event.message.metadata.detectionIdString}}'
+          crowdstrike.customer_id: '{{parsed_event.message.event.customer_id}}'
+          crowdstrike.host_id: '{{parsed_event.message.event.device_id}}'
+          crowdstrike.vertex_type: '{{parsed_event.message.event.vertex_type}}'
+          crowdstrike.scope: '{{parsed_event.message.event.scope}}'
+          crowdstrike.object_id: '{{parsed_event.message.event.object_id}}'
+          crowdstrike.edge.subject_id: '{{parsed_event.message.metadata.edge.sourceVertexId}}'
+          crowdstrike.edge.type: '{{parsed_event.message.metadata.edge.type}}'
+          user.domain: '{{parsed_event.message.event.properties.LogonDomain}}'
+          user.name: '{{parsed_event.message.event.properties.UserName}}'
+          user.id: '{{parsed_event.message.event.properties.UserSid or parsed_event.message.event.properties.LogonId}}'
+          process.command_line: '{{parsed_event.message.event.properties.CommandLine}}'
+          process.executable: '{{parsed_event.message.event.properties.ImageFileName}}'
+          process.name: '{{parsed_event.message.event.properties.ImageFileName | basename}}'
+          process.title: '{{parsed_event.message.event.properties.WindowTitle}}'
+          process.working_directory: '{{parsed_event.message.event.properties.ImageFileName | dirname}}'
+          process.pid: '{{parsed_event.message.event.properties.RawProcessId or parsed_event.message.event.properties.TargetProcessId}}'
+          process.parent.pid: '{{parsed_event.message.event.properties.ParentProcessId}}'
+          process.start: '{{parsed_event.message.event.properties.ProcessEndTime | to_rfc3339}}'
+          process.end: '{{parsed_event.message.event.properties.ProcessStartTime | to_rfc3339}}'
+          process.exit_code: '{{parsed_event.message.event.properties.ExitCode}}'
+          file.name: '{{parsed_event.message.event.properties.TargetFileName}}'
+          file.hash.sha256: '{{parsed_event.message.event.properties.SHA256HashData}}'
+          file.hash.sha1: '{{parsed_event.message.event.properties.SHA1HashData}}'
+          file.hash.md5: '{{parsed_event.message.event.properties.MD5HashData}}'
+          source.ip: '{{parsed_event.message.event.properties.LocalAddressIP4}}'
+          source.port: '{{parsed_event.message.event.properties.LocalPort}}'
+          source.nat.ip: '{{parsed_event.message.event.properties.externalIpAddress}}'
+          destination.ip: '{{parsed_event.message.event.properties.RemoteAddressIP4}}'
+          destination.port: '{{parsed_event.message.event.properties.RemotePort}}'
+          host.name: '{{parsed_event.message.event.properties.ComputerName}}'
+          host.ip: '{{parsed_event.message.event.edges.assigned_ipv4_address | map(attribute="object_id") | list | string}}'
+          host.mac: '{{parsed_event.message.event.edges.assigned_ipv4_address | map(attribute="properties") | map(attribute="PhysicalAddress") | list | string}}'
+          cloud.instance.id: '{{parsed_event.message.event.properties.instanceId}}'
+          cloud.account.id: '{{parsed_event.message.event.properties.accountId}}'
+          cloud.region: '{{parsed_event.message.event.properties.zone_group}}'
+          action.properties.LogonType: '{{parsed_event.message.event.properties.LogonType}}'
+          action.properties.LogonId: '{{parsed_event.message.event.properties.LogonId}}'
+      - set:
+          user.roles: ['admin']
+        filter: '{{parsed_event.message.event.properties.UserIsAdmin}}'
+      - translate:
+        dictionary:
+          "0": "hopopt"
+          "1": "icmp"
+          "2": "igmp"
+          "3": "ggp"
+          "4": "ipv4"
+          "5": "st"
+          "6": "tcp"
+          "7": "cbt"
+          "8": "egp"
+          "9": "igp"
+          "10": "bbn-rcc-mon"
+          "11": "nvp-ii"
+          "12": "pup"
+          "13": "argus"
+          "14": "emcon"
+          "15": "xnet"
+          "16": "chaos"
+          "17": "udp"
+          "18": "mux"
+          "19": "dcn-meas"
+          "20": "hmp"
+          "21": "prm"
+          "22": "xns-idp"
+          "23": "trunk-1"
+          "24": "trunk-2"
+          "25": "leaf-1"
+          "26": "leaf-2"
+          "27": "rdp"
+          "28": "irtp"
+          "29": "iso-tp4"
+          "30": "netblt"
+          "31": "mfe-nsp"
+          "32": "merit-inp"
+          "33": "dccp"
+          "34": "3pc"
+          "35": "idpr"
+          "36": "xtp"
+          "37": "ddp"
+          "38": "idpr-cmtp"
+          "39": "tp++"
+          "40": "il"
+          "41": "ipv6"
+          "42": "sdrp"
+          "43": "ipv6-route"
+          "44": "ipv6-frag"
+          "45": "idrp"
+          "46": "rsvp"
+          "47": "gre"
+          "48": "dsr"
+          "49": "bna"
+          "50": "esp"
+          "51": "ah"
+          "52": "i-nlsp"
+          "53": "swipe"
+          "54": "narp"
+          "55": "mobile"
+          "56": "tlsp"
+          "57": "skip"
+          "58": "ipv6-icmp"
+          "59": "ipv6-nonxt"
+          "60": "ipv6-opts"
+          "61": "any host internal protocol"
+          "62": "cftp"
+          "63": "any local network"
+          "64": "sat-expak"
+          "65": "kryptolan"
+          "66": "rvd"
+          "67": "ippc"
+          "68": "any distributed file system"
+          "69": "sat-mon"
+          "70": "visa"
+          "71": "ipcv"
+          "72": "cpnx"
+          "73": "cphb"
+          "74": "wsn"
+          "75": "pvp"
+          "76": "br-sat-mon"
+          "77": "sun-nd"
+          "78": "wb-mon"
+          "79": "wb-expak"
+          "80": "iso-ip"
+          "81": "vmtp"
+          "82": "secure-vmtp"
+          "83": "vines"
+          "84": "ttp"
+          "85": "nsfnet-igp"
+          "86": "dgp"
+          "87": "tcf"
+          "88": "eigrp"
+          "89": "ospfigp"
+          "90": "sprite-rpc"
+          "91": "larp"
+          "92": "mtp"
+          "93": "ax.25"
+          "94": "ipip"
+          "95": "micp"
+          "96": "scc-sp"
+          "97": "etherip"
+          "98": "encap"
+          "99": "any private encryption scheme"
+          "100": "gmtp"
+          "101": "ifmp"
+          "102": "pnni"
+          "103": "pim"
+          "104": "aris"
+          "105": "scps"
+          "106": "qnx"
+          "107": "a/n"
+          "108": "ipcomp"
+          "109": "snp"
+          "110": "compaq-peer"
+          "111": "ipx-in-ip"
+          "112": "vrrp"
+          "113": "pgm"
+          "114": "any 0-hop protocol"
+          "115": "l2tp"
+          "116": "ddx"
+          "117": "iatp"
+          "118": "stp"
+          "119": "srp"
+          "120": "uti"
+          "121": "smp"
+          "122": "sm"
+          "123": "ptp"
+          "124": "isis over ipv4"
+          "125": "fire"
+          "126": "crtp"
+          "127": "crudp"
+          "128": "sscopmce"
+          "129": "iplt"
+          "130": "sps"
+          "131": "pipe"
+          "132": "sctp"
+          "133": "fc"
+          "134": "rsvp-e2e-ignore"
+          "135": "mobility header"
+          "136": "udplite"
+          "137": "mpls-in-ip"
+          "138": "manet"
+          "139": "hip"
+          "140": "shim6"
+          "141": "wesp"
+          "142": "rohc"
+          "253": "unassigned"
+          "254": "use for experimentation and testing"
+          "255": "reserved"
+        mapping:
+          parsed_event.message.event.properties.Protocol: network.transport

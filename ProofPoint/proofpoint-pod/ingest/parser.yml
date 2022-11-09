@@ -16,6 +16,7 @@ pipeline:
     filter: '{{json_event.message.type == "message"}}'
   - name: set_fields_for_maillog
     filter: '{{json_event.message.type == "maillog"}}'
+  - name: set_CTI_fields
 
 stages:
   set_common_fields:
@@ -43,8 +44,16 @@ stages:
               {% for part in json_event.message.msgParts %}{
                 "file": {
                   "mime_type": "{{part.detectedMime}}",
+                  {% if part.labeledName != "" %}
                   "name": "{{part.labeledName}}",
+                  {% else %}
+                  "name": "{{part.detectedName}}",
+                  {% endif %}
+                  {% if part.labeledExt != "" %}
                   "extension": "{{part.labeledExt}}",
+                  {% else %}
+                  "extension": "{{part.detectedExt}}",
+                  {% endif %}
                   "size": "{{part.detectedSizeBytes}}",
                   "hash": {
                     "md5": "{{part.md5}}",
@@ -109,3 +118,16 @@ stages:
       - set:
           tls.version: '{{json_event.message.tls.version}}'
         filter: '{{json_event.message.tls.version != "NONE"}}'
+  set_CTI_fields:
+    actions:
+      - set:
+          url.original: '{{set_fields_for_messages.proofpoint.pod.urls[0]}}'
+        filter: '{{set_fields_for_messages.proofpoint.pod.urls != ""}}'
+      - set:
+          file.name: '{{set_fields_for_messages.email.attachments[0].file.name}}'
+        filter: '{{set_fields_for_messages.email.attachments[0].file.name != ""}}'
+      - set:
+          file.hash.sha256: '{{set_fields_for_messages.email.attachments[0].file.hash.sha256}}'
+          file.hash.md5: '{{set_fields_for_messages.email.attachments[0].file.hash.md5}}'
+        filter: '{{set_fields_for_messages.email.attachments[0].file.hash.sha256 != ""}}'
+
