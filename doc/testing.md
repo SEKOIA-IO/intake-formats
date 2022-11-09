@@ -14,13 +14,31 @@ The input hosts two information:
 The expectation contains the [structured event](structured_event.md) expected as the output of the parser for the raw event.
 
 
+## Create a new test
+
+In order to create a new test, you can use the script `utils/create_test.py` to generate a new test file.
+
+The script accept the following arguments:
+- The path to the test file to create. Supply the path to the test file in the format directory.
+- The raw event: You can provide the raw event as an argument of the script, or through the stdin with the argument `-`
+
+By suppling the path of the test file in the format directory, the script will read manifest information of the format.
+
+```shell
+$ cd utils
+$ poetry install  # optional, only when dependencies are not already installed
+$ poetry run python3 create_test.py ../My\ module/my-format/tests/test1.json "My raw event"
+$ cat /tmp/raw_event.txt | poetry run python3 create_test.py ../My\ module/my-format/tests/test2.json -
+```
+
+
 ## Validate parser
 
 To execute the test against the parser, go to the `utils` directory, then execute pytest with `test_formats.py` as argument:
 
 ```shell
 $ cd utils
-$ poetry install
+$ poetry install  # optional, only when dependencies are not already installed
 $ poetry run pytest test_formats.py -vv
 ```
 
