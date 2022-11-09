@@ -18,9 +18,9 @@ It hosts two documents:
   It must be a PNG image, with transparent background, named `logo.png` and must be lighter than 50Ko.
 
 - a `manifest.yml` document.
-  This document must contain an UUID, that identify the module, the name of the module, a short and url-friendly name of the module and a short description that describes the module.
+  This document must contain an UUID that identifies the module, the name of the module, a short and url-friendly name of the module and a short description that describes the module.
  
-  For example, you can inspire from the [AWS Module manifest](../AWS/_meta/manifest.yml).
+  Here is an example from the [AWS Module manifest](../AWS/_meta/manifest.yml).
 
 ### Formats
 
@@ -36,20 +36,20 @@ Each format share the same tree structure:
 Like the module one, this directory holds meta-information about the format.
 It consists of 4 files:
 
-- A logo that identify the product. This logo should help to identify the product the format represent.
+- A logo that identifies the product. This logo should help identify the product that is represented by the format. 
 
   It must be a PNG image, with transparent background, named `logo.png` and must be lighter than 50Ko.
 
 - a `manifest.yml` document.
-  This document must contain an UUID, that identify the format, the name of the format, a short and url-friendly name, a short description that describes the software technology and a list of [data-sources](datasources.md).
+  This document must contain an UUID that identifies the format, the name of the format, a short and url-friendly name, a short description that describes the software technology and a list of [data-sources](datasources.md).
   
-  For example, you can inspire from [Trend Micro Deep Security manifest](../Trend%20Micro/deep-security/_meta/manifest.yml)
+  Here is an example from [Trend Micro Deep Security manifest](../Trend%20Micro/deep-security/_meta/manifest.yml)
 
-- a [taxonomy](taxonomy.md) file, that describe fields used in the parser.
+- A [taxonomy](taxonomy.md) file that describes fields used in the parser.
 
   For inspiration, see [Windows taxonomy](../Windows/windows/_meta/fields.yml).
   
-- some [smart-descriptions](smart-descriptions.md) (e.g: [Windows smart-descriptions](../Windows/windows/_meta/smart-descriptions.json))
+- Some [smart-descriptions](smart-descriptions.md) (e.g: [Windows smart-descriptions](../Windows/windows/_meta/smart-descriptions.json))
 
 
 #### Parser
@@ -57,7 +57,7 @@ It consists of 4 files:
 The parser transforms raw event into [structured event](structured_event.md).
 
 It's a vocabulary scheduling how information will be extracted from the raw event.
-it consists of a pipeline, setting up the sequence of data extraction, and stages, defining the construction of the structured event.
+It consists of a pipeline setting up the sequence of data extraction as well as stages defining the construction of the structured event.
 
 The parser is written in [YAML](https://www.yaml.org) dialect.
 

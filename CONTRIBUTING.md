@@ -17,7 +17,7 @@ To contribute to this repository, you will need the following development setup:
 
 - Python3
   
-  we recommend you to use Python3.10 or higher.
+  We recommend you to use Python3.10 or higher.
   To ease python version management, you can use [pyenv](https://github.com/pyenv/pyenv#installation).
   
 - [Poetry](https://python-poetry.org/docs/#installation)

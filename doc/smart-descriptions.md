@@ -1,6 +1,6 @@
 # Smart-descriptions
 
-Event can be hard to read as a raw data. To make easier the visualization of events and their understanding, smart-descriptions help to display important information to the user.
+An event can be hard to read as a raw data. To make the visualization and the understand of events easier, smart-descriptions help to display important information to the user.
 
 ## Organization
 
@@ -13,7 +13,7 @@ The root element of the document is a JSON-array. This array contains a set of s
 A smart description consists of:
 - The value (manatory): a sentence that will display information from the [structured event](structured_event.md).
 
-  This sentence contains placeholders (delimited with curly-braces). Each placeholder encompass a path (dot-notation); the path indicate the location, in the structured event, of the value to used to replace the placeholder in the description.
+  This sentence contains placeholders (delimited with curly-braces). Each placeholder encompasses a path (dot-notation); the path indicates the location of the value in the structured event that is used to replace the placeholder in the description.
   
   e.g:
   With a structured event containing:
@@ -25,7 +25,7 @@ A smart description consists of:
   }
   ```
   
-  The description `Connection from {source.ip}` will result in `Connection from 1.2.3.4`
+  The description `Connection from {source.ip}` will result in `Connection from 1.2.3.4`.
 
 - A list of conditions (optional): These conditions define when the description should be displayed. For a same event, the description, with the largest number of matching conditions, will succeed.
 

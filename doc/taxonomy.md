@@ -4,7 +4,7 @@ The taxonomy of [structured events](structured_events.md) is based on the [ECS](
 
 ## Best Practices
 
-- When a raw event encompass a datetime, parse this information with a stage date and set result in the field `@timestamp`.
+- When a raw event encompasses a datetime, parse this information with a stage date and set result in the field `@timestamp`.
 - Define `event.category`, `event.type` and `event.kind` according to the [event categorization fields](https://www.elastic.co/guide/en/ecs/current/ecs-category-field-values-reference.html).
 - Define `event.category` and `event.type` as array.
 - As possible, define [`event.dataset`](https://www.elastic.co/guide/en/ecs/current/ecs-event.html#field-event-dataset).
@@ -27,9 +27,9 @@ The custom taxonomy is defined in the directory `_meta/fields.yml` in the format
 :warning: Please ensure that no field from the ECS taxonomy is suitable before creating a new field.
 
 A custom field consists of three elements:
-- name: The name of the field. it correspond to the path (dot-notation) of the field in the [structured event](structured_event.md).
+- name: The name of the field. it corresponds to the path (dot-notation) of the field in the [structured event](structured_event.md).
   
-  we recommend prefixing the field with the vendor and the name of the product (e.g for AWS cloud trail, custom taxonomy is prefixing with `aws.cloudtrail`)
+  We recommend prefixing the field with the vendor and the name of the product (e.g for AWS cloud trail, custom taxonomy is prefixing with `aws.cloudtrail`)
 
 - type: The type of the field.
 
