@@ -34,6 +34,6 @@ To contribute to this repository, you will need the following development setup:
 - Push your changes and create a [pull request](https://github.com/SEKOIA-IO/intake-formats/compare)
 
 
-## Documentation
+## <a id="documentation"></a> Documentation
 
 To understand how to develop a new format, refer to our [documentation](doc/README.md).
