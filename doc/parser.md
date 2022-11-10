@@ -285,7 +285,7 @@ The following shows the produced event.
 #### XML
 
 The `xml.parse-xml` stage can be used to transform a xml string into a dictionary.
-By default, the `message` field is parsed but this property can be overwritten to specify any field.
+Per default, the `message` field is parsed but this property can be overwritten to specify any field.
 
 **Example**
 
@@ -297,7 +297,7 @@ In this example, the parser produces an event with fields that take their value 
 }
 ```
 
-Below is the parsing pipeline that deserializes the `message` field and sets the `agent.name` and `agent.id` fields.
+Below is the parsing pipeline that deserialize the `message` field and set the `agent.name` and `agent.id` fields.
 
 ```yaml
 pipeline:
@@ -329,7 +329,7 @@ The following shows the produced event.
 #### Windows
 
 The `xml.parse-windows-event` stage can be used to transform a xml windows event into a dictionary.
-By default, the `message` field is parsed but this property can be overwritten to specify any field.
+Per default, the `message` field is parsed but this property can be overwritten to specify any field.
 
 The parser produces an event in two parts:
 
@@ -407,7 +407,7 @@ The following shows the produced event.
 #### CEF
 
 The `cef.parse-cef` stage can be used to parse CEF messages.
-By default, the `message` field is parsed but this property can be overwritten to specify any field.
+Per default, the `message` field is parsed but this property can be overwritten to specify any field.
 
 This stage will extract the following keys from the header definition:
 - `CEFVersion`: The CEF version
@@ -422,7 +422,7 @@ and will extract each key-value from the extension.
 
 **Example**
 
-In this example, the parser produces an event with fields that take their value from a CEF message. Below is an example of the input event.
+In this example, the parser produces an event with fields that take their value from a CEF message. Below is the example of the input event.
 
 ```json
 {
@@ -430,7 +430,7 @@ In this example, the parser produces an event with fields that take their value 
 }
 ```
 
-Below is the parsing pipeline that deserializes the `message` field and sets some fields.
+Below is the parsing pipeline that deserialize the `message` field and set some fields.
 
 ```yaml
 pipeline:
@@ -490,7 +490,7 @@ and will extract each key-value from the extension.
 
 **Example**
 
-In this example, the parser produces an event with fields that take their value from a CEF message. Below is the example of an input event.
+In this example, the parser produces an event with fields that take their value from a CEF message. Below is the example of the input event.
 
 ```json
 {
@@ -498,7 +498,7 @@ In this example, the parser produces an event with fields that take their value 
 }
 ```
 
-Below is the parsing pipeline that deserializes the `message` field and sets some fields.
+Below is the parsing pipeline that deserialize the `message` field and set some fields.
 
 ```yaml
 pipeline:
@@ -543,7 +543,7 @@ The following shows the produced event.
 
 ## Action
 
-An action is an elementary operation that can create, update and delete fields.
+An action is an elementary operations that can create, update and delete fields.
 The execution of an action can be conditionned to a filter.
 
 ### set
