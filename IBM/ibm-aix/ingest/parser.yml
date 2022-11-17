@@ -1,0 +1,78 @@
+name: ibm-aix
+pipeline:
+  - name: pre_parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: "original.message"
+        output_field: pre_message
+        pattern: '%{DATA:raw_message}'
+
+
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: message
+        pattern: '%{FILE_Link}|%{FILE_Unlink}|%{FILE_Rename}|%{FILE_Pipe}|%{FILE_Read}|%{USER_Login}|%{TCP_klisten}|%{TCP_kbind}|%{TCP_kaccept}|%{FS_Chroot}|%{FS_Rmdir}|%{FS_Mkdir}|%{PROC_Execute}|%{PROC_SetUserIDs}|%{PROC_SetGroups}|%{PROC_Kill}|%{PROC_LoadError}|%{PROC_RealGID}|%{PROC_Sysconfig}|%{S_PASSWD_READ}|%{PROC_Adjtime}|%{S_USER_WRITE}|%{SRC_Star_Stop}|%{AUD_It}|%{AUD_Proc}|%{CRON_Start_Finish}'
+        custom_patterns:
+          AIX_Time: '%{MONTHDAY} %{MONTH} %{YEAR} %{TIME}'
+          FILE_Link: '(filename %{DATA:file_name} )?FILE_Link\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles( linkname %{DATA:file_target_path} filename %{NOTSPACE:file_name})?'
+          FILE_Unlink: 'FILE_Unlink\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles filename %{NOTSPACE:file_name}'
+          FILE_Rename: 'FILE_Rename\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles\s*frompath: %{DATA:file_path} topath:%{DATA:file_name}'
+          FILE_Read: 'FILE_Read\s*%{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles file descriptor = 1635083369 filename = %{NOTSPACE:file_name} object read event detected %{NOTSPACE}'
+          FILE_Pipe: 'FILE_Pipe\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles read: %{INT} write: %{INT}'
+          USER_Login: '(flags: 80, libpath: , file: %{DATA:file_name} )?USER_Login\s*%{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles( user: %{NOTSPACE:user_name} tty: %{NOTSPACE:process_tty})?'
+          FS_Chroot: 'FS_Chroot\s*%{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles change root directory to: %{NOTSPACE:file_name}'
+          FS_Rmdir: 'FS_Rmdir\s*%{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name}\s*(OK|FAIL) %{AIX_Time}\s*No associated roles remove of directory: %{NOTSPACE:file_directory}'
+          FS_Mkdir: 'FS_Mkdir\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles mode: %{INT} dir: %{NOTSPACE:file_directory}'
+          PROC_Execute: 'PROC_Execute\s*%{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles euid: %{INT:user_id} egid: %{INT:group_id} epriv: %{BASE16NUM}:%{BASE16NUM} name %{NOTSPACE:process_name}( %{NOTSPACE:file_name})?%{DATA}'
+          PROC_Kill: 'PROC_Kill\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles pid: %{NUMBER:process_pid}, sig: %{NUMBER}'
+          PROC_LoadError: 'PROC_LoadError\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} FAIL %{AIX_Time}\s*No associated roles flags: 80, libpath:%{DATA}, file: %{DATA:file_name}%{DATA}'
+          PROC_RealGID: 'PROC_RealGID\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles old rgid: %{NUMBER}, new gid: %{NUMBER}, which:%{DATA}'
+          PROC_SetUserIDs: 'PROC_SetUserIDs\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles effect: %{NUMBER}, real: %{NUMBER}, saved: %{NUMBER}, login: %{NUMBER}'
+          PROC_SetGroups: 'PROC_SetGroups\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles group set:%{DATA}'
+          PROC_Sysconfig: 'PROC_Sysconfig\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles %{INT}'
+          S_PASSWD_READ: 'S_PASSWD_READ\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles audit object read event detected %{NOTSPACE:file_name}'
+          PROC_Adjtime: 'PROC_Adjtime\s*%{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles old time: %{AIX_Time}, delta: %{INT}:%{INT}'
+          AUD_It: 'AUD_It\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles%{DATA}'
+          AUD_Proc: 'AUD_Proc %{NOTSPACE:process_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles pid: %{NUMBER:process_pid} cmd: %{NUMBER}'
+          S_USER_WRITE: 'S_USER_WRITE\s*%{NOTSPACE:process_name} %{NOTSPACE:user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles audit object write event detected %{NOTSPACE:file_name}'
+          SRC_Star_Stop: '(SRC_Start|SRC_Stop)\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles %{NOTSPACE:file_name}'
+          CRON_Start_Finish: '(CRON_Start|CRON_Finish)\s*%{NOTSPACE:process_name} %{NOTSPACE:process_user_name} %{NOTSPACE:user_group} (OK|FAIL) %{AIX_Time}\s*No associated roles (event = start cron job cmd = %{DATA:process_command_line}|user = %{DATA} pid = %{NUMBER:process_pid}) time = %{DAY} %{MONTH} %{MONTHDAY} %{TIME} %{YEAR}'
+          TCP_klisten: 'TCP_klisten\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*0 fd15 qlimit 1'
+          TCP_kbind: 'TCP_kbind\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*No associated roles %{BASE16NUM} %{DATA:file_name}'
+          TCP_kaccept: 'TCP_kaccept\s*%{NOTSPACE:user_name} %{NOTSPACE:user_group} %{NOTSPACE:process_user_name} (OK|FAIL) %{AIX_Time}\s*(No associated roles|!) %{BASE16NUM} (Port %{IP:source_ip} %{INT:source_port})?%{DATA}'
+
+  - name: set_common_fields
+  - name: set_ecs_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          action.target: "process"
+          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
+          event.kind: 'event'
+          event.category: ['process']
+          observer.vendor: 'IBM'
+          
+  set_ecs_fields:
+    actions:
+      - set:
+          file.name: '{{parsed_event.message.file_name}}'
+          file.directory: '{{parsed_event.message.file_directory}}'
+          file.path: '{{parsed_event.message.file_path}}'
+          file.target_path: '{{parsed_event.message.file_target_path}}'
+          group.name: '{{parsed_event.message.user_group}}'
+          group.id: '{{parsed_event.message.group_id}}'
+          process.name: '{{parsed_event.message.process_name}}'
+          process.tty: '{{parsed_event.message.process_tty}}'
+          process.pid: '{{parsed_event.message.process_pid}}'
+          process.user.name: '{{parsed_event.message.process_user_name}}'
+          process.command_line: '{{parsed_event.message.process_command_line}}'
+          source.ip:  '{{parsed_event.message.source_ip}}'
+          source.port:  '{{parsed_event.message.source_port}}'
+          user.name: '{{parsed_event.message.user_name}}'
+          user.id: '{{parsed_event.message.user_id}}'
