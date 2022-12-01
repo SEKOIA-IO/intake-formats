@@ -1,11 +1,11 @@
-# Overview
+# Parser
 
 ## General
 
-An intake consists in a sequence of stages organized under a pipeline that modifies the event on the fly.
+A parser consists in a sequence of stages organized under a pipeline that modifies the event on the fly.
 
 The following pipeline is made of three stages (`stage1`, `stage2` and `stage3`)
-with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage1`.
+with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage2`.
 ```yaml
 pipeline:
  - name: stage1
@@ -282,9 +282,268 @@ The following shows the produced event.
 ```
 
 
+#### XML
+
+The `xml.parse-xml` stage can be used to transform a xml string into a dictionary.
+By default, the `message` field is parsed but this property can be overwritten to specify any field.
+
+**Example**
+
+In this example, the parser produces an event with fields that take their value from a deserialized xml field. Below is the example of the input event.
+
+```json
+{
+  "message": "<Event><Id>1234</Id><Provider><Name>system</Name><Id>6</Id></Provider>"
+}
+```
+
+Below is the parsing pipeline that deserializes the `message` field and sets the `agent.name` and `agent.id` fields.
+
+```yaml
+pipeline:
+  - name: parsed_event
+    external:
+      name: xml.parse-xml
+  - name: agent
+stages:
+  agent:
+    actions:
+      - set:
+          agent.id: '{{parsed_event.message.Event.Provider.Id}}'
+          agent.name: '{{parsed_event.message.Event.Provider.Name}}'
+```
+
+The following shows the produced event.
+
+```json
+{
+  "message": "<Event><Id>1234</Id><Provider><Name>system</Name><Id>6</Id></Provider>"
+  "agent": {
+    "id": 6,
+    "name": "system"
+  }
+}
+```
+
+
+#### Windows
+
+The `xml.parse-windows-event` stage can be used to transform a xml windows event into a dictionary.
+By default, the `message` field is parsed but this property can be overwritten to specify any field.
+
+The parser produces an event in two parts:
+
+- The system part, holding data extracted from the System tag
+- The data part, flattening the data tags as key-value structure
+
+The following event:
+
+```xml
+<Event><System><EventID>1234</EventID><Execution ProcessID="592" ThreadID="6452"/></System><EventData><Data Name="Key">Value</Data></EventData></Event>
+```
+
+will be transformed in the following structure:
+
+```json
+{
+    "System": {
+        "EventID": "1234",
+        "Execution": {
+            "ProcessID": "592",
+            "ThreadID": "6452"
+        }
+    },
+    "EventData": {
+        "Key": "Value"
+    }
+}
+```
+
+**Example**
+
+Given the previous event as the input of the parser.
+
+```json
+{
+  "message": "<Event><System><EventID>1234</EventID><Execution ProcessID=\"592\" ThreadID=\"6452\"/></System><EventData><Data Name=\"Key\">Value</Data></EventData></Event>"
+}
+```
+
+Below is the parsing pipeline that deserialize the `message` field and set the fields.
+
+```yaml
+pipeline:
+  - name: parsed_event
+    external:
+      name: xml.parse-windows-event
+  - name: set-fields
+stages:
+  set-fields:
+    actions:
+      - set:
+          process.pid: '{{parsed_event.message.System.Execution.ProcessID}}'
+          process.thread.id: '{{parsed_event.message.System.Execution.ThreadID}}'
+          event.id: '{{parsed_event.message.System.EventID}}'
+          custom.key: '{{parsed_event.message.EventData.Key}}'
+```
+
+The following shows the produced event.
+
+```json
+{
+  "message": "<Event><System><EventID>1234</EventID><Execution ProcessID=\"592\" ThreadID=\"6452\"/></System><EventData><Data Name=\"Key\">Value</Data></EventData></Event>",
+  "process": {
+    "pid": 592,
+    "thread": {
+      "id": 6452
+    }
+  },
+  "event": {"id": 1234},
+  "custom": {"key": "Value"}
+}
+```
+
+
+#### CEF
+
+The `cef.parse-cef` stage can be used to parse CEF messages.
+By default, the `message` field is parsed but this property can be overwritten to specify any field.
+
+This stage will extract the following keys from the header definition:
+- `CEFVersion`: The CEF version
+- `DeviceVendor`: The vendor of the product that generated the log
+- `DeviceProduct`: The product that generated the log
+- `DeviceVersion`: The version of the product
+- `DeviceEventClassID`: An unique identifier
+- `Name`: A human-readable description of the event
+- `Severity`: The severity of the event
+
+and will extract each key-value from the extension.
+
+**Example**
+
+In this example, the parser produces an event with fields that take their value from a CEF message. Below is an example of the input event.
+
+```json
+{
+  "message": "CEF:0|Security|threatmanager|1.0|100|worm successfully stopped|10|src=10.0.0.1 dst=2.1.2.2 spt=1232"
+}
+```
+
+Below is the parsing pipeline that deserializes the `message` field and sets some fields.
+
+```yaml
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+  - name: agent
+stages:
+  agent:
+    actions:
+      - set:
+          event.id: '{{parsed_event.message.DeviceEventClassID}}'
+          event.severity: '{{parsed_event.message.Severity}}'
+          source.ip: '{{parsed_event.message.src}}'
+          source.port: '{{parsed_event.message.spt}}'
+          destination.ip: '{{parsed_event.message.dst}}'
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: '{{parsed_event.message.DeviceProduct}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+```
+
+The following shows the produced event.
+
+```json
+{
+  "message": "CEF:0|Security|threatmanager|1.0|100|worm successfully stopped|10|src=10.0.0.1 dst=2.1.2.2 spt=1232"
+  "source": {
+    "ip": "10.0.0.1",
+    "port": 1232
+  },
+  "destination": {
+    "ip": "2.1.2.2"
+  },
+  "event": {"id": "100", "severity": 10},
+  "observer": {
+    "vendor": "Security",
+    "product": "threatmanager",
+    "version": "1.0"
+  }
+}
+```
+
+
+#### LEEF
+
+The `leef.parse-leef` stage can be used to parse LEEF messages (supported version of LEEF are 1 and 2)
+Per default, the `message` field is parsed but this property can be overwritten to specify any field.
+
+This stage will extract the following keys from the header definition:
+- `LEEFVersion`: The LEEF version
+- `DeviceVendor`: The vendor of the product that generated the log
+- `DeviceProduct`: The product that generated the log
+- `DeviceVersion`: The version of the product
+- `DeviceEventClassID`: An unique identifier
+
+and will extract each key-value from the extension.
+
+**Example**
+
+In this example, the parser produces an event with fields that take their value from a CEF message. Below is the example of an input event.
+
+```json
+{
+  "message": "LEEF:2|Security|threatmanager|1.0|100|^|src=10.0.0.1^dst=2.1.2.2^spt=1232"
+}
+```
+
+Below is the parsing pipeline that deserializes the `message` field and sets some fields.
+
+```yaml
+pipeline:
+  - name: parsed_event
+    external:
+      name: leef.parse-leef
+  - name: agent
+stages:
+  agent:
+    actions:
+      - set:
+          event.id: '{{parsed_event.message.DeviceEventClassID}}'
+          source.ip: '{{parsed_event.message.src}}'
+          source.port: '{{parsed_event.message.spt}}'
+          destination.ip: '{{parsed_event.message.dst}}'
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: '{{parsed_event.message.DeviceProduct}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+```
+
+The following shows the produced event.
+
+```json
+{
+  "message": "LEEF:2|Security|threatmanager|1.0|100|^|src=10.0.0.1^dst=2.1.2.2^spt=1232"
+  "source": {
+    "ip": "10.0.0.1",
+    "port": 1232
+  },
+  "destination": {
+    "ip": "2.1.2.2"
+  },
+  "event": {"id": "100"},
+  "observer": {
+    "vendor": "Security",
+    "product": "threatmanager",
+    "version": "1.0"
+  }
+}
+```
+
+
 ## Action
 
-An action is an elementary operations that can create, update and delete fields.
+An action is an elementary operation that can create, update and delete fields.
 The execution of an action can be conditionned to a filter.
 
 ### set
@@ -340,6 +599,14 @@ Example:
   filter: '{{stage1.log_type == "network"}}'
 ```
 
+### References
+
+Each stage generates a layer with a set of produced fields in the stage.
+You can refer one of these field from another field, a filter or the input of a next common stage.
+To refer a field, use a [jinja](https://jinja.palletsprojects.com) placeholder (ie `{{xxxx}}`) with the name of the referred layed (ie, the name of the stage) as the prefix then the path to the field in dot-notation
+(eg, to refer the value of the field `date` from the `parsed_date` stage, use `{{parsed_date.date}}`).
+For incoming events, a first layer named `original` is created by Ingest and the ECS envelop as received.
+
 #### filters
 
 Reference to another field can be extended with filters.
@@ -348,7 +615,7 @@ Multiple filters can be chained. The output of a filter is applied to the next.
 
 For example, `{{stage1.username |strip |upper}}` removes the whitespace and returns the uppercase value of the `username` variable computed in `stage1`.
 
-The following built-in filters are available:
+Ingest makes available the [jinja built-in filters](https://jinja.palletsprojects.com/en/3.0.x/templates/#list-of-builtin-filters). Most popular filters are:
 
 | filter       |  description
 |---------------|------------------------------------------------
@@ -362,6 +629,16 @@ The following built-in filters are available:
 |`min`| returns the smallest item from the variable
 |`strip`| returns the variable removed from heading and leading whitespaces
 |`upper`| returns the value all uppercase
+
+Ingest extends these built-in filters with a set of custom filters:
+| filter       |  description
+|---------------|------------------------------------------------
+|`basename`| returns the base name of a path (support unix and windows path)
+|`dirname`| returns the directory name of a path (support unix and windows path)
+|`to_rfc3339(value: Any, format=None)`| converts and formats any date as rfc3339 string
+|`to_iso8601(value: Any, format=None)`| converts and formats any date as iso8601 string
+|`re_match`| tests the value against an regular expression (the whole value)
+|`re_search`| tests if a subset of the value match the regular expression
 
 
 
@@ -377,3 +654,11 @@ Example:
    - destination.ip
   filter: '{{stage1.log_type != "network"}}'
 ```
+
+
+## Inspirations
+
+- See [Azure Front Door parser](https://github.com/SEKOIA-IO/intake-formats/blob/main/Azure/azure-front-door/ingest/parser.yml) as an introduction.
+- See [AWS Flow logs parser](https://github.com/SEKOIA-IO/intake-formats/blob/main/AWS/aws-flow-logs/ingest/parser.yml) for textual extraction.
+- See [Wallix Bastion parser](https://github.com/SEKOIA-IO/intake-formats/blob/main/Wallix/wallix-bastion/ingest/parser.yml) for filters usage.
+- See [ProofPoint TAP parser](https://github.com/SEKOIA-IO/intake-formats/blob/main/ProofPoint/proofpoint-tap/ingest/parser.yml#L59-L110) and [Azure Windows parser](https://github.com/SEKOIA-IO/intake-formats/blob/main/Azure/azure-windows/ingest/parser.yml) for complex parsers.
