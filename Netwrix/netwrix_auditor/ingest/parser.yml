@@ -12,6 +12,17 @@ pipeline:
     description: ''
     filter: ''
     external: null
+  - name: user-email-setter
+    description: ''
+    filter: '{{ "@" in cef_parser.message.suser }}'
+    external: null
+  - name: user-name-domain-setter
+    description: ''
+    filter: '{{ "\\" in cef_parser.message.suser }}'
+    external: null
+  - name: user-only-setter
+    description: ''
+    filter: '{{ "\\" not in cef_parser.message.suser and "@" not in cef_parser.message.suser }}'
   - name: document-event-setter
     description: ''
     filter: '{{ cef_parser.message.cat == "Document" }}'
@@ -38,15 +49,12 @@ stages:
     actions:
       - set:
           file.path: '{{ cef_parser.message.filePath.split("/")[3:] |join("/") }}'
-          user.email: '{{ cef_parser.message.suser }}'
           event.action: '{{ cef_parser.message.Name | lower }}'
         filter: ''
         name: set
   logon-event-setter:
     actions:
       - set:
-          user.name: '{{ cef_parser.message.suser.split("\\")[1] }}'
-          user.domain: '{{ cef_parser.message.suser.split("\\")[0] }}'
           event.reason: '{{ cef_parser.message.msg }}'
           server.address: '{{ cef_parser.message.shost }}'
         filter: ''
@@ -54,8 +62,26 @@ stages:
   exchange-event-setter:
     actions:
       - set:
+          event.reason: '{{ cef_parser.message.msg }}'
+        filter: ''
+        name: set
+  # The following stage exist because some logs have the suser field in a DOMAIN\\user,
+  # some have it as an email, and some have it as a single username
+  user-email-setter:
+    actions:
+      - set:
+          user.email: '{{ cef_parser.message.suser }}'
+        filter: ''
+  user-name-domain-setter:
+    actions:
+      - set:
           user.name: '{{ cef_parser.message.suser.split("\\")[1] }}'
           user.domain: '{{ cef_parser.message.suser.split("\\")[0] }}'
-          event.reason: '{{ cef_parser.message.msg }}'
+        filter: ''
+        name: set
+  user-only-setter:
+    actions:
+      - set:
+          user.name: '{{ cef_parser.message.suser }}'
         filter: ''
         name: set
