@@ -12,55 +12,6 @@ pipeline:
           AGENT_BEHAVIOR: '%{HOSTNAME:host_hostname},%{IP:host_ip}?,%{DATA:action},%{DATA:action_object},%{DATA:api_name}?,Begin: %{TIMESTAMP_ISO8601:start_date},End Time: %{TIMESTAMP_ISO8601:end_date},Rule: %{DATA:rule_name}?,%{NUMBER:process_id}?,%{DATA:process_path}?,%{NUMBER:return_code},%{DATA:module_name}?,%{DATA:process_params}?,User Name: %{DATA:username}?,Domain Name: %{DATA:domain_name}?,Action Type: %{NUMBER:action_type}?,File size \(bytes\): %{NUMBER:file_size}?,Device ID: %{DATA:device_id}?'
           SCAN_RESULT: 'Scan ID: %{NUMBER:scan_id},Begin: %{DATA:start_date},End Time: %{DATA:end_date},%{DATA:scan_status}?,Duration \(seconds\): %{NUMBER:scan_duration}?,User1: %{DATA:username},User2: %{DATA},%{DATA:reason},%{DATA:result},Command: %{DATA:scan_command},Threats: %{NUMBER:detected_threats},Infected: %{NUMBER:detected_infections},Total files: %{NUMBER:total_files},Omitted: %{NUMBER:omitted_files},Computer: %{DATA:host_hostname},IP Address: %{IP:host_ip},Domain Name: %{DATA:domain_name},Group Name: %{DATA:group_name},Server Name: %{DATA:server_name},Scan Type: %{DATA:scan_type}'
           THREAT_DETECTION: '%{HOSTNAME:host_hostname},Event Description: \[SID\s: %{NUMBER:sig_id}\] %{DATA:reason},Event Type: %{DATA:event_type}?,Local Host IP: %{IP:host_ip},Local Host MAC: %{DATA:host_mac}?,Remote Host Name: %{HOSTNAME:remote_name}?,Remote Host IP: %{IP:remote_ip},Remote Host MAC: %{DATA:remote_mac}?,%{DATA:direction},%{DATA:transport},,Begin: %{TIMESTAMP_ISO8601:start_date},End Time: %{TIMESTAMP_ISO8601:end_date},Occurrences: %{NUMBER:sightings},Application: %{DATA:application_name},Location: %{DATA},User Name: %{DATA:username},Domain Name: %{DATA:domain_name}?,Local Port: %{NUMBER:source_port},Remote Port: %{NUMBER:remote_port},CIDS Signature ID: %{NUMBER:signature_id},CIDS Signature string: %{DATA:signature_label},CIDS Signature SubID: %{NUMBER:signature_subid},Intrusion URL: %{DATA:intrusion_url},Intrusion Payload URL: %{DATA:intrusion_payload_url}?,SHA-256: %{DATA:intrusion_payload_SHA256},MD-5: %{DATA:intrusion_payload_MD5}?,Intensive Protection Level: %{DATA:protection_level},URL Risk: %{DATA:url_risk},URL Category: %{DATA:url_category}'
-          
-  - name: parse_first_seen
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.first_seen}}'
-        output_field: datetime
-    filter: '{{parsed_event.message.get("first_seen") != None}}'
-  - name: parse_last_seen
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.last_seen}}'
-        output_field: datetime
-    filter: '{{parsed_event.message.get("last_seen") != None}}'
-  - name: parse_start_date
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.start_date}}'
-        output_field: datetime
-  - name: parse_end_date
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.end_date}}'
-        output_field: datetime
-  - name: parse_modification_date
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.modification_date}}'
-        output_field: datetime
-    filter: '{{parsed_event.message.get("modification_date") != None}}'
-  - name: parse_cert_timestamp
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.cert_timestamp}}'
-        output_field: datetime
-        format: 'timestamp'
-    filter: '{{parsed_event.message.get("cert_timestamp") != None}}'
-  - name: parse_event_insert_time
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.event_insert_time}}'
-        output_field: datetime
-    filter: '{{parsed_event.message.get("event_insert_time") != None}}'
   - name: set_ecs_fields
   - name: set_broadcom_fields
 
@@ -75,8 +26,8 @@ stages:
           event.category: ["process"]
           event.reason: "{{parsed_event.message.reason}}"
           event.action: "{{parsed_event.message.action}}"
-          event.start: "{{parse_start_date.datetime}}"
-          event.end: "{{parse_start_end.datetime}}"
+          event.start: "{{parsed_event.message.start_date | to_rfc3339}}"
+          event.end: "{{parsed_event.message.end_date | to_rfc3339}}"
           host.ip: "{{parsed_event.message.host_ip}}"
           host.hostname: "{{parsed_event.message.host_hostname}}"
           host.name: "{{parsed_event.message.host_name}}"
@@ -137,9 +88,9 @@ stages:
             [{
               "indicator": {
                 "type": "file",
-                {% if parsed_event.message.get('first_seen') != None %}"first_seen": "{{parse_first_seen.datetime}}",{% endif %}
-                {% if parsed_event.message.get('last_seen') != None %}"last_seen": "{{parse_last_seen.datetime}}",{% endif %}
-                {% if parsed_event.message.get('modification_date') != None %}"modified_at": "{{parse_modification_date.datetime}}",{% endif %}
+                {% if parsed_event.message.get('first_seen') != None %}"first_seen": "{{parsed_event.message.first_seen | to_rfc3339}}",{% endif %}
+                {% if parsed_event.message.get('last_seen') != None %}"last_seen": "{{parsed_event.message.last_seen | to_rfc3339}}",{% endif %}
+                {% if parsed_event.message.get('modification_date') != None %}"modified_at": "{{parsed_event.message.modification_date | to_rfc3339}}",{% endif %}
                 {% if parsed_event.message.get('sightings') != None %}"sightings": {{parsed_event.message.sightings}},{% endif %}
                 {% if parsed_event.message.get('risk_name') != None %}"description": "{{parsed_event.message.risk_name}}",{% endif %}
                 {% if parsed_event.message.get('file_path') != None or parsed_event.message.get('file_size') != None %}
@@ -161,6 +112,7 @@ stages:
           broadcom.endpoint_protection.server.domain: "{{parsed_event.message.domain_name}}"
           broadcom.endpoint_protection.server.group: "{{parsed_event.message.group_name}}"
           broadcom.endpoint_protection.server.name: "{{parsed_event.message.server_name}}"
+          broadcom.endpoint_protection.application.code_signature.timestamp: "{{parsed_event.message.cert_timestamp | to_rfc3339}}"
           broadcom.endpoint_protection.application.code_signature.certificate.serial_number: "{{parsed_event.message.cert_serial_number}}"
           broadcom.endpoint_protection.application.code_signature.certificate.thumbprint: "{{parsed_event.message.cert_thumbprint}}"
           broadcom.endpoint_protection.application.code_signature.signer: "{{parsed_event.message.cert_signer}}"
@@ -193,9 +145,6 @@ stages:
       - set:
           broadcom.endpoint_protection.application.code_signature.digest_algorithm: "{{parsed_event.message.application_hash_type | lower()}}"
         filter: '{{parsed_event.message.get("application_hash_type") != None}}'
-      - set:
-          broadcom.endpoint_protection.application.code_signature.timestamp: "{{parse_cert_timestamp.datetime}}"
-        filter: '{{parsed_event.message.get("cert_timestamp") != None}}'
       - set:
           broadcom.endpoint_protection.protection.level: "{{parsed_event.message.protection_level}}"
         filter: '{{parsed_event.message.get("protection_level") != None and parsed_event.message.protection_level != "N/A"}}'
