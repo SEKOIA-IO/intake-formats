@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 from collections import defaultdict
-from typing import Tuple
+from typing import Tuple, Dict, List
 
 import pytest
 import requests
@@ -34,7 +34,7 @@ class IntakeTestManager:
                         module_path, intake_formats
                     )
 
-    def _get_formats(self, module_path: str, intake_formats: list[str]) -> list[str]:
+    def _get_formats(self, module_path: str, intake_formats: list[str]) -> Dict[str, List[str]]:
         formats = {}
 
         filtered_elements = {"_meta"}
