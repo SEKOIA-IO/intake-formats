@@ -183,7 +183,7 @@ stages:
           destination.nat.ip: "{{parsed_event.message.tranip or parsed_event.message.destinationTranslatedAddress}}"
           destination.nat.port: "{{parsed_event.message.destinationTranslatedPort}}"
           destination.packets: "{{parsed_event.message.rcvdpkt or parsed_event.message.FTNTFGTrcvpkt or parsed_event.message.FortinetFortiGatercvdpkt or parsed_event.message.get('Packets Received')}}"
-          destination.port: "{{parsed_event.message.dstport or parsed_event.message.dpt}}"
+          destination.port: "{{parsed_event.message.dstport or parsed_event.message.dpt or parsed_event.message.locport}}"
 
           dns.question.name: "{{parsed_event.message.qname or parsed_event.message.FTNFGTqname or parsed_event.message.FortinetFortiGateqname}}"
           dns.question.type: "{{parsed_event.message.qtype or parsed_event.message.FTNFGTqtype or parsed_event.message.FortinetFortiGateqtype}}"
@@ -215,7 +215,7 @@ stages:
           source.mac: "{{parsed_event.message.srcmac}}"
           source.nat.port: "{{parsed_event.message.sourceTranslatedPort}}"
           source.packets: "{{parsed_event.message.sentpkt or parsed_event.message.FTNTFGTsentpkt or parsed_event.message.FortinetFortiGatesentpkt or parsed_event.message.get('Packets Sent')}}"
-          source.port: "{{parsed_event.message.srcport or parsed_event.message.spt}}"
+          source.port: "{{parsed_event.message.srcport or parsed_event.message.spt or parsed_event.message.remport}}"
           fortinet.fortigate.icmp.request.type: "{{parsed_event.message.icmptype}}"
           fortinet.fortigate.icmp.request.code: "{{parsed_event.message.icmpcode}}"
           url.original: "{{parsed_event.message.url or parsed_event.message.request}}"
@@ -223,8 +223,8 @@ stages:
           user.name: '{{parsed_event.message.unauthuser}}'
           fortinet.fortigate.user.source: '{{parsed_event.message.unauthusersource}}'
       - set:
-          destination.ip: "{{parsed_event.message.dstip or parsed_event.message.dst}}"
-        filter: "{{parsed_event.message.get('dstip') not in [None, 'null', 'N/A'] or parsed_event.message.get('dst') not in [None, 'null', 'N/A']}}"
+          destination.ip: "{{parsed_event.message.locip or parsed_event.message.dstip or parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.get('locip') not in [None, 'null', 'N/A'] or parsed_event.message.get('dstip') not in [None, 'null', 'N/A'] or parsed_event.message.get('dst') not in [None, 'null', 'N/A']}}"
       - set:
           destination.user.name: "{{parsed_event.message.duser}}"
         filter: "{{parsed_event.message.duser != 'N/A'}}"
@@ -239,7 +239,7 @@ stages:
         filter: "{{parsed_event.message.get('qname') != None and parsed_event.message.qname.strip().startswith('[') and parsed_event.message.qname.strip().endswith(']')}}"
       - set:
           source.user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
-        filter: "{{parsed_event.message.user != 'N/A' or parsed_event.message.suser != 'N/A'}}"
+        filter: "{{parsed_event.message.get('user') not in [None, 'null', 'N/A'] or parsed_event.message.get('suser') not in [None, 'null', 'N/A']}}"
       - set:
           network.bytes: "{{parsed_event.message.get('in', 0) | int + parsed_event.message.get('out', 0) | int}}"
         filter: "{{parsed_event.message.get('in') != None or parsed_event.message.get('out') != None }}"
@@ -265,6 +265,15 @@ stages:
           user.domain: '{{final.user.name.split("\\") | first}}'
           user.name: '{{final.user.name.split("\\") | last}}'
         filter: "{{final.get('user', {}).get('name') != None and '\\\\' in final.user.name}}"
+      - set:
+          fortinet.fortigate.tunnel.name: '{{parsed_event.message.vpntunnel}}'
+          fortinet.fortigate.tunnel.version: '{{parsed_event.message.version}}'
+          fortinet.fortigate.tunnel.type: '{{parsed_event.message.tunneltype}}'
+          fortinet.fortigate.tunnel.id: '{{parsed_event.message.tunnelid}}'
+        filter: "{{parsed_event.message.subtype == 'vpn'}}"
+      - set:
+          fortinet.fortigate.tunnel.ip: '{{parsed_event.message.tunnelip}}'
+        filter: "{{parsed_event.message.subtype == 'vpn' and parsed_event.message.get('tunnelip') not in [None, 'null', 'N/A']}}"
       - translate:
         dictionary:
           0: 'inbound'
