@@ -154,6 +154,28 @@ pipeline:
     description: ''
     filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_session_manager"}}'
     external: null
+  - name: grok_anyconnect_vpn_auth
+    description: ''
+    filter: >-
+      {{grok_events.message.log_subtype == "anyconnect_vpn_auth_success" or
+      grok_events.message.log_subtype == "anyconnect_vpn_auth_failure"}}
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{grok_header.message.kv_part}}'
+        output_field: message
+        pattern: >-
+          ^type=anyconnect_vpn_auth_%{DATA:outcome}\smsg=\s+'%{DATA}\[%{NUMBER}\]
+          Server IP=%{IP:server_ip} Server port=%{NUMBER:server_port} Peer
+          IP=%{IP:client_ip} Peer port=%{NUMBER:client_port}(
+          User=%{DATA:user_name})?: %{GREEDYDATA:end_of_message}'$
+        custom_patterns: {}
+  - name: set_anyconnect_vpn_auth
+    description: ''
+    filter: >-
+      {{grok_events.message.log_subtype == "anyconnect_vpn_auth_success" or
+      grok_events.message.log_subtype == "anyconnect_vpn_auth_failure"}}
+    external: null
 stages:
   set_date:
     actions:
@@ -268,5 +290,17 @@ stages:
           user.name: >-
             {{grok_anyconnect_vpn_session_manager.message.user_name.split('@')[0]}}
           cisco_meraki.end_of_message: '{{grok_anyconnect_vpn_session_manager.message.end_of_message}}'
+        filter: ''
+        name: set
+  set_anyconnect_vpn_auth:
+    actions:
+      - set:
+          action.outcome: '{{grok_anyconnect_vpn_auth.message.outcome}}'
+          action.outcome_reason: '{{grok_anyconnect_vpn_auth.message.end_of_message}}'
+          client.ip: '{{grok_anyconnect_vpn_auth.message.client_ip}}'
+          client.port: '{{grok_anyconnect_vpn_auth.message.client_port}}'
+          server.ip: '{{grok_anyconnect_vpn_auth.message.server_ip}}'
+          server.port: '{{grok_anyconnect_vpn_auth.message.server_port}}'
+          user.name: '{{grok_anyconnect_vpn_auth.message.user_name.split(''@'')[0]}}'
         filter: ''
         name: set
