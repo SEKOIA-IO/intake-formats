@@ -13,6 +13,10 @@ VALIDATION_URL = "https://app.sekoia.io/api/v1/ingest/formats/validate"
 INTAKES_PATH = os.path.dirname(os.path.dirname(__file__))
 
 
+class FormatError(Exception):
+    pass
+
+
 class IntakeTestManager:
     def __init__(self):
         self._intakes = {}
@@ -80,12 +84,13 @@ class IntakeTestManager:
             with open(os.path.join(format_path, "ingest", "parser.yml")) as f:
                 parser = yaml.safe_load(f)
 
+            fields = []
             fields_path = os.path.join(format_path, "_meta", "fields.yml")
             if os.path.isfile(fields_path):
                 with open(fields_path) as f:
-                    fields = list(yaml.safe_load(f).values())
-            else:
-                fields = []
+                    content = yaml.safe_load(f)
+                    if content and getattr(content, "values"):
+                        fields = list(content.values())
 
             messages = []
             for test in self._intakes[module][intake_format]:
@@ -97,6 +102,10 @@ class IntakeTestManager:
                 VALIDATION_URL,
                 json={"parser": parser, "taxonomy": fields, "messages": messages},
             )
+            if not response.ok:
+                raise FormatError(
+                    f"{response.status_code} {response.reason} for {response.url}: {response.content} "
+                )
             response.raise_for_status()
             self._results[module][intake_format] = response.json()
             self._results[module][intake_format]["parsed_messages"] = {
