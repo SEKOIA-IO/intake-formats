@@ -90,7 +90,7 @@ class IntakeTestManager:
                 with open(fields_path) as f:
                     content = yaml.safe_load(f)
                     if content and getattr(content, "values"):
-                        fields = list(yaml.safe_load(f).values())
+                        fields = list(content.values())
 
             messages = []
             for test in self._intakes[module][intake_format]:
