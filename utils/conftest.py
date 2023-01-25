@@ -80,12 +80,13 @@ class IntakeTestManager:
             with open(os.path.join(format_path, "ingest", "parser.yml")) as f:
                 parser = yaml.safe_load(f)
 
+            fields = []
             fields_path = os.path.join(format_path, "_meta", "fields.yml")
             if os.path.isfile(fields_path):
                 with open(fields_path) as f:
-                    fields = list(yaml.safe_load(f).values())
-            else:
-                fields = []
+                    content = yaml.safe_load(f)
+                    if content and getattr(content, "values"):
+                        fields = list(yaml.safe_load(f).values())
 
             messages = []
             for test in self._intakes[module][intake_format]:
