@@ -13,6 +13,10 @@ VALIDATION_URL = "https://app.sekoia.io/api/v1/ingest/formats/validate"
 INTAKES_PATH = os.path.dirname(os.path.dirname(__file__))
 
 
+class FormatError(Exception):
+    pass
+
+
 class IntakeTestManager:
     def __init__(self):
         self._intakes = {}
@@ -98,6 +102,10 @@ class IntakeTestManager:
                 VALIDATION_URL,
                 json={"parser": parser, "taxonomy": fields, "messages": messages},
             )
+            if not response.ok:
+                raise FormatError(
+                    f"{response.status_code} {response.reason} for {response.url}: {response.content} "
+                )
             response.raise_for_status()
             self._results[module][intake_format] = response.json()
             self._results[module][intake_format]["parsed_messages"] = {
