@@ -34,9 +34,9 @@ pipeline:
         pattern: '%{PAM_MESSAGE}|%{FILE_OPEN_FAILURE}'
         custom_patterns:
           PAM_MESSAGE: '%{PAM_AUTH_FAILURE1}|%{PAM_AUTH_FAILURE2}'
-          PAM_AUTH_FAILURE1: 'pam_aaa:Authentication failed from %{IP:source_ip} - %{WORD:process_name}\[%{INT:process_id}\]'
-          PAM_AUTH_FAILURE2: 'error: PAM: Authentication failure for %{WORD} user %{USERNAME:username} from %{IP:source_ip} - %{WORD:process_name}\[%{INT:process_id}\]'
-          FILE_OPEN_FAILURE: 'Failed to open file: %{DATA:reason} - %{DATA:filepath}'
+          PAM_AUTH_FAILURE1: '%{DATA:module}_aaa:Authentication %{WORD:outcome} from %{IP:source_ip} - %{WORD:process_name}\[%{INT:process_id}\]'
+          PAM_AUTH_FAILURE2: 'error: %{WORD:module}: Authentication %{WORD:outcome} for %{WORD} user %{USERNAME:username} from %{IP:source_ip} - %{WORD:process_name}\[%{INT:process_id}\]'
+          FILE_OPEN_FAILURE: '%{WORD:outcome} to open file: %{DATA:reason} - %{DATA:filepath}'
     filter: '{{parsed_event.message.mnemonic == "SYSTEM_MSG"}}'
   - name: parsed_description
     external:
@@ -89,6 +89,9 @@ stages:
           process.name: '{{parsed_description.message.process_name}}'
           host.mac: '{{parsed_description.message.mac_addr | to_mac_address}}'
       - set:
+          event.module: '{{parsed_description.message.module  | lower }}'
+        filter: '{{parsed_description.message.get("module") != None }}'
+      - set:
           process.command_line: '{{parsed_description.message.process_cmd}}'
           process.args: '{{parsed_description.message.process_cmd.split(" ")}}'
           process.executable: '{{parsed_description.message.process_cmd.split(" ")[0]}}'
@@ -115,3 +118,11 @@ stages:
           cisco.nxos.observer.interface.name: '{{parsed_description.message.ifname}}'
           cisco.nxos.observer.terminal: '{{parsed_description.message.terminal}}'
           cisco.nxos.observer.vlan: '{{parsed_description.message.vlan}}'
+      - translate:
+        dictionary:
+          'failed': 'failure'
+          'Failed': 'failure'
+          'failure': 'failure'
+        mapping:
+          parsed_description.message.outcome: cisco.nxos.event.outcome
+        filter: '{{parsed_description.message.get("outcome") != None}}'
