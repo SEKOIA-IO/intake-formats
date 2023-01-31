@@ -33,7 +33,6 @@ pipeline:
   - name: set_cef_header_fields
   - name: set_cef_extension_fields
   - name: set_cef_extension_fields_cef
-  - name: set_ecs_fields
   - name: set_sonicwall_fields
 
 stages:
@@ -74,18 +73,13 @@ stages:
     actions:
     
       - set:
-          event.action: '{{parsed_event.message.act}}'
-          event.category: ['network']
-          event.kind: 'event'
-          event.reason: '{{parsed_event.message.msg}}'
-          file.name: '{{parsed_event.message.fname}}'
-          file.size: '{{parsed_event.message.fsize}}'
-          source.ip: '{{parsed_event.message.src or parsed_event.message.sourceAddress}}'
-          source.user.name: '{{parsed_event.message.suser}}'
-          destination.domain: "{{parsed_event.message.get('destination DnsDomain')}}"
-          service.name: "{{parsed_event.message.get('destination ServiceName')}}"
-          destination.nat.ip: "{{parsed_event.message.get('destination Translated Address')}}"
-          destination.nat.port: "{{parsed_event.message.get('destination TranslatedPort')}}"
+          destination.bytes: '{{parsed_event.message.in}}'
+          destination.domain: '{{parsed_event.message.request or parsed_event.message.get('destination DnsDomain') or parsed_event.message.dhost or parsed_event.message.dntdom}}'
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.ip: '{{parsed_event.message.dst or parsed_event.message.dstV6}}'
+          destination.mac: '{{parsed_event.message.dmac}}'
+          destination.nat.ip: '{{parsed_event.message.cs2Label or parsed_event.message.natDstV6 or parsed_event.message.get('destination Translated Address')}}'
+          destination.nat.port: '{{parsed_event.message.dnpt or parsed_event.message.get('destination TranslatedPort')}}'
 
       - translate:
         dictionary:
@@ -95,42 +89,54 @@ stages:
           parsed_event.message.deviceDirection: network.direction
 
       - set:
-          host.name: "{{parsed_event.message.dvchost or {parsed_event.message.get('deviceDns Domain')}}"
-          host.id: "{{parsed_event.message.get('device ExternalId')}}"
-          log.syslog.facility.name: "{{parsed_event.message.deviceFacility}}"
-          observer.ingress.interface.name: "{{parsed_event.message.get('deviceInbound Interface')}}"
-          host.domain: "{{parsed_event.message.get('deviceNt Domain')}}"
-          observer.egress.interface.name: "{{parsed_event.message.get('Device Outbound Interface')}}"
-          process.name: "{{parsed_event.message.get('deviceProcess Name')}}"
-          server.nat.ip: "{{parsed_event.message.get('device Translated Address')}}"
-          destination.domain: "{{parsed_event.message.dhost or parsed_event.message.dntdom}}"
-          destination.port: "{{parsed_event.message.dpt}}"
-          destination.ip: "{{parsed_event.message.dst}}"
-          event.timezone: "{{parsed_event.message.dtz}}"
+          destination.packets: '{{parsed_event.message.cn1Label}}'
+          destination.port: '{{parsed_event.message.dpt}}'
           destination.user.id: "{{parsed_event.message.duid}}"
           destination.user.name: "{{parsed_event.message.duser}}"
-          server.ip: "{{parsed_event.message.dvc}}"
-          destination.mac: "{{parsed_event.message.dmac}}"
+          event.action: '{{parsed_event.message.act or parsed_event.message.reason}}'
+          event.category: ['network']
           event.end: "{{parse_end_date.date}}"
+          event.kind: 'event'
+          event.outcome: "{{parsed_event.message.outcome}}"
+          event.reason: '{{parsed_event.message.msg}}'
+          event.start:  "{{parse_start_date.date}}"
+          event.timezone: "{{parsed_event.message.dtz}}"
           file.inode: "{{parsed_event.message.fileId}}"
+          file.name: '{{parsed_event.message.fname}}'
           file.mtime: "{{parsed_event.message.get('fileModification Time')}}"
           file.path:  "{{parsed_event.message.filePath}}"
+          file.size: '{{parsed_event.message.fsize}}'
           file.type:  "{{parsed_event.message.fileType}}"
+          host.domain: "{{parsed_event.message.get('deviceNt Domain')}}"
+          host.hostname: "{{parsed_event.message.shost or parsed_event.message.sourceHostName}}"
+          host.id: "{{parsed_event.message.get('device ExternalId')}}"
+          host.name: "{{parsed_event.message.dvchost or {parsed_event.message.get('deviceDns Domain')}}"
           host.network.ingress.bytes: "{{parsed_event.message.in}}"
           host.network.egress.bytes: "{{parsed_event.message.out}}"
-          event.outcome: "{{parsed_event.message.outcome}}"
-          event.action: "{{parsed_event.message.reason}}"
-          url.original: "{{parsed_event.message.request}}"
-          user_agent.original: "{{parsed_event.message.get('requestClient Application')}}"
           http.request.referrer: "{{parsed_event.message.requestContext}}"
           http.request.method: "{{parsed_event.message.requestMethod}}"
-          host.hostname: "{{parsed_event.message.shost or parsed_event.message.sourceHostName}}"
+          log.syslog.facility.name: "{{parsed_event.message.deviceFacility}}"
+          network.transport: '{{parsed_event.message.proto}}'
+          observer.egress.interface.name: '{{parsed_event.message.deviceOutboundInterface or parsed_event.message.get('Device Outbound Interface')}}'
+          observer.ingress.interface.name: '{{parsed_event.message.deviceInboundInterface or parsed_event.message.get('deviceInbound Interface')}}'
+          observer.type: 'firewall'
+          process.entity_id: '{{parsed_event.message.appid}}'
+          process.name: '{{parsed_event.message.appName or parsed_event.message.get('deviceProcess Name')}}'
+          rule.name: '{{parsed_event.message.cs1}}'
+          service.name: "{{parsed_event.message.get('destination ServiceName')}}"
+          server.ip: "{{parsed_event.message.dvc}}"
+          source.bytes: '{{parsed_event.message.out}}'
           source.domain: "{{parsed_event.message.get('sourceDns Domain')}}"
-          source.mac: "{{parsed_event.message.smac}}"
-          source.port: "{{parsed_event.message.spt}}"
-          source.nat.ip: "{{parsed_event.message.get('source Translated Address')}}"
-          source.nat.port: "{{parsed_event.message.get('source TranslatedPort')}}"
-          event.start:  "{{parse_start_date.date}}"
+          source.ip: '{{parsed_event.message.src or parsed_event.message.sourceAddress or parsed_event.message.srcV6}}'
+          source.mac: '{{parsed_event.message.smac}}'
+          source.nat.ip: '{{parsed_event.message.cs1Label or parsed_event.message.natSrcV6 or parsed_event.message.get('source Translated Address')}}'
+          source.nat.port: '{{parsed_event.message.snpt or parsed_event.message.get('source TranslatedPort')}}'
+          source.packets: '{{parsed_event.message.cn2Label}}'
+          source.port: '{{parsed_event.message.spt}}'
+          source.user.name: '{{parsed_event.message.suser}}'
+          user_agent.original: "{{parsed_event.message.get('requestClient Application')}}"
+          user.name: '{{parsed_event.message.susr}}'
+          url.original: "{{parsed_event.message.request}}"
 
       - translate:
         dictionary:
@@ -292,35 +298,6 @@ stages:
         mapping:
           parsed_event.message.type: cef.event_type
         fallback: 'base event'
-
-
-  set_ecs_fields:
-    actions:
-      - set:
-          destination.bytes: '{{parsed_event.message.in}}'
-          destination.domain: '{{parsed_event.message.request}}'
-          destination.ip: '{{parsed_event.message.dst or parsed_event.message.dstV6}}'
-          destination.mac: '{{parsed_event.message.dmac}}'
-          destination.nat.ip: '{{parsed_event.message.cs2Label or parsed_event.message.natDstV6}}'
-          destination.nat.port: '{{parsed_event.message.dnpt}}'
-          destination.packets: '{{parsed_event.message.cn1Label}}'
-          destination.port: '{{parsed_event.message.dpt}}'
-          network.transport: '{{parsed_event.message.proto}}'
-          observer.egress.interface.name: '{{parsed_event.message.deviceOutboundInterface}}'
-          observer.ingress.interface.name: '{{parsed_event.message.deviceInboundInterface}}'
-          observer.type: 'firewall'
-          # process.id: '{{parsed_event.message.app}}'
-          process.entity_id: '{{parsed_event.message.appid}}'
-          process.name: '{{parsed_event.message.appName}}'
-          rule.name: '{{parsed_event.message.cs1}}'
-          source.bytes: '{{parsed_event.message.out}}'
-          source.ip: '{{parsed_event.message.src or parsed_event.message.srcV6}}'
-          source.mac: '{{parsed_event.message.smac}}'
-          source.nat.ip: '{{parsed_event.message.cs1Label or parsed_event.message.natSrcV6}}'
-          source.nat.port: '{{parsed_event.message.snpt}}'
-          source.packets: '{{parsed_event.message.cn2Label}}'
-          source.port: '{{parsed_event.message.spt}}'
-          user.name: '{{parsed_event.message.susr}}'
 
   set_sonicwall_fields:
     actions:
