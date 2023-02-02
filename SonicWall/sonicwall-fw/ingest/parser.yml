@@ -32,7 +32,6 @@ pipeline:
   - name: set_timestamp
   - name: set_cef_header_fields
   - name: set_cef_extension_fields
-  - name: set_cef_extension_fields_cef
   - name: set_sonicwall_fields
 
 stages:
@@ -74,12 +73,12 @@ stages:
     
       - set:
           destination.bytes: '{{parsed_event.message.in}}'
-          destination.domain: '{{parsed_event.message.request or parsed_event.message.get('destination DnsDomain') or parsed_event.message.dhost or parsed_event.message.dntdom}}'
+          destination.domain: "{{parsed_event.message.request or parsed_event.message.get('destination DnsDomain') or parsed_event.message.dhost or parsed_event.message.dntdom}}"
           destination.port: "{{parsed_event.message.dpt}}"
           destination.ip: '{{parsed_event.message.dst or parsed_event.message.dstV6}}'
           destination.mac: '{{parsed_event.message.dmac}}'
-          destination.nat.ip: '{{parsed_event.message.cs2Label or parsed_event.message.natDstV6 or parsed_event.message.get('destination Translated Address')}}'
-          destination.nat.port: '{{parsed_event.message.dnpt or parsed_event.message.get('destination TranslatedPort')}}'
+          destination.nat.ip: "{{parsed_event.message.cs2Label or parsed_event.message.natDstV6 or parsed_event.message.get('destination Translated Address')}}"
+          destination.nat.port: "{{parsed_event.message.dnpt or parsed_event.message.get('destination TranslatedPort')}}"
 
       - translate:
         dictionary:
@@ -116,12 +115,23 @@ stages:
           http.request.referrer: "{{parsed_event.message.requestContext}}"
           http.request.method: "{{parsed_event.message.requestMethod}}"
           log.syslog.facility.name: "{{parsed_event.message.deviceFacility}}"
-          network.transport: '{{parsed_event.message.proto}}'
-          observer.egress.interface.name: '{{parsed_event.message.deviceOutboundInterface or parsed_event.message.get('Device Outbound Interface')}}'
-          observer.ingress.interface.name: '{{parsed_event.message.deviceInboundInterface or parsed_event.message.get('deviceInbound Interface')}}'
+
+      - set:
+          network: >
+            {
+              {% set list1 = parsed_event.message.proto.split('/') %}
+              "transport": "{{list1[0]}}",
+              {% if list1[1] and list1[1].isalpha() %}
+                "protocol": "{{list1[1]}}"
+              {% endif %}
+            }
+            
+      - set:
+          observer.egress.interface.name: "{{parsed_event.message.deviceOutboundInterface or parsed_event.message.get('Device Outbound Interface')}}"
+          observer.ingress.interface.name: "{{parsed_event.message.deviceInboundInterface or parsed_event.message.get('deviceInbound Interface')}}"
           observer.type: 'firewall'
           process.entity_id: '{{parsed_event.message.appid}}'
-          process.name: '{{parsed_event.message.appName or parsed_event.message.get('deviceProcess Name')}}'
+          process.name: "{{parsed_event.message.appName or parsed_event.message.get('deviceProcess Name')}}"
           rule.name: '{{parsed_event.message.cs1}}'
           service.name: "{{parsed_event.message.get('destination ServiceName')}}"
           server.ip: "{{parsed_event.message.dvc}}"
@@ -129,8 +139,8 @@ stages:
           source.domain: "{{parsed_event.message.get('sourceDns Domain')}}"
           source.ip: '{{parsed_event.message.src or parsed_event.message.sourceAddress or parsed_event.message.srcV6}}'
           source.mac: '{{parsed_event.message.smac}}'
-          source.nat.ip: '{{parsed_event.message.cs1Label or parsed_event.message.natSrcV6 or parsed_event.message.get('source Translated Address')}}'
-          source.nat.port: '{{parsed_event.message.snpt or parsed_event.message.get('source TranslatedPort')}}'
+          source.nat.ip: "{{parsed_event.message.cs1Label or parsed_event.message.natSrcV6 or parsed_event.message.get('source Translated Address')}}"
+          source.nat.port: "{{parsed_event.message.snpt or parsed_event.message.get('source TranslatedPort')}}"
           source.packets: '{{parsed_event.message.cn2Label}}'
           source.port: '{{parsed_event.message.spt}}'
           source.user.name: '{{parsed_event.message.suser}}'
@@ -302,4 +312,4 @@ stages:
   set_sonicwall_fields:
     actions:
       - set:
-          sonicwall.fw: '{{parsed_event.message not in [None, "", "NA"]}}'
+          sonicwall.fw: '{{parsed_event.message}}'
