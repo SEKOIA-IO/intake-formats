@@ -1,0 +1,37 @@
+name: freeradius
+pipeline:
+  - name: parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+        pattern: >-
+          \(%{INT}\)\s%{DATA:event_outcome}(\s\(%{GREEDYDATA:event_reason}\))?:\s\[%{USER}\]\s\(from\sclient\s%{DATA:network_name}\sport\s%{INT:client_port}(\scli\s(%{MAC:client_mac}|%{IP:client_ip}\svia\s%{PROTOCOL}))?\)
+        custom_patterns:
+          USER: '%{USER_EMAIL:user_email}|%{HOST}|%{DATA:user_name}'
+          HOST: 'host/%{HOSTNAME:client_domain}'
+          USER_EMAIL: '%{DATA:user_name}@%{DATA:user_domain}'
+          PROTOCOL_TUNNEL: '%{DATA:network_protocol} tunnel'
+          PROTOCOL: '%{PROTOCOL_TUNNEL}|%{DATA:network_protocol}'
+
+  - name: set_ecs_fields
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: 'event'
+          event.category: ['authentication']
+          event.type: ['info']
+          event.dataset: 'freeradius.authentication'
+          event.reason: '{{ parsing.message.event_reason }}'
+          user.email: '{{ parsing.message.user_email }}'
+          user.name: '{{ parsing.message.user_name }}'
+          user.domain: '{{ parsing.message.user_domain }}'
+          network.name: '{{ parsing.message.network_name }}'
+          source.port: '{{ parsing.message.client_port }}'
+          source.mac: '{{ parsing.message.client_mac }}'
+          source.ip: '{{ parsing.message.client_ip }}'
+          source.domain: '{{ parsing.message.client_domain }}'
+          network.protocol: '{{ parsing.message.network_protocol }}'
+          freeradius.outcome: '{{ parsing.message.event_outcome }}'
