@@ -79,18 +79,22 @@ class IntakeTestManager:
 
     def _get_format_results(self, module: str, intake_format: str) -> dict:
         if module not in self._results or intake_format not in self._results[module]:
-            format_path = os.path.join(INTAKES_PATH, module, intake_format)
+            module_path = os.path.join(INTAKES_PATH, module)
+            format_path = os.path.join(module_path, intake_format)
 
             with open(os.path.join(format_path, "ingest", "parser.yml")) as f:
                 parser = yaml.safe_load(f)
 
-            fields = []
-            fields_path = os.path.join(format_path, "_meta", "fields.yml")
-            if os.path.isfile(fields_path):
-                with open(fields_path) as f:
-                    content = yaml.safe_load(f)
-                    if content and getattr(content, "values"):
-                        fields = list(content.values())
+            fields = {}
+            module_fields_path = os.path.join(module_path, "_meta", "fields.yml")
+            format_fields_path = os.path.join(format_path, "_meta", "fields.yml")
+
+            for fields_path in [module_fields_path, format_fields_path]:
+                if os.path.isfile(fields_path):
+                    with open(fields_path) as f:
+                        content = yaml.safe_load(f)
+                        if content and isinstance(content, dict):
+                            fields.update(content)
 
             messages = []
             for test in self._intakes[module][intake_format]:
@@ -100,7 +104,11 @@ class IntakeTestManager:
 
             response = requests.post(
                 VALIDATION_URL,
-                json={"parser": parser, "taxonomy": fields, "messages": messages},
+                json={
+                    "parser": parser,
+                    "taxonomy": list(fields.values()),
+                    "messages": messages,
+                },
             )
             if not response.ok:
                 raise FormatError(
