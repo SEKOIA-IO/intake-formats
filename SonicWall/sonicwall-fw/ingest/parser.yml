@@ -18,7 +18,7 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field:  "{{parsed_event.message.end or parsed_event.message.endTime}}"
+        input_field: "{{parsed_event.message.end or parsed_event.message.endTime}}"
         output_field: date
 
   # Parse 'rt' (as a timestamp or as a date)
@@ -31,8 +31,8 @@ pipeline:
 
   - name: set_timestamp
   - name: set_cef_header_fields
-  - name: set_cef_extension_fields
   - name: set_sonicwall_fields
+  - name: set_cef_extension_fields
 
 stages:
   set_timestamp:
@@ -103,13 +103,17 @@ stages:
           event.type : 'protocol'
 
       - set:
-          event.type: ['info']
+          event.type: 'info'
           event.kind: 'enrichment'
         filter: "{{parsed_event.message.Severity | re_match('[1-4]')}}"
 
       - set:
           event.kind: 'alert'
         filter: "{{parsed_event.message.Severity | re_match('[7-9]|10')}}"
+
+      - set:
+          event.type: 'allowed'
+        filter: "{{event.code in [16, 29, 31, 199, 235, 236, 237, 238, 526, 597, 598, 602, 752, 1080, 1235, 1255, 1256]}}"
 
       - set:
           file.inode: "{{parsed_event.message.fileId}}"
@@ -321,8 +325,31 @@ stages:
           parsed_event.message.type: cef.event_type
         fallback: 'base event'
 
+
   set_sonicwall_fields:
     actions:
       - set:
           sonicwall.fw: "{ {% for key, value in parsed_event.message.items() %}{% if value not in ['NA', ''] %}'{{key}}': '{{ value }}',{% endif %}{% endfor %} }"
           sonicwall.fw.event.name: '{{parsed_event.message.Name}}'
+      
+      - translate:
+        dictionary:
+          1: 'System'
+          2: 'Log'
+          3: 'Security Services'
+          4: 'Users'
+          5: 'Firewall Settings'
+          6: 'Network'
+          7: 'VPN'
+          8: 'High Availability'
+          9: '3G/4G, Modem, and Module'
+          10: 'Firewall'
+          11: 'Wireless'
+          12: 'VoIP'
+          13: 'SSL VPN'
+          14: 'Anti-Spam'
+          15: 'WAN Acceleration'
+          16: 'SD-WAN'
+          17: 'Multi-Tenancy'
+        mapping:
+          parsed_event.message.gcat: sonicwall.fw.gcatname
