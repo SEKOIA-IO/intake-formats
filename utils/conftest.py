@@ -13,6 +13,10 @@ VALIDATION_URL = "https://app.sekoia.io/api/v1/ingest/formats/validate"
 INTAKES_PATH = os.path.dirname(os.path.dirname(__file__))
 
 
+class FormatError(Exception):
+    pass
+
+
 class IntakeTestManager:
     def __init__(self):
         self._intakes = {}
@@ -75,17 +79,22 @@ class IntakeTestManager:
 
     def _get_format_results(self, module: str, intake_format: str) -> dict:
         if module not in self._results or intake_format not in self._results[module]:
-            format_path = os.path.join(INTAKES_PATH, module, intake_format)
+            module_path = os.path.join(INTAKES_PATH, module)
+            format_path = os.path.join(module_path, intake_format)
 
             with open(os.path.join(format_path, "ingest", "parser.yml")) as f:
                 parser = yaml.safe_load(f)
 
-            fields_path = os.path.join(format_path, "_meta", "fields.yml")
-            if os.path.isfile(fields_path):
-                with open(fields_path) as f:
-                    fields = list(yaml.safe_load(f).values())
-            else:
-                fields = []
+            fields = {}
+            module_fields_path = os.path.join(module_path, "_meta", "fields.yml")
+            format_fields_path = os.path.join(format_path, "_meta", "fields.yml")
+
+            for fields_path in [module_fields_path, format_fields_path]:
+                if os.path.isfile(fields_path):
+                    with open(fields_path) as f:
+                        content = yaml.safe_load(f)
+                        if content and isinstance(content, dict):
+                            fields.update(content)
 
             messages = []
             for test in self._intakes[module][intake_format]:
@@ -95,8 +104,16 @@ class IntakeTestManager:
 
             response = requests.post(
                 VALIDATION_URL,
-                json={"parser": parser, "taxonomy": fields, "messages": messages},
+                json={
+                    "parser": parser,
+                    "taxonomy": list(fields.values()),
+                    "messages": messages,
+                },
             )
+            if not response.ok:
+                raise FormatError(
+                    f"{response.status_code} {response.reason} for {response.url}: {response.content} "
+                )
             response.raise_for_status()
             self._results[module][intake_format] = response.json()
             self._results[module][intake_format]["parsed_messages"] = {
