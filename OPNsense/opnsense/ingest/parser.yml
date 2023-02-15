@@ -1,4 +1,4 @@
-name: 'opnsense-package-filter'
+name: 'openbsd-package-filter'
 pipeline:
   - name: parsed_event
     external:
@@ -10,12 +10,12 @@ pipeline:
 
         custom_patterns:
           PACKET_FILTER: '%{NUMBER:rulenr},%{DATA:subrulenr},%{DATA:anchorname},%{WORD:label},%{WORD:interface},%{WORD:reason},%{WORD:action},%{WORD:dir}'
-          PF_IPV4: '4,%{WORD:tos},%{DATA:ecn},%{NUMBER:ttl},%{NUMBER:id},%{NUMBER:offset},%{WORD:flags},%{NUMBER:protonum},%{WORD:protoname},%{NUMBER:length},%{IPV4:src},%{IPV4:dst}'
+          PF_IPV4: '4,%{WORD:tos},%{DATA:ecn},%{NUMBER:hoplimit},%{NUMBER:id},%{NUMBER:offset},%{WORD:flags},%{NUMBER:protonum},%{WORD:protoname},%{NUMBER:length},%{IPV4:src},%{IPV4:dst}'
           PF_IPV6: '6,%{DATA:class},%{DATA:flow},%{DATA:hoplimit},%{WORD:protoname},%{NUMBER:protonum},{NUMBER:length},%{IPV6:src},%{IPV6:dst}'
           PF_UDP: '%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen}'
-          PF_TCP: '%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen},%{WORD:flags},%{NUMBER:seq},%{DATA:ack},%{NUMBER:window},%{DATA:urg},%{WORD:options}'
+          PF_TCP: '%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen},%{WORD:tcp_flags},%{NUMBER:seq},%{DATA:ack},%{NUMBER:window},%{DATA:urg},%{WORD:options}'
           PF_CARP: '%{DATA:hoplimit},%{DATA:vhid},%{DATA:version},%{DATA:advskew},%{DATA:advbase}'
-          PF_ICMP: '%{DATA:datalenght}'
+          PF_ICMP: 'datalenght=%{DATA:icmp_datalenght}'
 
   - name: set_ecs_fields
     stages:
@@ -25,36 +25,50 @@ pipeline:
               source.ip: "{{parsed_event.message.src}}"
               destination.ip: "{{parsed_event.message.dst}}"
               rule.id: "{{parsed_event.message.rulenr}}"
-              rule.description: "{{parsed_event.message.subrulenr}}"
-              event.module: "{{parsed_event.message.anchorname}}"
-              event.labels: "{{parsed_event.message.label}}"
-              interface.name: "{{parsed_event.message.interface}}"
+              openbsd.pf.rule.subrulenr: "{{parsed_event.message.subrulenr}}"
+              rule.ruleset: "{{parsed_event.message.anchorname}}"
+              openbsd.pf.event.tracker.id: "{{parsed_event.message.label}}"
               event.reason: "{{parsed_event.message.reason}}"
               event.action: "{{parsed_event.message.action}}"
               network.direction: "{{parsed_event.message.dir}}"
-              network.transport.tos: "{{parsed_event.message.tos}}"
-              network.transport.ecn: "{{parsed_event.message.ecn}}"
-              network.transport.ttl: "{{parsed_event.message.ttl}}"
-              event.id: "{{parsed_event.message.id}}"
-              event.offset: "{{parsed_event.message.offset}}"
-              network.transport.flags: "{{parsed_event.message.flags}}"
-              network.protocol: "{{parsed_event.message.protonum}}"
+              openbsd.pf.routing.class: "{{parsed_event.message.tos}}"
+              openbsd.pf.routing.hoplimit: "{{parsed_event.message.hoplimit}}"
+              openbsd.pf.routing.offset: "{{parsed_event.message.offset}}"
+              openbsd.pf.routing.flags: "{{parsed_event.message.flags}}"
+              network.network.iana_number: "{{parsed_event.message.protonum}}"
               network.transport: "{{parsed_event.message.protoname}}"
               network.bytes: "{{parsed_event.message.length}}"
               source.port: "{{parsed_event.message.srcport}}"
               destination.port: "{{parsed_event.message.dstport}}"
-              event.dataset: "{{parsed_event.message.datalen}}"
-              event.type: "{{parsed_event.message.flags}}"
-              event.sequence: "{{parsed_event.message.seq}}"
-              event.acknowledgement: "{{parsed_event.message.ack}}"
-              event.window_size: "{{parsed_event.message.window}}"
-              event.urgent: "{{parsed_event.message.urg}}"
-              event.network.options: "{{parsed_event.message.option}}"
+              openbsd.pf.transport.bytes: "{{parsed_event.message.datalen}}"
+              openbsd.pf.transport.tcp_flags: "{{parsed_event.message.tcp_flags}}"
+              openbsd.pf.transport.sequence_number: "{{parsed_event.message.seq}}"
+              openbsd.pf.transport.ack: "{{parsed_event.message.ack}}"
+              openbsd.pf.transport.window_size: "{{parsed_event.message.window}}"
+              openbsd.pf.transport.urgency: "{{parsed_event.message.urg}}"
+              openbsd.pf.transport.options: "{{parsed_event.message.option}}"
               event.classification: "{{parsed_event.message.class}}"
-              opnsense.vhid: "{{parsed_event.message.vhid}}"
-              event.version: "{{parsed_event.message.version}}"
-              network.icmp.skew: "{{parsed_event.message.advskew}}"
-              network.icmp.base: "{{parsed_event.message.advbase}}"
+              openbsd.pf.carp.vhid: "{{parsed_event.message.vhid}}"
+              openbsd.pf.carp.version: "{{parsed_event.message.version}}"
+              openbsd.pf.icmp.advskew: "{{parsed_event.message.advskew}}"
+              openbsd.pf.icmp.advbase: "{{parsed_event.message.advbase}}"
               opnsense.datalength: "{{parsed_event.message.datalenght}}"
-              network.flow.id: "{{parsed_event.message.flow}}"
+              openbsd.pf.routing.flow: "{{parsed_event.message.flow}}"
+
+          - set:
+              observer.ingress.interface.name: "{{parsed_event.message.interface}}"
+            filter: "{{parsed_event.message.dir == 'in'}}"
+
+          - set:
+              observer.egress.interface.name: "{{parsed_event.message.interface}}"
+            filter: "{{parsed_event.message.dir == 'out'}}"
+
+          - translate:
+              dictionary:
+                'in': 'inbound'
+
+                'out': 'outbound'
+
+              mapping:
+                parsed_event.message.direction: network.direction
 
