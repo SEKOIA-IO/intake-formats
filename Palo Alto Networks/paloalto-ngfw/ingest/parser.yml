@@ -31,7 +31,7 @@ pipeline:
           - ReceiveTime
           - SerialNum
           - Type
-          - Threat_ContentType
+          - Subtype
           - ConfigVersion
           - GenerateTime
           - SourceAddress
@@ -88,7 +88,7 @@ pipeline:
           - ReceiveTime
           - SerialNum
           - Type
-          - Threat_ContentType
+          - Subtype
           - FUTURE_USE
           - GeneratedTime
           - VirtualSystem
@@ -133,7 +133,7 @@ pipeline:
           - ReceiveTime
           - SerialNumber
           - Type
-          - Threat_ContentType
+          - Subtype
           - FUTURE_USE
           - GeneratedTime
           - VirtualSystem
@@ -180,7 +180,7 @@ pipeline:
           - ReceiveTime
           - SerialNumber
           - Type
-          - Threat_ContentType
+          - Subtype
           - FUTURE_USE
           - GeneratedTime
           - VirtualSystem
@@ -189,7 +189,7 @@ pipeline:
           - FUTURE_USE
           - FUTURE_USE_2
           - Module
-          - Severity
+          - VendorSeverity
           - Description
           - SequenceNumber
           - ActionFlags
@@ -214,7 +214,7 @@ pipeline:
           - ReceiveTime
           - SerialNum
           - Type
-          - Threat_ContentType
+          - Subtype
           - ConfigVersion
           - GenerateTime
           - SourceAddress
@@ -244,7 +244,7 @@ pipeline:
           - URLFilename
           - Threat_ContentName
           - Category
-          - Severity
+          - VendorSeverity
           - Direction
           - seqno
           - ActionFlags
@@ -308,7 +308,18 @@ pipeline:
         #timezone: '{{parsed_event.message.dtz}}'
     filter: '{{parsed_event.message.get("start") != None}}'
 
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_event.message.Description}}'
+        pattern: '%{SYSTEM_AUTH_AUTHENTICATION_FOR}'
+        custom_patterns:
+          SYSTEM_AUTH_AUTHENTICATION_FOR: "authenticated for user '%{USERNAME:user}'.   auth profile '%{DATA:auth_profile}', vsys '%{DATA:vsys}', server profile '%{DATA:server_profile}', server address '%{HOSTNAME:server_address}', From: %{IP:src}."
+    filter: '{{parsed_event.message.get("Description") != None}}'
+
   - name: set_extracted_fields
+  - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
     filter: '{{parsed_event.message.get("deviceOutboundInterface") != None}}'
   - name: set_ecs_deviceInboundInterface
@@ -354,7 +365,7 @@ stages:
         filter: '{{parsed_event.message.get("start") != None}}'
       - set:
           action.name: '{{parsed_event.message.Action}}'
-          action.type: '{{parsed_event.message.Threat_ContentType}}'
+          action.type: '{{parsed_event.message.Subtype}}'
           destination.address: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
           destination.bytes: '{{parsed_event.message.BytesReceived or parsed_event.message.out}}'
           destination.geo.country_iso_code: '{{parsed_event.message.PanOSDestinationLocation}}'
@@ -368,7 +379,6 @@ stages:
           email.subject: '{{parsed_event.message.Subject}}'
           email.to.address: '{{parsed_event.message.Recipient}}'
           event.action: '{{parsed_event.message.act or parsed_event.message.Threat_Category}}'
-          event.category: [ 'network' ]
           event.timezone: '{{parsed_event.message.dtz}}'
           event.dataset: '{{parsed_event.message.DeviceEventClassID | lower}}'
           event.duration: '{{parsed_event.message.ElapsedTimeInSec or parsed_event.message.SessionDuration}}'
@@ -386,7 +396,7 @@ stages:
           http.request.method: '{{parsed_event.message.HttpMethod}}'
           http.request.referrer: '{{parsed_event.message.Referer}}'
           log.hostname: '{{parsed_event.message.DeviceName or parsed_event.message.dvchost}}'
-          log.level: '{{parsed_event.message.Severity}}'
+          log.level: '{{parsed_event.message.VendorSeverity}}'
           log.logger: '{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower}}'
           network.application: '{{parsed_event.message.app}}'
           network.bytes: '{{parsed_event.message.Bytes or parsed_event.message.PanOSBytes}}'
@@ -401,10 +411,9 @@ stages:
           observer.version: '{{parsed_event.message.DeviceVersion}}'
           rule.name: '{{parsed_event.message.Rule}}'
           rule.uuid: '{{parsed_event.message.PanOSRuleUUID}}'
-          source.address: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src}}'
           source.bytes: '{{parsed_event.message.BytesSent or parsed_event.message.in}}'
           source.geo.country_iso_code: '{{parsed_event.message.SourceRegion}}'
-          source.ip: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src}}'
+          source.ip: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src or parsed_description.message.src}}'
           source.nat.ip: '{{parsed_event.message.NATSourceIP or parsed_event.message.sourceTranslatedAddress}}'
           source.nat.port: '{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}'
           source.packets: '{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}'
@@ -413,14 +422,55 @@ stages:
           user_agent.name: '{{parsed_event.message.UserAgent}}'
           user_agent.os.name: '{{parsed_event.message.ClientOS}}'
           user_agent.os.version: '{{parsed_event.message.ClientOSVersion}}'
-          user.name: '{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName}}'
+          user.name: '{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}'
           paloalto: '{{parsed_event.message}}'
+          paloalto.Threat_ContentType: '{{parsed_event.message.Subtype}}'
+
+  set_category_fields:
+    actions:
+      - set:
+          event.category: ['network']
+          event.type: ['info']
+      - set:
+          event.category: ['authentication']
+          event.type: ['info']
+        filter: '{{final.log.logger in ["auth", "system", "userid"]}}'
+      - translate:
+        dictionary:
+          login: ['start']
+          logout: ['end']
+          'auth-success': ['start']
+        mapping:
+          parsed_event.message.Subtype: event.type
+          parsed_event.message.Name: event.type
+          parsed_event.message.EventID: event.type
+        filter: '{{final.log.logger in ["userid", "system"]}}'
+      - translate:
+        dictionary:
+          spyware: ['malware']
+          virus: ['malware']
+          wildfire-virus: ['malware']
+          vulnerability: ['vulnerability']
+          file: ['file']
+          data: ['file']
+          flood: ['network']
+          packet: ['network']
+          scan: ['network']
+          url: ['network']
+          wildfire: ['malware']
+        mapping:
+          parsed_event.message.Name: event.category
+          parsed_event.message.Subtype: event.category
+        filter: '{{final.log.logger == "threat"}}'
       - translate:
         dictionary:
           'start': [ 'start' ]
           'end': [ 'end' ]
           'drop': [ 'denied' ]
           'denied': [ 'denied' ]
+          'deny': [ 'denied' ]
+          'allow': ['allowed']
         mapping:
-          parsed_event.message.Name: event.type
-        fallback: [ 'denied' ]
+          parsed_event.message.act: event.type
+          parsed_event.message.Subtype: event.type
+        filter: '{{final.log.logger == "traffic"}}'
