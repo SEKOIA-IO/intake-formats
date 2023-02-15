@@ -156,7 +156,7 @@ pipeline:
           - RepeatCount
           - Reason
           - Error
-          - Description
+          - EventDescription
           - Status
           - Location
           - LoginDuration
@@ -190,7 +190,7 @@ pipeline:
           - FUTURE_USE_2
           - Module
           - VendorSeverity
-          - Description
+          - EventDescription
           - SequenceNumber
           - ActionFlags
           - DGHierarchyLevel1
@@ -317,11 +317,21 @@ pipeline:
     external:
       name: grok.match
       properties:
-        input_field: '{{parsed_event.message.Description}}'
-        pattern: '%{SYSTEM_AUTH_AUTHENTICATION_FOR}'
+        input_field: '{{parsed_event.message.EventDescription}}'
+        pattern: '%{SYSTEM_AUTH_AUTHENTICATION_FOR}|%{CONNECTION}|%{WILDFIRE}|%{DHCP_RENEW}|%{PANDB_GENERIC}'
         custom_patterns:
           SYSTEM_AUTH_AUTHENTICATION_FOR: "authenticated for user '%{USERNAME:user}'.   auth profile '%{DATA:auth_profile}', vsys '%{DATA:vsys}', server profile '%{DATA:server_profile}', server address '%{HOSTNAME:server_address}', From: %{IP:src}."
-    filter: '{{parsed_event.message.get("Description") != None}}'
+          CONNECTION: "%{CONNECTION_SUCCESS}|%{CONNECTION_TO_SERVER}"
+          CONNECTION_SUCCESS: "Successfully connect to address: %{IP:dst} port: %{NUMBER:dport}, conn id: %{DATA:connection_id}"
+          CONNECTION_TO_SERVER: "Connection to %{DATA} server: %{DATA:dst_addr} completed successfully, initiated by %{IP:src}"
+          DHCP_RENEW: "DHCP RENEW: interface %{NOTSPACE:intf}, ip %{IP:src} netmask %{IP} dhcp server: %{IP:dst_addr}"
+          WILDFIRE: "%{WILDFIRE_INSTALLED}|%{WILDFIRE_GENERIC}"
+          WILDFIRE_NAME: "WildFire"
+          WILDFIRE_INSTALLED: "Installed %{WILDFIRE_NAME:module} package: %{DATA:filename}"
+          WILDFIRE_GENERIC: "%{WILDFIRE_NAME:module} %{DATA}"
+          PANDB_NAME: "PAN-DB"
+          PANDB_GENERIC: "%{PANDB_NAME:module} %{DATA}"
+    filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
   - name: set_extracted_fields
   - name: set_category_fields
@@ -373,13 +383,13 @@ stages:
           action.type: '{{parsed_event.message.Subtype}}'
           container.id: '{{parsed_event.message.ContainerID}}'
           container.name: '{{parsed_event.message.ContainerName}}'
-          destination.address: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
+          destination.address: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst or parsed_description.message.dst_addr}}'
           destination.bytes: '{{parsed_event.message.BytesReceived or parsed_event.message.out}}'
-          destination.ip: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
+          destination.ip: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst or parsed_description.message.dst}}'
           destination.nat.ip: '{{parsed_event.message.destinationTranslatedAddress or parsed_event.message.NATDestinationIP}}'
           destination.nat.port: '{{parsed_event.message.destinationTranslatedPort or parsed_event.message.NATDestinationPort}}'
           destination.packets: '{{parsed_event.message.PanOSPacketsReceived or parsed_event.message.pkts_received}}'
-          destination.port: '{{parsed_event.message.DestinationPort or parsed_event.message.dpt}}'
+          destination.port: '{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}'
           destination.user.name: '{{parsed_event.message.duser or parsed_event.message.DestinationUser}}'
           email.from.address: '{{parsed_event.message.Sender}}'
           email.subject: '{{parsed_event.message.Subject}}'
@@ -389,8 +399,10 @@ stages:
           event.dataset: '{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}'
           event.duration: '{{parsed_event.message.ElapsedTimeInSec or parsed_event.message.SessionDuration}}'
           event.kind: 'event'
-          event.reason: '{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.Description or parsed_event.message.PanOSConnectionError}}'
+          event.reason: '{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError}}'
+          event.module: '{{parsed_description.message.module}}'
           file.path: '{{parsed_event.message.URLFilename}}'
+          file.name: '{{parsed_event.message.URLFilename|basename or parsed_description.message.filename}}'
           host.hostname: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}'
           host.name: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName}}'
           host.id: '{{parsed_event.message.deviceExternalId}}'
@@ -411,6 +423,7 @@ stages:
           network.type: '{{parsed_event.message.PanOSTunnelType}}'
           observer.egress.interface.alias: '{{parsed_event.message.ToZone}}'
           observer.ingress.interface.alias: '{{parsed_event.message.FromZone}}'
+          observer.ingress.interface.name: '{{parsed_description.message.intf}}'
           observer.product: 'PAN-OS'
           observer.vendor: '{{parsed_event.message.DeviceVendor}}'
           observer.type: '{{parsed_event.message.DeviceProduct}}'
