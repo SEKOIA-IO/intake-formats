@@ -1,7 +1,7 @@
-# OPNSense
+# OpenBSD
 
 ## Description
-The description of the module
+OpenBSD is a security-focused, opensource and free operating based on Berkeley Software Distribution
 
 ## Intakes
 *
