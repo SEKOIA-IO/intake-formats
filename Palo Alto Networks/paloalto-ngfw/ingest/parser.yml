@@ -287,8 +287,7 @@ pipeline:
           - HttpHeaders
         delimiter: ","
 
-
-  - name: parsed_rt
+  - name: parsed_timestamp
     external:
       name: date.parse
       properties:
@@ -308,10 +307,27 @@ pipeline:
         #timezone: '{{parsed_event.message.dtz}}'
     filter: '{{parsed_event.message.get("start") != None}}'
 
+  # Parse JSON events
   - name: parsed_event
     external:
       name: json.parse-json
     filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.EventTime or parsed_event.message.TimeGenerated}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.get("EventTime") != None or parsed_event.message.get("TimeGenerated") != None}}'
+
+  - name: parsed_start
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.SessionStartTime}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.get("SessionStartTime") != None}}'
 
   - name: parsed_description
     external:
@@ -373,12 +389,8 @@ stages:
   set_extracted_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_rt.datetime}}'
-        filter: '{{parsed_event.message.get("rt")  != None}}'
-      - set:
+          '@timestamp': '{{parsed_timestamp.datetime}}'
           event.start: '{{parsed_start.datetime}}'
-        filter: '{{parsed_event.message.get("start") != None}}'
-      - set:
           action.name: '{{parsed_event.message.Action}}'
           action.type: '{{parsed_event.message.Subtype}}'
           container.id: '{{parsed_event.message.ContainerID}}'
