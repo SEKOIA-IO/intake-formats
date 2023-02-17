@@ -27,7 +27,7 @@ By suppling the path of the test file in the format directory, the script will r
 ```shell
 $ cd utils
 $ poetry install  # optional, only when dependencies are not already installed
-$ poetry run python3 create_test.py ../My\ module/my-format/tests/test1.json "My raw event"
+$ poetry run python3 create_test.py ../My\ module/my-format/tests/test_ingest_pass_logs.json "My raw event"
 $ cat /tmp/raw_event.txt | poetry run python3 create_test.py ../My\ module/my-format/tests/test2.json -
 ```
 
