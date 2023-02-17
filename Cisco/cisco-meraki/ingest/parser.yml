@@ -31,6 +31,14 @@ pipeline:
     filter: '{{kv_part_message.message.get("translated_dst_ip") != None}}'
   - name: set_urls
     filter: '{{grok_header.message.log_type == "urls"}}'
+  - name: grok_flows
+    filter: '{{grok_header.message.log_type == "flows"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{grok_header.message.kv_part}}'
+        output_field: message
+        pattern: ^%{WORD:action}\s%{GREEDYDATA}$    
   - name: set_flows
     filter: '{{grok_header.message.log_type == "flows"}}'
   - name: grok_events
@@ -181,6 +189,23 @@ stages:
         fallback: ['info']
         mapping:
           grok_header.message.action: event.type
+      - dictionary:
+          '0': allow
+          '1': deny
+          deny: deny
+          allow: allow
+        mapping:
+          grok_flows.message.action: action.outcome
+        filter: '{{grok_flows.message.get("action") != None}}'
+      - dictionary:
+          '0': ['allowed']
+          '1': ['denied']
+          deny: ['denied']
+          allow: ['allowed']
+        fallback: ['info']
+        mapping:
+          grok_flows.message.action: event.type
+        filter: '{{grok_flows.message.get("action") != None}}'
   set_logsubtype:
     actions:
       - set:
