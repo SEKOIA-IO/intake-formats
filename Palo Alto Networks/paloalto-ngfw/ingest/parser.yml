@@ -429,11 +429,11 @@ stages:
           file.path: '{{parsed_event.message.URLFilename}}'
           file.name: '{{parsed_event.message.URLFilename or parsed_description.message.filename}}'
           host.hostname: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}'
-          host.name: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName}}'
+          host.name: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost}}'
           host.id: '{{parsed_event.message.deviceExternalId}}'
           host.mac: '{{parsed_event.message.PanOSSourceDeviceMac}}'
           host.os.family: '{{parsed_event.message.PanOSSourceDeviceOSFamily}}'
-          host.os.version: '{{parsed_event.message.PanOSSourceDeviceOSVersion}}'
+          host.os.version: '{{parsed_event.message.PanOSSourceDeviceOSVersion or parsed_event.message.ClientOSVersion}}'
           host.os.type: '{{parsed_event.message.PanOSEndpointOSType}}'
           host.type: '{{parsed_event.message.PanOSSourceDeviceCategory}}'
           http.request.method: '{{parsed_event.message.HttpMethod}}'
@@ -446,7 +446,7 @@ stages:
           network.packets: '{{parsed_event.message.Packets or parsed_event.message.PacketsTotal}}'
           network.transport: '{{parsed_event.message.IPProtocol or parsed_event.message.proto}}'
           network.protocol: '{{parsed_description.message.proto}}'
-          network.type: '{{parsed_event.message.PanOSTunnelType}}'
+          network.type: '{{parsed_event.message.TunnelType or parsed_event.message.PanOSTunnelType}}'
           observer.egress.interface.alias: '{{parsed_event.message.ToZone or parsed_event.message.cs5}}'
           observer.ingress.interface.alias: '{{parsed_event.message.FromZone or parsed_event.message.cs4}}'
           observer.ingress.interface.name: '{{parsed_description.message.intf}}'
@@ -470,12 +470,18 @@ stages:
           user.name: '{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}'
           paloalto: '{ {% for key, value in parsed_event.message.items() %}{% if value not in ["null", "", None] %}"{{key}}": r"{{ value }}",{% endif %}{% endfor %} }'
           paloalto.Threat_ContentType: '{{parsed_event.message.Subtype}}'
+          paloalto.connection.stage: '{{parsed_event.message.Stage or parsed_event.message.PanOSStage}}'
+          paloalto.authentication.method: '{{parsed_event.message.AuthMethod or parsed_event.message.PanOSAuthMethod}}'
+          paloalto.connection.method: '{{parsed_event.message.ConnectionMethod or parsed_event.message.PanOSConnectionMethod}}'
       - set:
           source.geo.country_iso_code: '{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}'
         filter: '{{parsed_event.message.SourceLocation | length == 2 or parsed_event.message.PanOSSourceLocation | length == 2}}'
       - set:
           destination.geo.country_iso_code: '{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}'
         filter: '{{parsed_event.message.DestinationLocation | length == 2 or parsed_event.message.PanOSDestinationLocation | length == 2}}'
+      - set:
+          action.name: '{{parsed_event.message.EventID or parsed_event.message.PanOSEventIDValue}}'
+        filter: '{{final.action.name == null and (parsed_event.message.EventID not in [null, "0"] or parsed_event.message.PanOSEventIDValue not in [null, "0"])}}'
 
   set_category_fields:
     actions:
@@ -490,6 +496,18 @@ stages:
           event.category: ['host']
           event.type: ['info']
         filter: '{{final.log.logger == "system" and parsed_event.message.Subtype == "general"}}'
+      - set:
+          event.category: ['session']
+          event.type: ['info']
+        filter: '{{final.log.logger == "globalprotect"}}'
+      - translate:
+        dictionary:
+          'login': ['start']
+          'connected': ['start']
+        mapping:
+          paloalto.connection.stage: event.type
+        fallback: ['info']
+        filter: '{{final.log.logger == "globalprotect"}}'
       - translate:
         dictionary:
           login: ['start']
