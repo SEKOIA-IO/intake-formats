@@ -1,4 +1,4 @@
-name: microsoft-defender-for-endpoints
+name: microsoft-365-defender
 pipeline:
   - name: json_event
     external:
@@ -9,6 +9,13 @@ pipeline:
       properties:
         input_field: '{{json_event.message.time}}'
         output_field: datetime
+  - name: parse_device_info_user
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceInfo"}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{json_event.message.properties.LoggedOnUsers}}'
+        output_field: 'users'
   - name: set_common_fields
   - name: set_alert_evidence_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-AlertEvidence"}}'
@@ -89,7 +96,6 @@ stages:
           host.os.full: '{{json_event.message.properties.OSPlatform}}'
           host.os.version: '{{json_event.message.properties.OSVersion}}'
           host.type: '{{json_event.message.properties.DeviceType}}'
-          network.protocol: '{{json_event.message.properties.RequestProtocol or json_event.message.properties.Protocol}}'
           process.hash.md5: '{{json_event.message.InitiatingProcessMD5}}'
           process.hash.sha1: '{{json_event.message.InitiatingProcessSHA1}}'
           process.hash.sha256: '{{json_event.message.InitiatingProcessSHA256}}'
@@ -217,6 +223,9 @@ stages:
       - set:
           process.args:  '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
         filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 0}}'
+      - set:
+          network.protocol: '{{json_event.message.properties.RequestProtocol or json_event.message.properties.Protocol}}'
+        filter: '{{json_event.message.properties.get("RequestProtocol") != None or (json_event.message.properties.get("Protocol") != None and json_event.message.properties.Protocol != "Negotiate")}}'
   set_alert_evidence_fields:
     actions:
       - set:
@@ -313,6 +322,12 @@ stages:
           action.properties.OnboardingStatus: '{{json_event.message.properties.OnboardingStatus}}'
           action.properties.MergedDeviceIds: '{{json_event.message.properties.MergedDeviceIds}}'
           action.properties.MergedToDeviceId: '{{json_event.message.properties.MergedToDeviceId}}'
+          action.properties.JoinType: '{{json_event.message.properties.JoinType}}'
+      - set:
+          user.name: '{{parse_device_info_user.users[0].UserName}}'
+          user.domain: '{{parse_device_info_user.users[0].DomainName}}'
+          user.id: '{{parse_device_info_user.users[0].Sid}}'
+        filter: '{{parse_device_info_user.users | length > 0}}'
   set_device_logon_events_fields:
     actions:
       - set:
