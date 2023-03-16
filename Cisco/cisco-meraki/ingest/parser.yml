@@ -24,6 +24,22 @@ pipeline:
         output_field: message
         value_sep: '='
         item_sep: \s
+  - name: grok_src_ip_urls
+    filter: '{{grok_header.message.log_type == "urls"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{kv_part_message.message.src}}'
+        output_field: message
+        pattern: '^%{IP:src_ip}:%{NUMBER:src_port}$'
+  - name: grok_dst_ip_urls
+    filter: '{{grok_header.message.log_type == "urls"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{kv_part_message.message.dst}}'
+        output_field: message
+        pattern: '^%{IP:dst_ip}:%{NUMBER:dst_port}$'
   - name: set_common
   - name: set_source_nat_ip_flow
     filter: '{{kv_part_message.message.get("translated_src_ip") != None}}'
@@ -142,20 +158,24 @@ stages:
   set_common:
     actions:
       - set:
-          source.ip: '{{kv_part_message.message.src.split('':'')[0]}}'
-          source.port: >-
-            {{kv_part_message.message.sport or
-            kv_part_message.message.src.split(':')[1]}}
           event.kind: 'event'
           event.category: ['network']
           event.type: ['info']
           event.dataset: '{{grok_header.message.log_type}}'
-          destination.ip: '{{kv_part_message.message.dst.split('':'')[0]}}'
-          destination.port: >-
-            {{kv_part_message.message.dport or
-            kv_part_message.message.dst.split(':')[1]}}
           network.protocol: '{{kv_part_message.message.protocol}}'
           observer.hostname: '{{grok_header.message.device_hostname}}'
+      - set:
+          source.ip: '{{kv_part_message.message.src}}'
+          source.port: '{{kv_part_message.message.sport}}'
+          destination.ip: '{{kv_part_message.message.dst}}'
+          destination.port: '{{kv_part_message.message.dport}}'
+        filter: '{{grok_header.message.log_type != "urls"}}'
+      - set:
+          source.ip: '{{grok_src_ip_urls.message.src_ip}}'
+          source.port: '{{grok_src_ip_urls.message.src_port}}'
+          destination.ip: '{{grok_dst_ip_urls.message.dst_ip}}'
+          destination.port: '{{grok_dst_ip_urls.message.dst_port}}'
+        filter: '{{grok_header.message.log_type == "urls"}}'
   set_source_nat_ip_flow:
     actions:
       - set:
