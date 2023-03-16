@@ -16,7 +16,8 @@ pipeline:
     filter: '{{json_event.message.type == "message"}}'
   - name: set_fields_for_maillog
     filter: '{{json_event.message.type == "maillog"}}'
-  - name: set_CTI_fields
+  - name: set_fields_for_message_parts
+    filter: '{{json_event.message.type == "msgParts"}}'
 
 stages:
   set_common_fields:
@@ -39,29 +40,6 @@ stages:
           email.to.address: '{{json_event.message.msg.parsedAddresses.to}}'
           email.cc.address: '{{json_event.message.msg.parsedAddresses.cc}}'
           email.reply_to.address: '{{json_event.message.msg.parsedAddresses["reply-to"]}}'
-          email.attachments: >
-            [
-              {% for part in json_event.message.msgParts %}{
-                "file": {
-                  "mime_type": "{{part.detectedMime}}",
-                  {% if part.labeledName != "" %}
-                  "name": "{{part.labeledName}}",
-                  {% else %}
-                  "name": "{{part.detectedName}}",
-                  {% endif %}
-                  {% if part.labeledExt != "" %}
-                  "extension": "{{part.labeledExt}}",
-                  {% else %}
-                  "extension": "{{part.detectedExt}}",
-                  {% endif %}
-                  "size": "{{part.detectedSizeBytes}}",
-                  "hash": {
-                    "md5": "{{part.md5}}",
-                    "sha256": "{{part.sha256}}",
-                  }
-                }
-              }{% endfor %}
-            ]
           source.ip: '{{json_event.message.connection.ip}}'
           source.domain: '{{json_event.message.connection.host}}'
           source.geo.country_iso_code: '{{json_event.message.connection.country}}'
@@ -72,14 +50,6 @@ stages:
           proofpoint.pod.threat.scores: '{{json_event.message.filter.modules.spam.scores.classifiers}}'
           proofpoint.pod.routes: '{{json_event.message.filter.routes}}'
           proofpoint.pod.quarantine: '{{json_event.message.filter.quarantine}}'
-          proofpoint.pod.urls: >
-            [
-              {% for part in json_event.message.msgParts %}
-              {% for url in part.urls %}
-              {% if url.url | is_url %}"{{url.url}}",{% endif %}
-              {% endfor %}
-              {% endfor %}
-            ]
           proofpoint.pod.smtp.sender: '{{json_event.message.envelope.from}}'
           proofpoint.pod.smtp.recipients: '{{json_event.message.envelope.rcpts}}'
       - set:
@@ -118,16 +88,50 @@ stages:
       - set:
           tls.version: '{{json_event.message.tls.version}}'
         filter: '{{json_event.message.tls.version != "NONE"}}'
-  set_CTI_fields:
-    actions:
+  set_fields_for_message_parts:
+      actions:
       - set:
-          url.original: '{{set_fields_for_messages.proofpoint.pod.urls[0]}}'
-        filter: '{{set_fields_for_messages.proofpoint.pod.urls != ""}}'
+          event.category: ["email"]
+          event.dataset: 'msgParts'
+          event.type: ["info"]
+          email.local_id: '{{json_event.message.guid}}'
+          email.attachments: >
+              [
+                {
+                  "file": {
+                    "mime_type": "{{json_event.message.msgParts.detectedMime}}",
+                    {% if json_event.message.msgParts.labeledName != "" %}
+                    "name": "{{json_event.message.msgParts.labeledName}}",
+                    {% else %}
+                    "name": "{{json_event.message.msgParts.detectedName}}",
+                    {% endif %}
+                    {% if json_event.message.msgParts.labeledExt != "" %}
+                    "extension": "{{json_event.message.msgParts.labeledExt}}",
+                    {% else %}
+                    "extension": "{{json_event.message.msgParts.detectedExt}}",
+                    {% endif %}
+                    "size": "{{json_event.message.msgParts.detectedSizeBytes}}",
+                    "hash": {
+                      "md5": "{{json_event.message.msgParts.md5}}",
+                      "sha256": "{{json_event.message.msgParts.sha256}}",
+                    }
+                  }
+                }
+              ]
+          proofpoint.pod.urls: >
+              [
+                {% for url in json_event.message.msgParts.urls %}
+                {% if url.url | is_url %}"{{url.url}}",{% endif %}
+                {% endfor %}
+              ]
       - set:
-          file.name: '{{set_fields_for_messages.email.attachments[0].file.name}}'
-        filter: '{{set_fields_for_messages.email.attachments[0].file.name != ""}}'
+          url.original: '{{set_fields_for_message_parts.proofpoint.pod.urls[0]}}'
+        filter: '{{set_fields_for_message_parts.proofpoint.pod.urls != ""}}'
       - set:
-          file.hash.sha256: '{{set_fields_for_messages.email.attachments[0].file.hash.sha256}}'
-          file.hash.md5: '{{set_fields_for_messages.email.attachments[0].file.hash.md5}}'
-        filter: '{{set_fields_for_messages.email.attachments[0].file.hash.sha256 != ""}}'
+          file.name: '{{set_fields_for_message_parts.email.attachments[0].file.name}}'
+        filter: '{{set_fields_for_message_parts.email.attachments[0].file.name != ""}}'
+      - set:
+          file.hash.sha256: '{{set_fields_for_message_parts.email.attachments[0].file.hash.sha256}}'
+          file.hash.md5: '{{set_fields_for_message_parts.email.attachments[0].file.hash.md5}}'
+        filter: '{{set_fields_for_message_parts.email.attachments[0].file.hash.sha256 != ""}}'
 
