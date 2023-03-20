@@ -14,7 +14,7 @@ pipeline:
         columnnames:
           - tmp1
           - ReceiveTime
-          - SerialNum
+          - DeviceSN
           - Type
         delimiter: ","
 
@@ -29,9 +29,9 @@ pipeline:
         columnnames:
           - PaloAltoDomain
           - ReceiveTime
-          - SerialNum
+          - DeviceSN
           - Type
-          - Threat_ContentType
+          - Subtype
           - ConfigVersion
           - GenerateTime
           - SourceAddress
@@ -42,7 +42,7 @@ pipeline:
           - SourceUser
           - DestinationUser
           - Application
-          - VirtualSystem
+          - VirtualLocation
           - SourceZone
           - DestinationZone
           - InboundInterface
@@ -68,8 +68,8 @@ pipeline:
           - Padding
           - seqno
           - ActionFlags
-          - SourceCountry
-          - DestinationCountry
+          - SourceLocation
+          - DestinationLocation
           - cpadding
           - pkts_sent
           - pkts_received
@@ -86,12 +86,12 @@ pipeline:
         columnnames:
           - FUTURE_USER
           - ReceiveTime
-          - SerialNum
+          - DeviceSN
           - Type
-          - Threat_ContentType
+          - Subtype
           - FUTURE_USE
           - GeneratedTime
-          - VirtualSystem
+          - VirtualLocation
           - SourceIP
           - User
           - DataSourceName
@@ -104,10 +104,10 @@ pipeline:
           - DataSourceType
           - SequenceNumber
           - ActionFlags
-          - DeviceGroupHierarchyLevel1
-          - DeviceGroupHierarchyLevel2
-          - DeviceGroupHierarchyLevel3
-          - DeviceGroupHierarchyLevel4
+          - DGHierarchyLevel1
+          - DGHierarchyLevel2
+          - DGHierarchyLevel3
+          - DGHierarchyLevel4
           - VirtualSystemName
           - DeviceName
           - VirtualSystemID
@@ -131,32 +131,32 @@ pipeline:
         columnnames:
           - FUTURE_USE
           - ReceiveTime
-          - SerialNumber
+          - DeviceSN
           - Type
-          - Threat_ContentType
+          - Subtype
           - FUTURE_USE
           - GeneratedTime
-          - VirtualSystem
+          - VirtualLocation
           - EventID
           - Stage
           - AuthenticationMethod
           - TunnelType
           - SourceUser
-          - SourceRegion
+          - SourceLocation
           - MachineName
           - PublicIP
           - PublicIPv6
           - PrivateIP
           - PrivateIPv6
           - HostID
-          - SerialNumber
+          - DeviceSN
           - ClientVersion
           - ClientOS
           - ClientOSVersion
           - RepeatCount
           - Reason
           - Error
-          - Description
+          - EventDescription
           - Status
           - Location
           - LoginDuration
@@ -178,25 +178,25 @@ pipeline:
         columnnames:
           - FUTURE_USE
           - ReceiveTime
-          - SerialNumber
+          - DeviceSN
           - Type
-          - Threat_ContentType
+          - Subtype
           - FUTURE_USE
           - GeneratedTime
-          - VirtualSystem
+          - VirtualLocation
           - EventID
           - Object
           - FUTURE_USE
           - FUTURE_USE_2
           - Module
-          - Severity
-          - Description
+          - VendorSeverity
+          - EventDescription
           - SequenceNumber
           - ActionFlags
-          - DeviceGroupHierarchyLevel1
-          - DeviceGroupHierarchyLevel2
-          - DeviceGroupHierarchyLevel3
-          - DeviceGroupHierarchyLevel4
+          - DGHierarchyLevel1
+          - DGHierarchyLevel2
+          - DGHierarchyLevel3
+          - DGHierarchyLevel4
           - VirtualSystemName
           - DeviceName
         delimiter: ","
@@ -212,9 +212,9 @@ pipeline:
         columnnames:
           - PaloAltoDomain
           - ReceiveTime
-          - SerialNum
+          - DeviceSN
           - Type
-          - Threat_ContentType
+          - Subtype
           - ConfigVersion
           - GenerateTime
           - SourceAddress
@@ -225,7 +225,7 @@ pipeline:
           - SourceUser
           - DestinationUser
           - Application
-          - VirtualSystem
+          - VirtualLocation
           - SourceZone
           - DestinationZone
           - InboundInterface
@@ -244,12 +244,12 @@ pipeline:
           - URLFilename
           - Threat_ContentName
           - Category
-          - Severity
+          - VendorSeverity
           - Direction
           - seqno
           - ActionFlags
-          - SourceCountry
-          - DestinationCountry
+          - SourceLocation
+          - DestinationLocation
           - cpadding
           - ContentType
           - PcapID
@@ -264,10 +264,10 @@ pipeline:
           - Subject
           - Recipient
           - ReportID
-          - DeviceGroupHierarchyLevel1
-          - DeviceGroupHierarchyLevel2
-          - DeviceGroupHierarchyLevel3
-          - DeviceGroupHierarchyLevel4
+          - DGHierarchyLevel1
+          - DGHierarchyLevel2
+          - DGHierarchyLevel3
+          - DGHierarchyLevel4
           - VirtualSystemName
           - DeviceName
           - FileURL
@@ -287,8 +287,7 @@ pipeline:
           - HttpHeaders
         delimiter: ","
 
-
-  - name: parsed_rt
+  - name: parsed_timestamp
     external:
       name: date.parse
       properties:
@@ -308,7 +307,62 @@ pipeline:
         #timezone: '{{parsed_event.message.dtz}}'
     filter: '{{parsed_event.message.get("start") != None}}'
 
+  # Parse JSON events
+  - name: parsed_event
+    external:
+      name: json.parse-json
+    filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.EventTime or parsed_event.message.TimeGenerated}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.get("EventTime") != None or parsed_event.message.get("TimeGenerated") != None}}'
+
+  - name: parsed_start
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.SessionStartTime}}'
+        output_field: datetime
+    filter: '{{parsed_event.message.get("SessionStartTime") != None}}'
+
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_event.message.EventDescription}}'
+        pattern: '%{SYSTEM_AUTH_AUTHENTICATION_FOR}|%{CONNECTION}|%{CONTENT}|%{WILDFIRE}|%{NETWORK}|%{PANDB_GENERIC}|%{CLOUD_ELECTION}|%{AUTHENTICATION}'
+        custom_patterns:
+          SYSTEM_AUTH_AUTHENTICATION_FOR: "authenticated for user '%{USERNAME:user}'.   auth profile '%{DATA:auth_profile}', vsys '%{DATA:vsys}', server profile '%{DATA:server_profile}', server address '%{HOSTNAME:server_address}', From: %{IP:src}."
+          CONNECTION: "%{CONNECTION_SUCCESS}|%{CONNECTION_TO_SERVER}|%{CONNECTION_REGISTERED}"
+          CONNECTION_SUCCESS: "Successfully connect to address: %{IP:dst} port: %{NUMBER:dport}, conn id: %{DATA:connection_id}"
+          CONNECTION_TO_SERVER: "Connection to %{DATA} server: %{DATA:dst_addr} completed successfully, initiated by %{IP:src}"
+          CONNECTION_REGISTERED: "Successfully registered to Public Cloud %{DATA:dst_domain}"
+          WILDFIRE: "%{WILDFIRE_GENERIC}|%{WILDFIRE_CLOUD_FAILED}"
+          WILDFIRE_NAME: "WildFire"
+          WILDFIRE_GENERIC: "%{WILDFIRE_NAME:module} %{DATA}"
+          WILDFIRE_CLOUD_FAILED: "Failed to perform task resulting in connection timeout with %{WILDFIRE_NAME:module} Cloud %{HOSTNAME:dst_domain}"
+          NETWORK: "%{DHCP_RENEW}|%{NTP_SYNC}|%{PORT_UP}"
+          DHCP_RENEW: "DHCP RENEW: interface %{NOTSPACE:intf}, ip %{IP:src} netmask %{IP} dhcp server: %{IPORHOST:dst_addr}"
+          NTP_SYNC: "NTP sync to server %{HOSTNAME:dst_addr}"
+          PORT_UP: "Port %{NOTSPACE:intf}: %{DATA:action} %{DATA}"
+          PANDB_NAME: "PAN-DB"
+          PANDB_GENERIC: "%{PANDB_NAME:module} %{DATA}"
+          CONTENT: "%{CONTENT_INSTALLATION}|%{CONTENT_UPDATE}|%{CONTENT_UPGRADE}"
+          CONTENT_INSTALLATION: "Installed %{NOTSPACE:module} package: %{DATA:filename}"
+          CONTENT_UPDATE: "Content update job succeeded  for user %{USERNAME:user}"
+          CONTENT_UPGRADE: "Content package upgraded from version %{DATA} by %{USERNAME:user}"
+          CLOUD_ELECTION: "CLOUD ELECTION: %{HOSTNAME:dst_domain} IP: %{IP:dst} was elected, %{DATA}."
+          AUTHENTICATION: "%{AUTHENTICATION_CONSOLE}|%{AUTHENTICATION_WEB}"
+          AUTHENTICATION_CONSOLE: "authenticated for user '%{USERNAME:user}'.   From: %{IP:src}."
+          AUTHENTICATION_WEB: "User %{USERNAME:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
+    filter: '{{parsed_event.message.get("EventDescription") != None}}'
+
   - name: set_extracted_fields
+  - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
     filter: '{{parsed_event.message.get("deviceOutboundInterface") != None}}'
   - name: set_ecs_deviceInboundInterface
@@ -347,80 +401,149 @@ stages:
   set_extracted_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_rt.datetime}}'
-        filter: '{{parsed_event.message.get("rt")  != None}}'
-      - set:
+          '@timestamp': '{{parsed_timestamp.datetime}}'
           event.start: '{{parsed_start.datetime}}'
-        filter: '{{parsed_event.message.get("start") != None}}'
-      - set:
-          action.name: '{{parsed_event.message.Action}}'
-          action.type: '{{parsed_event.message.Threat_ContentType}}'
-          destination.address: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
+          action.name: '{{parsed_event.message.Action or parsed_description.message.action}}'
+          action.type: '{{parsed_event.message.Subtype}}'
+          container.id: '{{parsed_event.message.ContainerID}}'
+          container.name: '{{parsed_event.message.ContainerName}}'
+          destination.address: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst or parsed_description.message.dst_addr}}'
           destination.bytes: '{{parsed_event.message.BytesReceived or parsed_event.message.out}}'
-          destination.geo.country_iso_code: '{{parsed_event.message.PanOSDestinationLocation}}'
-          destination.ip: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst}}'
+          destination.domain: '{{parsed_description.message.dst_domain}}'
+          destination.ip: '{{parsed_event.message.DestinationAddress or parsed_event.message.dst or parsed_description.message.dst}}'
           destination.nat.ip: '{{parsed_event.message.destinationTranslatedAddress or parsed_event.message.NATDestinationIP}}'
           destination.nat.port: '{{parsed_event.message.destinationTranslatedPort or parsed_event.message.NATDestinationPort}}'
           destination.packets: '{{parsed_event.message.PanOSPacketsReceived or parsed_event.message.pkts_received}}'
-          destination.port: '{{parsed_event.message.DestinationPort or parsed_event.message.dpt}}'
-          destination.user.name: '{{parsed_event.message.duser}}'
+          destination.port: '{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}'
+          destination.user.name: '{{parsed_event.message.duser or parsed_event.message.DestinationUser}}'
           email.from.address: '{{parsed_event.message.Sender}}'
           email.subject: '{{parsed_event.message.Subject}}'
           email.to.address: '{{parsed_event.message.Recipient}}'
-          event.action: '{{parsed_event.message.act or parsed_event.message.Threat_Category}}'
-          event.category: [ 'network' ]
+          event.action: '{{parsed_event.message.act or parsed_event.message.Threat_Category or parsed_description.message.action}}'
           event.timezone: '{{parsed_event.message.dtz}}'
-          event.dataset: '{{parsed_event.message.DeviceEventClassID | lower}}'
+          event.dataset: '{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}'
           event.duration: '{{parsed_event.message.ElapsedTimeInSec or parsed_event.message.SessionDuration}}'
           event.kind: 'event'
-          event.reason: '{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.Description or parsed_event.message.PanOSConnectionError}}'
+          event.reason: '{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError}}'
+          event.module: '{{parsed_description.message.module}}'
           file.path: '{{parsed_event.message.URLFilename}}'
+          file.name: '{{parsed_event.message.URLFilename or parsed_description.message.filename}}'
           host.hostname: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}'
-          host.name: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}'
+          host.name: '{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost}}'
           host.id: '{{parsed_event.message.deviceExternalId}}'
           host.mac: '{{parsed_event.message.PanOSSourceDeviceMac}}'
           host.os.family: '{{parsed_event.message.PanOSSourceDeviceOSFamily}}'
-          host.os.version: '{{parsed_event.message.PanOSSourceDeviceOSVersion}}'
+          host.os.version: '{{parsed_event.message.PanOSSourceDeviceOSVersion or parsed_event.message.ClientOSVersion}}'
           host.os.type: '{{parsed_event.message.PanOSEndpointOSType}}'
           host.type: '{{parsed_event.message.PanOSSourceDeviceCategory}}'
           http.request.method: '{{parsed_event.message.HttpMethod}}'
           http.request.referrer: '{{parsed_event.message.Referer}}'
           log.hostname: '{{parsed_event.message.DeviceName or parsed_event.message.dvchost}}'
-          log.level: '{{parsed_event.message.Severity}}'
-          log.logger: '{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower}}'
+          log.level: '{{parsed_event.message.VendorSeverity}}'
+          log.logger: '{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}'
           network.application: '{{parsed_event.message.app}}'
           network.bytes: '{{parsed_event.message.Bytes or parsed_event.message.PanOSBytes}}'
           network.packets: '{{parsed_event.message.Packets or parsed_event.message.PacketsTotal}}'
           network.transport: '{{parsed_event.message.IPProtocol or parsed_event.message.proto}}'
-          network.type: '{{parsed_event.message.PanOSTunnelType}}'
-          observer.egress.interface.alias: '{{parsed_event.message.ToZone}}'
-          observer.ingress.interface.alias: '{{parsed_event.message.FromZone}}'
+          network.protocol: '{{parsed_description.message.proto}}'
+          network.type: '{{parsed_event.message.TunnelType or parsed_event.message.PanOSTunnelType}}'
+          observer.egress.interface.alias: '{{parsed_event.message.ToZone or parsed_event.message.cs5}}'
+          observer.ingress.interface.alias: '{{parsed_event.message.FromZone or parsed_event.message.cs4}}'
+          observer.ingress.interface.name: '{{parsed_description.message.intf}}'
           observer.product: 'PAN-OS'
           observer.vendor: '{{parsed_event.message.DeviceVendor}}'
           observer.type: '{{parsed_event.message.DeviceProduct}}'
           observer.version: '{{parsed_event.message.DeviceVersion}}'
+          observer.serial_number: '{{parsed_event.message.DeviceSN}}'
           rule.name: '{{parsed_event.message.Rule}}'
-          rule.uuid: '{{parsed_event.message.PanOSRuleUUID}}'
-          source.address: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src}}'
+          rule.uuid: '{{parsed_event.message.PanOSRuleUUID or parsed_event.message.RuleUUID}}'
           source.bytes: '{{parsed_event.message.BytesSent or parsed_event.message.in}}'
-          source.geo.country_iso_code: '{{parsed_event.message.SourceRegion}}'
-          source.ip: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src}}'
+          source.ip: '{{parsed_event.message.PublicIP or parsed_event.message.SourceAddress or parsed_event.message.SourceIP or parsed_event.message.src or parsed_description.message.src}}'
           source.nat.ip: '{{parsed_event.message.NATSourceIP or parsed_event.message.sourceTranslatedAddress}}'
           source.nat.port: '{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}'
           source.packets: '{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}'
           source.port: '{{parsed_event.message.SourcePort or parsed_event.message.spt}}'
-          source.user.name: '{{parsed_event.message.suser or parsed_event.message.PanOSSourceUserName}}'
+          source.user.name: '{{parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_event.message.SourceUser}}'
           user_agent.name: '{{parsed_event.message.UserAgent}}'
           user_agent.os.name: '{{parsed_event.message.ClientOS}}'
           user_agent.os.version: '{{parsed_event.message.ClientOSVersion}}'
-          user.name: '{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName}}'
-          paloalto: '{{parsed_event.message}}'
+          user.name: '{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}'
+          paloalto: '{ {% for key, value in parsed_event.message.items() %}{% if value not in ["null", "", None] %}"{{key}}": r"{{ value }}",{% endif %}{% endfor %} }'
+          paloalto.Threat_ContentType: '{{parsed_event.message.Subtype}}'
+          paloalto.connection.stage: '{{parsed_event.message.Stage or parsed_event.message.PanOSStage}}'
+          paloalto.authentication.method: '{{parsed_event.message.AuthMethod or parsed_event.message.PanOSAuthMethod}}'
+          paloalto.connection.method: '{{parsed_event.message.ConnectionMethod or parsed_event.message.PanOSConnectionMethod}}'
+      - set:
+          source.geo.country_iso_code: '{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}'
+        filter: '{{parsed_event.message.SourceLocation | length == 2 or parsed_event.message.PanOSSourceLocation | length == 2}}'
+      - set:
+          destination.geo.country_iso_code: '{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}'
+        filter: '{{parsed_event.message.DestinationLocation | length == 2 or parsed_event.message.PanOSDestinationLocation | length == 2}}'
+      - set:
+          action.name: '{{parsed_event.message.EventID or parsed_event.message.PanOSEventIDValue}}'
+        filter: '{{final.action.name == null and (parsed_event.message.EventID not in [null, "0"] or parsed_event.message.PanOSEventIDValue not in [null, "0"])}}'
+
+  set_category_fields:
+    actions:
+      - set:
+          event.category: ['network']
+          event.type: ['info']
+      - set:
+          event.category: ['authentication']
+          event.type: ['info']
+        filter: '{{final.log.logger in ["auth", "userid"] or (final.log.logger == "system" and parsed_event.message.Subtype == "auth")}}'
+      - set:
+          event.category: ['host']
+          event.type: ['info']
+        filter: '{{final.log.logger == "system" and parsed_event.message.Subtype == "general"}}'
+      - set:
+          event.category: ['session']
+          event.type: ['info']
+        filter: '{{final.log.logger == "globalprotect"}}'
+      - translate:
+        dictionary:
+          'login': ['start']
+          'connected': ['start']
+        mapping:
+          paloalto.connection.stage: event.type
+        fallback: ['info']
+        filter: '{{final.log.logger == "globalprotect"}}'
+      - translate:
+        dictionary:
+          login: ['start']
+          logout: ['end']
+          'auth-success': ['start']
+        mapping:
+          parsed_event.message.Subtype: event.type
+          parsed_event.message.Name: event.type
+          parsed_event.message.EventID: event.type
+        filter: '{{final.log.logger in ["userid", "system"]}}'
+      - translate:
+        dictionary:
+          spyware: ['malware']
+          virus: ['malware']
+          wildfire-virus: ['malware']
+          vulnerability: ['vulnerability']
+          file: ['file']
+          data: ['file']
+          flood: ['network']
+          packet: ['network']
+          scan: ['network']
+          url: ['network']
+          wildfire: ['malware']
+        mapping:
+          parsed_event.message.Name: event.category
+          parsed_event.message.Subtype: event.category
+        filter: '{{final.log.logger == "threat"}}'
       - translate:
         dictionary:
           'start': [ 'start' ]
           'end': [ 'end' ]
           'drop': [ 'denied' ]
           'denied': [ 'denied' ]
+          'deny': [ 'denied' ]
+          'allow': ['allowed']
         mapping:
-          parsed_event.message.Name: event.type
-        fallback: [ 'denied' ]
+          parsed_event.message.act: event.type
+          parsed_event.message.Subtype: event.type
+        filter: '{{final.log.logger == "traffic"}}'
