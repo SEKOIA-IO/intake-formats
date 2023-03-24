@@ -1,0 +1,38 @@
+name: Cloudflare Access Requests
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: set_ecs_fields
+  - name: set_cloudflare_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": '{{json_event.message.CreatedAt}}'
+          client.ip: '{{json_event.message.IPAddress}}'
+          event.category: ["network", "authentication"]
+          event.dataset: "access_request"
+          event.kind: 'event'
+      - set:
+          event.type: ["connection", "start"]
+        filter: '{{json_event.message.Action == "login" and json_event.message.Allowed == "allowed"}}'
+      - set:
+          event.type: ["connection","end"]
+        filter: '{{json_event.message.Action == "logout"}}'
+      - set:
+          event.type: ["connection","denied"]
+        filter: '{{json_event.message.Action == "login" and json_event.message.Allowed == "denied"}}'
+      - set:
+          source.geo.country_name: '{{json_event.message.Country}}'
+          url.full: '{{json_event.message.AppDomain}}'
+          user.email: '{{json_event.message.Email}}'
+          user.id: '{{json_event.message.UserID}}'
+          source.ip: '{{json_event.message.IPAddress}}'
+  set_cloudflare_fields:
+    actions:
+      - set:
+          cloudflare: "{ {% for key, value in json_event.message.items() %}{% if value not in ['NA', ''] %}{% if value != [] %}'{{key}}': r'{{value}}',{% endif %}{% endif %}{% endfor %} }" #'{{json_event.message}}'
