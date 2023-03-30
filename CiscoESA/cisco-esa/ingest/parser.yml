@@ -29,6 +29,32 @@ pipeline:
         input_field: "{{parsed_event.message.rt}}"
         output_field: date
 
+  - name: parse_message_id
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.ExternalMsgID}}"
+        output_field: message
+        pattern: "<%{MESSAGE_ID}>|%{MESSAGE_ID}"
+        custom_patterns:
+          MESSAGE_ID: '%{GREEDYDATA:id}'
+
+  - name: parse_duser
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.duser}}"
+        output_field: message
+        pattern: "%{GREEDYDATA:duser_name}@%{GREEDYDATA:duser_domain}"
+
+  - name: parse_suser
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.suser}}"
+        output_field: message
+        pattern: "%{GREEDYDATA:suser_name}@%{GREEDYDATA:suser_domain}"
+
   - name: set_timestamp
   - name: set_cef_header_fields
   - name: set_cef_extension_fields
@@ -60,7 +86,6 @@ stages:
           observer.vendor: '{{parsed_event.message.DeviceVendor}}'
           observer.type: '{{parsed_event.message.DeviceProduct}}'
           observer.version: '{{parsed_event.message.DeviceVersion}}'
-          rule.id: '{{parsed_event.message.DeviceEventClassID}}'
 
       - set:
           # Match only for agentSeverity of type int
@@ -74,11 +99,13 @@ stages:
       - set:
           event.action: '{{parsed_event.message.act}}'
           network.protocol: '{{parsed_event.message.app}}'
-          event.reason: '{{parsed_event.message.msg}}'
+          email.subject: '{{parsed_event.message.msg}}'
           file.name: '{{parsed_event.message.fname}}'
           file.size: '{{parsed_event.message.fsize}}'
           source.ip: '{{parsed_event.message.src or parsed_event.message.sourceAddress}}'
-          source.user.name: '{{parsed_event.message.suser}}'
+          source.user.email: '{{parsed_event.message.suser}}'
+          source.user.name: '{{parse_suser.message.suser_name}}'
+          source.user.domain: '{{parse_suser.message.suser_domain}}'
           destination.domain: "{{parsed_event.message.get('destination DnsDomain')}}"
           service.name: "{{parsed_event.message.get('destination ServiceName')}}"
           destination.nat.ip: "{{parsed_event.message.get('destination Translated Address')}}"
@@ -105,7 +132,9 @@ stages:
           destination.ip: "{{parsed_event.message.dst}}"
           event.timezone: "{{parsed_event.message.dtz}}"
           destination.user.id: "{{parsed_event.message.duid}}"
-          destination.user.name: "{{parsed_event.message.duser}}"
+          destination.user.email: "{{parsed_event.message.duser}}"
+          destination.user.name: "{{parse_duser.message.duser_name}}"
+          destination.user.domain: "{{parse_duser.message.duser_domain}}"
           server.ip: "{{parsed_event.message.dvc}}"
           destination.mac: "{{parsed_event.message.dmac}}"
           event.end: "{{parse_end_date.date}}"
@@ -145,6 +174,7 @@ stages:
           cisco.esa.helo.ip: "{{parsed_event.message.HeloIP}}"
           cisco.esa.helo.domain: "{{parsed_event.message.HeloDomain}}"
           cisco.esa.sender_group: "{{parsed_event.message.ESASenderGroup}}"
+          cisco.esa.status: "{{parsed_event.message.ESAStatus}}"
 
       - translate:
         dictionary:
