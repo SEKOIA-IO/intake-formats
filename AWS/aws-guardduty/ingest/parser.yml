@@ -15,7 +15,7 @@ pipeline:
       properties:
         input_field: json_event.message.type
         output_field: finding
-        pattern: '%{DATA:threat_purpose}:%{DATA:affected_resource_type}/%{DATA:threat_family_name}(.%{DATA:detection_mecanism})?(!%{DATA:artifact})?'
+        pattern: '%{DATA:threat_purpose}:%{DATA:affected_resource_type}/%{WORD:threat_family_name}(.%{DATA:detection_mecanism})?(!%{DATA:artifact})?'
   - name: set_fields
   - name: set_finding_fields
 
@@ -32,7 +32,7 @@ stages:
           cloud.provider: '{{json_event.message.partition}}'
           agent.version: '{{json_event.message.schemaVersion}}'
           service.name: '{{json_event.message.service.service.name}}'
-          user.name: '{{json_event.message.resource.accessKeyDetails.userName or json_event.message.resource.rdsDbUserDetails.user or json_event.message.resource.kubernetesDetails.kubernetesUserDetails.username}}' #to modify, does not work for all findings format
+          user.name: '{{json_event.message.resource.accessKeyDetails.userName or json_event.message.resource.rdsDbUserDetails.user or json_event.message.resource.kubernetesDetails.kubernetesUserDetails.username}}'
       - set:
           user.group.name: '{{json_event.message.resource.kubernetesDetails.kubernetesUserDetails.groups}}'
         filter: '{{json_event.message.resource.get("kubernetesDetails") != None}}'
@@ -46,8 +46,29 @@ stages:
           threat.enrichments.indicator.first_seen: '{{json_event.message.service.eventFirstSeen}}'
           threat.enrichments.indicator.last_seen: '{{json_event.message.service.eventLastSeen}}'
           threat.enrichments.indicator.sightings: '{{json_event.message.service.count}}'
+          threat.group.name: '{{parsed_finding.finding.threat_family_name}}'
       - set:
-          threat.evidence: '{{json_event.message.service.evidence.threatIntelligenceDetails}}'
+          threat.enrichments.indicator.file.name: >
+            {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
+            {%- for file in threat.filePaths -%}
+            {{file.fileName}}|
+            {%- endfor -%}
+            {%- endfor -%}
+          threat.enrichments.indicator.file.path: >
+            {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
+            {%- for file in threat.filePaths -%}
+            {{file.filePath}}|
+            {%- endfor -%}
+            {%- endfor -%}
+          threat.enrichments.indicator.file.hash.sha256: >
+            {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
+            {%- for file in threat.filePaths -%}
+            {{file.hash}}|
+            {%- endfor -%}
+            {%- endfor -%}
+        filter: '{{json_event.message.service.featureName == "EbsVolumeScan"}}'
+      - set:
+          aws.guardduty.threats.evidence: '{{json_event.message.service.evidence.threatIntelligenceDetails}}'
         filter: '{{json_event.message.service.get("evidence") != None or "null"}}'
 
   set_finding_fields:
@@ -62,7 +83,8 @@ stages:
           aws.guardduty.finding.principal.id: '{{json_event.message.resource.accessKeyDetails.principalId}}'
         filter: '{{json_event.message.resource.get("accessKeyDetails") != None}}'
       - set:
-          aws.guardduty.finding.instance: '{{json_event.message.resource.instanceDetails}}'
+          cloud.instance.id: '{{json_event.message.resource.instanceDetails.instanceId}}'
+          cloud.machine.type: '{{json_event.message.resource.instanceDetails.instanceType}}'
         filter: '{{json_event.message.resource.get("instanceDetails") != None}}'
       - set:
           aws.guardduty.finding.accesskey: '{{json_event.message.resource.accessKeyDetails}}'
@@ -88,7 +110,7 @@ stages:
           aws.guardduty.finding.ecs: '{{json_event.message.resource.ecsClusterDetails}}'
         filter: '{{json_event.message.resource.get("ecsClusterDetails") != None}}' 
       - set:
-          aws.guardduty.finding.s3bucket: '{{json_event.message.resource.s3BucketDetails}}'
+          aws.guardduty.finding.s3bucket: '{{json_event.message.resource.s3BucketDetails[0]}}'
         filter: '{{json_event.message.resource.get("s3BucketDetails") != None}}'
       - set:
           aws.guardduty.finding.volume.details: '{{json_event.message.resource.ebsVolumeDetails.scannedVolumeDetails}}'
@@ -96,7 +118,9 @@ stages:
       - set:
           aws.guardduty.finding.service.action.type: '{{json_event.message.service.action.actionType}}'
           aws.guardduty.finding.service.resource.role: '{{json_event.message.service.resourceRole}}'
+      - set:
           aws.guardduty.finding.service.additional_info: '{{json_event.message.service.additionalInfo}}'
+        filter: '{{parsed_finding.finding.threat_family_name == "AnomalousBehavior"}}'
       - set:
           network.direction: '{{json_event.message.service.action.networkConnectionAction.connectionDirection|lower }}'
           source.geo.country_name: '{{json_event.message.service.action.networkConnectionAction.remoteIpDetails.country.countryName}}'
@@ -140,10 +164,35 @@ stages:
           source.ip: '{{json_event.message.service.action.rdsLoginAttemptAction.remoteIpDetails.ipAddressV4}}'
         filter: '{{json_event.message.service.action.actionType == "RDS_LOGIN_ATTEMPT"}}'
       - set:
-          aws.guardduty.finding.volume.scan: '{{json_event.message.service.ebsVolumeScanDetails}}'
+          aws.guardduty.threats: >
+            {% for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames %}{
+              {% set d1 = {'name':threat.name, 'severity':threat.severity, 'itemCount':threat.itemCount} %}
+              "threat": {{ d1 }},
+            }{% endfor %}
         filter: '{{json_event.message.service.featureName == "EbsVolumeScan"}}'
       - delete:
           - aws.guardduty.finding.service.resource
         filter: '{{json_event.message.service.get("action") != None}}'
-        name: delete
+      - delete:
+          - aws.guardduty.finding.eks.details.tags
+        filter: '{{json_event.message.resource.get("eksClusterDetails") != None}}'
+      - delete:
+          - aws.guardduty.finding.ecs.tags
+        filter: '{{json_event.message.resource.get("ecsClusterDetails") != None}}'
+      - delete:
+          - aws.guardduty.finding.s3bucket.tags
+        filter: '{{json_event.message.resource.get("s3BucketDetails") != None}}'
+      - delete:
+          - aws.guardduty.finding.service.additional_info.value
+        filter: '{{parsed_finding.finding.threat_family_name == "AnomalousBehavior"}}'
+      - delete:
+          - aws.guardduty.finding.accesskey.userName
+        filter: '{{json_event.message.resource.get("accessKeyDetails") != None}}'
+        
       
+
+
+
+        
+
+
