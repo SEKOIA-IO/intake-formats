@@ -64,12 +64,12 @@ pipeline:
           {{ parsed_event.message.ESAAttachmentDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
 
   - name: json_event_esaurldetails
-    filter: "{{ parsed_event.message.get('ESAURLDetails') != None }}"
+    filter: "{{ parsed_event.message.get('ESAUrlDetails') != None }}"
     external:
       name: json.parse-json
       properties:
         input_field: > 
-          {{ parsed_event.message.ESAURLDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
+          {{ parsed_event.message.ESAUrlDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
 
   - name: set_timestamp
   - name: set_cef_header_fields
@@ -173,7 +173,7 @@ stages:
           source.nat.ip: "{{parsed_event.message.get('source Translated Address')}}"
           source.nat.port: "{{parsed_event.message.get('source TranslatedPort')}}"
           event.start:  "{{parse_start_date.date}}"
-          email.message_id: "{{parsed_event.message.ExternalMsgID}}"
+          email.message_id: "{{parse_message_id.message.MESSAGE_ID}}"
           email.local_id: "{{parsed_event.message.ESAMID}}"
           rule.name: "{{parsed_event.message.MailPolicy}}"
           email.attachments: >
@@ -190,15 +190,29 @@ stages:
                 {% if not loop.last %},{% endif %}
               {% endfor %}
             ]
-          url.full: >   
-            [
-              {% for url.full in dict(json_event_esaurldetails).values() %}
-                {
-                  "url": "{{url.full}}"{ % if url != dict(json_event_esaurldetails)|last % },{ % endif % }
-                }
-                { % if not loop.last % },{ % endif % }
-              { % endfor % }
-            ]
+          cisco.esa.url: >
+            {% if json_event_esaurldetails %}
+              [
+                {% for url, details in json_event_esaurldetails.items() %}
+                  {
+                    "url": {
+                      "full": "{{ url }}",
+                      {% if details.get('WbrsScore') is not none %}
+                      "wbrs_score": {{ details['WbrsScore'] }},
+                      {% endif %}
+                      {% if details.get('ExpandedUrl') is not none %}
+                      "expanded_url": "{{ details['ExpandedUrl'] }}",
+                      {% endif %}
+                      {% if details.get('AttachmentWithUrl') is not none %}
+                      "attachment_with_url": "{{ details['AttachmentWithUrl'] }}",
+                      {% endif %}
+                    }
+                  }{% if not loop.last %},{% endif %}
+                {% endfor %}
+              ]
+            {% else %}
+              []
+            {% endif %}
           cisco.esa.delivery.connection_id: "{{parsed_event.message.ESADCID}}"
           cisco.esa.injection.connection_id: "{{parsed_event.message.ESAICID}}"
           cisco.esa.protection.spam.verdict: "{{parsed_event.message.ESAASVerdict}}"
