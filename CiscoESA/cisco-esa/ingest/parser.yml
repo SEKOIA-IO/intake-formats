@@ -56,18 +56,20 @@ pipeline:
         pattern: "%{GREEDYDATA:suser_name}@%{GREEDYDATA:suser_domain}"
 
   - name: json_event_esaattachmentdetails
+    filter: "{{ parsed_event.message.get('ESAAttachmentDetails') != None }}"
     external:
       name: json.parse-json
       properties:
-        input_field: "{{parsed_event.message.ESAAttachmentDetails | replace(\"'\", '\"') | replace('\"', '\\\"')}}"
+        input_field: > 
+          {{ parsed_event.message.ESAAttachmentDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
 
   - name: json_event_esaurldetails
+    filter: "{{ parsed_event.message.get('ESAURLDetails') != None }}"
     external:
       name: json.parse-json
       properties:
-        input_field: "{{parsed_event.message.ESAURLDetails | replace(\"'\", '\"') | replace('\"', '\\\"')}}"
-
-
+        input_field: > 
+          {{ parsed_event.message.ESAURLDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
 
   - name: set_timestamp
   - name: set_cef_header_fields
@@ -174,8 +176,29 @@ stages:
           email.message_id: "{{parsed_event.message.ExternalMsgID}}"
           email.local_id: "{{parsed_event.message.ESAMID}}"
           rule.name: "{{parsed_event.message.MailPolicy}}"
-          email.attachments: "{{parsed_event.message.ESAAttachmentDetails}}"
-          url.full: "{{parsed_event.message.ESAURLDetails}}"
+          email.attachments: >
+            [
+              {% for filename, info in dict(json_event_esaattachmentdetails).items() %}
+                {
+                  "file": {
+                    "name": "{{filename}}",
+                    {% if info.get("AMP", {}).get("fileHash") is not none %}
+                      "hash": { "sha256": "{{info.AMP.fileHash}}" }
+                    {% endif %}
+                  }
+                }
+                {% if not loop.last %},{% endif %}
+              {% endfor %}
+            ]
+          url.full: >   
+            [
+              {% for url.full in dict(json_event_esaurldetails).values() %}
+                {
+                  "url": "{{url.full}}"{ % if url != dict(json_event_esaurldetails)|last % },{ % endif % }
+                }
+                { % if not loop.last % },{ % endif % }
+              { % endfor % }
+            ]
           cisco.esa.delivery.connection_id: "{{parsed_event.message.ESADCID}}"
           cisco.esa.injection.connection_id: "{{parsed_event.message.ESAICID}}"
           cisco.esa.protection.spam.verdict: "{{parsed_event.message.ESAASVerdict}}"
