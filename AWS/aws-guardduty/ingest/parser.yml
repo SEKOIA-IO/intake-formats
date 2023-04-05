@@ -43,42 +43,27 @@ stages:
         filter: '{{json_event.message.service.action.get("networkConnectionAction") != None}}'
       - set:
           threat.indicator.description: '{{json_event.message.description}}'
-          threat.indicator.first_seen: '{{json_event.message.service.eventFirstSeen}}'
-          threat.indicator.last_seen: '{{json_event.message.service.eventLastSeen}}'
-          threat.indicator.sightings: '{{json_event.message.service.count}}'
           threat.group.name: '{{parsed_finding.finding.threat_family_name}}'
-      - set:
-          threat.indicator.file.name: > 
-            {% set l=[] %}
-            {% set i=0 %}
-            {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
-            {%- for file in threat.filePaths -%}
-            {%- if l.insert(i,file.fileName) -%}{%- endif -%}
-            {% set i = i+1 %}
-            {%- endfor -%}
-            {%- endfor -%}
-            {{l}}
-          threat.indicator.file.path: >
-            {% set l=[] %}
-            {% set i=0 %}
-            {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
-            {%- for file in threat.filePaths -%}
-            {%- if l.insert(i,file.filePath) -%}{%- endif -%}
-            {% set i = i+1 %}
-            {%- endfor -%}
-            {%- endfor -%}
-            {{l}}
-          threat.indicator.file.hash.sha256: >
-             {% set l=[] %}
-             {% set i=0 %}
-             {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
-             {%- for file in threat.filePaths -%}
-             {%- if l.insert(i,file.hash) -%}{%- endif -%}
-             {% set i = i+1 %}
-             {%- endfor -%}
-             {%- endfor -%}
-             {{l}}
-        filter: '{{json_event.message.service.featureName == "EbsVolumeScan"}}'
+          threat.enrichments: >
+            [{
+              "indicator": {
+                "first_seen": '{{json_event.message.service.eventFirstSeen}}',
+                "last_seen": '{{json_event.message.service.eventLastSeen}}',
+                "sightings": '{{json_event.message.service.count}}',
+                {%- if json_event.message.service.featureName == "EbsVolumeScan" %}
+                "type": "file",
+                {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
+                {% for file in threat.filePaths %}
+                'file_{{loop.index}}': {
+                  "name": '{{file.fileName}}',
+                  "path": '{{file.filePath}}',
+                  "hash": '{{file.hash}}',
+                },
+                {% endfor %}
+                {%- endfor -%}
+                {%- endif -%}
+              }
+            }]
       - set:
           aws.guardduty.threats.evidence: '{{json_event.message.service.evidence.threatIntelligenceDetails}}'
         filter: '{{json_event.message.service.get("evidence") != None or "null"}}'
@@ -131,7 +116,7 @@ stages:
           aws.guardduty.finding.service.action.type: '{{json_event.message.service.action.actionType}}'
           aws.guardduty.finding.service.resource.role: '{{json_event.message.service.resourceRole}}'
       - set:
-          user_agent.original: '{{json_event.message.service.additionalInfo.userAgent.fullUserAgent}}' #maybe user_agent.os.full instead ?
+          user_agent.original: '{{json_event.message.service.additionalInfo.userAgent.fullUserAgent}}'
           user_agent.device.name: '{{json_event.message.service.additionalInfo.userAgent.userAgentCategory}}'
           aws.guardduty.finding.service.additional_info: '{{json_event.message.service.additionalInfo.anomalies}}'
         filter: '{{parsed_finding.finding.threat_family_name == "AnomalousBehavior"}}'
