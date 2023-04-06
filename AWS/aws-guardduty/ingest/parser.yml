@@ -45,25 +45,36 @@ stages:
           threat.indicator.description: '{{json_event.message.description}}'
           threat.group.name: '{{parsed_finding.finding.threat_family_name}}'
           threat.enrichments: >
-            [{
+            [ {%- if json_event.message.service.featureName != "EbsVolumeScan" -%}
+              {
               "indicator": {
                 "first_seen": '{{json_event.message.service.eventFirstSeen}}',
                 "last_seen": '{{json_event.message.service.eventLastSeen}}',
                 "sightings": '{{json_event.message.service.count}}',
-                {%- if json_event.message.service.featureName == "EbsVolumeScan" %}
+              },
+              },
+              {%- else -%}
+              {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
+              {% for file in threat.filePaths %}
+              {
+              "indicator": {
+                "first_seen": '{{json_event.message.service.eventFirstSeen}}',
+                "last_seen": '{{json_event.message.service.eventLastSeen}}',
+                "sightings": '{{json_event.message.service.count}}',
                 "type": "file",
-                {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
-                {% for file in threat.filePaths %}
-                'file_{{loop.index}}': {
+                'file': {
                   "name": '{{file.fileName}}',
                   "path": '{{file.filePath}}',
-                  "hash": '{{file.hash}}',
+                  "hash": {
+                    "sha256": '{{file.hash}}',
+                  },
                 },
-                {% endfor %}
-                {%- endfor -%}
-                {%- endif -%}
-              }
-            }]
+              },
+              },
+              {% endfor %}
+              {%- endfor -%}
+              {%- endif -%}
+            ]
       - set:
           aws.guardduty.threats.evidence: '{{json_event.message.service.evidence.threatIntelligenceDetails}}'
         filter: '{{json_event.message.service.get("evidence") != None or "null"}}'
