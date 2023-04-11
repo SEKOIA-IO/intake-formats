@@ -118,6 +118,9 @@ pipeline:
   - name: set_osSrc_parent_fields
     filter: '{{json_event.message.get("osSrc.process.parent.pid") != None}}'
 
+  - name: set_login_fields
+    filter: '{{json_event.message.get("event.category") == "logins"}}'
+
   - name: set_ip_fields
     filter: '{{json_event.message.get("src.ip.address") != None or json_event.message.get("dst.ip.address") != None}}'
 
@@ -126,6 +129,9 @@ pipeline:
 
   - name: set_module_load_fields
     filter: '{{json_event.message.get("event.category") == "module"}}'
+
+  - name: set_driver_load_fields
+    filter: '{{json_event.message.get("event.category") == "driver"}}'
 
   - name: set_file_fields
     filter: '{{json_event.message.get("tgt.file.path") != None}}'
@@ -158,6 +164,7 @@ stages:
           deepvisibility.event.type: '{{json_event.message.get("event.type")}}'
           deepvisibility.event.category: '{{json_event.message.get("event.category")}}'
           event.action: '{{json_event.message.get("event.type")}}'
+          event.category: '{{json_event.message.get("event.category")}}'
           deepvisibility.host.os.revision: '{{json_event.message.get("mgmt.osRevision")}}'
           #Correspondance à trouver deepvisibility.true_context.key: '{{json_event.message.event.trueContext.key.value}}'
           host.name: '{{json_event.message.get("endpoint.name")}}'
@@ -177,12 +184,6 @@ stages:
           deepvisibility.scheduled_task.name: '{{ json_event.message.get("task.name") }}'
           #Correspondance à trouver deepvisibility.scheduled_task.trigger_type: '{{ json_event.message.event.triggerType }}'
           #Correspondance à trouver process.exit_code: '{{ json_event.message.event.exitCode }}'
-      #Champs absents du nouveau format
-      #- set:
-      #    file.hash.md5: '{{ json_event.message.event.hashes.md5 }}'
-      #    file.hash.sha1: '{{ json_event.message.event.hashes.sha1 }}'
-      #    file.hash.sha256: '{{ json_event.message.event.hashes.sha256 }}'
-      #  filter: '{{json_event.message.event.hashes != null }}'
 
   set_process_fields:
     actions:
@@ -530,6 +531,47 @@ stages:
           deepvisibility.process.ossrc.parent.code_signature.status: '{{json_event.message.get("osSrc.process.parent.reasonSignatureInvalid")}}'
         filter: '{{ json_event.message.get("osSrc.process.parent.verifiedStatus") != None and json_event.message.get("osSrc.process.parent.verifiedStatus") == "unverified" }}'
 
+  set_login_fields:
+    actions:
+      - set:
+          user.name: '{{json_event.message.get("event.login.userName")}}'
+          user.domain: '{{json_event.message.get("event.login.accountDomain")}}'
+          user.id: '{{json_event.message.get("event.login.accountSid")}}'
+          source.ip: '{{json_event.message.get("src.endpoint.ip.address")}}'
+          action.properties.LogonType_tmp: '{{json_event.message.get("event.login.type")}}'
+          action.properties.TargetUserName: '{{json_event.message.get("event.login.userName")}}'
+          action.properties.TargetDomainName: '{{json_event.message.get("event.login.accountDomain")}}'
+          action.properties.TargetUserSid: '{{json_event.message.get("event.login.accountSid")}}'
+          action.properties.IpAddress: '{{json_event.message.get("src.endpoint.ip.address")}}'
+      - set:
+          action.outcome: "success"
+        filter: '{{json_event.message.get("event.login.loginIsSuccessful") == True}}'
+      - set:
+          action.outcome: "failure"
+          action.outcome_reason: '{{json_event.message.get("event.login.failureReason")}}'
+        filter: '{{json_event.message.get("event.login.loginIsSuccessful") == False}}'
+      - set:
+          user.roles: '["admin"]'
+        filter: '{{json_event.message.get("event.login.isAdministratorEquivalent") == True}}'
+      - translate:
+        dictionary:
+          'SYSTEM': '0'
+          'INTERACTIVE': '2'
+          'NETWORK': '3'
+          'BATCH': '4'
+          'SERVICE': '5'
+          'UNLOCK': '7'
+          'NETWORK_CLEAR_TEXT': '8'
+          'NETWORK_CREDENTIALS': '9'
+          'REMOTE_INTERACTIVE': '10'
+          'CACHED_INTERACTIVE': '11'
+          'CACHED_REMOTE_INTERACTIVE': '12'
+          'CACHED_UNLOCK': '13'
+        mapping:
+          action.properties.LogonType_tmp: action.properties.LogonType
+      - delete:
+          - action.properties.LogonType_tmp
+
   set_ip_fields:
     actions:
       - set:
@@ -545,7 +587,7 @@ stages:
         filter: '{{json_event.message.get("dst.ip.address") != None }}'
 
       - set:
-          network.direction: "inbNetwound"
+          network.direction: "inbound"
         filter: '{{ json_event.message.get("event.network.direction") == "INCOMING" }}'
       - set:
           network.direction: "outbound"
@@ -624,6 +666,26 @@ stages:
       - set:
           dll.path: '{{json_event.message.get("module.path")}}'
           dll.name: '{{find_dll_name.file.name}}'
+
+  set_driver_load_fields:
+    actions:
+      - set:
+          deepvisibility.driver.verdict: '{{json_event.message.get("driver.loadVerdict")}}'
+          deepvisibility.driver.isloadedbeforemonitor: '{{json_event.message.get("driver.isLoadedBeforeMonitor")}}'
+          deepvisibility.driver.hash.sha1: '{{json_event.message.get("driver.peSha1")}}'
+          deepvisibility.driver.hash.sha256: '{{json_event.message.get("driver.peSha256")}}'
+          deepvisibility.driver.start_code: '{{json_event.message.get("driver.startType")}}'
+      - translate:
+        dictionary: 
+          0: Started by the system loader at system boot
+          1: Started at system start by the IoInitSystem function
+          2: Started automatically by the service control manager during system startup
+          3: Started on demand by the service control manager when a process called the StartService function
+          4: Disabled - the service cannot start
+          7: Invalid or unknown
+        mapping:
+          deepvisibility.driver.start_code: deepvisibility.driver.start_type
+        fallback: ''
 
   set_file_fields:
     actions:
