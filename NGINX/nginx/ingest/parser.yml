@@ -1,0 +1,141 @@
+name: nginx
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        pattern: '%{ERROR}|%{COMBINED}'
+        custom_patterns:
+          NGINXURL: '(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})'
+          ERROR: '%{YEAR}/%{MONTHNUM}/%{MONTHDAY} %{HOUR}:%{MINUTE}:%{SECOND} \[%{WORD}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:http_request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?%{GREEDYDATA}'
+          COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - %{DATA:source_user_name} \[%{HTTPDATE}\] \"%{WORD:http_request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}\" %{NUMBER:http_response_status_code} (-|%{NUMBER:http_response_bytes})? \"%{DATA:http_request_referrer}\" \"%{DATA:user_agent_original}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?'
+    filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
+  - name: parsed_event
+    external:
+      name: json.parse-json
+    filter: '{{original.message | re_match("\{(?:[^{}]|())*\}")}}'
+  - name: set_json_fields
+    filter: '{{original.message | re_match("\{(?:[^{}]|())*\}")}}'
+  - name: set_grok_fields
+    filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
+
+stages:
+  set_json_fields:
+    actions:
+      - set:
+          action.name: >
+            {%- if parsed_event.message.get("request_method") != None -%}
+              {{parsed_event.message.request_method}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[0]}}
+            {%- endif -%}
+          action.outcome: > #maybe event.outcome, but in this case we can only get success, failure and unknown as results (but we won't need a custom field).
+            {%- if parsed_event.message.get("response_status") != None -%}
+              {%- if parsed_event.message.response_status < 200 -%}
+                information
+              {%- elif parsed_event.message.response_status < 300 -%}
+                success
+              {%- elif parsed_event.message.response_status < 400 -%}
+                redirect
+              {%- else -%}
+                failure
+              {%- endif -%}
+            {%- elif parsed_event.message.get("status") != None -%}
+              {%- if parsed_event.message.status | re_search("^([0-9]|[0-9][0-9]|1[0-9][0-9])$") -%}
+                information
+              {%- elif parsed_event.message.status | re_search("^2[0-9][0-9]$") -%}
+                success
+              {%- elif parsed_event.message.status | re_search("^3[0-9][0-9]$") -%}
+                redirect
+              {%- else -%}
+                failure
+              {%- endif -%}
+            {%- endif -%}
+          action.properties : >
+             [{ 
+                {%- set list = ['-','0','',None] -%}
+                {%- set used = ['body_bytes_sent','http_referrer','http_referer','request_method','response_status','status','http_version','host','server_name','server_addr','http_user_agent','remote_addr','request','upstream_addr'] -%}
+                {%- for elt in parsed_event.message -%}
+                  {%- if elt not in used and parsed_event.message.get(elt) not in list -%}
+                    "{{elt}}": '{{parsed_event.message.get(elt)}}',
+                  {%- endif -%}
+                {%- endfor -%}
+              }]
+          destination.address: '{{parsed_event.message.host or parsed_event.message.server_name}}'
+          destination.ip: >
+            {%- if parsed_event.message.get("server_addr") != None -%}
+              {{parsed_event.message.server_addr}}
+            {%- elif parsed_event.message.get("host") | is_ipaddress -%}
+              {{parsed_event.message.host}}
+            {%- elif parsed_event.message.upstream_addr | re_search("(?<=:)\w+") == False -%}
+              {{parsed_event.message.upstream_addr}}
+            {%- else -%}
+              {%- set list = parsed_event.message.upstream_addr.split(':') -%}
+              {{list[0]}}
+            {%- endif -%}
+          http.request.method: >
+            {%- if parsed_event.message.get("request_method") != None -%}
+              {{parsed_event.message.request_method}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[0]}}
+            {%- endif -%}
+          http.request.referrer: '{{parsed_event.message.http_referrer or parsed_event.message.http_referer}}'
+          http.response.bytes: '{{parsed_event.message.body_bytes_sent}}'
+          http.response.status_code: '{{parsed_event.message.response_status or parsed_event.message.status}}'
+          http.version: >
+            {%- if parsed_event.message.get("http_version") != None -%}
+              {{parsed_event.message.http_version[5:]}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[2][5:]}}
+            {%- endif -%}
+          source.ip: '{{parsed_event.message.remote_addr}}'
+          url.original: >
+            {%- set list = parsed_event.message.request.split(' ') -%}
+            {{list[1]}}
+          user_agent.original: '{{parsed_event.message.http_user_agent}}'
+      - set:
+          destination.domain: >
+            {%- if parsed_event.message.get("server_name") != None -%}
+              {{parsed_event.message.server_name}}
+            {%- elif parsed_event.message.get("host") | is_ipaddress == False -%}
+              {{parsed_event.message.host}}
+            {%- endif -%}
+      - set:
+          destination.port: >
+            {%- set list = parsed_event.message.upstream_addr.split(':') -%}
+            {{list[1]}}
+        filter: '{{parsed_event.message.upstream_addr not in [None, "-"]}}'
+
+  set_grok_fields:
+    actions:
+      - set:
+          destination.address: '{{parsed_event.message.destination_address}}'
+          destination.domain: '{{parsed_event.message.destination_address}}'
+          destination.ip: '{{parsed_event.message.destination_address}}'
+          event.kind: >
+            {%- if original.message | re_search("^([0-9][0-9][0-9][0-9])/([1-9]|0[1-9]|1[0-2])/(0[1-9]|1[0-9]|2[0-9]|3[0-1]|[1-9])") -%}
+              error
+            {%- else -%}
+              access
+            {%- endif -%}
+          http.request.method: '{{parsed_event.message.http_request_method}}'
+          http.request.referrer: '{{parsed_event.message.http_request_referrer}}'
+          http.response.bytes: '{{parsed_event.message.http_response_bytes}}'
+          http.response.mime_type: '{{parsed_event.message.http_response_mimetype}}'
+          http.response.status_code: '{{parsed_event.message.http_response_status_code}}'
+          http.version: '{{parsed_event.message.http_version}}'
+          source.address: '{{parsed_event.message.source_address}}'
+          source.ip: '{{parsed_event.message.source_address}}'
+          source.user.name: '{{parsed_event.message.source_user_name}}'
+          url.domain: '{{parsed_event.message.url_domain}}'
+          url.original: '{{parsed_event.message.url_original}}'
+          url.path: '{{parsed_event.message.url_path}}'
+          url.scheme: '{{parsed_event.message.url_scheme}}'
+          url.username: '{{parsed_event.message.url_username}}'
+          user_agent.original: '{{parsed_event.message.user_agent_original}}'
+      - set:
+          url.full: '{{parsed_event.message.url_original}}'
+        filter: '{{parsed_event.message.get("url_original") != None and re.search("^/http/", parsed_event.message.get("url_original")) != None}}'
