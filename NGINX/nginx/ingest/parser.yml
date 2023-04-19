@@ -7,8 +7,8 @@ pipeline:
         pattern: '%{ERROR}|%{COMBINED}'
         custom_patterns:
           NGINXURL: '(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})'
-          ERROR: '%{YEAR}/%{MONTHNUM}/%{MONTHDAY} %{HOUR}:%{MINUTE}:%{SECOND} \[%{WORD}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?%{GREEDYDATA}'
-          COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE}\] \"%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?'
+          ERROR: '%{YEAR}/%{MONTHNUM}/%{MONTHDAY} %{HOUR}:%{MINUTE}:%{SECOND} \[%{WORD}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?(%{DATA}upstream: \"%{URIPROTO}://(?:%{USER}(?::[^@]*)?@)?(?:%{IPORHOST:url_name}(?::%{POSINT:url_port})?)?(?:%{URIPATHPARAM})?\")?%{GREEDYDATA}'
+          COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE:time_local}\] \"%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?'
     filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
   - name: parsed_event
     external:
@@ -108,7 +108,7 @@ stages:
           source.address: '{{parsed_event.message.source_address}}'
           source.ip: '{{parsed_event.message.remote_addr or parsed_event.message.source_address}}'
           source.user.name: '{{parsed_event.message.source_user_name}}'
-          url.domain: '{{parsed_event.message.url_domain}}'
+          url.domain: '{{parsed_event.message.url_domain or parsed_event.message.url_name}}'
           url.original: >
             {%- if parsed_event.message.get("url_original") != None -%}
               {{parsed_event.message.url_original}}
@@ -117,6 +117,7 @@ stages:
               {{list[1]}}
             {%- endif -%}
           url.path: '{{parsed_event.message.url_path}}'
+          url.port: '{{parsed_event.message.url_port}}'
           url.scheme: '{{parsed_event.message.url_scheme}}'
           url.username: '{{parsed_event.message.url_username}}'
           user_agent.original: '{{parsed_event.message.http_user_agent}}'
@@ -176,5 +177,4 @@ stages:
       - set:
           url.full: '{{parsed_event.message.url_original}}'
         filter: '{{parsed_event.message.get("url_original") != None and re.search("^http", parsed_event.message.get("url_original")) != None}}'
-
 
