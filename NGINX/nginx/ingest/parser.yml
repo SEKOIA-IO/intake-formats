@@ -14,6 +14,13 @@ pipeline:
     external:
       name: json.parse-json
     filter: '{{original.message | re_match("\{(?:[^{}]|())*\}")}}'
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.time_local}}'
+        output_field: datetime
+        format: '%d/%b/%Y:%H:%M:%S %z'
   - name: set_ecs_fields
   - name: set_fields
 
@@ -31,36 +38,10 @@ stages:
   set_fields:
     actions:
       - set:
-          '@timestamp': >
-            {%- set elt = parsed_event.message.time_local.split('/') -%}
-            {%- set month = elt[1] -%}
-            {%- set months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sept','Oct','Nov','Dec'] -%}
-            {%- set monthnum = months.index(month)+1 -%}
-            {%- set rest = elt[2].split(':') -%}
-            {%- set year = rest[0] -%}
-            {%- set sec = rest[3].split(' ')[0] -%}
-            {%- set Z = rest[3].split(' ')[1][1:3] | int -%}
-            {%- set z = rest[3].split(' ')[1][3:] |int -%}
-            {%- set hour = rest[1] | int -%}
-            {%- set hour = hour-Z -%}
-            {%- if hour < 10 -%}
-              {%- set hour = hour | string() -%}
-              {%- set hour = '0' + hour -%}
-            {%- endif -%}
-            {%- set min = rest[2] | int -%}
-            {%- set min = min-z -%}
-            {%- if min < 10 -%}
-              {%- set min = min | string() -%}
-              {%- set min = '0' + min -%}
-            {%- endif -%}
-            {%- if monthnum < 10 -%}
-              {{year}}-0{{monthnum}}-{{elt[0]}}T{{hour}}:{{min}}:{{sec}}.000000Z
-            {%- else -%}
-              {{year}}-{{monthnum}}-{{elt[0]}}T{{hour}}:{{min}}:{{sec}}.000000Z
-            {%- endif -%}
+          '@timestamp': '{{parsed_date.datetime}}'
         filter: '{{parsed_event.message.get("time_local") != None}}'
       - set:
-          '@timestamp': '{{parsed_event.message.timestamp | to_rfc3339 }}'
+          '@timestamp': '{{parsed_event.message.timestamp | to_rfc3339}}'
           destination.address: '{{parsed_event.message.host or parsed_event.message.server_name or parsed_event.message.destination_address}}'
           destination.ip: >
             {%- if parsed_event.message.get("destination_address") | is_ipaddress -%}
@@ -154,13 +135,13 @@ stages:
                 failure
               {%- endif -%}
             {%- endif -%}
+          event.type: > 
+            {%- if parsed_event.message.get("nginx_access") == true -%}
+              ['access']
+            {%- else -%}
+              ['error']
+            {%- endif -%}
         filter: '{{original.message | re_match("\{(?:[^{}]|())*\}")}}'
-      - translate:
-        dictionary:
-          'GET': ['access']
-          'DELETE': ['deletion']
-        mapping:
-          action.name: event.type
       - set:
           destination.port: >
             {%- set list = parsed_event.message.upstream_addr.split(':') -%}
