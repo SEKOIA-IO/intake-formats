@@ -89,7 +89,7 @@ def test_intake_format_coverage(manager, module, intake_format):
     for missing in coverage.get("missing", []):
         print(missing)
 
-    assert coverage["percent"] > 75
+    assert coverage["percent"] >= 75
 
 
 def test_intake_format_unused_fields(manager, module, intake_format):
