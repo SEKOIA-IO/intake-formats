@@ -1,0 +1,161 @@
+name: nginx
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        pattern: '%{ERROR}|%{COMBINED}'
+        custom_patterns:
+          NGINXURL: '(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})'
+          ERROR: '%{YEAR}/%{MONTHNUM}/%{MONTHDAY} %{HOUR}:%{MINUTE}:%{SECOND} \[%{WORD}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?(%{DATA}upstream: \"%{URIPROTO}://(?:%{USER}(?::[^@]*)?@)?(?:%{IPORHOST:url_name}(?::%{POSINT:url_port})?)?(?:%{URIPATHPARAM})?\")?%{GREEDYDATA}'
+          COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE:time_local}\] \"%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?'
+    filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
+  - name: parsed_event
+    external:
+      name: json.parse-json
+    filter: '{{original.message | re_match("\{(?:[^{}]|())*\}")}}'
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.time_local}}'
+        output_field: datetime
+        format: '%d/%b/%Y:%H:%M:%S %z'
+  - name: set_ecs_fields
+  - name: set_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: 'event'
+          event.category: ['web']
+          event.dataset: 'access'
+          observer.product: 'nginx'
+          observer.type: 'WEB server'
+          observer.vendor: 'F5'
+
+  set_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.datetime}}'
+        filter: '{{parsed_event.message.get("time_local") != None}}'
+      - set:
+          '@timestamp': '{{parsed_event.message.timestamp | to_rfc3339}}'
+          destination.address: '{{parsed_event.message.host or parsed_event.message.server_name or parsed_event.message.destination_address}}'
+          destination.ip: >
+            {%- if parsed_event.message.get("destination_address") | is_ipaddress -%}
+              {{parsed_event.message.destination_address}}
+            {%- elif parsed_event.message.get("server_addr") != None -%}
+              {{parsed_event.message.server_addr}}
+            {%- elif parsed_event.message.get("host") | is_ipaddress -%}
+              {{parsed_event.message.host}}
+            {%- elif parsed_event.message.upstream_addr | re_search("(?<=:)\w+") == False -%}
+              {{parsed_event.message.upstream_addr}}
+            {%- else -%}
+              {%- set list = parsed_event.message.upstream_addr.split(':') -%}
+              {{list[0]}}
+            {%- endif -%}
+          destination.domain: >
+            {%- if parsed_event.message.get("destination_address") != None -%}
+              {{parsed_event.message.destination_address}}
+            {%- elif parsed_event.message.get("server_name") != None -%}
+              {{parsed_event.message.server_name}}
+            {%- elif parsed_event.message.get("host") | is_ipaddress == False -%}
+              {{parsed_event.message.host}}
+            {%- endif -%}
+          event.duration: '{{parsed_event.message.request_time | float*10**9}}'
+          http.request.method: >
+            {%- if parsed_event.message.get("request_method") != None -%}
+              {{parsed_event.message.request_method}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[0]}}
+            {%- endif -%}
+          http.response.bytes: '{{parsed_event.message.body_bytes_sent}}'
+          http.response.mime_type: '{{parsed_event.message.http_response_mimetype}}'
+          http.response.status_code: '{{parsed_event.message.response_status or parsed_event.message.status}}'          
+          http.version: >
+            {%- if original.message | re_match("\{(?:[^{}]|())*\}") == False -%}
+              {{parsed_event.message.http_version}}
+            {%- elif parsed_event.message.get("http_version") != None -%}
+              {{parsed_event.message.http_version[5:]}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[2][5:]}}
+            {%- endif -%}
+          network.forwarded_ip: '{{parsed_event.message.proxy_add_x_forwarded_for}}'
+          network.protocol: '{{parsed_event.message.http_scheme}}'
+          source.address: '{{parsed_event.message.source_address}}'
+          source.ip: '{{parsed_event.message.remote_addr or parsed_event.message.source_address}}'
+          source.user.name: '{{parsed_event.message.source_user_name}}'
+          url.domain: '{{parsed_event.message.url_domain or parsed_event.message.url_name}}'
+          url.original: >
+            {%- if parsed_event.message.get("url_original") != None -%}
+              {{parsed_event.message.url_original}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[1]}}
+            {%- endif -%}
+          url.path: '{{parsed_event.message.url_path}}'
+          url.port: '{{parsed_event.message.url_port}}'
+          url.scheme: '{{parsed_event.message.url_scheme}}'
+          url.username: '{{parsed_event.message.url_username}}'
+          user_agent.original: '{{parsed_event.message.http_user_agent}}'
+      - set:
+          http.request.referrer: '{{parsed_event.message.http_referrer or parsed_event.message.http_referer}}'
+        filter: '{{parsed_event.message.get("http_referrer") != "-" and parsed_event.message.get("http_referer") != "-"}}'
+      - set:
+          action.name: >
+            {%- if parsed_event.message.get("request_method") != None -%}
+              {{parsed_event.message.request_method}}
+            {%- elif parsed_event.message.get("request") != None -%}
+              {%- set list = parsed_event.message.request.split(' ') -%}
+              {{list[0]}}
+            {%- endif -%}
+          action.outcome: >
+            {%- if parsed_event.message.get("response_status") != None -%}
+              {%- if parsed_event.message.response_status < 200 -%}
+                information
+              {%- elif parsed_event.message.response_status < 300 -%}
+                success
+              {%- elif parsed_event.message.response_status < 400 -%}
+                redirect
+              {%- else -%}
+                failure
+              {%- endif -%}
+            {%- elif parsed_event.message.get("status") != None -%}
+              {%- if parsed_event.message.status | re_search("^([0-9]|[0-9][0-9]|1[0-9][0-9])$") -%}
+                information
+              {%- elif parsed_event.message.status | re_search("^2[0-9][0-9]$") -%}
+                success
+              {%- elif parsed_event.message.status | re_search("^3[0-9][0-9]$") -%}
+                redirect
+              {%- else -%}
+                failure
+              {%- endif -%}
+            {%- endif -%}
+          event.type: > 
+            {%- if parsed_event.message.get("nginx_access") == true -%}
+              ['access']
+            {%- else -%}
+              ['error']
+            {%- endif -%}
+        filter: '{{original.message | re_match("\{(?:[^{}]|())*\}")}}'
+      - set:
+          destination.port: >
+            {%- set list = parsed_event.message.upstream_addr.split(':') -%}
+            {{list[1]}}
+        filter: '{{parsed_event.message.upstream_addr not in [None, "-"]}}'
+      - set:
+          event.type: >
+            {%- if original.message | re_search("^([0-9][0-9][0-9][0-9])/([1-9]|0[1-9]|1[0-2])/(0[1-9]|1[0-9]|2[0-9]|3[0-1]|[1-9])") -%}
+              ['error']
+            {%- else -%}
+              ['access']
+            {%- endif -%}
+        filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
+      - set:
+          url.full: '{{parsed_event.message.url_original}}'
+        filter: '{{parsed_event.message.get("url_original") != None and re.search("^http", parsed_event.message.get("url_original")) != None}}'
+
