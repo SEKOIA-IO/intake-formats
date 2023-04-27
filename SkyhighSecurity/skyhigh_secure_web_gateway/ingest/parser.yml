@@ -2,12 +2,12 @@ name: skyhigh-secure-web-gateway
 pipeline:
   - name: parse_kv
     external:
-          name: kv.parse-kv
-          properties:
-            input_field: '{{original.message}}'
-            output_field: message
-            value_sep: '='
-            item_sep: \s
+      name: kv.parse-kv
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+        value_sep: '='
+        item_sep: \s
   - name: parse_date
     filter: '{{parse_kv.message.request_timestamp_epoch != null}}'
     external:
@@ -43,13 +43,12 @@ stages:
       - set:
           '@timestamp': '{{parse_date.datetime}}'
           event.start: '{{parse_date_mcafee.datetime}}'
-          event.category: ['network']
+          event.category: [ 'network' ]
           event.code: '{{parse_kv.message.block_id}}'
           event.kind: 'event'
           event.action: '{{parse_kv.message.result}}'
           event.reason: '{{parse_kv.message.block_reason}}'
           source.bytes: '{{parse_kv.message.client_to_server_bytes}}'
-          destination.ip: '{{parse_kv.message.destination_ip}}'
           destination.domain: '{{parse_kv.message.destination_host or parse_kv.message.requested_host }}'
           destination.bytes: '{{parse_kv.message.server_to_client_bytes}}'
           destination.port: '{{parse_kv.message.destination_port}}'
@@ -73,9 +72,16 @@ stages:
           network.direction: 'egress'
 
       - set:
+          destination.ip: '{{parse_kv.message.destination_ip}}'
+        filter: '{{parse_kv.message.destination_ip | is_ipaddress}}'
+
+      - set:
           source.nat.ip: '{{parse_kv.message.source_ip}}'
+        filter: '{{parse_kv.message.client_ip != null and parse_kv.message.source_ip | is_ipaddress}}'
+
+      - set:
           source.ip: '{{parse_kv.message.client_ip}}'
-        filter: '{{parse_kv.message.client_ip != null}}'
+        filter: '{{parse_kv.message.client_ip != null and parse_kv.message.client_ip | is_ipaddress}}'
 
       - set:
           source.ip: '{{parse_kv.message.source_ip}}'
