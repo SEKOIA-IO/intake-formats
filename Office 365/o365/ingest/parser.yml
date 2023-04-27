@@ -10,6 +10,13 @@ pipeline:
         input_field: '{{json_event.message.UserId}}'
         output_field: message
         pattern: '%{EMAILADDRESS:email}'
+  - name: parse_data
+    filter: '{{json_event.message.RecordType == 64}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{json_event.message.Data}}'
+        output_field: ParsedData
   - name: parse_client_ip
     external:
       name: grok.match
@@ -34,6 +41,8 @@ pipeline:
     filter: '{{json_event.message.RecordType in [28, 41, 47]}}'
   - name: parse_yammer
     filter: '{{json_event.message.RecordType == 22}}'
+  - name: parse_automated_investigation_and_response
+    filter: '{{json_event.message.RecordType == 64}}'
 
 stages:
   set_common_fields:
@@ -280,8 +289,30 @@ stages:
               {% endfor %}
             ]
         filter: '{{json_event.message.get("AttachmentData", []) != []}}'
+
   parse_yammer:
     actions:
       - set:
           file.name: '{{json_event.message.FileName}}'
           event.category: ['file']
+
+  parse_automated_investigation_and_response:
+    actions:
+      - set:
+          office365.investigation.id: '{{json_event.message.InvestigationId}}'
+          office365.investigation.name: '{{json_event.message.InvestigationName}}'
+          office365.investigation.type: '{{json_event.message.InvestigationType}}'
+          office365.investigation.status: '{{json_event.message.Status}}'
+          event.start: '{{json_event.message.StartTimeUtc}}'
+          event.end: '{{json_event.message.EndTimeUtc}}'
+          office365.investigation.alert.type: '{{parse_data.ParsedData.AlertType}}'
+          office365.investigation.alert.provider.name: '{{parse_data.ParsedData.ProviderName}}'
+          office365.investigation.alert.provider.status: '{{parse_data.ParsedData.Status}}'
+          office365.investigation.alert.severity: '{{parse_data.ParsedData.Severity}}'
+          office365.investigation.alert.is_incident: '{{parse_data.ParsedData.IsIncident}}'
+          office365.investigation.alert.correlation_key: '{{parse_data.ParsedData.CorrelationKey}}'
+          office365.investigation.alert.category: '{{parse_data.ParsedData.Category}}'
+          office365.investigation.alert.source_type: '{{parse_data.ParsedData.SourceAlertType}}'
+          host.name: '{{parse_data.ParsedData.MachineName}}'
+      - set:
+          event.kind: '{% if parse_data.ParsedData.IsIncident %}{{"alert"}}{% else %}{{"event"}}{% endif %}'
