@@ -41,6 +41,10 @@ class JsonSorterEncoder(json.JSONEncoder):
             """
             match item:
                 case _ if isinstance(item, list):
+                    # As we might have a case when list contains dicts, we should sort them as well
+                    if len(item) > 0 and isinstance(item[0], dict):
+                        return sorted(item, key=lambda i: i.keys())
+
                     return sorted(_sort(i) for i in item)
 
                 case _ if isinstance(item, dict):
