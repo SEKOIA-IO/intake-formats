@@ -1,6 +1,20 @@
 name: rsa-securid
 pipeline:
+  - name: parsed_dsv
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - TIME
+          - MS_TIME
+          - OBSERVER_HOSTNAME
+          - RSA_SECUREID_CLASS
+        delimiter: ","
+
   - name: parsed_event
+    filter: "{{ 'audit.runtime' in parsed_dsv.message.RSA_SECUREID_CLASS }}"
     external:
       name: dsv.parse-dsv
       properties:
@@ -27,31 +41,144 @@ pipeline:
           - USER_NAME
           - USER_FIRSTNAME
           - USER_LASTNAME
+          - AGENT_ID
+          - RSA_SECUREID_AGENT_DOMAIN_ID
           - RSA_SECUREID_AGENT_IP
           - AGENT_NAME
           - RSA_SECUREID_POLICY_METHOD_ID
           - RSA_SECUREID_POLICY_METHOD_NAME
           - RSA_SECUREID_POLICY_ID
           - RSA_SECUREID_POLICY_EXPRESSION
-          - RSA_SECUREID_OBJECTS_TYPE
-          - RSA_SECUREID_OBJECTS_ID
-          - RSA_SECUREID_OBJECTS_SOURCE_ID
-          - RSA_SECUREID_OBJECTS_SECURITY_ID
-          - RSA_SECUREID_OBJECTS_NAME
-          - RSA_SECUREID_OBJECTS_TYPE
+          - ARG1
+          - ARG2
+          - ARG3
+          - ARG4
+          - ARG5
+          - ARG6
           - ARG7
           - ARG8
           - ARG9
           - ARG10
         delimiter: ","
+    actions:
+      - set:
+          is_dsv_event: true
+          is_parsed_event: true
+
+  - name: parsed_event
+    filter: "{{ 'audit.admin' in parsed_dsv.message.RSA_SECUREID_CLASS }}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - TIME
+          - MS_TIME
+          - OBSERVER_HOSTNAME
+          - RSA_SECUREID_CLASS
+          - LOG_LEVEL
+          - ???
+          - OBSERVER_SERIAL_NUMBER
+          - DESTINATION_IP
+          - SOURCE_IP
+          - RSA_SECUREID_ACTION_NAME
+          - EVENT_CODE
+          - RSA_SECUREID_EVENT_OUTCOME
+          - EVENT_REASON
+          - RSA_SECUREID_SESSION_ID
+          - UNKNOWN
+          - USER_ID
+          - RSA_SECUREID_SOURCE_ID
+          - RSA_SECUREID_DOMAIN_ID
+          - USER_NAME
+          - USER_FIRSTNAME_USER_LASTNAME
+          - RSA_SECUREID_OBJECTS_TYPE
+          - RSA_SECUREID_OBJECTS_ID
+          - RSA_SECUREID_OBJECTS_SOURCE_ID
+          - RSA_SECUREID_SECURITY_ID
+          - RSA_SECUREID_OBJECTS_NAME
+          - RSA_SECUREID_OBJECTS_TYPE_2
+          - RSA_SECUREID_OBJECTS_ID_2
+          - RSA_SECUREID_OBJECTS_SOURCE_ID_2
+          - RSA_SECUREID_SECURITY_ID_2
+          - RSA_SECUREID_OBJECTS_NAME_2
+          - RSA_SECUREID_OBJECTS_TYPE_3
+          - RSA_SECUREID_OBJECTS_ID_3
+          - RSA_SECUREID_OBJECTS_SOURCE_ID_3
+          - RSA_SECUREID_SECURITY_ID_3
+          - RSA_SECUREID_OBJECTS_NAME_3
+        delimiter: ","
+    actions:
+      - set:
+          is_dsv_event: true
+          is_parsed_event: true
+
+  - name: parsed_event
+    filter: "{{ 'system' in parsed_dsv.message.RSA_SECUREID_CLASS }}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - TIME
+          - MS_TIME
+          - OBSERVER_HOSTNAME
+          - RSA_SECUREID_CLASS
+          - LOG_LEVEL
+          - ???
+          - OBSERVER_SERIAL_NUMBER
+          - DESTINATION_IP
+          - SOURCE_IP
+          - RSA_SECUREID_ACTION_NAME
+          - EVENT_CODE
+          - RSA_SECUREID_EVENT_OUTCOME
+          - EVENT_REASON
+          - RSA_SECUREID_SESSION_ID
+          - USER_ID
+          - RSA_SECUREID_SOURCE_ID
+          - RSA_SECUREID_DOMAIN_ID
+          - USER_NAME
+          - USER_FIRSTNAME
+          - USER_LASTNAME
+          - AGENT_ID
+          - RSA_SECUREID_AGENT_DOMAIN_ID
+          - RSA_SECUREID_AGENT_IP
+          - AGENT_NAME
+          - RSA_SECUREID_POLICY_METHOD_ID
+          - RSA_SECUREID_POLICY_METHOD_NAME
+          - RSA_SECUREID_POLICY_ID
+          - RSA_SECUREID_POLICY_EXPRESSION
+          - ARG1
+          - ARG2
+          - ARG3
+          - ARG4
+          - ARG5
+          - ARG6
+          - ARG7
+          - ARG8
+          - ARG9
+          - ARG10
+        delimiter: ","
+    actions:
+      - set:
+          is_dsv_event: true
+          is_parsed_event: true
 
   - name: parsed_description
     external:
       name: grok.match
       properties:
-        input_field: original.message
+        input_field: '{{original.message}}'
         output_field: message
-        pattern: '%{GREEDYDATA:rsaadmin_title}: %{GREEDYDATA:tty}; %{GREEDYDATA:pwd} ; %{GREEDYDATA:user} ; %{GREEDYDATA:command}|%{GREEDYDATA:reason}'
+        pattern: 'rsaadmin : TTY=%{GREEDYDATA:tty}; PWD=%{GREEDYDATA:pwd} ; USER=%{GREEDYDATA:user} ; COMMAND=%{GREEDYDATA:command}|%{GREEDYDATA:reason}'
+    actions:
+      - set:
+          is_dsv_event: false
+          is_parsed_event: false
+          event:
+            reason: '{{original.message}}'
 
   - name: set_csv_fields
 
@@ -67,8 +194,8 @@ stages:
           event.code: "{{parsed_event.message.EVENT_CODE}}"
           user.id: "{{parsed_event.message.USER_ID}}"
           user.name: "{{parsed_event.message.USER_NAME}}"
-          user.firstname: "{{parsed_event.message.USER_FIRSTNAME}}"
-          user.lastname: "{{parsed_event.message.USER_LASTNAME}}"
+          rsa.securid.user.firstname: "{{parsed_event.message.USER_FIRSTNAME}}"
+          rsa.securid.user.lastname: "{{parsed_event.message.USER_LASTNAME}}"
           agent.id: "{{parsed_event.message.AGENT_ID}}"
           agent.name: "{{parsed_event.message.AGENT_NAME}}"
           event.outcome: "{{parsed_event.message.RSA_SECUREID_EVENT_OUTCOME}}"
@@ -89,14 +216,12 @@ stages:
           rsa.securid.objects.security.id: "{{parsed_event.message.RSA_SECUREID_SECURITY_ID}}"
           rsa.securid.objects.name: "{{parsed_event.message.RSA_SECUREID_OBJECTS_NAME}}"
           event.reason: >-
-            {% if parsed_event.message.EVENT_REASON == '' %}
-            {% elif parsed_event.message.EVENT_REASON %}
+            {% if is_dsv_event is defined and is_dsv_event %}
               {{ parsed_event.message.EVENT_REASON }}
             {% else %}
-              {{parsed_description.message.reason or parsed_description.pattern[0]}}
+              {{ parsed_description.message.reason or parsed_description.pattern[0]}}
             {% endif %}
-          process.title: "{{parsed_description.message.rsaadmin_title}}"
-          process.tty: "{{parsed_description.message.tty}}"
+          rsa.securid.process.tty: "{{parsed_description.message.tty}}"
           process.working_directory: "{{parsed_description.message.pwd}}"
-          process.env_vars: "{{parsed_description.message.user}}"
+          rsa.securid.process.env_vars: "{{parsed_description.message.user}}"
           process.command_line: "{{parsed_description.message.command}}"
