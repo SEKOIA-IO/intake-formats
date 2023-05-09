@@ -26,7 +26,7 @@ pipeline:
           - OBSERVER_HOSTNAME
           - RSA_SECUREID_CLASS
           - LOG_LEVEL
-          - ???
+          - CORRELATION_ID
           - OBSERVER_SERIAL_NUMBER
           - DESTINATION_IP
           - SOURCE_IP
@@ -60,10 +60,6 @@ pipeline:
           - ARG9
           - ARG10
         delimiter: ","
-    actions:
-      - set:
-          is_dsv_event: true
-          is_parsed_event: true
 
   - name: parsed_event
     filter: "{{ 'audit.admin' in parsed_dsv.message.RSA_SECUREID_CLASS }}"
@@ -78,7 +74,7 @@ pipeline:
           - OBSERVER_HOSTNAME
           - RSA_SECUREID_CLASS
           - LOG_LEVEL
-          - ???
+          - CORRELATION_ID
           - OBSERVER_SERIAL_NUMBER
           - DESTINATION_IP
           - SOURCE_IP
@@ -109,10 +105,6 @@ pipeline:
           - RSA_SECUREID_SECURITY_ID_3
           - RSA_SECUREID_OBJECTS_NAME_3
         delimiter: ","
-    actions:
-      - set:
-          is_dsv_event: true
-          is_parsed_event: true
 
   - name: parsed_event
     filter: "{{ 'system' in parsed_dsv.message.RSA_SECUREID_CLASS }}"
@@ -127,7 +119,7 @@ pipeline:
           - OBSERVER_HOSTNAME
           - RSA_SECUREID_CLASS
           - LOG_LEVEL
-          - ???
+          - CORRELATION_ID
           - OBSERVER_SERIAL_NUMBER
           - DESTINATION_IP
           - SOURCE_IP
@@ -161,24 +153,15 @@ pipeline:
           - ARG9
           - ARG10
         delimiter: ","
-    actions:
-      - set:
-          is_dsv_event: true
-          is_parsed_event: true
 
   - name: parsed_description
+    filter: "{{ parsed_dsv.message.RSA_SECUREID_CLASS == '' }}"
     external:
       name: grok.match
       properties:
         input_field: '{{original.message}}'
         output_field: message
         pattern: 'rsaadmin : TTY=%{GREEDYDATA:tty}; PWD=%{GREEDYDATA:pwd} ; USER=%{GREEDYDATA:user} ; COMMAND=%{GREEDYDATA:command}|%{GREEDYDATA:reason}'
-    actions:
-      - set:
-          is_dsv_event: false
-          is_parsed_event: false
-          event:
-            reason: '{{original.message}}'
 
   - name: set_csv_fields
 
@@ -215,12 +198,6 @@ stages:
           rsa.securid.objects.source.id: "{{parsed_event.message.RSA_SECUREID_OBJECTS_SOURCE_ID}}"
           rsa.securid.objects.security.id: "{{parsed_event.message.RSA_SECUREID_SECURITY_ID}}"
           rsa.securid.objects.name: "{{parsed_event.message.RSA_SECUREID_OBJECTS_NAME}}"
-          event.reason: >-
-            {% if is_dsv_event is defined and is_dsv_event %}
-              {{ parsed_event.message.EVENT_REASON }}
-            {% else %}
-              {{ parsed_description.message.reason or parsed_description.pattern[0]}}
-            {% endif %}
           rsa.securid.process.tty: "{{parsed_description.message.tty}}"
           process.working_directory: "{{parsed_description.message.pwd}}"
           rsa.securid.process.env_vars: "{{parsed_description.message.user}}"
