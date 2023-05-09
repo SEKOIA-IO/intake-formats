@@ -6,29 +6,30 @@ A parser consists in a sequence of stages organized under a pipeline that modifi
 
 The following pipeline is made of three stages (`stage1`, `stage2` and `stage3`)
 with the execution of `stage2` and `stage3` conditonned to a filter that evaluates the value of the event field `message.log_type` at the end of `stage2`.
+
 ```yaml
 pipeline:
- - name: stage1
- - name: stage2
-   filter: '{{stage1.message.log_type == "network"}}'
- - name: stage3
-   filter: '{{stage1.message.log_type == "process"}}'
+  - name: stage1
+  - name: stage2
+    filter: '{{stage1.message.log_type == "network"}}'
+  - name: stage3
+    filter: '{{stage1.message.log_type == "process"}}'
 ```
-
 
 ## Stage
 
 A stage is a parsing step that denotes changes in the event that participate in the same semantic definition. A stage can create, update and delete fields by chaining execution of actions.
 
 For example, the following snippet shows a stage named `my_stage` which consists in two actions.
+
 ```yaml
 my_stage:
   actions:
-   - set:
-       destination.ip: 127.0.0.1
-       source.ip: 127.0.0.2
-   - delete:
-      - event.data
+    - set:
+        destination.ip: 127.0.0.1
+        source.ip: 127.0.0.2
+    - delete:
+        - event.data
 ```
 
 ### Common stages
@@ -45,7 +46,6 @@ pipeline:
         prop1: val1
         prop2: val2
 ```
-
 
 #### JSON
 
@@ -74,8 +74,8 @@ stages:
   network:
     actions:
       - set:
-          destination.ip: '{{parsed_event.message.traffic.target}}'
-          source.ip: '{{parsed_event.message.traffic.source}}'
+          destination.ip: "{{parsed_event.message.traffic.target}}"
+          source.ip: "{{parsed_event.message.traffic.source}}"
 ```
 
 The following shows the produced event.
@@ -121,7 +121,7 @@ stages:
   email:
     actions:
       - set:
-          destination.user.email: '{{parsed_event.message.to}}'
+          destination.user.email: "{{parsed_event.message.to}}"
 ```
 
 The following shows the produced event.
@@ -255,18 +255,18 @@ pipeline:
       name: dsv.parse-dsv
       properties:
         columnnames:
-            - date
-            - action
-            - username
-            - user_id
+          - date
+          - action
+          - username
+          - user_id
         delimiter: ";"
   - name: set_user_id
 stages:
   set_user_id:
     actions:
       - set:
-          user.name: '{{parsed_dsv.message.username}}'
-          user.id: '{{parsed_dsv.message.user_id}}'
+          user.name: "{{parsed_dsv.message.username}}"
+          user.id: "{{parsed_dsv.message.user_id}}"
 ```
 
 The following shows the produced event.
@@ -280,7 +280,6 @@ The following shows the produced event.
   }
 }
 ```
-
 
 #### XML
 
@@ -309,8 +308,8 @@ stages:
   agent:
     actions:
       - set:
-          agent.id: '{{parsed_event.message.Event.Provider.Id}}'
-          agent.name: '{{parsed_event.message.Event.Provider.Name}}'
+          agent.id: "{{parsed_event.message.Event.Provider.Id}}"
+          agent.name: "{{parsed_event.message.Event.Provider.Name}}"
 ```
 
 The following shows the produced event.
@@ -324,7 +323,6 @@ The following shows the produced event.
   }
 }
 ```
-
 
 #### Windows
 
@@ -346,16 +344,16 @@ will be transformed in the following structure:
 
 ```json
 {
-    "System": {
-        "EventID": "1234",
-        "Execution": {
-            "ProcessID": "592",
-            "ThreadID": "6452"
-        }
-    },
-    "EventData": {
-        "Key": "Value"
+  "System": {
+    "EventID": "1234",
+    "Execution": {
+      "ProcessID": "592",
+      "ThreadID": "6452"
     }
+  },
+  "EventData": {
+    "Key": "Value"
+  }
 }
 ```
 
@@ -381,10 +379,10 @@ stages:
   set-fields:
     actions:
       - set:
-          process.pid: '{{parsed_event.message.System.Execution.ProcessID}}'
-          process.thread.id: '{{parsed_event.message.System.Execution.ThreadID}}'
-          event.id: '{{parsed_event.message.System.EventID}}'
-          custom.key: '{{parsed_event.message.EventData.Key}}'
+          process.pid: "{{parsed_event.message.System.Execution.ProcessID}}"
+          process.thread.id: "{{parsed_event.message.System.Execution.ThreadID}}"
+          event.id: "{{parsed_event.message.System.EventID}}"
+          custom.key: "{{parsed_event.message.EventData.Key}}"
 ```
 
 The following shows the produced event.
@@ -398,11 +396,10 @@ The following shows the produced event.
       "id": 6452
     }
   },
-  "event": {"id": 1234},
-  "custom": {"key": "Value"}
+  "event": { "id": 1234 },
+  "custom": { "key": "Value" }
 }
 ```
-
 
 #### CEF
 
@@ -410,6 +407,7 @@ The `cef.parse-cef` stage can be used to parse CEF messages.
 Per default, the `message` field is parsed but this property can be overwritten to specify any field.
 
 This stage will extract the following keys from the header definition:
+
 - `CEFVersion`: The CEF version
 - `DeviceVendor`: The vendor of the product that generated the log
 - `DeviceProduct`: The product that generated the log
@@ -442,14 +440,14 @@ stages:
   agent:
     actions:
       - set:
-          event.id: '{{parsed_event.message.DeviceEventClassID}}'
-          event.severity: '{{parsed_event.message.Severity}}'
-          source.ip: '{{parsed_event.message.src}}'
-          source.port: '{{parsed_event.message.spt}}'
-          destination.ip: '{{parsed_event.message.dst}}'
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
-          observer.product: '{{parsed_event.message.DeviceProduct}}'
-          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          event.id: "{{parsed_event.message.DeviceEventClassID}}"
+          event.severity: "{{parsed_event.message.Severity}}"
+          source.ip: "{{parsed_event.message.src}}"
+          source.port: "{{parsed_event.message.spt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
 ```
 
 The following shows the produced event.
@@ -473,13 +471,13 @@ The following shows the produced event.
 }
 ```
 
-
 #### LEEF
 
 The `leef.parse-leef` stage can be used to parse LEEF messages (supported version of LEEF are 1 and 2)
 Per default, the `message` field is parsed but this property can be overwritten to specify any field.
 
 This stage will extract the following keys from the header definition:
+
 - `LEEFVersion`: The LEEF version
 - `DeviceVendor`: The vendor of the product that generated the log
 - `DeviceProduct`: The product that generated the log
@@ -510,13 +508,13 @@ stages:
   agent:
     actions:
       - set:
-          event.id: '{{parsed_event.message.DeviceEventClassID}}'
-          source.ip: '{{parsed_event.message.src}}'
-          source.port: '{{parsed_event.message.spt}}'
-          destination.ip: '{{parsed_event.message.dst}}'
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
-          observer.product: '{{parsed_event.message.DeviceProduct}}'
-          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          event.id: "{{parsed_event.message.DeviceEventClassID}}"
+          source.ip: "{{parsed_event.message.src}}"
+          source.port: "{{parsed_event.message.spt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
 ```
 
 The following shows the produced event.
@@ -540,7 +538,6 @@ The following shows the produced event.
 }
 ```
 
-
 ## Action
 
 An action is an elementary operations that can create, update and delete fields.
@@ -560,7 +557,7 @@ Example:
 ```yaml
 - set:
     source.ip: 127.0.0.1
-    destination.ip: {{stage1.target.ip}}
+    destination.ip: { { stage1.target.ip } }
   filter: '{{stage1.log_type == "network"}}'
 ```
 
@@ -574,28 +571,27 @@ An optional fallback value can be defined.
 If the value of the source field doesn't match any entry of the mapping dictionary, this fallback value will be used to set the target field.
 If no fallback value is defined and the value of the source field doesn't match any entries, the target field will not be created in the final event.
 
-
 Example:
 
 ```yaml
 - translate:
   dictionary:
-    200: 'OK'
-    201: 'Created'
-    204: 'No Content'
-    400: 'Bad Request'
-    401: 'Unauthorized'
-    403: 'Forbidden'
-    404: 'Not Found'
-    500: 'Internal Server Error'
-    501: 'Not Implemented'
-    502: 'Bad Gateway'
-    503: 'Service Unavailable'
-    504: 'Gateway Timeout'
+    200: "OK"
+    201: "Created"
+    204: "No Content"
+    400: "Bad Request"
+    401: "Unauthorized"
+    403: "Forbidden"
+    404: "Not Found"
+    500: "Internal Server Error"
+    501: "Not Implemented"
+    502: "Bad Gateway"
+    503: "Service Unavailable"
+    504: "Gateway Timeout"
   mapping:
     http.response.status_code: http.response.status_message
     api.status_code: api.status_message
-  fallback: 'Request Processed'
+  fallback: "Request Processed"
   filter: '{{stage1.log_type == "network"}}'
 ```
 
@@ -617,21 +613,21 @@ For example, `{{stage1.username |strip |upper}}` removes the whitespace and retu
 
 Ingest makes available the [jinja built-in filters](https://jinja.palletsprojects.com/en/3.0.x/templates/#list-of-builtin-filters). Most popular filters are:
 
-| filter       |  description
-|---------------|------------------------------------------------
-|`abs`          | returns the absolute value of the variable.
-|`capitalize`   | returns the first character uppercase, all others lowercase.
-|`float`        | converts the variable in float
-|`int`| converts the variable in int
-|`length`| returns the number of items
-|`lower`| returns the value all lowercase
-|`max`| returns the largest item from the variable
-|`min`| returns the smallest item from the variable
-|`strip`| returns the variable removed from heading and leading whitespaces
-|`upper`| returns the value all uppercase
+| filter       | description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `abs`        | returns the absolute value of the variable.                       |
+| `capitalize` | returns the first character uppercase, all others lowercase.      |
+| `float`      | converts the variable in float                                    |
+| `int`        | converts the variable in int                                      |
+| `length`     | returns the number of items                                       |
+| `lower`      | returns the value all lowercase                                   |
+| `max`        | returns the largest item from the variable                        |
+| `min`        | returns the smallest item from the variable                       |
+| `strip`      | returns the variable removed from heading and leading whitespaces |
+| `upper`      | returns the value all uppercase                                   |
 
 Ingest extends these built-in filters with a set of custom filters:
-| filter       |  description
+| filter | description
 |---------------|------------------------------------------------
 |`basename`| returns the base name of a path (support unix and windows path)
 |`dirname`| returns the directory name of a path (support unix and windows path)
@@ -639,8 +635,6 @@ Ingest extends these built-in filters with a set of custom filters:
 |`to_iso8601(value: Any, format=None)`| converts and formats any date as iso8601 string
 |`re_match`| tests the value against an regular expression (the whole value)
 |`re_search`| tests if a subset of the value match the regular expression
-
-
 
 ### delete
 
@@ -650,11 +644,10 @@ Example:
 
 ```yaml
 - delete:
-   - source.ip
-   - destination.ip
+    - source.ip
+    - destination.ip
   filter: '{{stage1.log_type != "network"}}'
 ```
-
 
 ## Inspirations
 
