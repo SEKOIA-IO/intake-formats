@@ -5,6 +5,7 @@
 Format are organized in modules. Each module is associated with a category or, most of the time, a product vendor.
 
 A module is made up of:
+
 - `_meta`, a meta-information directory
 - as many sub-directories as formats included in the module
 
@@ -19,7 +20,7 @@ It hosts two documents:
 
 - a `manifest.yml` document.
   This document must contain an UUID that identifies the module, the name of the module, a short and url-friendly name of the module and a short description that describes the module.
- 
+
   Here is an example from the [AWS Module manifest](../AWS/_meta/manifest.yml).
 
 ### Formats
@@ -27,6 +28,7 @@ It hosts two documents:
 A format is associated to a software technology. In general, a format correspond to a vendor product.
 
 Each format share the same tree structure:
+
 - `_meta`, a meta-information directory
 - `ingest/parser.yml`, the parser of the format
 - a set of testings files
@@ -36,21 +38,20 @@ Each format share the same tree structure:
 Like the module one, this directory holds meta-information about the format.
 It consists of 4 files:
 
-- A logo that identifies the product. This logo should help identify the product that is represented by the format. 
+- A logo that identifies the product. This logo should help identify the product that is represented by the format.
 
   It must be a PNG image, with transparent background, named `logo.png` and must be lighter than 50Ko.
 
 - a `manifest.yml` document.
   This document must contain an UUID that identifies the format, the name of the format, a short and url-friendly name, a short description that describes the software technology and a list of [data-sources](datasources.md).
-  
+
   Here is an example from [Trend Micro Deep Security manifest](../Trend%20Micro/deep-security/_meta/manifest.yml)
 
 - A [taxonomy](taxonomy.md) file that describes fields used in the parser.
 
   For inspiration, see [Windows taxonomy](../Windows/windows/_meta/fields.yml).
-  
-- Some [smart-descriptions](smart-descriptions.md) (e.g: [Windows smart-descriptions](../Windows/windows/_meta/smart-descriptions.json))
 
+- Some [smart-descriptions](smart-descriptions.md) (e.g: [Windows smart-descriptions](../Windows/windows/_meta/smart-descriptions.json))
 
 #### Parser
 
@@ -63,13 +64,11 @@ The parser is written in [YAML](https://www.yaml.org) dialect.
 
 Refer to [parser](parser.md) to understand the vocabulary.
 
-
 #### Test files
 
 To validate the parser, a set of test files should be hosted in the directory `tests` of the format.
 
 See [testing](testing.md) to understand test files and how to validate the parser with them.
-
 
 ## Generation
 
@@ -86,7 +85,7 @@ $ poetry run generate.py new-module
 module_name [SEKOIAIO]: My module
 module_description [The description of the module]: My first module
 module_dir [My module]:
-$ 
+$
 ```
 
 ### To generate a new format
@@ -99,5 +98,5 @@ $ poetry run generate.py new-format ../My\ module
 intake_name [The name of the intake]: My Format
 intake_slug [my-format]:
 intake_description [The description of the intake]: My First Format
-$ 
+$
 ```
