@@ -122,7 +122,7 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     expected_sorted = json.loads(json.dumps(expected, sort_keys=True, cls=JsonSorterEncoder))
     parsed_sorted = json.loads(json.dumps(parsed, sort_keys=True, cls=JsonSorterEncoder))
 
-    assert expected_sorted == parsed_sorted
+    assert parsed_sorted == expected_sorted
 
 
 def test_intake_format_coverage(manager, module, intake_format):
