@@ -29,6 +29,7 @@ class JsonSorterEncoder(json.JSONEncoder):
         Returns:
             str: sorted json string
         """
+
         def _sort(item: any) -> any:
             """
             Recursive function to perform sorting.
@@ -54,6 +55,7 @@ class JsonSorterEncoder(json.JSONEncoder):
                     return item
 
         return super(JsonSorterEncoder, self).encode(_sort(obj))
+
 
 # Tests inside this file are actually parametrized depending on arguments
 # See `pytest_generate_tests` in conftest.py for details
@@ -84,6 +86,7 @@ def build_fixed_expectation(parsed_message):
     pop_field(new_expectation, "event.id")
     pop_field(new_expectation, "event.outcome")
     pop_field(new_expectation, "ecs.version")
+    pop_field(new_expectation, "sekoiaio.intake.parsing_duration_ms")
 
     return new_expectation
 
@@ -105,9 +108,7 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     if "related" in parsed:
         for related_field in ["hosts", "ip", "user", "hash"]:
             if related_field in parsed["related"]:
-                parsed["related"][related_field] = sorted(
-                    parsed["related"][related_field]
-                )
+                parsed["related"][related_field] = sorted(parsed["related"][related_field])
 
     pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
 
