@@ -9,7 +9,6 @@ constant_fields = {
             "parsing_status": "success",
             "dialect": "test",
             "dialect_uuid": "00000000-0000-0000-0000-000000000000",
-            "parsing_duration_ms": 1.4557838439941406,
         }
     },
     "event": {"id": "00000000-0000-0000-0000-000000000000", "outcome": "success"},
@@ -82,12 +81,12 @@ def build_fixed_expectation(parsed_message):
 
     pop_field(new_expectation, "sekoiaio.intake.coverage")
     pop_field(new_expectation, "sekoiaio.intake.parsing_status")
+    pop_field(new_expectation, "sekoiaio.intake.parsing_duration_ms")
     pop_field(new_expectation, "sekoiaio.intake.dialect")
     pop_field(new_expectation, "sekoiaio.intake.dialect_uuid")
     pop_field(new_expectation, "event.id")
     pop_field(new_expectation, "event.outcome")
     pop_field(new_expectation, "ecs.version")
-    pop_field(new_expectation, "sekoiaio.intake.parsing_duration_ms")
 
     return new_expectation
 
@@ -104,6 +103,9 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
 
     # Ignore the message field
     testcase["expected"]["message"] = parsed["message"]
+
+    # Ignore the parsing_duration_ms which has never the same value
+    pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
 
     # The order inside `related` is not guaranteed, sort it to make it consistent
     if "related" in parsed:
