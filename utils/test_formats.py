@@ -9,6 +9,7 @@ constant_fields = {
             "parsing_status": "success",
             "dialect": "test",
             "dialect_uuid": "00000000-0000-0000-0000-000000000000",
+            "parsing_duration_ms": 1.4557838439941406,
         }
     },
     "event": {"id": "00000000-0000-0000-0000-000000000000", "outcome": "success"},
