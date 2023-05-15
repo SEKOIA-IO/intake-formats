@@ -11,86 +11,98 @@ The root element of the document is a JSON-array. This array contains a set of s
 ## Smart-description
 
 A smart description consists of:
+
 - The value (manatory): a sentence that will display information from the [structured event](structured_event.md).
 
   This sentence contains placeholders (delimited with curly-braces). Each placeholder encompasses a path (dot-notation); the path indicates the location of the value in the structured event that is used to replace the placeholder in the description.
-  
+
   e.g:
   With a structured event containing:
+
   ```json
   {
     "source": {
-        "ip": "1.2.3.4"
+      "ip": "1.2.3.4"
     }
   }
   ```
-  
+
   The description `Connection from {source.ip}` will result in `Connection from 1.2.3.4`.
 
 - A list of conditions (optional): These conditions define when the description should be displayed. For a same event, the description, with the largest number of matching conditions, will succeed.
 
   a condition is compound of a path (dot-notation) to the field to test, and the expected value of the field (equal operation).
-  
+
   e.g:
   With a structured event containing:
+
   ```json
   {
     "event": {
-        "kind": "alert"
+      "kind": "alert"
     }
   }
   ```
-  
+
   The condition
+
   ```json
   {
     "field": "event.kind",
     "value": "alert"
   }
   ```
+
   will match
-  
+
   while the condition
+
   ```json
   {
     "field": "event.kind",
     "value": "event"
   }
   ```
+
   will not match
 
   To test the existence of a field in the structured event, only define the field in the condition.
-  
+
   e.g:
   The condition
+
   ```json
   {
     "field": "event.kind"
   }
   ```
+
   will test the existence of `event.kind`
 
 - A list of relationships (optional): The relationships help to connect information from the structured event.
 
   A relationship is compound of:
+
   - the source: the path to the field, in the structured data, to consider as the source of the relationship
   - the target: the path to the field, in the structured data, to consider as the target of the relationship
   - the type: a sentence that describes the nature of the relationship
-  
+
   e.g:
   With a structured event containing:
+
   ```json
   {
     "source": {
-        "ip": "1.2.3.4"
+      "ip": "1.2.3.4"
     },
     "destination": {
-        "ip": "5.6.7.8"
+      "ip": "5.6.7.8"
     }
   }
   ```
-  
+
   The relationship
+
   ```json
   {
     "source": "source.ip",
@@ -98,9 +110,9 @@ A smart description consists of:
     "type": "was connected to"
   }
   ```
+
   will connect `1.2.3.4` to `5.6.7.8` as a `was connected to` relation
 
-  
 ## Example
 
 see [Windows smart-descriptions](../Windows/windows/_meta/smart-descriptions.json)
