@@ -4,9 +4,9 @@ pipeline:
     external:
       name: grok.match
       properties:
-        pattern: '%{ERROR}|%{COMBINED}'
+        pattern: "%{ERROR}|%{COMBINED}"
         custom_patterns:
-          NGINXURL: '(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})'
+          NGINXURL: "(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
           ERROR: '%{YEAR}/%{MONTHNUM}/%{MONTHDAY} %{HOUR}:%{MINUTE}:%{SECOND} \[%{WORD}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?(%{DATA}upstream: \"%{URIPROTO}://(?:%{USER}(?::[^@]*)?@)?(?:%{IPORHOST:url_name}(?::%{POSINT:url_port})?)?(?:%{URIPATHPARAM})?\")?%{GREEDYDATA}'
           COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE:time_local}\] \"%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?'
     filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
@@ -18,9 +18,9 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.time_local}}'
+        input_field: "{{parsed_event.message.time_local}}"
         output_field: datetime
-        format: '%d/%b/%Y:%H:%M:%S %z'
+        format: "%d/%b/%Y:%H:%M:%S %z"
   - name: set_ecs_fields
   - name: set_fields
 
@@ -28,21 +28,21 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          event.kind: 'event'
-          event.category: [ 'web' ]
-          event.dataset: 'access'
-          observer.product: 'nginx'
-          observer.type: 'WEB server'
-          observer.vendor: 'F5'
+          event.kind: "event"
+          event.category: ["web"]
+          event.dataset: "access"
+          observer.product: "nginx"
+          observer.type: "WEB server"
+          observer.vendor: "F5"
 
   set_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_date.datetime}}'
+          "@timestamp": "{{parsed_date.datetime}}"
         filter: '{{parsed_event.message.get("time_local") != None}}'
       - set:
-          '@timestamp': '{{parsed_event.message.timestamp | to_rfc3339}}'
-          destination.address: '{{parsed_event.message.host or parsed_event.message.server_name or parsed_event.message.destination_address}}'
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          destination.address: "{{parsed_event.message.host or parsed_event.message.server_name or parsed_event.message.destination_address}}"
           destination.ip: >
             {%- if parsed_event.message.get("destination_address") | is_ipaddress -%}
               {{parsed_event.message.destination_address}}
@@ -64,7 +64,7 @@ stages:
             {%- elif parsed_event.message.get("host") | is_ipaddress == False -%}
               {{parsed_event.message.host}}
             {%- endif -%}
-          event.duration: '{{parsed_event.message.request_time | float*10**9}}'
+          event.duration: "{{parsed_event.message.request_time | float*10**9}}"
           http.request.method: >
             {%- if parsed_event.message.get("request_method") != None -%}
               {{parsed_event.message.request_method}}
@@ -72,9 +72,9 @@ stages:
               {%- set list = parsed_event.message.request.split(' ') -%}
               {{list[0]}}
             {%- endif -%}
-          http.response.bytes: '{{parsed_event.message.body_bytes_sent}}'
-          http.response.mime_type: '{{parsed_event.message.http_response_mimetype}}'
-          http.response.status_code: '{{parsed_event.message.response_status or parsed_event.message.status}}'
+          http.response.bytes: "{{parsed_event.message.body_bytes_sent}}"
+          http.response.mime_type: "{{parsed_event.message.http_response_mimetype}}"
+          http.response.status_code: "{{parsed_event.message.response_status or parsed_event.message.status}}"
           http.version: >
             {%- if original.message | re_match("\{(?:[^{}]|())*\}") == False -%}
               {{parsed_event.message.http_version}}
@@ -84,20 +84,20 @@ stages:
               {%- set list = parsed_event.message.request.split(' ') -%}
               {{list[2][5:]}}
             {%- endif -%}
-          network.forwarded_ip: '{{parsed_event.message.proxy_add_x_forwarded_for}}'
-          network.protocol: '{{parsed_event.message.http_scheme}}'
-          source.address: '{{parsed_event.message.source_address}}'
+          network.forwarded_ip: "{{parsed_event.message.proxy_add_x_forwarded_for}}"
+          network.protocol: "{{parsed_event.message.http_scheme}}"
+          source.address: "{{parsed_event.message.source_address}}"
       - set:
-          source.ip: '{{parsed_event.message.remote_addr}}'
-        filter: '{{parsed_event.message.remote_addr | is_ipaddress}}'
+          source.ip: "{{parsed_event.message.remote_addr}}"
+        filter: "{{parsed_event.message.remote_addr | is_ipaddress}}"
 
       - set:
-          source.ip: '{{parsed_event.message.source_address}}'
-        filter: '{{parsed_event.message.source_address | is_ipaddress}}'
+          source.ip: "{{parsed_event.message.source_address}}"
+        filter: "{{parsed_event.message.source_address | is_ipaddress}}"
 
       - set:
-          source.user.name: '{{parsed_event.message.source_user_name}}'
-          url.domain: '{{parsed_event.message.url_domain or parsed_event.message.url_name}}'
+          source.user.name: "{{parsed_event.message.source_user_name}}"
+          url.domain: "{{parsed_event.message.url_domain or parsed_event.message.url_name}}"
           url.original: >
             {%- if parsed_event.message.get("url_original") != None -%}
               {{parsed_event.message.url_original}}
@@ -105,14 +105,14 @@ stages:
               {%- set list = parsed_event.message.request.split(' ') -%}
               {{list[1]}}
             {%- endif -%}
-          url.path: '{{parsed_event.message.url_path}}'
-          url.port: '{{parsed_event.message.url_port}}'
-          url.scheme: '{{parsed_event.message.url_scheme}}'
-          url.username: '{{parsed_event.message.url_username}}'
-          user_agent.original: '{{parsed_event.message.http_user_agent}}'
-          
+          url.path: "{{parsed_event.message.url_path}}"
+          url.port: "{{parsed_event.message.url_port}}"
+          url.scheme: "{{parsed_event.message.url_scheme}}"
+          url.username: "{{parsed_event.message.url_username}}"
+          user_agent.original: "{{parsed_event.message.http_user_agent}}"
+
       - set:
-          http.request.referrer: '{{parsed_event.message.http_referrer or parsed_event.message.http_referer}}'
+          http.request.referrer: "{{parsed_event.message.http_referrer or parsed_event.message.http_referer}}"
         filter: '{{parsed_event.message.get("http_referrer") != "-" and parsed_event.message.get("http_referer") != "-"}}'
       - set:
           action.name: >
@@ -165,6 +165,5 @@ stages:
             {%- endif -%}
         filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
       - set:
-          url.full: '{{parsed_event.message.url_original}}'
+          url.full: "{{parsed_event.message.url_original}}"
         filter: '{{parsed_event.message.get("url_original") != None and re.search("^http", parsed_event.message.get("url_original")) != None}}'
-
