@@ -15,6 +15,46 @@ constant_fields = {
     "ecs": {"version": "1.10.0"},
 }
 
+
+class JsonSorterEncoder(json.JSONEncoder):
+    """Custom json encoder to sort lists and dicts recursively."""
+
+    def encode(self, obj: dict) -> str:
+        """
+        Encode function with additional sorting.
+
+        Arguments:
+            obj: dict
+
+        Returns:
+            str: sorted json string
+        """
+        def _sort(item: any) -> any:
+            """
+            Recursive function to perform sorting.
+
+            Arguments:
+                item: any
+
+            Returns:
+                any:
+            """
+            match item:
+                case _ if isinstance(item, list):
+                    # As we might have a case when list contains dicts, we should sort them as well
+                    if len(item) > 0 and isinstance(item[0], dict):
+                        return sorted(item, key=lambda i: i.keys())
+
+                    return sorted(_sort(i) for i in item)
+
+                case _ if isinstance(item, dict):
+                    return {k: _sort(v) for k, v in item.items()}
+
+                case _:
+                    return item
+
+        return super(JsonSorterEncoder, self).encode(_sort(obj))
+
 # Tests inside this file are actually parametrized depending on arguments
 # See `pytest_generate_tests` in conftest.py for details
 
@@ -77,7 +117,12 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
         with open(test_fullpath, "w") as out:
             json.dump(testcase, out, indent=2)
 
-    assert parsed == expected
+    # Perform sorting on all fields(including lists) using custom encoder to make sure we have a consistent order
+    # The most simple way is to encode to json string and decode it back :)
+    expected_sorted = json.loads(json.dumps(expected, sort_keys=True, cls=JsonSorterEncoder))
+    parsed_sorted = json.loads(json.dumps(parsed, sort_keys=True, cls=JsonSorterEncoder))
+
+    assert parsed_sorted == expected_sorted
 
 
 def test_intake_format_coverage(manager, module, intake_format):

@@ -1,6 +1,5 @@
 name: cisco-esa
 pipeline:
-
   - name: parsed_event
     external:
       name: cef.parse-cef
@@ -18,7 +17,7 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field:  "{{parsed_event.message.end or parsed_event.message.endTime}}"
+        input_field: "{{parsed_event.message.end or parsed_event.message.endTime}}"
         output_field: date
 
   # Parse 'rt' (as a timestamp or as a date)
@@ -37,7 +36,7 @@ pipeline:
         output_field: message
         pattern: "<%{MESSAGE_ID}>|%{MESSAGE_ID}"
         custom_patterns:
-          MESSAGE_ID: '%{GREEDYDATA:id}'
+          MESSAGE_ID: "%{GREEDYDATA:id}"
 
   - name: parse_duser
     external:
@@ -60,7 +59,7 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: > 
+        input_field: >
           {{ parsed_event.message.ESAAttachmentDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
 
   - name: json_event_esaurldetails
@@ -68,7 +67,7 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: > 
+        input_field: >
           {{ parsed_event.message.ESAURLDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
 
   - name: set_timestamp
@@ -78,85 +77,100 @@ pipeline:
 
 stages:
   set_timestamp:
-
     actions:
       # Default timestamp is the start or startTime field
       - set:
-          '@timestamp': "{{parse_start_date.date}}"
+          "@timestamp": "{{parse_start_date.date}}"
 
       # Second choice is the receipt time (rc) field
       - set:
-          '@timestamp': "{{parse_receipt_time.date}}"
+          "@timestamp": "{{parse_receipt_time.date}}"
         filter: "{{parse_start_date == null and parse_receipt_time != null}}"
 
       # Last choice is the end or endTime field
       - set:
-          '@timestamp': "{{parse_end_date.date}}"
+          "@timestamp": "{{parse_end_date.date}}"
         filter: "{{parse_start_date == null and parse_receipt_time == null and parse_end_date != null}}"
 
   set_cef_header_fields:
-  # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
+    # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
     actions:
-
       - set:
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
-          observer.type: '{{parsed_event.message.DeviceProduct}}'
-          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.type: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
 
       - set:
           # Match only for agentSeverity of type int
-          event.severity: '{{parsed_event.message.Severity}}'
+          event.severity: "{{parsed_event.message.Severity}}"
         filter: "{{parsed_event.message.Severity | re_match('[1-9]|10')}}"
-
 
   set_cef_extension_fields:
     actions:
-
       - set:
-          event.action: '{{parsed_event.message.act | lower}}'
+          event.action: "{{parsed_event.message.act | lower}}"
         filter: '{{parsed_event.message.get("act") != None}}'
 
       - set:
-          network.protocol: '{{parsed_event.message.app}}'
-          email.subject: '{{parsed_event.message.msg}}'
-          file.name: '{{parsed_event.message.fname}}'
-          file.size: '{{parsed_event.message.fsize}}'
-          source.ip: '{{parsed_event.message.src or parsed_event.message.sourceAddress}}'
-          email.from.address: '{{parsed_event.message.suser}}'
+          network.protocol: "{{parsed_event.message.app}}"
+          email.subject: "{{parsed_event.message.msg}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.size: "{{parsed_event.message.fsize}}"
+          email.from.address: "{{parsed_event.message.suser}}"
           destination.domain: "{{parsed_event.message.get('destination DnsDomain')}}"
           service.name: "{{parsed_event.message.get('destination ServiceName')}}"
-          destination.nat.ip: "{{parsed_event.message.get('destination Translated Address')}}"
           destination.nat.port: "{{parsed_event.message.get('destination TranslatedPort')}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.get('destination Translated Address')}}"
+        filter: "{{parsed_event.message.get('destination Translated Address')  | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src }}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.sourceAddress}}"
+        filter: "{{parsed_event.message.sourceAddress | is_ipaddress}}"
 
       - translate:
         dictionary:
-          0: 'inbound'
-          1: 'outbound'
+          0: "inbound"
+          1: "outbound"
         mapping:
           parsed_event.message.deviceDirection: network.direction
 
       - set:
-          host.name: "{{parsed_event.message.dvchost or {parsed_event.message.get('deviceDns Domain')}}"
+          host.name: "{{parsed_event.message.dvchost or parsed_event.message.get('deviceDns Domain')}}"
           host.id: "{{parsed_event.message.get('device ExternalId')}}"
           log.syslog.facility.name: "{{parsed_event.message.deviceFacility}}"
           observer.ingress.interface.name: "{{parsed_event.message.get('deviceInbound Interface')}}"
           host.domain: "{{parsed_event.message.get('deviceNt Domain')}}"
           observer.egress.interface.name: "{{parsed_event.message.get('Device Outbound Interface')}}"
           process.name: "{{parsed_event.message.get('deviceProcess Name')}}"
-          server.nat.ip: "{{parsed_event.message.get('device Translated Address')}}"
           destination.domain: "{{parsed_event.message.dhost or parsed_event.message.dntdom}}"
           destination.port: "{{parsed_event.message.dpt}}"
+
+      - set:
           destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+
+      - set:
           event.timezone: "{{parsed_event.message.dtz}}"
           destination.user.id: "{{parsed_event.message.duid}}"
           email.to.address: "{{parsed_event.message.duser}}"
+
+      - set:
           server.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc | is_ipaddress}}"
+
+      - set:
           destination.mac: "{{parsed_event.message.dmac}}"
           event.end: "{{parse_end_date.date}}"
           file.inode: "{{parsed_event.message.fileId}}"
           file.mtime: "{{parsed_event.message.get('fileModification Time')}}"
-          file.path:  "{{parsed_event.message.filePath}}"
-          file.type:  "{{parsed_event.message.fileType}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.type: "{{parsed_event.message.fileType}}"
           host.network.ingress.bytes: "{{parsed_event.message.in}}"
           host.network.egress.bytes: "{{parsed_event.message.out}}"
           event.outcome: "{{parsed_event.message.outcome}}"
@@ -169,9 +183,14 @@ stages:
           source.domain: "{{parsed_event.message.get('sourceDns Domain')}}"
           source.mac: "{{parsed_event.message.smac}}"
           source.port: "{{parsed_event.message.spt}}"
+
+      - set:
           source.nat.ip: "{{parsed_event.message.get('source Translated Address')}}"
+        filter: "{{parsed_event.message.get('source Translated Address') | is_ipaddress}}"
+
+      - set:
           source.nat.port: "{{parsed_event.message.get('source TranslatedPort')}}"
-          event.start:  "{{parse_start_date.date}}"
+          event.start: "{{parse_start_date.date}}"
           email.message_id: "{{parse_message_id.message.MESSAGE_ID}}"
           email.local_id: "{{parsed_event.message.ESAMID}}"
           rule.name: "{{parsed_event.message.MailPolicy}}"
@@ -199,11 +218,15 @@ stages:
           cisco.esa.authentication.spf.verdict: "{{parsed_event.message.ESASPFVerdict}}"
           cisco.esa.authentication.dkim.verdict: "{{parsed_event.message.ESADKIMVerdict}}"
           cisco.esa.source.domain.age: "{{parsed_event.message.ESASDRDomainAge}}"
+
+      - set:
           cisco.esa.helo.ip: "{{parsed_event.message.HeloIP}}"
+        filter: "{{parsed_event.message.HeloIP | is_ipaddress}}"
+
+      - set:
           cisco.esa.helo.domain: "{{parsed_event.message.HeloDomain}}"
           cisco.esa.sender_group: "{{parsed_event.message.ESASenderGroup}}"
           cisco.esa.status: "{{parsed_event.message.ESAStatus}}"
-
 
       - translate:
         dictionary:
@@ -358,15 +381,15 @@ stages:
 
       - translate:
         dictionary:
-          0: 'base event'
-          1: 'aggregated'
-          2: 'correlation'
-          3: 'action'
+          0: "base event"
+          1: "aggregated"
+          2: "correlation"
+          3: "action"
         mapping:
           parsed_event.message.type: cef.event_type
-        fallback: 'base event'
+        fallback: "base event"
 
   set_cef_extension_fields_cef:
     actions:
       - set:
-          cef: '{{parsed_event.message}}'
+          cef: "{{parsed_event.message}}"

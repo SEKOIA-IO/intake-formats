@@ -1,21 +1,21 @@
-name: 'openbsd-packet-filter'
+name: "openbsd-packet-filter"
 pipeline:
   - name: parsed_event
     external:
       name: grok.match
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: message
-        pattern: '%{PACKET_FILTER},(%{PF_IPV4}|%{PF_IPV6}),(%{PF_UDP}|%{PF_TCP}|%{PF_CARP}|%{PF_ICMP})'
+        pattern: "%{PACKET_FILTER},(%{PF_IPV4}|%{PF_IPV6}),(%{PF_UDP}|%{PF_TCP}|%{PF_CARP}|%{PF_ICMP})"
 
         custom_patterns:
-          PACKET_FILTER: '%{NUMBER:rulenr},%{DATA:subrulenr},%{DATA:anchorname},%{WORD:label},%{WORD:interface},%{WORD:reason},%{WORD:action},%{WORD:dir}'
-          PF_IPV4: '4,%{WORD:tos},%{DATA:ecn},%{NUMBER:hoplimit},%{NUMBER:id},%{NUMBER:offset},%{WORD:flags},%{NUMBER:protonum},%{WORD:protoname},%{NUMBER:length},%{IPV4:src},%{IPV4:dst}'
-          PF_IPV6: '6,%{DATA:class},%{DATA:flow},%{DATA:hoplimit},%{WORD:protoname},%{NUMBER:protonum},%{NUMBER:length},%{IPV6:src},%{IPV6:dst}'
-          PF_UDP: '%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen}'
-          PF_TCP: '%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen},%{WORD:tcp_flags},%{NUMBER:seq},%{DATA:ack},%{NUMBER:window},%{DATA:urg},%{GREEDYDATA:options}'
-          PF_CARP: '%{DATA:type},%{NUMBER:hoplimit},%{DATA:vhid},%{NUMBER:version},%{NUMBER:advskew},%{NUMBER:advbase}'
-          PF_ICMP: 'datalength=%{NUMBER:datalength}'
+          PACKET_FILTER: "%{NUMBER:rulenr},%{DATA:subrulenr},%{DATA:anchorname},%{WORD:label},%{WORD:interface},%{WORD:reason},%{WORD:action},%{WORD:dir}"
+          PF_IPV4: "4,%{WORD:tos},%{DATA:ecn},%{NUMBER:hoplimit},%{NUMBER:id},%{NUMBER:offset},%{WORD:flags},%{NUMBER:protonum},%{WORD:protoname},%{NUMBER:length},%{IPV4:src},%{IPV4:dst}"
+          PF_IPV6: "6,%{DATA:class},%{DATA:flow},%{DATA:hoplimit},%{WORD:protoname},%{NUMBER:protonum},%{NUMBER:length},%{IPV6:src},%{IPV6:dst}"
+          PF_UDP: "%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen}"
+          PF_TCP: "%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen},%{WORD:tcp_flags},%{NUMBER:seq},%{DATA:ack},%{NUMBER:window},%{DATA:urg},%{GREEDYDATA:options}"
+          PF_CARP: "%{DATA:type},%{NUMBER:hoplimit},%{DATA:vhid},%{NUMBER:version},%{NUMBER:advskew},%{NUMBER:advbase}"
+          PF_ICMP: "datalength=%{NUMBER:datalength}"
 
   - name: set_ecs_fields
 stages:
@@ -23,7 +23,11 @@ stages:
     actions:
       - set:
           source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+      - set:
           destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+      - set:
           rule.id: "{{parsed_event.message.rulenr}}"
           openbsd.pf.rule.subrulenr: "{{parsed_event.message.subrulenr}}"
           rule.ruleset: "{{parsed_event.message.anchorname}}"
@@ -57,9 +61,9 @@ stages:
           openbsd.pf.carp.type: "{{parsed_event.message.type}}"
 
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
+          event.kind: "event"
+          event.category: ["network"]
+          event.type: ["connection"]
 
       - translate:
         dictionary:
@@ -68,7 +72,6 @@ stages:
         mapping:
           parsed_event.message.action: event.type
         fallback: ["info"]
-
 
       - set:
           observer.ingress.interface.name: "{{parsed_event.message.interface}}"
@@ -80,8 +83,7 @@ stages:
 
       - translate:
         dictionary:
-          'in': 'inbound'
-          'out': 'outbound'
+          "in": "inbound"
+          "out": "outbound"
         mapping:
           parsed_event.message.dir: network.direction
-
