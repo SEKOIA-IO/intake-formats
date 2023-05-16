@@ -101,6 +101,11 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     # Ignore the message field
     testcase["expected"]["message"] = parsed["message"]
 
+    # Ignore parsing_duration_ms if it is present in result
+    if parsed.get("sekoiaio", {}).get("intake", {}).get("parsing_duration_ms") is not None:
+        testcase["expected"]["sekoiaio"]["intake"]["parsing_duration_ms"] = \
+            parsed["sekoiaio"]["intake"]["parsing_duration_ms"]
+
     # The order inside `related` is not guaranteed, sort it to make it consistent
     if "related" in parsed:
         for related_field in ["hosts", "ip", "user", "hash"]:
