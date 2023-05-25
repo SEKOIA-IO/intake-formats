@@ -31,6 +31,8 @@ pipeline:
     filter: "{{json_event.message.RecordType == 1}}"
   - name: parse_exchange_item
     filter: "{{json_event.message.RecordType == 2}}"
+  - name: parse_exchange_item_group
+    filter: "{{json_event.message.RecordType == 3}}"
   - name: parse_network_traffic
     filter: "{{json_event.message.RecordType in [15, 25]}}"
   - name: parse_azure_active_directory_operation
@@ -295,6 +297,35 @@ stages:
           email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
           email.subject: "{{json_event.message.Item.Subject}}"
         filter: '{{json_event.message.get("Item") != None and json_event.message.Item.get("InternetMessageId") != None}}'
+
+  parse_exchange_item_group:
+    actions:
+      - set:
+          email.message_id: >
+            [
+              {% for item in json_event.message.AffectedItems %}
+                {% if item.get("InternetMessageId") != None %}
+                  "{{item.InternetMessageId[1:-1]}}",
+                {% endif %}
+              {% endfor %}
+            ]
+          email.subject: >
+            [
+              {% for item in json_event.message.AffectedItems %}
+                {% if item.get("Subject") != None %}
+                  "{{item.Subject}}",
+                {% endif %}
+              {% endfor %}
+            ]
+          office365.exchange.item.parent_folder: >
+            [
+              {% for item in json_event.message.AffectedItems %}
+                {% if item.get("ParentFolder") != None %}
+                  "{{item.ParentFolder.Path}}",
+                {% endif %}
+              {% endfor %}
+            ]
+        filter: '{{json_event.message.get("AffectedItems") != None}}'
 
   parse_network_traffic:
     actions:
