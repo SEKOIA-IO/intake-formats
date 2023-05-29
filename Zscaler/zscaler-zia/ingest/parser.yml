@@ -1,0 +1,174 @@
+name: zcaler-zia
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_start_date
+    filter: "{{parsed_event.message.start != null or parsed_event.message.startTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.start or parsed_event.message.startTime}}"
+        output_field: date
+
+  - name: parse_end_date
+    filter: "{{parsed_event.message.end != null or parsed_event.message.endTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.end or parsed_event.message.endTime}}"
+        output_field: date
+
+  # Parse 'rt' (as a timestamp or as a date)
+  - name: parse_receipt_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: date
+
+  - name: set_timestamp
+  - name: set_header_fields
+  - name: set_extension_fields
+  - name: set_custom_fields
+
+stages:
+  set_timestamp:
+    actions:
+      # Default timestamp is the start or startTime field
+      - set:
+          "@timestamp": "{{parse_start_date.date}}"
+
+      # Second choice is the receipt time (rc) field
+      - set:
+          "@timestamp": "{{parse_receipt_time.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time != null}}"
+
+      # Last choice is the end or endTime field
+      - set:
+          "@timestamp": "{{parse_end_date.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time == null and parse_end_date != null}}"
+
+  set_header_fields:
+    # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
+    actions:
+      - set:
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.type: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          rule.id: "{{parsed_event.message.DeviceEventClassID}}"
+
+      - set:
+          # Match only for agentSeverity of type int
+          event.severity: "{{parsed_event.message.Severity}}"
+        filter: "{{parsed_event.message.Severity | re_match('[1-9]|10')}}"
+
+  set_extension_fields:
+    actions:
+      - set:
+          event.action: "{{parsed_event.message.act}}"
+          event.reason: "{{parsed_event.message.reason}}"
+          event.start: "{{parse_start_date.date}}"
+          event.timezone: "{{parsed_event.message.dtz}}"
+          event.end: "{{parse_end_date.date}}"
+          event.kind: "event"
+          event.category: ["network", "web"]
+
+      - set:
+          destination.domain: "{{parsed_event.message.dhost}}"
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.user.id: "{{parsed_event.message.duid}}"
+          destination.user.name: "{{parsed_event.message.duser}}"
+          destination.mac: "{{parsed_event.message.dmac}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.destinationTranslatedAddress}}"
+          destination.nat.port: "{{parsed_event.message.destinationTranslatedPort}}"
+        filter: "{{parsed_event.message.destinationTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          source.mac: "{{parsed_event.message.smac}}"
+          source.port: "{{parsed_event.message.spt}}"
+          source.user.name: "{{parsed_event.message.suser}}"
+          source.user.id: "{{parsed_event.message.suid}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.sourceTranslatedAddress}}"
+          source.nat.port: "{{parsed_event.message.sourceTranslatedPort}}"
+        filter: "{{parsed_event.message.sourceTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          network.protocol: "{{parsed_event.message.app}}"
+          network.application: "{{parsed_event.message.destinationServiceName}}"
+          url.original: "{{parsed_event.message.request}}"
+          user_agent.original: "{{parsed_event.message.requestClientApplication}}"
+
+      - set:
+          http.request.bytes: "{{parsed_event.message.out}}"
+          http.request.referrer: "{{parsed_event.message.requestContext}}"
+          http.request.method: "{{parsed_event.message.requestMethod}}"
+          http.response.bytes: "{{parsed_event.message.in}}"
+          http.response.status_code: "{{parsed_event.message.outcome}}"
+          http.response.mime_type: "{{parsed_event.message.contenttype}}"
+
+      - set:
+          file.name: "{{parsed_event.message.fname}}"
+          file.size: "{{parsed_event.message.fsize}}"
+          file.mime_type: "{{parsed_event.message.filetype or parsed_event.message.fileType}}"
+          file.inode: "{{parsed_event.message.fileId}}"
+          file.path: "{{parsed_event.message.filePath}}"
+
+      - set:
+          host.name: "{{parsed_event.message.dvchost or parsed_event.message.devicehostname}}"
+
+      - set:
+          server.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc | is_ipaddress}}"
+
+      - translate:
+        dictionary:
+          0: "base event"
+          1: "aggregated"
+          2: "correlation"
+          3: "action"
+        mapping:
+          parsed_event.message.type: zscaler.zia.event.type
+        fallback: "base event"
+
+      - translate:
+        dictionary:
+          "Allowed": ["allowed"]
+          "allowed": ["allowed"]
+          "Blocked": ["denied"]
+          "blocked": ["denied"]
+        mapping:
+          parsed_event.message.act: event.type
+        fallback: ["info"]
+
+  set_custom_fields:
+    actions:
+      - set:
+          zscaler.zia.url.super_category: "{{parsed_event.message.urlsupercat}}"
+          zscaler.zia.url.category: "{{parsed_event.message.cat}}"
+          zscaler.zia.url.class: "{{parsed_event.message.ZscalerNSSWeblogURLClass}}"
+          zscaler.zia.dlp.dict: "{{parsed_event.message.ZscalerNSSWeblogDLPDictionaries}}"
+          zscaler.zia.dlp.engine: "{{parsed_event.message.dlpeng}}"
+          zscaler.zia.source.location: "{{parsed_event.message.spriv}}"
+          zscaler.zia.threat.name: "{{parsed_event.message.threatname}}"
+          zscaler.zia.threat.riskscore: "{{parsed_event.message.riskscore}}"
+          zscaler.zia.threat.malware.category: "{{parsed_event.message.malwarecat}}"
+          zscaler.zia.threat.malware.class: "{{parsed_event.message.malwareclass}}"
+          zscaler.zia.user.departement: "{{parsed_event.message.dept}}"
+          zscaler.zia.application.class: "{{parsed_event.message.appclass}}"
+          zscaler.zia.host.user.name: "{{parsed_event.message.deviceowner}}"
+          zscaler.zia.file_unscannable.mime_type: "{{parsed_event.message.unscannabletype}}"
+          zscaler.zia.tls.key_protection_type: "{{parsed_event.message.keyprotectiontype}}"
