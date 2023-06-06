@@ -5,30 +5,33 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '%{CLIENT}'
+        pattern: "%{CLIENT}"
         custom_patterns:
-          QUERY_FLAGS: '%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?'
+          QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
-          QUERY_FLAGS_SIGNED: 'S?'
+          QUERY_FLAGS_SIGNED: "S?"
           QUERY_FLAGS_EDNS: 'E(\(%{INT}\))?'
-          QUERY_FLAGS_TCP: 'T'
-          QUERY_FLAGS_DNSSEC: 'D'
-          QUERY_FLAGS_CD: 'C'
-          QUERY_FLAGS_DNS_SERVER_COOKIE: 'V'
-          QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER: 'K'
-          CLIENT: 'client ?(%{DATA}) %{IP:src}#%{INT:spt} (%{DATA}): query: %{IPORHOST:dns_question_name} %{WORD:dns_question_class} %{WORD:dns_question_type} %{QUERY_FLAGS} \(%{IP}\)'
+          QUERY_FLAGS_TCP: "T"
+          QUERY_FLAGS_DNSSEC: "D"
+          QUERY_FLAGS_CD: "C"
+          QUERY_FLAGS_DNS_SERVER_COOKIE: "V"
+          QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER: "K"
+          CLIENT: '(%{WORD:category}: )?client ?(%{DATA}) %{IP:src}#%{INT:spt} (%{DATA}): query: %{IPORHOST:dns_question_name} %{WORD:dns_question_class} %{WORD:dns_question_type} %{QUERY_FLAGS} \(%{IP}\)'
   - name: set_ecs_fields
 
 stages:
   set_ecs_fields:
     actions:
       - set:
-          source.ip: '{{parse_event.message.src}}'
-          source.port: '{{parse_event.message.spt}}'
-          dns.question.class: '{{parse_event.message.dns_question_class}}'
-          dns.question.type: '{{parse_event.message.dns_question_type}}'
-          dns.question.name: '{{parse_event.message.dns_question_name}}'
-          dns.type: 'query'
+          source.ip: "{{parse_event.message.src}}"
+        filter: "{{parse_event.message.src | is_ipaddress}}"
+
+      - set:
+          source.port: "{{parse_event.message.spt}}"
+          dns.question.class: "{{parse_event.message.dns_question_class}}"
+          dns.question.type: "{{parse_event.message.dns_question_type}}"
+          dns.question.name: "{{parse_event.message.dns_question_name}}"
+          dns.type: "query"
           dns.header_flags: >
             [
               {% if parse_event.message.flags_rd == "+" %}"RD",{% endif %}
@@ -37,3 +40,6 @@ stages:
       - set:
           network.transport: "tcp"
         filter: '{{parse_event.message.flags_tcp == "T"}}'
+
+      - set:
+          infoblox.ddi.category: "{{parse_event.message.category}}"
