@@ -1,0 +1,38 @@
+name: github-audit-logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.created_at}}"
+        output_field: datetime
+        format: timestamp
+  - name: set_common_fields
+  - name: set_custom_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.action: "{{json_event.message.operation_type}}"
+          event.category: ["configuration"]
+          event.kind: "event"
+          geo.country_iso_code: "{{json_event.message.actor_location.country_code}}"
+          group.name: "{{json_event.message.actor}}"
+          organization.id: "{{json_event.message.org_id}}"
+          organization.name: "{{json_event.message.org}}"
+          user.email: "{{json_event.message.data.email}}"
+          user.id: "{{json_event.message.actor_id}}"
+          user_agent.original: "{{json_event.message.user_agent}}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          github.audit_logs: "{{json_event.message}}"
+          github.audit_logs._document_id: "{{json_event.message._document_id}}"
+          github.audit_logs.user: "{{json_event.message.user}}"
+          github.audit_logs.repo: "{{json_event.message.repo}}"
