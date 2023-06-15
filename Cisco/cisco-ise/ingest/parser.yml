@@ -1,15 +1,34 @@
 name: cisco-ise
 pipeline:
-  - name: parsed_event
+  - name: pre_parsed_event
     external:
       name: grok.match
       properties:
         input_field: original.message
+        output_field: pre_message
+        # pattern: "%{LOGLEVEL:status}:%{DATA:reason}:%{GREEDYDATA:kv}"
+        pattern: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
+
+  - name: grok_timestamp_in_status
+    filter: '{{pre_parsed_event.pre_message.status[0].isdigit()}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{pre_parsed_event.pre_message.reason_with_kv}}"
+        output_field: time_message
+        pattern: "%{DATA:start_of_msg}: %{DATA:reason},%{GREEDYDATA:end_of_msg}"
+
+  - name: parsed_event
+    filter: '{{":" in pre_parsed_event.pre_message.reason_with_kv}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{pre_parsed_event.pre_message.reason_with_kv}}"
         output_field: message
-        pattern: "%{LOGLEVEL:status}:%{DATA:reason}:%{GREEDYDATA:kv}"
+        pattern: "%{DATA:reason}:%{GREEDYDATA:kv}"
 
   - name: grok_conf
-    filter: '{{"Configuration" in parsed_event.message.reason }}'
+    filter: '{{"Configuration" in parsed_event.message.reason and ":" in pre_parsed_event.pre_message.reason_with_kv}}'
     external:
       name: grok.match
       properties:
@@ -18,6 +37,7 @@ pipeline:
         pattern: "Configuration %{WORD:change}"
 
   - name: parsed_kv_sentence
+    filter: '{{":" in pre_parsed_event.pre_message.reason_with_kv}}'
     external:
       name: kv.parse-kv
       properties:
@@ -29,6 +49,7 @@ pipeline:
   - name: set_ecs_fields
   - name: set_configuration_fields
   - name: set_network_fields
+  - name: set_miscellaneous_fields
 
 stages:
   set_ecs_fields:
@@ -90,5 +111,19 @@ stages:
           source.mac: '{{parsed_kv_sentence.result.get("NAS Identifier")}}'
         filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
       - set:
-          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip")}}'
-        filter: '{{(parsed_kv_sentence.result.get("NAS IP Address") != None or parsed_kv_sentence.result.get("NAD Address") != None or parsed_kv_sentence.result.get("Device Ip") != None) and "Configuration" not in parsed_event.message.reason}}'
+          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP")}}'
+        filter: '{{(parsed_kv_sentence.result.get("NAS IP Address") != None or parsed_kv_sentence.result.get("NAD Address") != None or parsed_kv_sentence.result.get("Device Ip") != None or parsed_kv_sentence.result.get("Network device IP") != None) and "Configuration" not in parsed_event.message.reason}}'
+
+  set_miscellaneous_fields:
+    actions:
+      - set:
+          event.reason: '{{pre_parsed_event.pre_message.reason_with_kv}}'
+        filter: '{{":" not in pre_parsed_event.pre_message.reason_with_kv and "=" not in pre_parsed_event.pre_message.reason_with_kv}}'
+
+      - set:
+          event.reason: '{{parsed_event.message.kv}}'
+        filter: '{{":" in parsed_event.message.kv and "=" not in parsed_event.message.kv}}'
+
+      - set:
+          event.reason: '{{grok_timestamp_in_status.time_message.reason}}'
+        filter: '{{pre_parsed_event.pre_message.status[0].isdigit()}}'
