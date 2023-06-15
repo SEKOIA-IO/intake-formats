@@ -1,0 +1,94 @@
+name: cisco-ise
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: original.message
+        output_field: message
+        pattern: "%{LOGLEVEL:status}:%{DATA:reason}:%{GREEDYDATA:kv}"
+
+  - name: grok_conf
+    filter: '{{"Configuration" in parsed_event.message.reason }}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.reason.strip()}}"
+        output_field: conf_result
+        pattern: "Configuration %{WORD:change}"
+
+  - name: parsed_kv_sentence
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parsed_event.message.kv.strip()}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ';\s'
+
+  - name: set_ecs_fields
+  - name: set_configuration_fields
+  - name: set_network_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: event
+          observer.vendor: Cisco
+          observer.product: "Cisco ISE"
+          event.type: ["info"]
+
+  set_configuration_fields:
+    actions:
+      - set:
+          user.name: "{{parsed_kv_sentence.result.Admin}}"
+        filter: "{{parsed_kv_sentence.result.get('Admin') != None and 'Configuration' in parsed_event.message.reason}}"
+      - set:
+          event.category: configuration
+        filter: '{{"Configuration" in parsed_event.message.reason }}'
+      - set:
+          cisco.ise.config_object.name: '{{parsed_kv_sentence.result.get("Object Name")}}'
+        filter: '{{parsed_kv_sentence.result.get("Object Name") != None and "Configuration" in parsed_event.message.reason}}'
+      - set:
+          cisco.ise.config_object.type: '{{parsed_kv_sentence.result.get("Object Type")}}'
+        filter: '{{parsed_kv_sentence.result.get("Object Type") != None and "Configuration" in parsed_event.message.reason}}'
+      - set:
+          cisco.ise.config_action: "{{grok_conf.conf_result.change}}"
+        filter: '{{grok_conf.conf_result.get("change") != None and "Configuration" in parsed_event.message.reason}}'
+
+  set_network_fields:
+    actions:
+      - set:
+          event.category: network
+        filter: '{{"Configuration" not in parsed_event.message.reason }}'
+      - set:
+          source.domain: '{{parsed_kv_sentence.result.get("Server")}}'
+        filter: '{{parsed_kv_sentence.result.get("Server") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          user.name: '{{parsed_kv_sentence.result.get("Device login username")}}'
+        filter: '{{parsed_kv_sentence.result.get("Device login username") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          user.name: '{{parsed_kv_sentence.result.get("Calling Station Id")}}'
+        filter: '{{parsed_kv_sentence.result.get("Calling Station Id") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          cisco.ise.network_calling_station.id: '{{parsed_kv_sentence.result.get("Error Message")}}'
+        filter: '{{parsed_kv_sentence.result.get("Error Message") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          event.reason: '{{parsed_kv_sentence.result.get("Error Message")}}'
+        filter: '{{parsed_kv_sentence.result.get("Error Message") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          event.reason: '{{parsed_kv_sentence.result.get("Failure Reason")}}'
+        filter: '{{parsed_kv_sentence.result.get("Failure Reason") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          source.domain: '{{parsed_kv_sentence.result.get("Device Name")}}'
+        filter: '{{parsed_kv_sentence.result.get("Device Name") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          source.mac: '{{parsed_kv_sentence.result.get("NAS Identifier")}}'
+        filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          source.mac: '{{parsed_kv_sentence.result.get("NAS Identifier")}}'
+        filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
+      - set:
+          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip")}}'
+        filter: '{{(parsed_kv_sentence.result.get("NAS IP Address") != None or parsed_kv_sentence.result.get("NAD Address") != None or parsed_kv_sentence.result.get("Device Ip") != None) and "Configuration" not in parsed_event.message.reason}}'
