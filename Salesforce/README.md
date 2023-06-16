@@ -6,6 +6,6 @@ Salesforce provides users comprehensive tools to manage customer data, automate 
 
 ## Intakes
 
-- [salesforce-events](./salesforce-events/CHANGELOG.md) 
-  
-    **Helps to monitor Salesforce events.**
+- [salesforce-events](./salesforce-events/CHANGELOG.md)
+
+  **Helps to monitor Salesforce events.**
