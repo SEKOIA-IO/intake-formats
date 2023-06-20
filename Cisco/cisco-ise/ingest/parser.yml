@@ -6,7 +6,6 @@ pipeline:
       properties:
         input_field: original.message
         output_field: pre_message
-        # pattern: "%{LOGLEVEL:status}:%{DATA:reason}:%{GREEDYDATA:kv}"
         pattern: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
 
   - name: grok_timestamp_in_status
@@ -77,49 +76,22 @@ stages:
       - set:
           event.category: configuration
           event.type: ["change"]
-        filter: '{{"Configuration" in parsed_event.message.reason }}'
-      - set:
           cisco.ise.config_object.name: '{{parsed_kv_sentence.result.get("Object Name")}}'
-        filter: '{{parsed_kv_sentence.result.get("Object Name") != None and "Configuration" in parsed_event.message.reason}}'
-      - set:
           cisco.ise.config_object.type: '{{parsed_kv_sentence.result.get("Object Type")}}'
-        filter: '{{parsed_kv_sentence.result.get("Object Type") != None and "Configuration" in parsed_event.message.reason}}'
-      - set:
           cisco.ise.config_action: "{{grok_conf.conf_result.change}}"
-        filter: '{{grok_conf.conf_result.get("change") != None and "Configuration" in parsed_event.message.reason}}'
+        filter: '{{"Configuration" in parsed_event.message.reason }}'
 
   set_network_fields:
     actions:
       - set:
           event.category: network
-        filter: '{{"Configuration" not in parsed_event.message.reason }}'
-      - set:
-          source.domain: '{{parsed_kv_sentence.result.get("Server")}}'
-        filter: '{{parsed_kv_sentence.result.get("Server") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
-          user.name: '{{parsed_kv_sentence.result.get("Device login username")}}'
-        filter: '{{parsed_kv_sentence.result.get("Device login username") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
-          user.name: '{{parsed_kv_sentence.result.get("Calling Station Id")}}'
-        filter: '{{parsed_kv_sentence.result.get("Calling Station Id") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
+          event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason")}}'
           cisco.ise.network_calling_station.id: '{{parsed_kv_sentence.result.get("Error Message")}}'
-        filter: '{{parsed_kv_sentence.result.get("Error Message") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
-          event.reason: '{{parsed_kv_sentence.result.get("Error Message")}}'
-        filter: '{{parsed_kv_sentence.result.get("Error Message") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
-          event.reason: '{{parsed_kv_sentence.result.get("Failure Reason")}}'
-        filter: '{{parsed_kv_sentence.result.get("Failure Reason") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
-          source.domain: '{{parsed_kv_sentence.result.get("Device Name")}}'
-        filter: '{{parsed_kv_sentence.result.get("Device Name") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
+          user.name: '{{parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("Calling Station Id")}}'
+          source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
           source.mac: "{{grok_mac.adress_mac.adress}}"
-        filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
-      - set:
           source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP")}}'
-        filter: '{{(parsed_kv_sentence.result.get("NAS IP Address") != None or parsed_kv_sentence.result.get("NAD Address") != None or parsed_kv_sentence.result.get("Device Ip") != None or parsed_kv_sentence.result.get("Network device IP") != None) and "Configuration" not in parsed_event.message.reason}}'
+        filter: '{{"Configuration" not in parsed_event.message.reason }}'
 
   set_miscellaneous_fields:
     actions:
