@@ -17,6 +17,24 @@ pipeline:
         output_field: time_message
         pattern: "%{DATA:start_of_msg}: %{DATA:reason},%{GREEDYDATA:end_of_msg}"
 
+  - name: grok_event_outcome
+    filter: '{{ "MESSAGE" in grok_timestamp_in_status.time_message.end_of_msg and grok_timestamp_in_status.time_message.end_of_msg.count("=") == 1 }}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_timestamp_in_status.time_message.end_of_msg}}"
+        output_field: event_outcome
+        pattern: " MESSAGE=%{DATA:outcome_msg},"
+
+  - name: grok_event_outcomes
+    filter: '{{ "MESSAGE" in grok_timestamp_in_status.time_message.end_of_msg and grok_timestamp_in_status.time_message.end_of_msg.count("=") > 1 }}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_timestamp_in_status.time_message.end_of_msg}}"
+        output_field: event_outcomes
+        pattern: " MESSAGE=%{DATA:outcome_msg} threshold_space = %{DATA:threshold_space}, used_space = %{DATA:used_space},"
+
   - name: parsed_event
     filter: '{{":" in pre_parsed_event.pre_message.reason_with_kv}}'
     external:
@@ -106,3 +124,11 @@ stages:
       - set:
           event.reason: "{{grok_timestamp_in_status.time_message.reason}}"
         filter: "{{pre_parsed_event.pre_message.status[0].isdigit()}}"
+
+      - set:
+          event.outcome: "success" 
+        filter: "{{pre_parsed_event.pre_message.status[0].isdigit() and ('success' in grok_event_outcome.event_outcome.outcome_msg or 'success' in grok_event_outcomes.event_outcomes.outcome_msg)}}"
+
+      - set:
+          event.outcome: "failure" 
+        filter: "{{pre_parsed_event.pre_message.status[0].isdigit() and ('fail' in grok_event_outcome.event_outcome.outcome_msg or 'fail' in grok_event_outcomes.event_outcomes.outcome_msg)}}"
