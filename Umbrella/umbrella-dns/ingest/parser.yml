@@ -1,0 +1,41 @@
+name: umbrella-dns
+pipeline:
+  - name: parsed_event
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - datetime
+          - user_name
+          - DATA
+          - source_ip
+          - destination_ip
+          - action_type
+          - dns_question_type
+          - dns_response_code
+          - dns_question_name
+          - tmp_categories
+          - GREEDYDATA
+        delimiter: ","
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          action.name: "DNS query"
+          action.target: "network-traffic"
+          action.type: "{{parsed_event.message.action_type}}"
+          destination.ip: "{{parsed_event.message.destination_ip}}"
+          dns.response_code: "{{parsed_event.message.dns_response_code}}"
+          dns.question.name: "{{parsed_event.message.dns_question_name}}"
+          dns.question.type: "{{parsed_event.message.dns_question_type}}"
+          dns.type: "query"
+          source.ip: "{{parsed_event.message.source_ip}}"
+          user.name: "{{parsed_event.message.user_name}}"
+
+      - set:
+          action.outcome: "success"
+        filter: "{{dns.response_code == 'NOERROR'}}"
