@@ -18,12 +18,19 @@ pipeline:
           FAULT: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{DATA:pid}\] \[%{DATA:originator_info}\] %{GREEDYDATA:reason}; %{GREEDYDATA}\(Fault cause: %{DATA:event_code}\\n--> \)%{GREEDYDATA:context}\]'
           FAULT_TYPE_2: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{DATA:pid}\] \[%{DATA:originator_info}\] %{GREEDYDATA:reason}: %{DATA:event_code}:%{GREEDYDATA} userName:\\\\n--> \\\"%{DATA:username}\\\"%{GREEDYDATA} \\\"%{DATA:locale}\\\"'
           HTTP_LOGS_1: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{DATA:pid}\] \[%{DATA:originator_info}\] %{TIMESTAMP_ISO8601:datetime} %{DATA:http_method} %{URIPATH:url_path} HTTP/%{NUMBER:http_version} %{NUMBER:response_status} %{DATA:upstream_status} - %{NUMBER} %{NUMBER} %{NUMBER} %{NUMBER} %{NUMBER} %{IP:source_ip}:%{NUMBER:source_port} %{IP:destination_ip}:%{NUMBER:destination_port} %{IP:ip_address}:%{NUMBER:local_port1} %{IP:local_ip2}:%{NUMBER:local_port2}'
-          HTTP_LOGS_2: '\[%{HTTPDATE:timestamp}\] %{DATA:thread} \[Request]\ %{IP:source_ip}:%{NUMBER:source_port} to local %{NUMBER:destination_port} - HTTP/%{NUMBER:http_version} %{DATA:http_method} %{URIPATH:url_path} %{DATA} %{NUMBER:response_status} - %{NUMBER:response_bytes} bytes %{DATA} process %{NUMBER:process_time}ms / commit %{NUMBER:commit_time}ms / conn \[%{DATA:conn_status}\]'
+          HTTP_LOGS_2: '\[%{HTTPDATE:http_logs2_timestamp}\] %{DATA:thread} \[Request]\ %{IP:source_ip}:%{NUMBER:source_port} to local %{NUMBER:destination_port} - HTTP/%{NUMBER:http_version} %{DATA:http_method} %{URIPATH:url_path} %{DATA} %{NUMBER:response_status} - %{NUMBER:response_bytes} bytes %{DATA} process %{NUMBER:process_time}ms / commit %{NUMBER:commit_time}ms / conn \[%{DATA:conn_status}\]'
           OTHERS_EVENTS: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{INT:pid}\] \[%{DATA}\] %{DATA} -- %{GREEDYDATA:reason}'
           OTHERS_EVENTS_TYPE_2: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA:thread}\] %{DATA:log_level} opId=%{DATA:operationID} %{DATA:process} - %{GREEDYDATA:reason}'
           OTHERS_EVENTS_TYPE_3: '%{TIMESTAMP_ISO8601:timestamp}: %{DATA}: \[%{GREEDYDATA:reason}'
           OTHERS_EVENTS_TYPE_4: "%{GREEDYDATA:reason}"
           OTHERS_EVENTS_TYPE_5: '\[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:log_level} \] %{GREEDYDATA:reason}'
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.http_logs2_timestamp}}"
+        output_field: datetime
+        format: "%d/%b/%Y:%H:%M:%S %z"
 
   - name: set_ecs_fields
 
@@ -47,7 +54,6 @@ stages:
           vmware_vcenter.event_id: "{{parsed_event.message.id}}"
           event.code: "{{parsed_event.message.event_code}}"
           process.pid: "{{parsed_event.message.pid}}"
-          process.end: "{{parsed_event.message.process_time}}"
           process.name: "{{parsed_event.message.process}}"
           source.port: "{{parsed_event.message.source_port}}"
           http.version: "{{parsed_event.message.http_version}}"
@@ -66,6 +72,14 @@ stages:
           vmware_vcenter.commit_time: "{{parsed_event.message.commit_time}}"
           vmware_vcenter.thread: "{{parsed_event.message.thread}}"
           vmware_vcenter.operationID: "{{parsed_event.message.operationID}}"
+
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+        filter: '{{parsed_date.get("datetime") != None}}'
+
+      - set:
+          process.end: "{{parsed_event.message.process_time}}"
+        filter: "{{parsed_event.message.process_time > 0}}"
 
       - set:
           observer.vendor: "VMWare"
