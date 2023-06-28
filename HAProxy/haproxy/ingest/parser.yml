@@ -1,0 +1,34 @@
+name: HAProxy
+pipeline:
+  - name: grok
+    external:
+      name: grok.match
+      properties:
+        output_field: message
+        pattern: >-
+          %{DATA}\[%{INT}\]: \[%{WORD}\] %{INT} %{GREEDYDATA:json_msg}
+
+  - name: json
+    filter: "{{grok.message.json_msg != null}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{grok.message.json_msg}}"
+
+  - name: json_ipqual
+    description: "Extract fields from the JSON ipqual field"
+    filter: "{{json.message != null and json.message.ipqual != null}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json.message.ipqual}}"
+
+  - name: main_stage
+
+stages:
+  main_stage:
+    actions:
+      - set:
+          ## This is placeholder to be removed:
+          event.reason: "{{json.message.fingerprint}}"
+          event.action: "{{json_ipqual.message.al}}"
