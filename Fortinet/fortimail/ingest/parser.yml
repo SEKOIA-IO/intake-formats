@@ -1,0 +1,166 @@
+name: fortimail
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{original.message}}"
+
+  - name: parsed_msg
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: file
+        pattern: '%{DATA:type} name: %{DATA:name}(\(checksum:%{DATA:hash}\))?, scanned by Antivirus Scanner\(%{DATA:event_status}\)'
+
+  - name: parse_starttls
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: msg
+        pattern: "STARTTLS=server, cert-subject=%{GREEDYDATA:tls_server_subject}, cert-issuer=%{GREEDYDATA:tls_server_issuer}, verifymsg=%{GREEDYDATA:event_reason}"
+    filter: "{{'STARTTLS=server' in parsed_event.message.msg}}"
+
+  - name: parse_full_url
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: msg
+        pattern: "FortiGuard-AntiSpam identified spam URL: %{GREEDYDATA:url_full}"
+    filter: "{{'FortiGuard-AntiSpam identified spam URL' in parsed_event.message.msg}}"
+
+  - name: parse_verify_msg
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: msg
+        pattern: "STARTTLS=client, cert-subject=%{GREEDYDATA:tls_client_subject}, cert-issuer=%{GREEDYDATA:tls_client_issuer}, verifymsg=%{GREEDYDATA:event_reason}"
+    filter: "{{'verifymsg=' in parsed_event.message.msg}}"
+
+  - name: parse_file_information
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: msg
+        pattern: '%{DATA:file_type} %{DATA:file_name}\s\(checksum: %{DATA:file_hash_sha256}\) has been scanned by FortiSandbox.( Scan result: rating=%{GREEDYDATA:tmp_event_status})?'
+    filter: "{{'has been scanned by FortiSandbox' in parsed_event.message.msg}}"
+
+  - name: parse_stat_message
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: msg
+        pattern: 'to=%{DATA:user_email}, (delay=%{DATA:tmp_delay}, )?(xdelay=%{DATA:tmp_xdelay}, )?(mailer=%{DATA:tmp_mailer}, )?(pri=%{NUMBER:tmp_priority_level_msg}, )?(relay=%{HOSTNAME:destination_domain} \[%{IP:_destination_ip}\], )?(dsn=%{DATA:tmp_dsn_version}, )?stat=%{GREEDYDATA:event_reason}'
+    filter: "{{parsed_event.message.get('type') == 'event' and parsed_event.message.get('msg') and 'stat=' in parsed_event.message.get('msg')}}"
+
+  - name: parse_webfilter_full_url
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.msg
+        output_field: msg
+        pattern: "FortiGuard-WebFilter identified URL: %{DATA:url_full}, category: %{DATA:tmp_spam_category}, id: %{GREEDYDATA:tmp_spam_id}."
+    filter: "{{parsed_event.message.get('msg') and 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg}}"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          action.outcome: "{{parsed_event.message.disposition}}"
+          destination.ip: "{{parsed_event.message.dst_ip}}"
+          action.outcome_reason: "{{parsed_event.message.msg}}"
+          event.category: "{{parsed_event.message.subtype}}"
+          event.kind: "{{parsed_event.message.type}}"
+          event.message: "{{parsed_event.message.msg}}"
+          http.request.bytes: "{{parsed_event.message.message_length}}"
+          log.level: "{{parsed_event.message.pri}}"
+          network.direction: "{{parsed_event.message.direction}}"
+          source.address: "{{parsed_event.message.client_name}}"
+          source.domain: "{{parsed_event.message.domain}}"
+          source.ip: "{{parsed_event.message.client_ip}}"
+      - set:
+          action.properties: >
+            [{
+              {% if 'device_id' in parsed_event.message %}'device_id': '{{parsed_event.message.device_id}}',{% endif %}
+              {% if 'resolved' in parsed_event.message %}'dns_resolution_attempt': '{{parsed_event.message.resolved}}',{% endif %}
+              {% if 'hfrom' in parsed_event.message %}'host_sender': '{{parsed_event.message.hfrom}}',{% endif %}
+              {% if 'log_id' in parsed_event.message %}'log_id': '{{parsed_event.message.log_id}}',{% endif %}
+              {% if 'mailer' in parsed_event.message %}'mailer': '{{parsed_event.message.mailer}}',{% endif %}
+              {% if 'polid' in parsed_event.message %}'policy_id': '{{parsed_event.message.polid}}',{% endif %}
+              {% if 'session_id' in parsed_event.message %}'session_id': '{{parsed_event.message.session_id}}',{% endif %}
+              {% if 'client_cc' in parsed_event.message %}'source_country': '{{parsed_event.message.client_cc}}',{% endif %}
+              {% if 'src_type' in parsed_event.message %}'src_type': '{{parsed_event.message.src_type}}',{% endif %}
+              {% if 'subject' in parsed_event.message %}'subject': '{{parsed_event.message.subject}}',{% endif %}
+              {% if 'virus' in parsed_event.message %}'virus': '{{parsed_event.message.virus}}',{% endif %}
+              {% if parsed_event.message.get('msg') and 'scanned by Antivirus Scanner' in parsed_event.message.get('msg') %}'event_status': '{{parsed_msg.file.event_status}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' %}'event_status': '{{parsed_event.message.status}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' %}'user_identifier': '{{parsed_event.message.ui}}',{% endif %}
+              {% if 'STARTTLS=server' in parsed_event.message.msg %}'start_tls': 'server',{% endif %}
+              {% if 'STARTTLS=client' in parsed_event.message.msg and 'verifymsg=' in parsed_event.message.msg %}'start_tls': 'client',{% endif %}
+              {% if 'has been scanned by FortiSandbox' in parsed_event.message.msg %}'event_status': '{{parse_file_information.msg.tmp_event_status}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'delay': '{{parse_stat_message.msg.tmp_delay}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'mailer': '{{parse_stat_message.msg.tmp_mailer}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'priority_level_msg': '{{parse_stat_message.msg.tmp_priority_level_msg}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'xdelay': '{{parse_stat_message.msg.tmp_xdelay}}',{% endif %}
+              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'dsn_version': '{{parse_stat_message.msg.tmp_dsn_version}}',{% endif %}
+              {% if 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg %}'spam_category': '{{parse_webfilter_full_url.msg.tmp_spam_category}}',{% endif %}
+              {% if 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg %}'spam_id': {{parse_webfilter_full_url.msg.tmp_spam_id}},{% endif %}
+            }]
+      - set:
+          event.action: "{{parsed_event.message.action}}"
+          user.name: "{{parsed_event.message.user}}"
+        filter: "{{parsed_event.message.get('type') == 'event'}}"
+      - set:
+          action.outcome_reason: "{{parsed_event.message.classifier}}"
+        filter: "{{parsed_event.message.get('type') == 'statistics'}}"
+      - set:
+          email.from.address: "{% if parsed_event.message.get('from') %}{{parsed_event.message.from}}{% endif %}"
+          email.to.address: "{% if parsed_event.message.get('to') %}{{parsed_event.message.to}}{% endif %}"
+        filter: "{{parsed_event.message.get('type') in ['statistics', 'spam', 'virus']}}"
+      - set:
+          file.size: "{{parsed_event.message.size}}"
+          network.protocol: "{{parsed_event.message.proto}}"
+          tls.cipher: "{{parsed_event.message.cipher}}"
+        filter: "{{'stat=' in parsed_event.message.get('msg')}}"
+      - set:
+          file.hash.sha256: "{{parsed_msg.file.hash}}"
+          file.name: "{{parsed_msg.file.name}}"
+          file.type: "{{parsed_msg.file.type | lower}}"
+        filter: "{{parsed_event.message.get('msg') and 'scanned by Antivirus Scanner' in parsed_event.message.get('msg')}}"
+      - set:
+          event.reason: "{{parse_starttls.msg.event_reason}}"
+          tls.server.issuer: "{{parse_starttls.msg.tls_server_issuer}}"
+          tls.server.subject: "{{parse_starttls.msg.tls_server_subject}}"
+        filter: "{{parsed_event.message.get('msg') and 'STARTTLS=server' in parsed_event.message.msg}}"
+      - set:
+          url.full: "{{parse_full_url.msg.url_full}}"
+        filter: "{{'FortiGuard-AntiSpam identified spam URL' in parsed_event.message.msg}}"
+      - set:
+          event.reason: "{{parse_verify_msg.msg.event_reason}}"
+          tls.client.issuer: "{{parse_verify_msg.msg.tls_client_issuer}}"
+          tls.client.subject: "{{parse_verify_msg.msg.tls_client_subject}}"
+        filter: "{{'verifymsg=' in parsed_event.message.msg}}"
+      - set:
+          file.hash.sha256: "{{parse_file_information.msg.file_hash_sha256}}"
+          file.name: "{{parse_file_information.msg.file_name}}"
+          file.type: "{{parse_file_information.msg.file_type | lower}}"
+        filter: "{{'has been scanned by FortiSandbox' in parsed_event.message.msg}}"
+      - set:
+          user.email: "{{parse_stat_message.msg.user_email}}"
+          user.name: "{{parse_stat_message.msg.mailer}}"
+          destination.domain: "{{parse_stat_message.msg.destination_domain}}"
+          destination.ip: "{{parse_stat_message.msg._destination_ip}}"
+          event.reason: "{{parse_stat_message.msg.event_reason}}"
+        filter: "{{parsed_event.message.get('type') == 'event' and parsed_event.message.get('msg') and 'stat=' in parsed_event.message.get('msg')}}"
+
+      - set:
+          url.full: "{{parse_webfilter_full_url.msg.url_full}}"
+        filter: "{{ parsed_event.message.get('msg') and 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg}}"
