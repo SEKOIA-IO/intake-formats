@@ -11,20 +11,20 @@ from pydantic import BaseModel
 
 class ExternalStageReference(BaseModel):
     name: str
-    properties: dict[str, Any] | None
+    properties: dict[str, Any] | None = None
 
 
 class StageReference(BaseModel):
 
-    id: str | None
+    id: str | None = None
     name: str
-    external: ExternalStageReference | None
-    filter: str | None
+    external: ExternalStageReference | None = None
+    filter: str | None = None
 
 
 class Action(BaseModel):
     name: str = "unknown"
-    filter: str | None
+    filter: str | None = None
 
 
 class SetAction(Action):
@@ -41,12 +41,12 @@ class TranslateAction(Action):
     name: str = "translate"
     dictionary: dict[Any, Any]
     mapping: dict[str, str]
-    fallback: Any | None
+    fallback: Any | None = None
 
 
 class Stage(BaseModel):
 
-    description: str | None
+    description: str | None = None
     actions: list[SetAction | DeleteAction | TranslateAction]
 
 
