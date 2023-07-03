@@ -98,6 +98,8 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
 
     parsed = manager.get_parsed_message(test_path)
 
+    print(test_path)
+
     # Make tests simpler to write by removing some default values
     merge_dict(testcase["expected"], constant_fields)
 
@@ -127,6 +129,10 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     # The most simple way is to encode to json string and decode it back :)
     expected_sorted = json.loads(json.dumps(expected, sort_keys=True, cls=JsonSorterEncoder))
     parsed_sorted = json.loads(json.dumps(parsed, sort_keys=True, cls=JsonSorterEncoder))
+    # if expected_sorted != parsed_sorted:
+    #     with open(test_fullpath) as outfile:
+            # testcase = json.load(f)
+            # json.dump(data, outfile, indent=2)
 
     assert parsed_sorted == expected_sorted
 
