@@ -1,0 +1,43 @@
+name: threat-visualizer
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.time}}"
+        output_field: datetime
+        format: timestamp
+  - name: parsed_date_mod
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.model.then.modified}}"
+        output_field: datetime
+        format: "%Y-%m-%d%H:%M:%S"
+  - name: set_common_fields
+  - name: set_custom_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.category: "network"
+          event.end: "{{parsed_date_mod.datetime}}"
+          event.kind: "event"
+          event.type: ["info"]
+      - set:
+          event.kind: "alert"
+        filter: "{{json_event.message.model.then.category == 'Critical'}}"
+      - set:
+          device.id: "{{json_event.message.device.did}}"
+          observer.name: "Darktrace"
+          observer.product: "Threat visualizer"
+
+  set_custom_fields:
+    actions:
+      - set:
+          darktrace.threat_visualizer: "{{json_event.message}}"
