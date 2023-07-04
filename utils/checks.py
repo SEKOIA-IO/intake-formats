@@ -29,7 +29,7 @@ class Action(BaseModel):
 
 class SetAction(Action):
     name: str = "set"
-    set: dict[str, str | bool | list[str]]
+    set: dict[str, str | list[str]]
 
 
 class DeleteAction(Action):
