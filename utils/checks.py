@@ -3,7 +3,7 @@
 
 import os
 import sys
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any
 
 import yaml
 from pydantic import BaseModel
@@ -11,65 +11,63 @@ from pydantic import BaseModel
 
 class ExternalStageReference(BaseModel):
     name: str
-    properties: Optional[Dict[str, Any]]
+    properties: dict[str, Any] | None = None
 
 
 class StageReference(BaseModel):
 
-    id: Optional[str]
+    id: str | None = None
     name: str
-    external: Optional[ExternalStageReference]
-    filter: Optional[str]
+    external: ExternalStageReference | None = None
+    filter: str | None = None
 
 
 class Action(BaseModel):
     name: str = "unknown"
-    filter: Optional[str]
+    filter: str | None = None
 
 
 class SetAction(Action):
     name: str = "set"
-    set: Dict[str, Union[str, List[str]]]
+    set: dict[str, str | list[str]]
 
 
 class DeleteAction(Action):
     name: str = "delete"
-    delete: List[str]
+    delete: list[str]
 
 
 class TranslateAction(Action):
     name: str = "translate"
-    dictionary: Dict[Any, Any]
-    mapping: Dict[str, str]
-    fallback: Optional[Any]
+    dictionary: dict[Any, Any]
+    mapping: dict[str, str]
+    fallback: Any | None = None
 
 
 class Stage(BaseModel):
-
-    description: Optional[str]
-    actions: List[Union[SetAction, DeleteAction, TranslateAction]]
+    description: str | None = None
+    actions: list[SetAction | DeleteAction | TranslateAction]
 
 
 class IntakeFormat(BaseModel):
-
     name: str
-    pipeline: List[StageReference]
-    stages: Dict[str, Stage]
+    pipeline: list[StageReference]
+    stages: dict[str, Stage]
 
 
 class CheckResult(BaseModel):
     name: str
     description: str
-    error: Optional[str] = None
-    warnings: List[str] = []
-    options: Dict[str, Any] = dict()
+    error: str | None = None
+    warnings: list[str] = []
+    options: dict[str, Any] = dict()
 
 
-def find_modules(root_path: str) -> Set[str]:
+def find_modules(root_path: str) -> set[str]:
     """
     Return the path to all the potential modules
     """
-    module_paths: Set[str] = set()
+    module_paths: set[str] = set()
 
     filtered_elements = {".git", ".github", "doc", "utils"}
 
@@ -140,10 +138,10 @@ def check_module(module_path: str) -> CheckResult:
     return result
 
 
-def check_module_uuids_and_slugs(check_module_results: List[CheckResult]):
+def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
 
     # module uuids are unique
-    module_uuids: Dict[str, str] = dict()
+    module_uuids: dict[str, str] = dict()
     for module_result in check_module_results:
         if (
             not module_result.error
@@ -159,7 +157,7 @@ def check_module_uuids_and_slugs(check_module_results: List[CheckResult]):
             ] = module_result.options.get("module_slug", "unknown")
 
     # module slugs are unique
-    module_slugs: Dict[str, str] = dict()
+    module_slugs: dict[str, str] = dict()
     for module_result in check_module_results:
         if (
             not module_result.error
@@ -175,10 +173,10 @@ def check_module_uuids_and_slugs(check_module_results: List[CheckResult]):
             ] = module_result.options.get("module_slug", "unknown")
 
 
-def check_format_uuids_and_slugs(check_format_results: List[CheckResult]):
+def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
 
     # format uuids are unique
-    format_uuids: Dict[str, str] = dict()
+    format_uuids: dict[str, str] = dict()
     for format_result in check_format_results:
         if (
             not format_result.error
@@ -194,7 +192,7 @@ def check_format_uuids_and_slugs(check_format_results: List[CheckResult]):
             ] = format_result.options.get("format_slug", "unknown")
 
     # format slugs are unique
-    format_slugs: Dict[str, str] = dict()
+    format_slugs: dict[str, str] = dict()
     for format_result in check_format_results:
         if (
             not format_result.error
@@ -210,11 +208,11 @@ def check_format_uuids_and_slugs(check_format_results: List[CheckResult]):
             ] = format_result.options.get("format_slug", "unknown")
 
 
-def find_formats(root_path: str) -> Set[str]:
+def find_formats(root_path: str) -> set[str]:
     """
     Return the path to all the potential formats
     """
-    format_paths: Set[str] = set()
+    format_paths: set[str] = set()
 
     filtered_elements = {"_meta"}
 
@@ -297,7 +295,7 @@ def check_format(format_path: str) -> CheckResult:
             with open(parser_file, "r") as fd:
                 parser = yaml.safe_load(fd)
 
-            IntakeFormat.parse_obj(parser)
+            IntakeFormat.model_validate(parser)
 
         except Exception as any_error:
             result.error = f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)"
@@ -305,7 +303,7 @@ def check_format(format_path: str) -> CheckResult:
     return result
 
 
-def check_module_formats(module_result: CheckResult) -> List[CheckResult]:
+def check_module_formats(module_result: CheckResult) -> list[CheckResult]:
 
     module_formats = find_formats(module_result.options["module_path"])
 
