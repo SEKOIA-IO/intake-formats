@@ -29,7 +29,7 @@ class Action(BaseModel):
 
 class SetAction(Action):
     name: str = "set"
-    set: dict[str, str | list[str]]
+    set: dict[str, str | bool | list[str]]
 
 
 class DeleteAction(Action):
@@ -45,13 +45,11 @@ class TranslateAction(Action):
 
 
 class Stage(BaseModel):
-
     description: str | None = None
     actions: list[SetAction | DeleteAction | TranslateAction]
 
 
 class IntakeFormat(BaseModel):
-
     name: str
     pipeline: list[StageReference]
     stages: dict[str, Stage]
@@ -143,7 +141,7 @@ def check_module(module_path: str) -> CheckResult:
 def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
 
     # module uuids are unique
-    module_uuids: Dict[str, str] = dict()
+    module_uuids: dict[str, str] = dict()
     for module_result in check_module_results:
         if (
             not module_result.error
@@ -297,7 +295,7 @@ def check_format(format_path: str) -> CheckResult:
             with open(parser_file, "r") as fd:
                 parser = yaml.safe_load(fd)
 
-            IntakeFormat.parse_obj(parser)
+            IntakeFormat.model_validate(parser)
 
         except Exception as any_error:
             result.error = f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)"
