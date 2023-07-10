@@ -59,20 +59,20 @@ class CustomFieldType(str, Enum):
     DICT = "dict"
     IP = "ip"
     NUMBER = "number"
-
     OBJECT = "object"
-    TEXT = "text"
-    KEYWORDS = "keywords"
-    DATE = "date"
-    STRING = "string"
-    LIST = "list"
-    GEO_POINT = "geo_point"
-    TRACKER = "tracker"
-    BOOL = "bool"
-    INTEGER = "integer"
-    SHORT = "short"
-    DATETIME = "datetime"
-    DATE_NANOS = "date_nanos"
+
+    #TEXT = "text"
+    #KEYWORDS = "keywords"
+    #DATE = "date"
+    #STRING = "string"
+    #LIST = "list"
+    #GEO_POINT = "geo_point"
+    #TRACKER = "tracker"
+    #BOOL = "bool"
+    #INTEGER = "integer"
+    #SHORT = "short"
+    #DATETIME = "datetime"
+    #DATE_NANOS = "date_nanos"
 
 
 class CustomField(BaseModel):
