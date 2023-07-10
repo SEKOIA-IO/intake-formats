@@ -366,10 +366,12 @@ def check_logo_image(result: CheckResult, image_path: str):
 
 
 def check_taxonomy_file(
-    taxonomy_file_path: str, result: CheckResult
+    taxonomy_file_path: str, result: CheckResult, for_module: bool = False
 ) -> tuple[CheckResult, dict[str, CustomField] | None]:
     if not os.path.isfile(taxonomy_file_path):
-        result.errors.append("No format taxonomy found. Please create _meta/fields.yml")
+        if not for_module:
+            result.errors.append("No format taxonomy found. Please create _meta/fields.yml")
+
         return result, None
 
     try:
