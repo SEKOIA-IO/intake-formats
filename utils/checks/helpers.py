@@ -1,5 +1,6 @@
 import functools
 import itertools
+import json
 import os.path
 import re
 from typing import Any
@@ -129,13 +130,15 @@ def check_event_category_or_type(field_var: str) -> bool:
         # can't properly check this, assume it's ok - will rely on checking test files instead
         return True
 
-    elif (
-        field_var.strip().startswith("[")
-        and field_var.strip().endswith("]")
-        and "{%" in field_var
-    ):
-        # the last condition is to assure that we won't allow array passed like a string (e.g. '["process"]'),
-        return True
+    else:
+        try:
+            field = json.loads(field_var)
+
+            if type(field) == list:
+                return True
+
+        except json.decoder.JSONDecodeError:
+            return False
 
     return False
 
