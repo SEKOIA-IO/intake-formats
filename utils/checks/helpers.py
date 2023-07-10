@@ -57,6 +57,7 @@ def find_tests(tests_path: str) -> set[str]:
 def check_format_parser(
     result: CheckResult,
     parser: IntakeFormat,
+    report_undeclared_fields: bool = True,
     format_taxonomy: dict[str, CustomField] | None = None,
     module_taxonomy: dict[str, CustomField] | None = None,
 ) -> CheckResult:
@@ -97,7 +98,7 @@ def check_format_parser(
             item for item in non_declared_fields if not item.startswith(f"{field}.")
         }
 
-    if len(non_declared_fields) > 0:
+    if len(non_declared_fields) > 0 and report_undeclared_fields:
         for field in non_declared_fields:
             result.errors.append(
                 f"Custom field `{field}` needs to be defined in _meta/fields.yml"
@@ -367,12 +368,16 @@ def check_logo_image(result: CheckResult, image_path: str):
 
 def check_taxonomy_file(
     taxonomy_file_path: str, result: CheckResult, for_module: bool = False
-) -> tuple[CheckResult, dict[str, CustomField] | None]:
+) -> tuple[CheckResult, dict[str, CustomField] | None, bool]:
+    exists_but_failed = False
+
     if not os.path.isfile(taxonomy_file_path):
         if not for_module:
-            result.errors.append("No format taxonomy found. Please create _meta/fields.yml")
+            result.errors.append(
+                "No format taxonomy found. Please create _meta/fields.yml"
+            )
 
-        return result, None
+        return result, None, exists_but_failed
 
     try:
         with open(taxonomy_file_path, "r") as fd:
@@ -385,6 +390,8 @@ def check_taxonomy_file(
 
     except Exception as any_error:
         result.errors.append(f"Taxonomy file cannot be loaded (`{any_error}`)")
-        return result, None
+        exists_but_failed = True
 
-    return result, taxonomy_content
+        return result, None, exists_but_failed
+
+    return result, taxonomy_content, exists_but_failed

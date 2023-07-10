@@ -34,7 +34,11 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
     result = check_logo_image(result=result, image_path=format_logo_file)
 
     taxonomy_file = os.path.join(format_meta_dir, "fields.yml")
-    result, taxonomy_content = check_taxonomy_file(taxonomy_file, result)
+    result, taxonomy_content, taxonomy_exists_but_failed = check_taxonomy_file(
+        taxonomy_file_path=taxonomy_file,
+        result=result,
+        for_module=False
+    )
 
     # if format has a parser file, check its definition
     parser_file = os.path.join(format_path, "ingest", "parser.yml")
@@ -57,6 +61,8 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
     result = check_format_parser(
         result,
         parser=parser_content,
+        # Don't report undeclared fields for an incorrect taxonomy
+        report_undeclared_fields=not taxonomy_exists_but_failed,
         format_taxonomy=taxonomy_content,
         module_taxonomy=module_result.options.get("module_taxonomy"),
     )

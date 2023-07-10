@@ -30,7 +30,9 @@ def check_module(module_path: str) -> CheckResult:
 
     # check module taxonomy, if exist
     taxonomy_file = os.path.join(module_meta_dir, "fields.yml")
-    result, taxonomy_content = check_taxonomy_file(taxonomy_file, result, for_module=True)
+    result, taxonomy_content, _ = check_taxonomy_file(
+        taxonomy_file_path=taxonomy_file, result=result, for_module=True
+    )
     result.options["module_taxonomy"] = taxonomy_content
 
     logo_path = os.path.join(module_meta_dir, "logo.png")
