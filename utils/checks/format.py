@@ -130,13 +130,12 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
                 )
 
         except Exception as any_error:
-            print(any_error.with_traceback())
             result.errors.append(
                 f"test {test_path} exists, but cannot be loaded (`{any_error}`)"
             )
 
     # Check smart descriptions
-    smart_desc_file = os.path.join(format_meta_dir, "smart_descriptions.json")
+    smart_desc_file = os.path.join(format_meta_dir, "smart-descriptions.json")
     if not os.path.isfile(smart_desc_file):
         result.errors.append(f"smart-descriptions.json does not exist")
 
