@@ -382,6 +382,10 @@ def check_taxonomy_file(
 
         return result, None, exists_but_failed
 
+    if os.path.getsize(taxonomy_file_path) == 0:
+        # File is empty
+        return result, None, exists_but_failed
+
     try:
         with open(taxonomy_file_path, "r") as fd:
             taxonomy = yaml.safe_load(fd)

@@ -140,7 +140,7 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
     if not os.path.isfile(smart_desc_file):
         result.errors.append(f"smart-descriptions.json does not exist")
 
-    else:
+    elif os.path.getsize(smart_desc_file) > 0:
         try:
             with open(parser_file, "r") as fd:
                 smart_desc = json.load(fd)
