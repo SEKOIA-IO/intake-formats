@@ -61,18 +61,18 @@ class CustomFieldType(str, Enum):
     NUMBER = "number"
     OBJECT = "object"
 
-    # TEXT = "text"
-    # KEYWORDS = "keywords"
-    # DATE = "date"
-    # STRING = "string"
-    # LIST = "list"
-    # GEO_POINT = "geo_point"
-    # TRACKER = "tracker"
-    # BOOL = "bool"
-    # INTEGER = "integer"
-    # SHORT = "short"
-    # DATETIME = "datetime"
-    # DATE_NANOS = "date_nanos"
+    TEXT = "text"
+    KEYWORDS = "keywords"
+    DATE = "date"
+    STRING = "string"
+    LIST = "list"
+    GEO_POINT = "geo_point"
+    TRACKER = "tracker"
+    BOOL = "bool"
+    INTEGER = "integer"
+    SHORT = "short"
+    DATETIME = "datetime"
+    DATE_NANOS = "date_nanos"
 
 
 class CustomField(BaseModel):
@@ -84,7 +84,7 @@ class CustomField(BaseModel):
 
 class SmartDescriptionCondition(BaseModel):
     field: str
-    value: str | None
+    value: str | int | bool | None = None
 
 
 class SmartDescriptionRelationship(BaseModel):
@@ -95,7 +95,7 @@ class SmartDescriptionRelationship(BaseModel):
 
 class SmartDescription(BaseModel):
     value: str
-    relationships: list[SmartDescriptionRelationship] | None
+    relationships: list[SmartDescriptionRelationship] | None = None
     conditions: list[SmartDescriptionCondition]
 
 
