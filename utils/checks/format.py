@@ -141,7 +141,7 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
 
     elif os.path.getsize(smart_desc_file) > 0:
         try:
-            with open(parser_file, "r") as fd:
+            with open(smart_desc_file, "r") as fd:
                 smart_desc = json.load(fd)
 
             smart_descriptions_content = [
