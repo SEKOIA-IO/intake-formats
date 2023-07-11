@@ -117,7 +117,7 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
 
     expected = testcase["expected"]
 
-    if True: #request.config.getoption("fix_expectations") and parsed != expected:
+    if request.config.getoption("fix_expectations") and parsed != expected:
         testcase["expected"] = build_fixed_expectation(parsed)
 
         with open(test_fullpath, "w") as out:
