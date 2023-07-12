@@ -35,9 +35,7 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
 
     taxonomy_file = os.path.join(format_meta_dir, "fields.yml")
     result, taxonomy_content, taxonomy_exists_but_failed = check_taxonomy_file(
-        taxonomy_file_path=taxonomy_file,
-        result=result,
-        for_module=False
+        taxonomy_file_path=taxonomy_file, result=result, for_module=False
     )
 
     # if format has a parser file, check its definition

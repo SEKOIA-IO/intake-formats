@@ -11,11 +11,11 @@ from constants import (CheckResult, CustomField, DeleteAction, IntakeFormat,
                        SetAction, TranslateAction)
 
 
-def find_modules(root_path: str) -> set[str]:
+def find_modules(root_path: str) -> list[str]:
     """
     Return the path to all the potential modules
     """
-    module_paths: set[str] = set()
+    module_paths: list[str] = []
 
     filtered_elements = {".git", ".github", "doc", "utils", ".idea"}
 
@@ -23,16 +23,16 @@ def find_modules(root_path: str) -> set[str]:
         if element not in filtered_elements:
             element_path = os.path.join(root_path, element)
             if os.path.isdir(element_path):
-                module_paths.add(element_path)
+                module_paths.append(element_path)
 
-    return module_paths
+    return sorted(module_paths)
 
 
-def find_formats(root_path: str) -> set[str]:
+def find_formats(root_path: str) -> list[str]:
     """
     Return the path to all the potential formats
     """
-    format_paths: set[str] = set()
+    format_paths: list[str] = list()
 
     filtered_elements = {"_meta"}
 
@@ -40,9 +40,9 @@ def find_formats(root_path: str) -> set[str]:
         if element not in filtered_elements:
             element_path = os.path.join(root_path, element)
             if os.path.isdir(element_path):
-                format_paths.add(element_path)
+                format_paths.append(element_path)
 
-    return format_paths
+    return sorted(format_paths)
 
 
 def find_tests(tests_path: str) -> set[str]:
