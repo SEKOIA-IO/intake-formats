@@ -59,6 +59,7 @@ def check_format_parser(
     result: CheckResult,
     parser: IntakeFormat,
     report_undeclared_fields: bool = True,
+    ignore_event_fieldset_errors: bool = False,
     format_taxonomy: dict[str, CustomField] | None = None,
     module_taxonomy: dict[str, CustomField] | None = None,
 ) -> CheckResult:
@@ -106,18 +107,19 @@ def check_format_parser(
             )
 
     # Check whether event.type event.kind event.categories are set
-    required_fields = {"event.type", "event.kind", "event.category"}
-    for field in required_fields:
-        if field not in used_fields:
-            result.errors.append(f"Required field `{field}` was not set")
+    if not ignore_event_fieldset_errors:
+        required_fields = {"event.type", "event.kind", "event.category"}
+        for field in required_fields:
+            if field not in used_fields:
+                result.errors.append(f"Required field `{field}` was not set")
 
-    if "event.category" in field_assignments:
-        if not check_event_category_or_type(field_assignments["event.category"]):
-            result.errors.append(f"event.category is not a list")
+        if "event.category" in field_assignments:
+            if not check_event_category_or_type(field_assignments["event.category"]):
+                result.errors.append(f"event.category is not a list")
 
-    if "event.type" in field_assignments:
-        if not check_event_category_or_type(field_assignments["event.type"]):
-            result.errors.append(f"event.type is not a list")
+        if "event.type" in field_assignments:
+            if not check_event_category_or_type(field_assignments["event.type"]):
+                result.errors.append(f"event.type is not a list")
 
     return result
 

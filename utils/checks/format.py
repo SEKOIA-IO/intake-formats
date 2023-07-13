@@ -10,7 +10,13 @@ from helpers import (check_event_category_to_type_mapping, check_format_parser,
                      find_tests)
 
 
-def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
+def check_format(
+    format_path: str,
+    module_result: CheckResult,
+    ignore_missing_parsers: bool,
+    ignore_event_fieldset_errors: bool,
+    ignore_missing_tests: bool,
+) -> CheckResult:
     result = CheckResult(
         name=f"check_format_{format_path}",
         description="Checks the format has a proper definition",
@@ -39,121 +45,116 @@ def check_format(format_path: str, module_result: CheckResult) -> CheckResult:
     )
 
     # if format has a parser file, check its definition
-    parser_file = os.path.join(format_path, "ingest", "parser.yml")
-    if not os.path.isfile(parser_file):
-        result.errors.append(f"Parser file does not exist")
-        return result
+    if not ignore_missing_parsers:
+        parser_file = os.path.join(format_path, "ingest", "parser.yml")
+        if not os.path.isfile(parser_file):
+            result.errors.append(f"Parser file does not exist")
+            return result
 
-    try:
-        with open(parser_file, "r") as fd:
-            parser = yaml.safe_load(fd)
+        try:
+            with open(parser_file, "r") as fd:
+                parser = yaml.safe_load(fd)
 
-        parser_content = IntakeFormat.model_validate(parser)
+            parser_content = IntakeFormat.model_validate(parser)
 
-    except Exception as any_error:
-        result.errors.append(
-            f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)"
+        except Exception as any_error:
+            result.errors.append(
+                f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)"
+            )
+            return result
+
+        result = check_format_parser(
+            result,
+            parser=parser_content,
+            # Don't report undeclared fields for an incorrect taxonomy
+            report_undeclared_fields=not taxonomy_exists_but_failed,
+            ignore_event_fieldset_errors=ignore_event_fieldset_errors,
+            format_taxonomy=taxonomy_content,
+            module_taxonomy=module_result.options.get("module_taxonomy"),
         )
-        return result
 
-    result = check_format_parser(
-        result,
-        parser=parser_content,
-        # Don't report undeclared fields for an incorrect taxonomy
-        report_undeclared_fields=not taxonomy_exists_but_failed,
-        format_taxonomy=taxonomy_content,
-        module_taxonomy=module_result.options.get("module_taxonomy"),
-    )
+    if not ignore_missing_tests:
+        test_folder = os.path.join(format_path, "tests")
+        if not os.path.exists(test_folder):
+            result.errors.append("tests folder does not exist")
+            return result
 
-    # move to a separate function
-    test_folder = os.path.join(format_path, "tests")
-    if not os.path.exists(test_folder):
-        result.errors.append("tests folder does not exist")
-        return result
+        test_paths = find_tests(test_folder)
+        if len(test_paths) == 0:
+            result.errors.append("no test found")
+            return result
 
-    test_paths = find_tests(test_folder)
-    if len(test_paths) == 0:
-        result.errors.append("no test found")
-        return result
-
-    for test_path in test_paths:
-        try:
-            with open(test_path, "rt") as file:
-                test_content = json.load(file)
-
-            test_parsed = TestFile.model_validate(test_content)
-
-            test_time_stamp = test_parsed.expected.get("@timestamp")
-            re_rfc3339 = re.compile(
-                r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$"
-            )
-
-            if test_time_stamp and not re.match(re_rfc3339, test_time_stamp):
-                result.errors.append(f"Incorrect @timestamp in the test {test_path}")
-
-            if "event" in test_parsed.expected:
-                event = test_parsed.expected["event"]
-
-                event_type_readable = False
-                event_category_readable = False
-
-                if "type" in event:
-                    if type(event["type"]) != list:
-                        result.errors.append(
-                            f"event.type is not a list in a test {test_path}"
-                        )
-                    else:
-                        event_type_readable = True
-
-                if "category" in event:
-                    if type(event["category"]) != list:
-                        result.errors.append(
-                            f"event.category is not a list in test {test_path}"
-                        )
-                    else:
-                        event_category_readable = True
-
-                if event_type_readable and event_category_readable:
-                    check_mapping = check_event_category_to_type_mapping(
-                        event_categories=event["category"], event_types=event["type"]
-                    )
-                    if not check_mapping:
-                        result.errors.append(
-                            f"`event.type` does not match the type associated to the `event.category` in {test_path}"
-                        )
-
-            else:
-                result.errors.append(
-                    f"No event.category and event.type declared as `expected` in {test_path}"
-                )
-
-        except Exception as any_error:
-            result.errors.append(
-                f"test {test_path} exists, but cannot be loaded (`{any_error}`)"
-            )
-
-    # Check smart descriptions
-    smart_desc_file = os.path.join(format_meta_dir, "smart-descriptions.json")
-    if not os.path.isfile(smart_desc_file):
-        result.errors.append(f"smart-descriptions.json does not exist")
-
-    elif os.path.getsize(smart_desc_file) > 0:
-        try:
-            with open(smart_desc_file, "r") as fd:
-                smart_desc = json.load(fd)
-
-            smart_descriptions_content = [
-                SmartDescription(**item) for item in smart_desc
-            ]
-
-        except Exception as any_error:
-            result.errors.append(
-                f"smart-descriptions.json exists, but cannot be loaded (`{any_error}`)"
+        for test_path in test_paths:
+            check_test_file(
+                test_path=test_path,
+                ignore_event_fieldset_errors=ignore_event_fieldset_errors,
+                result=result,
             )
 
     # Check if CHANGELOG.md exists
     changelog_path = os.path.join(format_path, "CHANGELOG.md")
     if not os.path.isfile(changelog_path):
         result.errors.append("CHANGELOG.md does not exist")
+
+    return result
+
+
+def check_test_file(
+    test_path: str, ignore_event_fieldset_errors: bool, result: CheckResult
+) -> CheckResult:
+    try:
+        with open(test_path, "rt") as file:
+            test_content = json.load(file)
+
+        test_parsed = TestFile.model_validate(test_content)
+
+        test_time_stamp = test_parsed.expected.get("@timestamp")
+        re_rfc3339 = re.compile(
+            r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$"
+        )
+
+        if test_time_stamp and not re.match(re_rfc3339, test_time_stamp):
+            result.errors.append(f"Incorrect @timestamp in the test {test_path}")
+
+        if "event" in test_parsed.expected and not ignore_event_fieldset_errors:
+            event = test_parsed.expected["event"]
+
+            event_type_readable = False
+            event_category_readable = False
+
+            if "type" in event:
+                if type(event["type"]) != list:
+                    result.errors.append(
+                        f"event.type is not a list in a test {test_path}"
+                    )
+                else:
+                    event_type_readable = True
+
+            if "category" in event:
+                if type(event["category"]) != list:
+                    result.errors.append(
+                        f"event.category is not a list in test {test_path}"
+                    )
+                else:
+                    event_category_readable = True
+
+            if event_type_readable and event_category_readable:
+                check_mapping = check_event_category_to_type_mapping(
+                    event_categories=event["category"], event_types=event["type"]
+                )
+                if not check_mapping:
+                    result.errors.append(
+                        f"`event.type` does not match the type associated to the `event.category` in {test_path}"
+                    )
+
+        elif not ignore_event_fieldset_errors:
+            result.errors.append(
+                f"No event.category and event.type declared as `expected` in {test_path}"
+            )
+
+    except Exception as any_error:
+        result.errors.append(
+            f"test {test_path} exists, but cannot be loaded (`{any_error}`)"
+        )
 
     return result

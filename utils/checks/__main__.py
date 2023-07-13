@@ -1,3 +1,4 @@
+import argparse
 import sys
 
 from constants import CheckResult
@@ -6,11 +7,16 @@ from helpers import find_formats, find_modules
 from module import check_module
 
 
-def check_module_formats(module_result: CheckResult) -> list[CheckResult]:
+def check_module_formats(module_result: CheckResult, **kwargs) -> list[CheckResult]:
     module_formats = find_formats(module_result.options["module_path"])
 
     check_module_formats = [
-        check_format(module_format, module_result) for module_format in module_formats
+        check_format(
+            format_path=module_format,
+            module_result=module_result,
+            **kwargs,
+        )
+        for module_format in module_formats
     ]
 
     return check_module_formats
@@ -89,6 +95,24 @@ def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Check formats")
+    parser.add_argument(
+        "--ignore_missing_parsers",
+        action="store_true",
+        help="ignore missing parser.yml",
+    )
+    parser.add_argument(
+        "--ignore_event_fieldset_errors",
+        action="store_true",
+        help="Ignore missing or incorrect event.type and event.category in parser and tests",
+    )
+    parser.add_argument(
+        "--ignore_missing_tests",
+        action="store_true",
+        help="ignore missing tests folder",
+    )
+    args = parser.parse_args()
+
     modules = find_modules(".")
 
     in_error = False
@@ -106,7 +130,14 @@ def main():
 
     check_format_results = []
     for check_module_result in check_module_results:
-        check_format_results.extend(check_module_formats(check_module_result))
+        check_format_results.extend(
+            check_module_formats(
+                check_module_result,
+                ignore_missing_parsers=args.ignore_missing_parsers,
+                ignore_event_fieldset_errors=args.ignore_event_fieldset_errors,
+                ignore_missing_tests=args.ignore_missing_tests,
+            )
+        )
 
     check_format_uuids_and_slugs(check_format_results)
 
