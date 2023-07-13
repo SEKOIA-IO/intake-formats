@@ -13,5 +13,5 @@ if __name__ == "__main__":
     next(reader)  # ignore the header
 
     field_names = [line[3] for line in reader]
-    with open("data/built_in_fields.txt", "wt") as file:
+    with open("validators/data/built_in_fields.txt", "wt") as file:
         file.write("\n".join(field_names))

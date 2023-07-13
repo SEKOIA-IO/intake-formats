@@ -1,25 +1,66 @@
 import argparse
+import os
 import sys
 
-from constants import CheckResult
-from format import check_format
-from helpers import find_formats, find_modules
-from module import check_module
+from validators.constants import CheckResult
+from validators.format import FormatValidator
+from validators.module import ModuleValidator
 
 
-def check_module_formats(module_result: CheckResult, **kwargs) -> list[CheckResult]:
-    module_formats = find_formats(module_result.options["module_path"])
+def find_modules(root_path: str) -> list[str]:
+    """
+    Return the path to all the potential modules
+    """
+    module_paths: list[str] = []
 
-    check_module_formats = [
-        check_format(
-            format_path=module_format,
-            module_result=module_result,
-            **kwargs,
-        )
+    filtered_elements = {".git", ".github", "doc", "utils", ".idea"}
+
+    for element in os.listdir(root_path):
+        if element not in filtered_elements:
+            element_path = os.path.join(root_path, element)
+            if os.path.isdir(element_path):
+                module_paths.append(element_path)
+
+    return sorted(module_paths)
+
+
+def find_formats(root_path: str) -> list[str]:
+    """
+    Return the path to all the potential formats
+    """
+    format_paths: list[str] = list()
+
+    filtered_elements = {"_meta"}
+
+    for element in os.listdir(root_path):
+        if element not in filtered_elements:
+            element_path = os.path.join(root_path, element)
+            if os.path.isdir(element_path):
+                format_paths.append(element_path)
+
+    return sorted(format_paths)
+
+
+def check_format(
+    path: str, module_result: CheckResult, args: argparse.Namespace
+) -> CheckResult:
+    valid = FormatValidator(path=path, module_result=module_result, args=args)
+    valid.validate()
+
+    return valid.result
+
+
+def check_module_formats(
+    module_result: CheckResult, args: argparse.Namespace
+) -> list[CheckResult]:
+    module_formats = find_formats(module_result.options["path"])
+
+    result = [
+        check_format(path=module_format, module_result=module_result, args=args)
         for module_format in module_formats
     ]
 
-    return check_module_formats
+    return result
 
 
 def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
@@ -28,34 +69,34 @@ def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
     for module_result in check_module_results:
         if (
             len(module_result.errors) == 0
-            and "module_slug" in module_result.options
-            and module_result.options["module_uuid"] in module_uuids
+            and "manifest_slug" in module_result.options
+            and module_result.options["manifest_uuid"] in module_uuids
         ):
             module_result.errors.append(
-                f"module have the same uuid ({module_result.options['module_uuid']}) "
-                f"than module {module_uuids[module_result.options['module_uuid']]}"
+                f"module have the same uuid ({module_result.options['manifest_uuid']}) "
+                f"than module {module_uuids[module_result.options['manifest_uuid']]}"
             )
 
             module_uuids[
-                module_result.options["module_uuid"]
-            ] = module_result.options.get("module_slug", "unknown")
+                module_result.options["manifest_uuid"]
+            ] = module_result.options.get("manifest_slug", "unknown")
 
     # module slugs are unique
     module_slugs: dict[str, str] = dict()
     for module_result in check_module_results:
         if (
             len(module_result.errors) == 0
-            and "module_slug" in module_result.options
-            and module_result.options["module_slug"] in module_slugs
+            and "manifest_slug" in module_result.options
+            and module_result.options["manifest_slug"] in module_slugs
         ):
             module_result.errors.append(
-                f"module have the same slug ({module_result.options['module_slug']}) "
-                f"than module {module_slugs[module_result.options['module_slug']]}"
+                f"module have the same slug ({module_result.options['manifest_slug']}) "
+                f"than module {module_slugs[module_result.options['manifest_slug']]}"
             )
 
             module_slugs[
-                module_result.options["module_slug"]
-            ] = module_result.options.get("module_slug", "unknown")
+                module_result.options["manifest_slug"]
+            ] = module_result.options.get("manifest_slug", "unknown")
 
 
 def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
@@ -64,34 +105,41 @@ def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
     for format_result in check_format_results:
         if (
             len(format_result.errors) == 0
-            and "format_uuid" in format_result.options
-            and format_result.options["format_uuid"] in format_uuids
+            and "manifest_uuid" in format_result.options
+            and format_result.options["manifest_uuid"] in format_uuids
         ):
             format_result.errors.append(
-                f"format have the same uuid ({format_result.options['format_uuid']}) "
-                f"than format {format_uuids[format_result.options['format_uuid']]}"
+                f"format have the same uuid ({format_result.options['manifest_uuid']}) "
+                f"than format {format_uuids[format_result.options['manifest_uuid']]}"
             )
 
             format_uuids[
                 format_result.options["format_uuid"]
-            ] = format_result.options.get("format_slug", "unknown")
+            ] = format_result.options.get("manifest_slug", "unknown")
 
     # format slugs are unique
     format_slugs: dict[str, str] = dict()
     for format_result in check_format_results:
         if (
             len(format_result.errors) == 0
-            and "format_slug" in format_result.options
-            and format_result.options["format_slug"] in format_slugs
+            and "manifest_slug" in format_result.options
+            and format_result.options["manifest_slug"] in format_slugs
         ):
             format_result.errors.append(
-                f"format have the same slug ({format_result.options['format_slug']}) "
-                f"than format {format_slugs[format_result.options['format_slug']]}"
+                f"format have the same slug ({format_result.options['manifest_slug']}) "
+                f"than format {format_slugs[format_result.options['manifest_slug']]}"
             )
 
             format_slugs[
-                format_result.options["format_slug"]
-            ] = format_result.options.get("format_slug", "unknown")
+                format_result.options["manifest_slug"]
+            ] = format_result.options.get("manifest_slug", "unknown")
+
+
+def check_module(path: str, args: argparse.Namespace) -> CheckResult:
+    valid = ModuleValidator(path, args)
+    valid.validate()
+
+    return valid.result
 
 
 def main():
@@ -114,38 +162,31 @@ def main():
     args = parser.parse_args()
 
     modules = find_modules(".")
-
     in_error = False
 
-    check_module_results = [check_module(module) for module in modules]
+    check_module_results = [check_module(module, args) for module in modules]
     check_module_uuids_and_slugs(check_module_results)
+    # @todo check slugs and uuid's
 
     print(f"🔎 {len(check_module_results)} modules found")
     for res in check_module_results:
         if len(res.errors) > 0:
             in_error = True
-            module_path = res.options.get("module_path")
+            module_name = os.path.basename(res.options.get("path"))
             for error in res.errors:
-                print(f"Module: {module_path} Error: {error}")
+                print(f"Module: {module_name} Error: {error}")
 
     check_format_results = []
     for check_module_result in check_module_results:
-        check_format_results.extend(
-            check_module_formats(
-                check_module_result,
-                ignore_missing_parsers=args.ignore_missing_parsers,
-                ignore_event_fieldset_errors=args.ignore_event_fieldset_errors,
-                ignore_missing_tests=args.ignore_missing_tests,
-            )
-        )
-
+        check_format_results.extend(check_module_formats(check_module_result, args))
     check_format_uuids_and_slugs(check_format_results)
 
+    # @todo check slugs and uuids
     print(f"🔎 {len(check_format_results)} formats found")
     for res in check_format_results:
         if len(res.errors) > 0:
             in_error = True
-            format_path = res.options.get("format_path")
+            format_path = res.options.get("path")
             for error in res.errors:
                 print(f"Format: {format_path} Error: {error}")
 

@@ -1,58 +1,53 @@
+import argparse
 import functools
 import itertools
 import json
-import os.path
-import re
+import os
 from typing import Any
 
 import yaml
 
-from constants import (CheckResult, CustomField, DeleteAction, IntakeFormat,
-                       SetAction, TranslateAction)
+from . import Validator
+from .constants import (CheckResult, CustomField, DeleteAction, IntakeFormat,
+                        SetAction, TranslateAction)
 
 
-def find_modules(root_path: str) -> list[str]:
-    """
-    Return the path to all the potential modules
-    """
-    module_paths: list[str] = []
+class ParserValidator(Validator):
+    @classmethod
+    def validate(cls, result: CheckResult, args: argparse.Namespace) -> None:
+        format_path = result.options["path"]
+        parser_file = os.path.join(format_path, "ingest", "parser.yml")
+        if not os.path.exists(parser_file):
+            if not args.ignore_missing_parsers:
+                result.errors.append(f"Parser file does not exist")
 
-    filtered_elements = {".git", ".github", "doc", "utils", ".idea"}
+            return
 
-    for element in os.listdir(root_path):
-        if element not in filtered_elements:
-            element_path = os.path.join(root_path, element)
-            if os.path.isdir(element_path):
-                module_paths.append(element_path)
+        try:
+            with open(parser_file, "r") as fd:
+                parser = yaml.safe_load(fd)
 
-    return sorted(module_paths)
+            parser_content = IntakeFormat.model_validate(parser)
 
+        except Exception as any_error:
+            result.errors.append(
+                f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)"
+            )
+            return
 
-def find_formats(root_path: str) -> list[str]:
-    """
-    Return the path to all the potential formats
-    """
-    format_paths: list[str] = list()
+        module_result = result.options["module_result"]
+        taxonomy_exists_but_failed = result.options["taxonomy_exists_but_failed"]
+        taxonomy_content = result.options["taxonomy"]
 
-    filtered_elements = {"_meta"}
-
-    for element in os.listdir(root_path):
-        if element not in filtered_elements:
-            element_path = os.path.join(root_path, element)
-            if os.path.isdir(element_path):
-                format_paths.append(element_path)
-
-    return sorted(format_paths)
-
-
-def find_tests(tests_path: str) -> set[str]:
-    result: set[str] = set()
-
-    for element in os.listdir(tests_path):
-        if element.endswith(".json"):
-            result.add(os.path.join(tests_path, element))
-
-    return result
+        check_format_parser(
+            result,
+            parser=parser_content,
+            # Don't report undeclared fields for an incorrect taxonomy
+            report_undeclared_fields=not taxonomy_exists_but_failed,
+            ignore_event_fieldset_errors=args.ignore_event_fieldset_errors,
+            format_taxonomy=taxonomy_content,
+            module_taxonomy=module_result.options.get("taxonomy"),
+        )
 
 
 def check_format_parser(
@@ -215,10 +210,16 @@ def check_event_category_to_type_mapping(
 
 @functools.cache
 def get_builtin_fields() -> set[str]:
-    with open("utils/checks/data/built_in_fields.txt", "rt") as f:
+    with open(
+        "utils/checks/validators/data/built_in_fields.txt",
+        "rt",
+    ) as f:
         builtin_fields = f.read().split("\n")
 
-    with open("utils/checks/data/sekoiaio_flat.yml", "rt") as f:
+    with open(
+        "utils/checks/validators/data/sekoiaio_flat.yml",
+        "rt",
+    ) as f:
         sekoia_flat = yaml.safe_load(f)
         sekoia_fields = set(sekoia_flat.keys())
 
@@ -284,123 +285,3 @@ def expand_fields(fields: set[str]):
             result.add(".".join(parts[:i]))
 
     return result
-
-
-def check_manifest(manifest_file_path: str, result: CheckResult) -> CheckResult:
-    if not os.path.isfile(manifest_file_path):
-        result.errors.append(f"manifest file (`{manifest_file_path}`) is missing")
-        return result
-
-    # check the format has a valid manifest
-    try:
-        with open(manifest_file_path, "r") as fd:
-            manifest_content = yaml.safe_load(fd)
-
-    except Exception as any_error:
-        result.errors.append(f"manifest file cannot be loaded (`{any_error}`)")
-        return result
-
-    # check format has a uuid
-    format_uuid = manifest_content.get("uuid")
-    if not format_uuid:
-        result.errors.append("no uuid found in the manifest file")
-
-    else:
-        result.options["format_uuid"] = format_uuid
-
-    # check format has a name
-    format_name = manifest_content.get("name")
-    if not format_name:
-        result.errors.append("no name found in the manifest file")
-
-    else:
-        result.options["format_name"] = format_name
-
-    # check format has a slug
-    format_slug = manifest_content.get("slug")
-    if not format_slug:
-        result.errors.append("no slug found in the manifest file")
-
-    elif not re.match(r"^[a-z]([a-z]|-|\d)*$", format_slug):
-        result.errors.append("incorrect slug in the manifest file")
-
-    else:
-        result.options["format_slug"] = format_slug
-
-    return result
-
-
-def check_logo_image(result: CheckResult, image_path: str):
-    from PIL import Image
-
-    def has_transparency(img: Image):
-        if img.info.get("transparency", None) is not None:
-            return True
-
-        elif img.mode == "P":
-            transparent = img.info.get("transparency", -1)
-            for _, index in img.getcolors():
-                if index == transparent:
-                    return True
-
-        elif img.mode == "RGBA":
-            extrema = img.getextrema()
-            if extrema[3][0] < 255:
-                return True
-
-        return False
-
-    if not os.path.isfile(image_path):
-        result.errors.append(f"Logofile (`{image_path}`) is missing")
-        return result
-
-    image = Image.open(image_path)
-    if image.format != "PNG":
-        result.errors.append("Logo is not in PNG format")
-
-    if image.width != image.height:
-        result.errors.append(f"Logo is not square - {image.width}x{image.height}px")
-
-    if not has_transparency(image):
-        result.errors.append("Logo background is not transparent")
-
-    if os.path.getsize(image_path) > 50 * 1024:
-        result.errors.append("Logo file weights more than 50 KiB")
-
-    image.close()
-    return result
-
-
-def check_taxonomy_file(
-    taxonomy_file_path: str, result: CheckResult, for_module: bool = False
-) -> tuple[CheckResult, dict[str, CustomField] | None, bool]:
-    exists_but_failed = False
-
-    if not os.path.isfile(taxonomy_file_path):
-        if not for_module:
-            result.errors.append(
-                "No format taxonomy found. Please create _meta/fields.yml"
-            )
-
-        return result, None, exists_but_failed
-
-    if os.path.getsize(taxonomy_file_path) == 0:
-        # File is empty
-        return result, None, exists_but_failed
-
-    try:
-        with open(taxonomy_file_path, "r") as fd:
-            taxonomy = yaml.safe_load(fd)
-
-        taxonomy_content = {
-            item_key: CustomField(**item_value)
-            for item_key, item_value in taxonomy.items()
-        }
-
-    except Exception as any_error:
-        result.errors.append(f"Taxonomy file cannot be loaded (`{any_error}`)")
-        exists_but_failed = True
-
-        return result, None, exists_but_failed
-
-    return result, taxonomy_content, exists_but_failed
