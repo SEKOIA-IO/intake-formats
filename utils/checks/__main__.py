@@ -166,7 +166,6 @@ def main():
 
     check_module_results = [check_module(module, args) for module in modules]
     check_module_uuids_and_slugs(check_module_results)
-    # @todo check slugs and uuid's
 
     print(f"🔎 {len(check_module_results)} modules found")
     for res in check_module_results:
@@ -181,7 +180,6 @@ def main():
         check_format_results.extend(check_module_formats(check_module_result, args))
     check_format_uuids_and_slugs(check_format_results)
 
-    # @todo check slugs and uuids
     print(f"🔎 {len(check_format_results)} formats found")
     for res in check_format_results:
         if len(res.errors) > 0:
