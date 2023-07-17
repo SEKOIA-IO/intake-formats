@@ -32,8 +32,15 @@ pipeline:
   - name: set_common_fields
   - name: set_dns_fields
   - name: set_registry_fields
+  - name: set_os_fields
 
 stages:
+  set_os_fields:
+    actions:
+      - set:
+          "host.os.platform": "{{parsed_event.message.event_platform | lower}}"
+        filter: '{{parsed_event.message.get("event_platform") != None}}'
+
   set_registry_fields:
     actions:
       - set:
@@ -53,6 +60,20 @@ stages:
       - set:
           "dns.question.name": "{{parsed_event.message.DomainName}}"
           "dns.question.type": "{{parsed_event.message.RequestType}}"
+          "source.ip": "{{parsed_event.message.LocalAddressIP6}}"
+          "source.nat.port": "{{parsed_event.message.LocalPort}}"
+
+          "destination.ip": "{{parsed_event.message.RemoteAddressIP6}}"
+          "destination.nat.ip": "{{parsed_event.message.RemoteAddressIP4}}"
+          "destination.nat.port": "{{parsed_event.message.RemotePort | int}}"
+
+      - set:
+          "source.nat.ip": >
+            [
+              {% for record in parsed_event.message.get("aip").split(" ") %}
+                  {% if record != "" %}"{{record}}",{% endif %}
+              {% endfor %}
+            ]
 
       - translate:
         dictionary:
@@ -138,14 +159,10 @@ stages:
           "user.id": "{{parsed_event.message.UserSid}}"
           "user.name": "{{parsed_event.message.UserName}}"
           "agent.id": "{{parsed_event.message.aid}}"
+          "agent.version": "{{parsed_event.message.AgentVersion}}"
 
-          "source.ip": "{{parsed_event.message.LocalAddressIP6}}"
-          "source.nat.ip": "{{parsed_event.message.aip}}"
-          "source.nat.port": "{{parsed_event.message.LocalPort}}"
-
-          "destination.ip": "{{parsed_event.message.RemoteAddressIP6}}"
-          "destination.nat.ip": "{{parsed_event.message.RemoteAddressIP4}}"
-          "destination.nat.port": "{{parsed_event.message.RemotePort | int}}"
+          "source.geo.country_name": "{{parsed_event.message.Country}}"
+          "source.geo.city_name": "{{parsed_event.message.City}}"
 
           "file.path": "{{parsed_event.message.TargetFileName}}"
           "file.hash.sha1": "{{parsed_event.message.SHA1HashData}}"
