@@ -147,7 +147,7 @@ def main():
     parser.add_argument(
         "--ignore_missing_parsers",
         action="store_true",
-        help="ignore missing parser.yml",
+        help="Ignore missing parser.yml",
     )
     parser.add_argument(
         "--ignore_event_fieldset_errors",
@@ -157,7 +157,12 @@ def main():
     parser.add_argument(
         "--ignore_missing_tests",
         action="store_true",
-        help="ignore missing tests folder",
+        help="Ignore missing tests folder",
+    )
+    parser.add_argument(
+        "--ignore_empty_descriptions",
+        action="store_true",
+        help="Ignore empty, but existing descriptions",
     )
     args = parser.parse_args()
 

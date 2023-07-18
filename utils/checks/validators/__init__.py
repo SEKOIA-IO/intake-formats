@@ -1,5 +1,6 @@
 from .base import Validator
 from .changelog import ChangelogValidator
+from .data_sources import ManifestDataSourcesValidator
 from .logo import LogoValidator
 from .manifest import ManifestValidator
 from .meta import MetaValidator

@@ -1,9 +1,9 @@
 import argparse
 import os
 
-from . import (ChangelogValidator, LogoValidator, ManifestValidator,
-               MetaValidator, ParserValidator, TaxonomyValidator,
-               TestFileValidator)
+from . import (ChangelogValidator, LogoValidator, ManifestDataSourcesValidator,
+               ManifestValidator, MetaValidator, ParserValidator,
+               TaxonomyValidator, TestFileValidator)
 from .constants import CheckResult
 
 
@@ -28,6 +28,7 @@ class FormatValidator:
             MetaValidator,
             LogoValidator,
             ManifestValidator,
+            ManifestDataSourcesValidator,
             TaxonomyValidator,
             ParserValidator,
             TestFileValidator,
