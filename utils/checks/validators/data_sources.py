@@ -28,9 +28,8 @@ class ManifestDataSourcesValidator(Validator):
             - get_allowed_data_sources()
         )
         if len(unsupported_data_sources) > 0:
-            result.errors.append(
-                "%s format(s) are unsupported" % ",".join(unsupported_data_sources)
-            )
+            for data_source in unsupported_data_sources:
+                result.errors.append(f"`Data source {data_source}` is not supported")
             return
 
 

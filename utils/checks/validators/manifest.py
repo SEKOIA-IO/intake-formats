@@ -21,10 +21,14 @@ class ManifestValidator(Validator):
         module_meta_dir = result.options["meta_dir"]
         module_manifest_file = os.path.join(module_meta_dir, "manifest.yml")
 
-        check_manifest(manifest_file_path=module_manifest_file, result=result, args=args)
+        check_manifest(
+            manifest_file_path=module_manifest_file, result=result, args=args
+        )
 
 
-def check_manifest(manifest_file_path: str, result: CheckResult, args: argparse.Namespace) -> None:
+def check_manifest(
+    manifest_file_path: str, result: CheckResult, args: argparse.Namespace
+) -> None:
     if not os.path.isfile(manifest_file_path):
         result.errors.append(f"manifest file (`{manifest_file_path}`) is missing")
         return
@@ -71,5 +75,8 @@ def check_manifest(manifest_file_path: str, result: CheckResult, args: argparse.
     if "description" not in manifest_content:
         result.errors.append("no description found in the manifest file")
 
-    elif not args.ignore_empty_descriptions and len(manifest_content.get("description")) == 0:
+    elif (
+        not args.ignore_empty_descriptions
+        and len(manifest_content.get("description")) == 0
+    ):
         result.errors.append("description is found, but empty")
