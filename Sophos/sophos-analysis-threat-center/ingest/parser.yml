@@ -1,0 +1,57 @@
+name: sophos-analysis-threat-center
+pipeline:
+  - external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+    name: parse_json
+
+  - name: set_ecs_fields
+  - name: set_sophos_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_json.message.calendar_time}}"
+
+          event.kind: "event"
+          event.severity: "{{parse_json.message.ioc_severity}}"
+          event.reason: "{{parse_json.message.description}}"
+          event.code: "{{parse_json.message.ioc_detection_id}}"
+
+          user.name: "{{parse_json.message.meta_username}}"
+
+          registry.path: "{{parse_json.message.path}}"
+          registry.key: "{{parse_json.message.key}}"
+          registry.data.type: "{{parse_json.message.type}}"
+          registry.data.strings: "['{{parse_json.message.data}}']"
+
+          source.ip: "{{parse_json.message.meta_public_ip}}"
+          source.mac: "{{parse_json.message.meta_mac_address}}"
+          source.geo.country_iso_code: "{{parse_json.message.meta_public_ip_country_code}}"
+          source.geo.postal_code: "{{parse_json.message.meta_public_ip_postal}}"
+          source.geo.city_name: "{{parse_json.message.meta_public_ip_city}}"
+          source.geo.country_name: "{{parse_json.message.meta_public_ip_country}}"
+
+          host.name: "{{parse_json.message.meta_hostname}}"
+          host.id: "{{parse_json.message.host_identifier}}"
+          host.os.name: "{{parse_json.message.meta_os_name}}"
+          host.os.version: "{{parse_json.message.meta_os_version}}"
+          host.domain: "{{parse_json.message.subject_domain}}"
+
+          vulnerability.reference: "{{parse_json.message.ioc_detection_references[2:-2]}}"
+          vulnerability.description: "{{parse_json.message.ioc_detection_description}}"
+
+  set_sophos_fields:
+    actions:
+      - set:
+          sophos.threat_center.cvss: "{{parse_json.message.ioc_detection_cvss}}"
+          sophos.threat_center.id: "{{parse_json.message.endpoint_id}}"
+          sophos.threat_center.detection_attack: "{{parse_json.message.ioc_detection_attack}}"
+          sophos.threat_center.query.source: "{{parse_json.message.query_source}}"
+          sophos.threat_center.query.action: "{{parse_json.message.osquery_action}}"
+          sophos.threat_center.query.pack_version: "{{parse_json.message.meta_query_pack_version}}"
+          sophos.threat_center.query.name: "{{parse_json.message.query_name}}"
+          sophos.threat_center.endpoint.type: "{{parse_json.message.meta_endpoint_type}}"
