@@ -32,8 +32,20 @@ pipeline:
   - name: set_common_fields
   - name: set_dns_fields
   - name: set_registry_fields
+  - name: set_host_fields
 
 stages:
+  set_host_fields:
+    actions:
+      - set:
+          "host.os.platform": "{{parsed_event.message.event_platform | lower}}"
+        filter: '{{parsed_event.message.get("event_platform") != None}}'
+
+      - set:
+          "host.name": "{{parsed_event.message.ComputerName}}"
+          "host.domain": "{{parsed_event.message.MachineDomain}}"
+          "host.mac": "{{parsed_event.message.MAC}}"
+
   set_registry_fields:
     actions:
       - set:
@@ -53,6 +65,20 @@ stages:
       - set:
           "dns.question.name": "{{parsed_event.message.DomainName}}"
           "dns.question.type": "{{parsed_event.message.RequestType}}"
+          "source.ip": "{{parsed_event.message.LocalAddressIP6}}"
+          "source.nat.port": "{{parsed_event.message.LocalPort}}"
+
+          "destination.ip": "{{parsed_event.message.RemoteAddressIP6}}"
+          "destination.nat.ip": "{{parsed_event.message.RemoteAddressIP4}}"
+          "destination.nat.port": "{{parsed_event.message.RemotePort | int}}"
+
+      - set:
+          "host.ip": >
+            [
+              {% for record in parsed_event.message.get("aip").split(" ") %}
+                  {% if record != "" %}"{{record}}",{% endif %}
+              {% endfor %}
+            ]
 
       - translate:
         dictionary:
@@ -138,14 +164,10 @@ stages:
           "user.id": "{{parsed_event.message.UserSid}}"
           "user.name": "{{parsed_event.message.UserName}}"
           "agent.id": "{{parsed_event.message.aid}}"
+          "agent.version": "{{parsed_event.message.AgentVersion}}"
 
-          "source.ip": "{{parsed_event.message.LocalAddressIP6}}"
-          "source.nat.ip": "{{parsed_event.message.aip}}"
-          "source.nat.port": "{{parsed_event.message.LocalPort}}"
-
-          "destination.ip": "{{parsed_event.message.RemoteAddressIP6}}"
-          "destination.nat.ip": "{{parsed_event.message.RemoteAddressIP4}}"
-          "destination.nat.port": "{{parsed_event.message.RemotePort | int}}"
+          "source.geo.country_name": "{{parsed_event.message.Country}}"
+          "source.geo.city_name": "{{parsed_event.message.City}}"
 
           "file.path": "{{parsed_event.message.TargetFileName}}"
           "file.hash.sha1": "{{parsed_event.message.SHA1HashData}}"
@@ -153,13 +175,20 @@ stages:
           "file.hash.md5": "{{parsed_event.message.MD5HashData}}"
 
           "crowdstrike.customer_id": "{{parsed_event.message.cid}}"
+          "crowdstrike.gateway_ip": "{{parsed_event.message.GatewayIP}}"
+          "crowdstrike.gateway_mac": "{{parsed_event.message.GatewayMAC}}"
 
           "url.domain": "{{parsed_event.message.DownloadServer}}"
           "url.path": "{{parsed_event.message.DownloadPath}}"
+
+          "observer.ip": "{{parsed_event.message.LocalAddressIP4}}"
+          "observer.mac": "{{parsed_event.message.MAC}}"
+          "observer.egress.interface.alias": "{{parsed_event.message.InterfaceAlias}}"
       - set:
           "user.target.id": "{{parsed_event.message.UserRid}}"
           "user.target.group.id": "{{parsed_event.message.GroupRid}}"
         filter: "{{parsed_event.message.event_simpleName == 'UserAccountAddedToGroup'}}"
+
       - translate:
         dictionary:
           "EndOfProcess": ["end"]
@@ -176,6 +205,7 @@ stages:
         mapping:
           parsed_event.message.event_simpleName: event.type
         fallback: ["info"]
+
       - translate:
         dictionary:
           "EndOfProcess": ["process"]
@@ -206,3 +236,21 @@ stages:
         mapping:
           parsed_event.message.event_simpleName: event.category
         fallback: ["process"]
+
+      - translate:
+        dictionary:
+          "ZeroTrustHostAssessment": ["host"]
+        mapping:
+          parsed_event.message.event_type: event.category
+
+      - set:
+          "event.category": ["host"]
+        filter: "{{parsed_event.message.get('ComputerName') != None and parsed_event.message.get('MAC') != None}}"
+
+      - set:
+          "event.category": ["host"]
+        filter: "{{parsed_event.message.get('LocalAddressIP4') != None and parsed_event.message.get('MAC') != None}}"
+
+      - set:
+          "event.category": ["host"]
+        filter: "{{parsed_event.message.get('ComputerName') != None and parsed_event.message.get('MachineDomain') != None}}"
