@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2023-07-19 - 1.0.1
+
+### Added
+
+- add support for new events
+
+### Changed
+
+- Fix support for ip adresses
+
 ## 2023-07-10 - 1.0.0
 
 ### Added
