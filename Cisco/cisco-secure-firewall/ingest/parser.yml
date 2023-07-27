@@ -6,10 +6,30 @@ pipeline:
       properties:
         input_field: "original.message"
         output_field: pre_message
-        pattern: '(<[0-9]+>)?(%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp})?(%{IP:log_ip})?(%{SPACE}%{DATA:log_hostname}%{SPACE})?(\:)?\%%{PRODUCT_NAME:product}\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{DATA:raw_message}'
+        pattern: '((<[0-9]+>)?(%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp})?(%{IP:log_ip})?(%{SPACE}%{DATA:log_hostname}%{SPACE})?(\:)?\%%{PRODUCT_NAME:product}\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{GREEDYDATA:raw_message})|%{GREEDYDATA:raw_message}'
         custom_patterns:
           MESSAGE_NUMBER: "[0-9]{6}"
           PRODUCT_NAME: "(FTD|ASA|NGIPS)"
+
+  - name: parsed_event_withoutproduct
+    filter: "{{not pre_parsing.pre_message.message_number_grok}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: message
+        pattern: "%{Group_1}|%{Group_2}|%{Group_3}|%{Group_4}|%{Group_5}|%{Group_6}|%{Group_7}|%{Group_8}|%{Group_9}|%{Group_10}"
+        custom_patterns:
+          Group_1: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> IPv4 Address <%{IPV4}> IPv6 address <%{IPV6}> assigned to session"
+          Group_2: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> Client Type: %{GREEDYDATA:client_type}"
+          Group_3: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> SVC closing connection: %{GREEDYDATA:action_outcome_reason}."
+          Group_4: "Group = %{GREEDYDATA:user_group}, Username = %{WORD:user_name}, IP = %{IP:source_ip}, %{DATA:action_outcome_reason}.Session Type: %{DATA:session_type}, Duration: %{DATA:special_duration}, Bytes xmt: %{DATA:bytes_xmt}, Bytes rcv: %{DATA:bytes_rcv}, Reason: %{GREEDYDATA:action_outcome_reason}"
+          Group_5: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> AnyConnect session resumed connection from IP <%{IP:destination_ip}>."
+          Group_6: Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:action_name}\. Waiting to resume.
+          Group_7: "TunnelGroup <%{GREEDYDATA:user_group}> GroupPolicy <%{DATA:group_policy}> User <%{WORD:user_name}> IP <%{IP:source_ip}> No IPv6 address available for SVC connection"
+          Group_8: "POOLIP: Pool=%{GREEDYDATA:user_group}, WARN: %{GREEDYDATA:action_outcome_reason}"
+          Group_9: "Tunnel group search using certificate maps (failed|succed) for peer certificate: serial number: %{DATA:serial_number}, subject name: UID=%{DATA:uid},CN=%{DATA:user_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{DATA:contry_code}, issuer_name: CN=%{DATA:agent_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{GREEDYDATA:contry_code}."
+          Group_10: "Task ran for %{DATA:duration} msec, Process = %{DATA:process_name}, PC = %{DATA:host_name}, Call stack = %{GREEDYDATA:call_stack}"
 
   - name: parsed_event
     filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "111007", "199019", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "305012", "313001", "313004", "313005", "313008", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "609001", "609002", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016", "852001"]}}'
@@ -83,6 +103,7 @@ pipeline:
   - name: set_ecs_fields_from_kv
     filter: '{{pre_parsing.pre_message.message_number_grok in ["430001","430002","430003","430004","430005"]}}'
   - name: set_ecs_fields_from_condition
+  - name: set_ecs_fields_without_productname
 
 stages:
   set_common_fields:
@@ -162,6 +183,23 @@ stages:
       - set:
           action.name: "{{parsed_event.message.action_name|lower }}"
         filter: '{{parsed_event.message.get("action_name") != None}}'
+
+  set_ecs_fields_without_productname:
+    actions:
+      - set:
+          user.domain: "{{parsed_event_withoutproduct.message.user_group}}"
+          user.name: "{{parsed_event_withoutproduct.message.user_name}}"
+          cisco.ftd.event.duration: "{{parsed_event_withoutproduct.message.duration}}"
+          host.name: "{{parsed_event_withoutproduct.message.host_name}}"
+      - set:
+          source.ip: "{{parsed_event_withoutproduct.message.source_ip}}"
+        filter: "{{parsed_event_withoutproduct.message.source_ip | is_ipaddress}}"
+      - set:
+          action.name: "{{parsed_event_withoutproduct.message.action_name|lower }}"
+        filter: '{{parsed_event_withoutproduct.message.get("action_name") != None}}'
+      - set:
+          destination.ip: "{{parsed_event_withoutproduct.message.destination_ip}}"
+        filter: "{{parsed_event_withoutproduct.message.destination_ip | is_ipaddress}}"
 
   set_ecs_fields_from_kv:
     actions:
