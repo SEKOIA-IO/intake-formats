@@ -27,7 +27,9 @@ pipeline:
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
   - name: set_common_fields
   - name: set_office365_fields
-  - name: parse_exchange
+  - name: parse_exchange_admin
+    filter: "{{json_event.message.RecordType == 1}}"
+  - name: parse_exchange_item
     filter: "{{json_event.message.RecordType == 2}}"
   - name: parse_network_traffic
     filter: "{{json_event.message.RecordType in [15, 25]}}"
@@ -116,7 +118,24 @@ stages:
           office365.context.correlation.id: "{{json_event.message.AppAccessContext.CorrelationId}}"
         filter: '{{json_event.message.get("AppAccessContext") != None}}'
 
-  parse_exchange:
+  parse_exchange_admin:
+    actions:
+      - translate:
+        dictionary:
+          "True": "success"
+          "False": "failure"
+        mapping:
+          json_event.message.ResultStatus: action.outcome
+      - set:
+          office365.exchange_admin.parameters: >
+            [
+              {% for parameter in json_event.message.Parameters %}
+                "{{ parameter.Name }}:{{ parameter.Value }}",
+              {% endfor %}
+            ]
+        filter: '{{json_event.message.get("Parameters") != None}}'
+
+  parse_exchange_item:
     actions:
       - translate:
         dictionary:
