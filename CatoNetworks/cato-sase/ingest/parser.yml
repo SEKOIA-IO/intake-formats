@@ -7,33 +7,66 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: output
 
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.event_time}}"
+        output_field: datetime
+    filter: "{{json_event.output.event_time != None}}"
+
   - name: set_common_fields
+  - name: set_os_info
+  - name: set_event_fields
 
 stages:
+  set_event_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.kind: "event"
+          event.action: "{{json_event.output.action | lower}}"
+          event.reason: "{{json_event.output.event_message}}"
+
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+        filter: "{{json_event.output.event_type == 'Security' and json_event.output.threat_type == 'malware'}}"
+
+  set_os_info:
+    actions:
+      - set:
+          host.name: "{{json_event.output.device_name}}"
+          host.ip: "{{json_event.output.host_ip}}"
+          host.mac: "{{json_event.output.host_mac}}"
+          host.os.version: "{{json_event.output.os_version}}"
+
+      - translate:
+        dictionary:
+            "OS_WINDOWS": "windows"
+            "OS_MAC": "macos"
+            "OS_LINUX": "linux"
+            "OS_IOS": "ios"
+            "OS_ANDROID": "android"
+            "OS_UNKNOWN": "unknown"
+        mapping:
+            json_event.output.os_type: host.os.type
+        filter: "{{json_event.output.os_type != None}}"
+
   set_common_fields:
     actions:
       # Default fields with predefined values
       - set:
-          event.kind: "event"
-          event.action: "{{json_event.output.action}}"
-          event.reason: "{{json_event.output.event_message}}"
-
           agent.version: "{{json_event.output.client_version}}"
 
           destination.geo.country_name: "{{json_event.output.dest_country}}"
           destination.ip: "{{json_event.output.dest_ip}}"
           destination.port: "{{json_event.output.dest_port}}"
 
-          host.name: "{{json_event.output.device_name}}"
-          host.os.type: "{{json_event.output.os_type}}"
-          host.os.version: "{{json_event.output.os_version}}"
-
           file.hash.sha256: "{{json_event.output.file_hash}}"
           file.name: "{{json_event.output.file_name}}"
           file.size: "{{json_event.output.file_size}}"
 
-          host.ip: "{{json_event.output.host_ip}}"
-          host.mac: "{{json_event.output.host_mac}}"
           network.transport: "{{json_event.output.ip_protocol}}"
           network.direction: "{{json_event.output.traffic_direction}}"
           url.original: "{{json_event.output.url}}"
@@ -83,3 +116,9 @@ stages:
           cato.threat_verdict: "{{json_event.output.threat_verdict}}"
           cato.tunnel_protocol: "{{json_event.output.tunnel_protocol}}"
           cato.windows_domain_name: "{{json_event.output.windows_domain_name}}"
+          cato.pop_name: "{{json_event.output.pop_name}}"
+          cato.risk_level: "{{json_event.output.risk_level}}"
+          cato.src_is_site_or_vpn: "{{json_event.output.src_is_site_or_vpn}}"
+          cato.incident_aggregation: "{{json_event.output.incident_aggregation}}"
+          cato.domain_name: "{{json_event.output.domain_name}}"
+          cato.dest_is_site_or_vpn: "{{json_event.output.dest_is_site_or_vpn}}"
