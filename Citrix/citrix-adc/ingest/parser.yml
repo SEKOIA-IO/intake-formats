@@ -51,10 +51,9 @@ pipeline:
         input_field: "{{parse_audit_header.message.payload}}"
         output_field: message
         pattern: "%{OPTION_1}|%{OPTION_2}"
-
         custom_patterns:
-          OPTION_1: ".*User <?%{USERNAME:user_name}?>.*Srcip: %{IP:src_ip}.*Dstip: %{IP:dest_ip}.*denied_by_policy: %{WORD:policy}.*"
-          OPTION_2: ".*User %{USERNAME:user_name}.*Nat_ip %{IP:nat_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Destination %{IP:dest_ip}:%{POSINT:dest_port}.*Denied_by_policy %{POLICY_NAME:policy}.*"
+          OPTION_1: ".*User <?%{USERNAME:user_name}?>.*Srcip: %{IP:src_ip}.*Dstip: %{IP:dest_ip}.*denied_by_policy: %{POLICY_NAME:policy}.*"
+          OPTION_2: ".*User %{USERNAME:user_name}.*Nat_ip %{IP:nat_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Source %{IP:src_ip}:%{POSINT:src_port}.*Destination %{IP:dest_ip}:%{POSINT:dest_port}.*Denied_by_policy %{POLICY_NAME:policy}.*"
           POLICY_NAME: '"?"?\w+"?"?'
 
   - name: parse_audit_snmp_logs
@@ -97,6 +96,7 @@ stages:
     actions:
       - set:
           event.kind: "alert"
+          event.dataset: "alert"
       - set:
           observer.vendor: "{{parsed_event.message.DeviceVendor}}"
           observer.product: "{{parsed_event.message.DeviceProduct}}"
@@ -134,18 +134,21 @@ stages:
   set_connection_log_fields:
     actions:
       - set:
+          event.dataset: "audit_connection"
+          event.code: "{{ parse_audit_header.message.message }}"
           observer.name: "{{ parse_audit_header.message.observer }}"
           source.ip: "{{ parse_audit_connection_logs.message.src_ip }}"
           source.nat.ip: "{{ parse_audit_connection_logs.message.nat_ip }}"
           destination.ip: "{{ parse_audit_connection_logs.message.dest_ip }}"
-          citrix.adc.bytes.received: "{{ parse_audit_connection_logs.message.bytes_send }}"
-          citrix.adc.bytes.sent: "{{ parse_audit_connection_logs.message.bytes_recv }}"
+          citrix.adc.bytes.received: "{{ parse_audit_connection_logs.message.bytes_recv }}"
+          citrix.adc.bytes.sent: "{{ parse_audit_connection_logs.message.bytes_send }}"
           citrix.adc.virtual_server.ip: "{{ parse_audit_connection_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_connection_logs.message.vserver_port }}"
 
   set_sslvpn_log_fields:
     actions:
       - set:
+          event.dataset: "audit_sslvpn"
           observer.name: "{{ parse_audit_header.message.observer }}"
           source.ip: "{{ parse_audit_sslvpn_logs.message.src_ip }}"
           destination.ip: "{{ parse_audit_sslvpn_logs.message.dest_ip }}"
@@ -159,12 +162,14 @@ stages:
   set_snmp_log_fields:
     actions:
       - set:
+          event.dataset: "audit_snmp"
           observer.name: "{{ parse_audit_header.message.observer }}"
           event.code: "{{ parse_audit_header.message.message }}"
 
   set_ssl_log_fields:
     actions:
       - set:
+          event.dataset: "audit_ssl"
           observer.name: "{{ parse_audit_header.message.observer }}"
           event.code: "{{ parse_audit_header.message.message }}"
           source.ip: "{{ parse_audit_ssl_logs.message.src_ip }}"
