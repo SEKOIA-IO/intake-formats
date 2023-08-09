@@ -13,19 +13,31 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\"?\s*%{HEADER:header}%{SPACE}:%{SPACE}%{WORD:mode} %{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :%{SPACE}%{GREEDYDATA:payload}\"?'
+        pattern: '\"?\s*%{HEADER:header}\s+:\s+%{WORD:mode}\s+%{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :\s+%{GREEDYDATA:payload}\"?'
         custom_patterns:
-          DATE_TIME: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
-          HEADER: "%{DATE_TIME:timestamp} %{TIMEZONE}? %{USERNAME:observer}%{SPACE}%{USERNAME:s2}"
+          HEADER: '%{DATE_TIME:timestamp} %{TIMEZONE}? %{USERNAME:observer}\s%{USERNAME:s2}'
+          DATE_TIME: '%{DATE_TIME_YMD}|%{DATE_TIME_MDY}'
+          DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
+          DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           TIMEZONE: "GMT"
     filter: "{{ not original.message.startswith('CEF') }}"
 
   - name: parse_audit_timestamp
+    filter: "{{ parse_audit_header.message.DATE_TIME_YMD != None }}"
     external:
       name: date.parse
       properties:
         input_field: "{{parse_audit_header.message.timestamp}}"
         format: "%Y/%m/%d:%H:%M:%S"
+        output_field: date
+
+  - name: parse_audit_timestamp
+    filter: "{{ parse_audit_header.message.DATE_TIME_MDY != None }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_header.message.timestamp}}"
+        format: "%m/%d/%Y:%H:%M:%S"
         output_field: date
 
   - name: parse_audit_connection_logs
