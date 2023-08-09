@@ -16,7 +16,7 @@ pipeline:
         pattern: '\"?\s*%{HEADER:header}\s+:\s+%{WORD:mode}\s+%{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :\s+%{GREEDYDATA:payload}\"?'
         custom_patterns:
           HEADER: '%{DATE_TIME:timestamp} %{TIMEZONE}? %{USERNAME:observer}\s%{USERNAME:s2}'
-          DATE_TIME: '%{DATE_TIME_YMD}|%{DATE_TIME_MDY}'
+          DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}"
           DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           TIMEZONE: "GMT"
@@ -95,7 +95,10 @@ pipeline:
     filter: "{{ parse_audit_header.message.type == 'TCP' }}"
 
   - name: set_sslvpn_log_fields
-    filter: "{{ parse_audit_header.message.type == 'SSLVPN' }}"
+    filter: "{{ parse_audit_header.message.type == 'SSLVPN' and parse_audit_header.message.message_type != 'Message' }}"
+
+  - name: set_sslvpn_freeform_log_fields
+    filter: "{{ parse_audit_header.message.type == 'SSLVPN' and parse_audit_header.message.message_type == 'Message' }}"
 
   - name: set_snmp_log_fields
     filter: "{{ parse_audit_header.message.type == 'SNMP' }}"
@@ -140,6 +143,7 @@ stages:
           event.kind: "event"
           event.category: ["network"]
           event.type: ["connection"]
+          event.code: "{{ parse_audit_header.message.message_type }}"
 
           "@timestamp": "{{ parse_audit_timestamp.date }}"
 
@@ -157,6 +161,12 @@ stages:
           citrix.adc.virtual_server.ip: "{{ parse_audit_connection_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_connection_logs.message.vserver_port }}"
 
+  set_sslvpn_freeform_log_fields:
+    actions:
+      - set:
+          event.dataset: "audit_sslvpn"
+          citrix.adc.message: '{{ parse_audit_header.message.payload.strip(''"'') }}'
+
   set_sslvpn_log_fields:
     actions:
       - set:
@@ -165,7 +175,6 @@ stages:
           source.ip: "{{ parse_audit_sslvpn_logs.message.src_ip }}"
           destination.ip: "{{ parse_audit_sslvpn_logs.message.dest_ip }}"
           user.name: "{{ parse_audit_sslvpn_logs.message.user_name }}"
-          event.code: "{{ parse_audit_header.message.message_type }}"
           rule.name: '{{ parse_audit_sslvpn_logs.message.policy.strip(''"'') }}'
           source.nat.ip: "{{ parse_audit_sslvpn_logs.message.nat_ip }}"
           citrix.adc.virtual_server.ip: "{{ parse_audit_sslvpn_logs.message.vserver_ip }}"
@@ -176,14 +185,12 @@ stages:
       - set:
           event.dataset: "audit_snmp"
           observer.name: "{{ parse_audit_header.message.observer }}"
-          event.code: "{{ parse_audit_header.message.message_type }}"
 
   set_ssl_log_fields:
     actions:
       - set:
           event.dataset: "audit_ssl"
           observer.name: "{{ parse_audit_header.message.observer }}"
-          event.code: "{{ parse_audit_header.message.message_type }}"
           source.ip: "{{ parse_audit_ssl_logs.message.src_ip }}"
           source.port: "{{ parse_audit_ssl_logs.message.src_port }}"
 
