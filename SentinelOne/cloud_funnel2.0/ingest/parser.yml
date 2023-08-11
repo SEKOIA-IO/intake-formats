@@ -90,6 +90,8 @@ pipeline:
 
   - name: set_meta_fields
 
+  - name: set_ecs_categorization_fields
+
   - name: set_common_fields
 
   - name: set_process_fields
@@ -161,6 +163,62 @@ stages:
       - set:
           "@timestamp": "{{convert_timestamp.timestamp}}"
 
+  set_ecs_categorization_fields:
+    actions:
+      - set:
+          event.kind: "event"
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") in ("process", "cross_process", "command_script") }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") not in ("File Creation", "File Modification", "File Rename", "File Deletion") }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") == "File Creation" }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") in ("File Modification", "File Rename") }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") == "File Deletion" }}'
+      - set:
+          event.category: ["authentication"]
+        filter: '{{ json_event.message.get("event.category") == "logins" }}'
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") == "dns" or json_event.message.get("event.category") == "ip" }}'
+      - set:
+          event.category: ["registry"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.get("event.category") == "registry" and json_event.message.get("event.type") in ("Registry Value Create", "Registry Key Create") }}'
+      - set:
+          event.category: ["registry"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.get("event.category") == "registry" and json_event.message.get("event.type") in ("Registry Value Modified", "Registry Key Modified", "Registry Key Security Changed") }}'
+      - set:
+          event.category: ["registry"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.get("event.category") == "registry" and json_event.message.get("event.type") in ("Registry Value Delete", "Registry Key Delete") }}'
+      - set:
+          event.category: ["web", "network"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") == "url" }}'
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: '{{ json_event.message.get("event.category") == "threat_intelligence_indicators" }}'
+      - set:
+          event.category: ["driver"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") in ("driver", "module") }}'
+
   set_common_fields:
     actions:
       - set:
@@ -217,8 +275,16 @@ stages:
           process.title: '{{json_event.message.get("src.process.displayName")}}'
           process.user.name: '{{json_event.message.get("src.process.user")}}'
           process.working_directory: '{{json_event.message.get("src.process.image.path") | dirname }}'
-          user.name: '{{json_event.message.get("src.process.user")}}'
         filter: '{{json_event.message.get("osSrc.process.pid") == None}}'
+
+      - set:
+          user.name: '{{json_event.message.get("src.process.user").split("\\")[1]}}'
+          user.domain: '{{json_event.message.get("src.process.user").split("\\")[0]}}'
+        filter: '{{json_event.message.get("osSrc.process.pid") == None and json_event.message.get("src.process.user") != None and "\\" in json_event.message.get("src.process.user")}}'
+
+      - set:
+          user.name: '{{json_event.message.get("src.process.user")}}'
+        filter: '{{json_event.message.get("osSrc.process.pid") == None and json_event.message.get("src.process.user") != None and "\\" not in json_event.message.get("src.process.user")}}'
 
       - set:
           user.name: '{{json_event.message.get("src.process.eUserName")}}'
@@ -467,7 +533,14 @@ stages:
           process.hash.sha1: '{{json_event.message.get("osSrc.process.image.sha1")}}'
           process.hash.sha256: '{{json_event.message.get("osSrc.process.image.sha256")}}'
 
+      - set:
+          user.name: '{{json_event.message.get("osSrc.process.user").split("\\")[1]}}'
+          user.domain: '{{json_event.message.get("osSrc.process.user").split("\\")[0]}}'
+        filter: '{{json_event.message.get("osSrc.process.user") != None and "\\" in json_event.message.get("osSrc.process.user")}}'
+
+      - set:
           user.name: '{{json_event.message.get("osSrc.process.user")}}'
+        filter: '{{json_event.message.get("osSrc.process.user") != None and "\\" not in json_event.message.get("osSrc.process.user")}}'
 
       - set:
           process.start: "{{convert_ossrc_process_start.start_date}}"
@@ -581,13 +654,19 @@ stages:
           user.target.domain: '{{json_event.message.get("event.login.accountDomain")}}'
       - set:
           action.outcome: "success"
+          event.type: ["start"]
         filter: '{{json_event.message.get("event.login.loginIsSuccessful") == True}}'
       - set:
           action.outcome: "failure"
           action.outcome_reason: '{{json_event.message.get("event.login.failureReason")}}'
+          event.type: ["error"]
         filter: '{{json_event.message.get("event.login.loginIsSuccessful") == False}}'
       - set:
-          user.roles: '["admin"]'
+          action.outcome: "success"
+          event.type: ["end"]
+        filter: '{{json_event.message.get("event.type") == "Logout"}}'
+      - set:
+          user.roles: ["admin"]
         filter: '{{json_event.message.get("event.login.isAdministratorEquivalent") == True}}'
       - translate:
         dictionary:
