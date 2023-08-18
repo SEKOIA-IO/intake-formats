@@ -1,0 +1,45 @@
+name: google-drive-reports
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.id.time}}"
+          event.kind: "event"
+          event.category: ["file"]
+          event.type: ["access"]
+
+          user.id: "{{json_event.message.id.customerId}}"
+          google-drive-reports.actor.email: "{{json_event.message.actor.email}}"
+
+          network.application: "{{json_event.message.id.applicationName}}"
+          source.ip: "{{json_event.message.ipAddress}}"
+
+      - set:
+          event.type: ["access", "change"]
+        filter: '{{ json_event.message.events[0].name in ["edit", "rename", "update"]}}'
+
+      - set:
+          event.type: ["access", "deletion"]
+        filter: '{{ json_event.message.events[0].name == "delete"}}'
+
+      - set:
+          event.type: ["access", "creation"]
+        filter: '{{ json_event.message.events[0].name == "create"}}'
+
+      - set:
+          user.email: "{{json_event.message.actor.email}}"
+        filter: '{{ json_event.message.actor.callerType == "USER"}}'
+
+      - set:
+          file.gid: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner_team_drive_id" %}{{param.value}}{% endif %}{% endfor %}'
+          file.owner: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner" %}{{param.value}}{% endif %}{% endfor %}'
+          file.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_type" %}{{param.value}}{% endif %}{% endfor %}'
+          file.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_title" %}{{param.value}}{% endif %}{% endfor %}'
+          google-drive-reports.parameters.visibility: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "visibility" %}{{param.value}}{% endif %}{% endfor %}'
