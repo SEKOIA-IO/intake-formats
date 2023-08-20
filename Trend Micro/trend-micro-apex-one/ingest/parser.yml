@@ -1,0 +1,151 @@
+name: cef
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_start_date
+    filter: "{{parsed_event.message.start != null or parsed_event.message.startTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.start or parsed_event.message.startTime}}"
+        output_field: date
+
+  - name: parse_end_date
+    filter: "{{parsed_event.message.end != null or parsed_event.message.endTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.end or parsed_event.message.endTime}}"
+        output_field: date
+
+  # Parse 'rt' (as a timestamp or as a date)
+  - name: parse_receipt_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: date
+
+
+  - name: set_timestamp
+  - name: set_cef_header_fields
+  - name: set_attack_discovery_detection_event
+  - name: set_behavior_monitoring_event
+
+stages:
+  set_timestamp:
+    actions:
+      # Default timestamp is the start or startTime field
+      - set:
+          "@timestamp": "{{parse_start_date.date}}"
+
+      # Second choice is the receipt time (rc) field
+      - set:
+          "@timestamp": "{{parse_receipt_time.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time != null}}"
+
+      # Last choice is the end or endTime field
+      - set:
+          "@timestamp": "{{parse_end_date.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time == null and parse_end_date != null}}"
+
+  set_cef_header_fields:
+    # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
+    actions:
+      - set:
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          event.dataset: "{{parsed_event.message.Name}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          rule.id: "{{parsed_event.message.DeviceEventClassID}}"
+
+      - set:
+          # Match only for agentSeverity of type int
+          event.severity: "{{parsed_event.message.Severity}}"
+        filter: "{{parsed_event.message.Severity | re_match('[1-9]|10')}}"
+
+  set_attack_discovery_detection_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ['intrusion_detection']
+          event.type: ['info']
+          user.name: "{{parsed_event.message.duser}}"
+          source.ip: "{{parsed_event.message.c6a3}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          rule.name: "{{parsed_event.message.cs1Label}}"
+          rule.ruleset: "{{parsed_event.message.cat}}"
+
+  set_behavior_monitoring_event:
+    actions:
+      - set:
+          event.kind: event
+          event.type: ['change']
+          event.category: ['process']
+          host.name: "{{parsed_event.message.dvchost}}"
+          source.ip: "{{parsed_event.message.src}}"
+          process.executable: "{{parsed_event.message.sproc}}"
+
+      - translate:
+        dictionary:
+            1: "Process"
+            2: "Process image"
+            4: "Registry"
+            8: "File system"
+            16: "Driver"
+            32: "SDT"
+            64: "System API"
+            128: "User Mode"
+            2048: "Exploit"
+            65535: "All"
+        mapping:
+          parsed_event.message.cn2: cef.event_type
+
+      - translate:
+        dictionary:
+          0: "Compromised executable file"
+          1: "New startup program"
+          2: "Host file modification"
+          3: "Program library injection"
+          4: "New Internet Explorer plugin"
+          5: "Internet Explorer setting modification"
+          6: "Shell modification"
+          7: "New service"
+          8: "Security policy modification"
+          9: "Firewall policy modification"
+          10: "System file modification"
+          11: "Duplicated system file"
+          13: "Layered service provider"
+          14: "System process modification"
+          16: "Suspicious behavior"
+          100: "Newly encountered programs"
+          200: "Unauthorized file encryption"
+          1000: "Threat behavior analysis"
+          9999: "User-defined policy"
+        mapping:
+          parsed_event.message.cs2: rule.name
+
+      - translate:
+        dictionary:
+            0: "Allow"
+            1: "Ask"
+            2: "Deny"
+            3: "Terminate"
+            4: "Read Only"
+            5: "Read/Write Only"
+            6: "Read/Execute Only"
+            7: "Feedback"
+            8: "Clean"
+            1002: "Unknown"
+            1003: "Assess"
+            1004: "Terminated. Files were recovered."
+            1005: "Terminated. Some files were not recovered."
+            1006: "Terminated. Files were not recovered."
+            1007: "Terminated. Restart result: Files were recovered."
+            1008: "Terminated: Restart result: Some files were not recovered."
+            1009: "Terminated: Restart result: Riles were not recovered."
+        mapping:
+          parsed_event.message.act: event.action
