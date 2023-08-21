@@ -6,6 +6,6 @@ OpenLDAP (Lightweight Directory Access Protocol) is an open-source implementatio
 
 ## Intakes
 
-- [open-ldap](./open-ldap/CHANGELOG.md)
+- [openldap](openldap/CHANGELOG.md)
 
   **Helps to monitor OpenLDAP events.**
