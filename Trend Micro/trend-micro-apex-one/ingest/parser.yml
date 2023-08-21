@@ -32,7 +32,13 @@ pipeline:
   - name: set_timestamp
   - name: set_cef_header_fields
   - name: set_attack_discovery_detection_event
+    filter: "{{parsed_event.message.Name == 'Attack Discovery Detections'}}"
   - name: set_behavior_monitoring_event
+    filter: "{{parsed_event.message.Name == 'Behavior Monitoring'}}"
+  - name: set_cnc_callback_event
+    filter: "{{parsed_event.message.Name == 'CnC Callback'}}"
+  - name: set_content_security_event
+    filter: "{{parsed_event.message.Name == 'This is a policy name'}}"
 
 stages:
   set_timestamp:
@@ -149,3 +155,87 @@ stages:
             1009: "Terminated: Restart result: Riles were not recovered."
         mapping:
           parsed_event.message.act: event.action
+
+  set_cnc_callback_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['network']
+          event.type: info
+          host.name: "{{parsed_event.message.shost}}"
+          source.ip: "{{parsed_event.message.src}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          source.domain: "{{parsed_event.message.cs3Label}}"
+          rule.ruleset: "{{parsed_event.message.SLF_PolicyName}}"
+          url.original: "{{parsed_event.message.request}}"
+          event.start: "{{parsed_event.message.SLF_FirstSeen}}"
+          event.end: "{{parsed_event.message.SLF_LastSeen}}"
+          destination.address: "{{parsed_event.message.cn3Label}}"
+          process.name: "{{parsed_event.message.deviceProcessName}}"
+
+  set_content_security_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['email']
+          event.type: ['info']
+          event.severity: "{{parsed_event.message.CLF_SeverityCode}}"
+          event.code: "{{parsed_event.message.cs5Label}}"
+          email.to.address: "{{parsed_event.message.dhost}}"
+          email.from.address: "{{parsed_event.message.shost}}"
+          rule.name: "{{parsed_event.message.SL_PolicyContent}}"
+          rule.ruleset: "{{parsed_event.message.cat}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+          file.name: "{{parsed_event.message.fname}}"
+          email.subject: "{{parsed_event.message.msg}}"
+          source.ip: "{{parsed_event.message.src}}"
+          url.original: "{{parsed_event.message.request}}"
+
+      - translate:
+        dictionary:
+            0: Unknown
+            1: N/A
+            2: Deliver
+            3: Delete
+            4: Quarantine
+            5: Postpone
+            6: Forward
+            7: Replace
+            8: Archive
+            100: Strip
+            101: Pass
+        mapping:
+          parsed_event.message.act: event.action
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: ContentFilter
+          2: AttachmentFilter
+          3: StandardFilter
+          4: SizeFilter
+          5: DisclaimerMgr
+          6: SpamFilter
+          7: OPP
+          8: ImportFilter
+          9: PhishingFilter
+          10: UrlReputationFilter
+        mapping:
+          parsed_event.message.cs3: Trend_Micro.SL_FilterType
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: N/A
+          2: Deliver
+          3: Delete
+          4: Quarantine
+          5: Postpone
+          6: Forward
+          7: Replace
+          8: Archive
+          100: Strip
+          101: Pass
+        mapping:
+          parsed_event.message.cs6: Trend_Micro.SL_MessageAction
+
