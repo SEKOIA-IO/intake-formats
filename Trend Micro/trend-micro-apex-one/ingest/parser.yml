@@ -41,7 +41,14 @@ pipeline:
     filter: "{{parsed_event.message.Name == 'This is a policy name'}}"
   - name: set_data_loss_prevention_event
     filter: "{{parsed_event.message.Name == 'Data Loss Prevention'}}"
-
+  - name: set_device_access_control_event
+    filter: "{{parsed_event.message.Name == 'Device Access Control'}}"
+  - name: set_endpoint_application_control_event
+    filter: "{{parsed_event.message.Name == 'Endpoint Application Control Violation Information'}}"
+  - name: set_engine_update_event
+    filter: "{{parsed_event.message.Name == 'Engine Update Status'}}"
+  - name: set_logon_logoff_event
+    filter: "{{parsed_event.message.Name == 'Managed Product Logon/Logoff Events'}}"
 
 stages:
   set_timestamp:
@@ -309,3 +316,87 @@ stages:
           36: web upload
         mapping:
           parsed_event.message.cn2: event.action
+
+  set_device_access_control_event:
+    actions:
+      - set:
+          event.kind: event
+          event.type: ['info']
+          event.category: ['file']
+          source.domain: "{{parsed_event.message.shost}}"
+          destination.domain: "{{parsed_event.message.dvchost}}"
+          process.executable: "{{parsed_event.message.sproc}}"
+          file.name: "{{parsed_event.message.fname}}"
+
+      - translate:
+        dictionary:
+          0: USB storage device
+          1: Non-storage USB
+          2: CD/DVD
+          3: Floppy disks
+          4: Network driver
+        mapping:
+          parsed_event.message.cn2: Trend_Micro.DeviceType
+
+      - translate:
+        dictionary:
+          0: Modify
+          1: Read and execute
+          2: Read
+          3: List device content only
+          4: Block
+        mapping:
+          parsed_event.message.cn3: Trend_Micro.Permission
+
+  set_endpoint_application_control_event:
+    actions:
+      - set:
+          event.kind: event
+          event.type: ['change']
+          event.category: ['process']
+          source.domain: "{{parsed_event.message.shost}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+          source.user.name: "{{parsed_event.message.suser}}"
+          source.ip: "{{parsed_event.message.cs2 or parsed_event.message.c6a3}}"
+          process.executable: "{{parsed_event.message.fname}}"
+          process.hash.sha1: "{{parsed_event.message.fileHash}}"
+          process.command_line: "{{parsed_event.message.cs3}}"
+          user.name: "{{parsed_event.message.duser}}"
+          rule.name: "{{parsed_event.message.cs4}}"
+          rule.ruleset: "{{parsed_event.message.cs5}}"
+
+      - translate:
+        dictionary:
+          0: Allowed
+          1: Blocked
+          2: Reported as allowed
+          3: Reported as blocked
+        mapping:
+          parsed_event.message.act: event.action
+
+  set_engine_update_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['process']
+          event.type: ['change']
+          host.name: "{{parsed_event.message.shost}}"
+          source.ip: "{{parsed_event.message.cs2}}"
+          Trend_Micro.Engine: "{{parsed_event.message.cn2}}"
+
+      - translate:
+        dictionary:
+          0: Unused
+          1: In use
+        mapping:
+          parsed_event.message.cn3: Trend_Micro.Engine_Status
+
+  set_logon_logoff_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['authentication']
+          event.type: ['info']
+          process.title: "{{parsed_event.message.deviceFacility}}"
+          host.name: "{{parsed_event.message.shost}}"
+          event.reason: "{{parsed_event.message.msg}}"
