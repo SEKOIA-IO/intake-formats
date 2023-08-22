@@ -49,6 +49,16 @@ pipeline:
     filter: "{{parsed_event.message.Name == 'Engine Update Status'}}"
   - name: set_logon_logoff_event
     filter: "{{parsed_event.message.Name == 'Managed Product Logon/Logoff Events'}}"
+  - name: set_network_content_inspection_event
+    filter: "{{parsed_event.message.Name == 'Suspicious Connection'}}"
+  - name: set_pattern_update_status_event
+    filter: "{{parsed_event.message.Name == 'Pattern Update Status'}}"
+  - name: set_predictive_machine_learning_event
+    filter: "{{parsed_event.message.Name == 'virusa'}}"
+  - name: set_sandbox_detection_event
+    filter: "{{parsed_event.message.Name == 'VAN_RANSOMWARE.umxxhelloransom_abc'}}"
+  - name: set_spyware_grayware_event
+    filter: "{{parsed_event.message.Name == 'Spyware Detected'}}"
 
 stages:
   set_timestamp:
@@ -400,3 +410,97 @@ stages:
           process.title: "{{parsed_event.message.deviceFacility}}"
           host.name: "{{parsed_event.message.shost}}"
           event.reason: "{{parsed_event.message.msg}}"
+
+  set_network_content_inspection_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['network']
+          event.type: ['connection']
+          event.code: "{{parsed_event.message.cat}}"
+          process.executable: "{{parsed_event.message.deviceProcessName}}"
+          source.ip: "{{parsed_event.message.src}}"
+          source.port: "{{parsed_event.message.spt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          destination.port: "{{parsed_event.message.dpt}}"
+          Trend_Micro.NCIE_ThreatName: "{{parsed_event.message.NCIE_ThreatName}}"
+          event.action: "{{parsed_event.message.act}}"
+          network.direction: >-
+            {% if parsed_event.message.deviceDirection != 'None' %}
+              {{parsed_event.message.deviceDirection}}
+            {% endif %}
+
+  set_pattern_update_status_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['configuration']
+          event.type: ['change']
+          host.name: "{{parsed_event.message.shost}}"
+          host.os.name: "{{parsed_event.message.cs1}}"
+          host.ip: "{{parsed_event.message.cs2}}"
+          Trend_Micro.Connection_Status: "{{parsed_event.message.cn1}}"
+          rule.id: "{{parsed_event.message.cn2}}"
+          Trend_Micro.Pattern_RuleVersion: "{{parsed_event.message.cn5}}"
+          event.reason: "{{parsed_event.message.msg}}"
+
+      - translate:
+        dictionary:
+          0: Up-to-date
+          1: 1 version old
+          2: 2 versions old
+          3: 3 versions old
+          4: 4 versions old
+          5: 5 versions old
+          6: 6 versions old
+          7: 7 or more versions old
+        mapping:
+          parsed_event.message.cn3: Trend_Micro.Pattern_RuleStatus
+
+  set_predictive_machine_learning_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ['malware']
+          event.type: ['info']
+          file.name: "{{parsed_event.message.fname}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.hash.sha1: "{{parsed_event.message.filehash}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          process.user.name: "{{parsed_event.message.duser}}"
+          host.ip: "{{parsed_event.message.dst or c6a3}}"
+          user.name: "{{parsed_event.message.suser}}"
+          source.address: "{{parsed_event.message.shost}}"
+          url.original: "{{parsed_event.message.cs3}}"
+          process.executable: "{{parsed_event.message.sproc}}"
+          process.command_line: "{{parsed_event.message.cs4}}"
+
+  set_sandbox_detection_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ['malware']
+          event.type: ['info']
+          host.name: "{{parsed_event.message.dhost}}"
+          source.ip: "{{parsed_event.message.src or parsed_event.message.c6a3}}"
+          process.name: "{{parsed_event.message.sproc}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          file.name: "{{parsed_event.message.fname}}"
+          url.original: "{{parsed_event.message.request}}"
+          Trend_Micro.Security_Threat: "{{parsed_event.message.cs1}}"
+          Trend_Micro.Risk_Level: "{{parsed_event.message.cn1}}"
+          Trend_Micro.Threat_Categories: "{{parsed_event.message.cs2}}"
+          Trend_Micro.Cloud_Service_Vendor: "{{parsed_event.message.cs3}}"
+
+  set_spyware_grayware_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ['malware']
+          event.type: ['info']
+          Trend_Micro.VirusName: "{{parsed_event.message.cs1}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
+          user.name: "{{parsed_event.message.duser}}"
