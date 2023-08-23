@@ -59,6 +59,12 @@ pipeline:
     filter: "{{parsed_event.message.Name == 'VAN_RANSOMWARE.umxxhelloransom_abc'}}"
   - name: set_spyware_grayware_event
     filter: "{{parsed_event.message.Name == 'Spyware Detected'}}"
+  - name: set_suspicious_files_event
+    filter: "{{parsed_event.message.Name == 'Suspicious Files'}}"
+  - name: set_virus_malware_event
+    filter: "{{parsed_event.message.Name == 'JS_EXPLOIT.SMDN' or parsed_event.message.Name == 'WORM_GAMARUE.ITK'}}"
+  - name: set_web_security_event
+    filter: "{{parsed_event.message.Name == '7'}}"
 
 stages:
   set_timestamp:
@@ -504,3 +510,72 @@ stages:
           host.name: "{{parsed_event.message.dhost}}"
           source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
           user.name: "{{parsed_event.message.duser}}"
+
+  set_suspicious_files_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ['malware']
+          event.type: ['info']
+          file.name: "{{parsed_event.message.cs3}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
+          event.action: "{{parsed_event.message.act}}"
+
+  set_virus_malware_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ['malware']
+          event.type: ['info']
+          host.name: "{{parsed_event.message.dhost}}"
+          user.name: "{{parsed_event.message.duser}}"
+          event.code: "{{parsed_event.message.cs4}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
+
+  set_web_security_event:
+    actions:
+      - set:
+          event.kind: event
+          event.category: ['network']
+          event.type: ['info']
+          destination.port: "{{parsed_event.message.dpt}}"
+          source.ip: "{{parsed_event.message.src}}"
+          rule.ruleset: "{{parsed_event.message.cs1}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+          file.name: "{{parsed_event.message.fname}}"
+          url.original: "{{parsed_event.message.request}}"
+          user.name: "{{parsed_event.message.duser}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: Pass
+          2: Block
+          3: Monitor
+          4: Delete
+          5: Quarantine
+          6: Warn
+          7: Warn and continue
+          8: Override
+        mapping:
+          parsed_event.message.act: event.action
+
+      - translate:
+        dictionary:
+          0: None (the field should not be defined in this case)
+          1: Inbound
+          2: Outbound
+        mapping:
+          parsed_event.message.deviceDirection: network.direction
+        if:
+          - condition: parsed_event.message.deviceDirection != 0
+
+
+        
+
