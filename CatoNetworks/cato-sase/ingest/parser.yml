@@ -1,0 +1,151 @@
+name: cato_sase
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: output
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.event_time}}"
+        output_field: datetime
+    filter: "{{json_event.output.event_time != None}}"
+
+  - name: set_common_fields
+  - name: set_os_info
+  - name: set_event_fields
+
+stages:
+  set_event_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.kind: "event"
+          event.action: "{{json_event.output.action | lower}}"
+          event.reason: "{{json_event.output.event_message}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{json_event.output.get('login_type') != None or json_event.output.get('authentication_type') != None}}"
+
+      ## https://support.catonetworks.com/hc/en-us/articles/360011568478
+      - set:
+          event.category: ["malware"]
+        filter: "{{json_event.output.get('threat_type') != None or json_event.output.get('threat_name') != None}}"
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+        filter: "{{json_event.output.event_sub_type == 'IPS'}}"
+
+      - set:
+          event.type: ["denied"]
+        filter: "{{json_event.output.event_sub_type == 'IPS' and json_event.output.action == 'Block'}}"
+
+      - set:
+          event.type: ["start"]
+        filter: "{{json_event.output.event_type == 'Connectivity' and json_event.output.event_sub_type == 'Connected'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["allowed"]
+        filter: "{{json_event.output.event_type == 'Security' and json_event.output.event_sub_type == 'RPF' and json_event.output.action == 'Allow'}}"
+
+  set_os_info:
+    actions:
+      - set:
+          host.name: "{{json_event.output.device_name}}"
+          host.ip: "{{json_event.output.host_ip}}"
+          host.mac: "{{json_event.output.host_mac}}"
+          host.os.version: "{{json_event.output.os_version}}"
+
+      - translate:
+        dictionary:
+          "OS_WINDOWS": "windows"
+          "OS_MAC": "macos"
+          "OS_LINUX": "linux"
+          "OS_IOS": "ios"
+          "OS_ANDROID": "android"
+          "OS_UNKNOWN": "unknown"
+        mapping:
+          json_event.output.os_type: host.os.type
+        filter: "{{json_event.output.os_type != None}}"
+
+  set_common_fields:
+    actions:
+      # Default fields with predefined values
+      - set:
+          agent.version: "{{json_event.output.client_version}}"
+
+          destination.geo.country_name: "{{json_event.output.dest_country}}"
+          destination.ip: "{{json_event.output.dest_ip}}"
+          destination.port: "{{json_event.output.dest_port}}"
+
+          file.hash.sha256: "{{json_event.output.file_hash}}"
+          file.name: "{{json_event.output.file_name}}"
+          file.size: "{{json_event.output.file_size}}"
+
+          network.transport: "{{json_event.output.ip_protocol}}"
+          network.direction: "{{json_event.output.traffic_direction}}"
+          url.original: "{{json_event.output.url}}"
+
+          user.name: "{{json_event.output.user_name}}"
+          user.email: "{{json_event.output.vpn_user_email}}"
+
+          rule.id: "{{json_event.output.rule}}"
+          rule.name: "{{json_event.output.rule_name}}"
+
+          source.geo.country_name: "{{json_event.output.src_country}}"
+          source.ip: "{{json_event.output.src_ip}}"
+          source.nat.ip: "{{json_event.output.src_isp_ip}}"
+          source.port: "{{json_event.output.src_port}}"
+
+          cato.ad_name: "{{json_event.output.ad_name}}"
+          cato.application: "{{json_event.output.application}}"
+          cato.authentication_type: "{{json_event.output.authentication_type}}"
+          cato.categories: "{{json_event.output.categories}}"
+          cato.client_class: "{{json_event.output.client_class}}"
+          cato.configured_host_name: "{{json_event.output.configured_host_name}}"
+          cato.custom_categories: >
+            [
+              {% for record in json_event.output.custom_categories.split(',') %}
+                  {% if record != "" %}"{{record | trim}}",{% endif %}
+              {% endfor %}
+            ]
+          cato.custom_category: "{{json_event.output.custom_category}}"
+          cato.dest_site: "{{json_event.output.dest_site}}"
+          cato.dest_site_name: "{{json_event.output.dest_site_name}}"
+          cato.directory_host_name: "{{json_event.output.directory_host_name}}"
+          cato.directory_ip: "{{json_event.output.directory_ip}}"
+          cato.directory_sync_result: "{{json_event.output.directory_sync_result}}"
+          cato.directory_sync_type: "{{json_event.output.directory_sync_type}}"
+          cato.event_sub_type: "{{json_event.output.event_sub_type}}"
+          cato.event_type: "{{json_event.output.event_type}}"
+          cato.incident_id: "{{json_event.output.incident_id}}"
+          cato.link_type: "{{json_event.output.link_type}}"
+          cato.login_type: "{{json_event.output.login_type}}"
+          cato.registration_code: "{{json_event.output.registration_code}}"
+          cato.src_site: "{{json_event.output.src_site}}"
+          cato.src_site_name: "{{json_event.output.src_site_name}}"
+          cato.subnet_name: "{{json_event.output.subnet_name}}"
+          cato.threat_name: "{{json_event.output.threat_name}}"
+          cato.threat_reference: "{{json_event.output.threat_reference}}"
+          cato.threat_type: "{{json_event.output.threat_type}}"
+          cato.threat_verdict: "{{json_event.output.threat_verdict}}"
+          cato.tunnel_protocol: "{{json_event.output.tunnel_protocol}}"
+          cato.windows_domain_name: "{{json_event.output.windows_domain_name}}"
+          cato.pop_name: "{{json_event.output.pop_name}}"
+          cato.risk_level: "{{json_event.output.risk_level}}"
+          cato.src_is_site_or_vpn: "{{json_event.output.src_is_site_or_vpn}}"
+          cato.incident_aggregation: "{{json_event.output.incident_aggregation}}"
+          cato.domain_name: "{{json_event.output.domain_name}}"
+          cato.dest_is_site_or_vpn: "{{json_event.output.dest_is_site_or_vpn}}"
