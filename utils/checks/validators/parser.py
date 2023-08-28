@@ -231,8 +231,6 @@ def get_assigned_fields(parser: IntakeFormat) -> tuple[set[str], dict[str, Any]]
     """
     Gather fields we affect in a parser
     """
-    pipeline_steps = set(item.name for item in parser.pipeline)
-
     field_names: set[str] = set()
     set_fields: dict[str, str] = {}
 
@@ -249,14 +247,9 @@ def get_assigned_fields(parser: IntakeFormat) -> tuple[set[str], dict[str, Any]]
                 field_names.update(action.delete)
 
             elif isinstance(action, TranslateAction):
-                fields = set(action.mapping.keys())
-                fields.update(set(action.mapping.values()))
-
-                # could mention an ECS var or a runtime var, and we have to ignore the latter.
-                # so we filter out fields with pipeline stage name in them (e.g. `parse_date.message`)
-                fields = {
-                    item for item in fields if item.split(".")[0] not in pipeline_steps
-                }
+                # only values(), because keys() could involve a runtime var
+                # this way we could get false negatives, but will avoid all false positives
+                fields = set(action.mapping.values())
                 field_names.update(fields)
 
     return field_names, set_fields
