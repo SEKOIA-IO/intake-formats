@@ -196,13 +196,18 @@ stages:
           rule.name: "{{parsed_event.message.MailPolicy}}"
           email.attachments: >-
             [{% for filename, info in json_event_esaattachmentdetails.message.items() -%}
-              {%- if not loop.first %},{% endif %}
-              {
-                "file": {
-                  "name": "{{ filename }}"{% if info.get("AMP", {}).get("fileHash") is not none %},
-                  "hash": { "sha256": "{{ info.AMP.fileHash }}" }{% endif %}
-                }
-              }
+              {% set hashes = info.get("AMP", {}).get("fileHash") %}
+              {% if hashes is none %}
+                {"file":{ "name": "{{ filename }}"}},
+              {% else %}
+                {% if hashes is string %}
+                  {"file":{"name": "{{ filename }}", "hash":{"sha256": "{{ hashes }}"}}},
+                {% else %}
+                  {% for hash in hashes %}
+                    {"file":{"name": "{{ filename }}", "hash":{"sha256": "{{ hash }}"}}},
+                  {% endfor %}
+                {% endif %}
+              {% endif %}
             {%- endfor %}]
           cisco.esa.url: >-
             [{% for url, details in dict(json_event_url_details.message).items() %}
