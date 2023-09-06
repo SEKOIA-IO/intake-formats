@@ -9,4 +9,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 2023-09-06
 
- - Add for the first time the splunk core parser
+- Add for the first time the splunk core parser
