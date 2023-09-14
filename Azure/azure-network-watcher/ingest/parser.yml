@@ -1,0 +1,90 @@
+name: azure-network-watcher
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  #- name: parsed_event
+  #  external:
+  #    name: grok.match
+  #    properties:
+  #      input_field: "{{json_event.message.properties.Msg}}"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          log.hostname: "{{json_event.message.resourceId}}"
+          source.mac: "{{json_event.message.macAddress}}"
+          action.type: "{{json_event.message.rule}}"
+          source.ip: "{{json_event.message.srcaddr}}"
+          destination.ip: "{{json_event.message.dstaddr}}"
+          source.bytes: "{{json_event.message.srcbytes}}"
+          destination.bytes: "{{json_event.message.dstbytes}}"
+          source.packets: "{{json_event.message.srcpackets}}"
+          destination.packets: "{{json_event.message.dstpackets}}"
+          source.port: "{{json_event.message.srcport}}"
+          destination.port: "{{json_event.message.dstport}}"
+          source.address: "{{json_event.message.srcaddr}}"
+          destination.address: "{{json_event.message}}"
+
+      - set:
+          action.target: "network-traffic"
+        filter: "{{json_event.message.get('destination') != None and json_event.message.get('source')}}"
+
+      - set:
+          tmp.flowstate: "end"
+        filter: "{{json_event.message.get('flowstate') == 'E'}}"
+
+      - set:
+          tmp.flowstate: "continue"
+        filter: "{{json_event.message.get('flowstate') == 'C'}}"
+
+      - set:
+          tmp.flowstate: "begin"
+        filter: "{{json_event.message.get('flowstate') == 'B'}}"
+
+      - set:
+          action.name: "accept"
+        filter: "{{json_event.message.get('trafficdecision') == 'A'}}"
+
+      - set:
+          action.name: "reject"
+        filter: "{{json_event.message.get('trafficdecision') != 'A'}}"
+
+      - set:
+          network.direction: "inbound"
+        filter: "{{json_event.message.get('trafficflow') == 'I'}}"
+
+      - set:
+          network.direction: "outbound"
+        filter: "{{json_event.message.get('trafficflow') != 'I'}}"
+
+      - set:
+          network.transport: "tcp"
+        filter: "{{json_event.message.get('protocol') == 'T'}}"
+
+      - set:
+          network.transport: "tcp"
+        filter: "{{json_event.message.get('protocol') != 'T'}}"
+
+
+
+
+
+   #       grok {
+   #         id => "azure_network_watcher_grok1"
+   #         patterns_dir   => "/usr/share/logstash/pipeline/patterns"
+   #         match => {[azure_nw][flowstate] == "E"
+   #             "[azure_nw][flow.0]" => [
+   #                 "(%{INT:[azure_nw][flowTime]},%{IP:[azure_nw][srcaddr]},%{IP:[azure_nw][dstaddr]},%{INT:[azure_nw][srcport]},%{INT:[azure_nw][dstport]},%{PROTOCOL:[azure_nw][protocol]},%{TRAFFICFLOW:[azure_nw][trafficflow]},%{TRAFFICDECISION:[azure_nw][trafficdecision]}(|,(%{FLOWSTATE:[azure_nw][flowstate]}|),(%{INT:[azure_nw][srcpackets]}|),(%{INT:[azure_nw][srcbytes]}|),(%{INT:[azure_nw][dstpackets]}|),(%{INT:[azure_nw][dstbytes]}|)))$"
+   #                 ] }
+   #         tag_on_failure => [ "_grokparsefailure" ]
+   #         timeout_millis => 5000
+   #         timeout_scope  => 'event'
+   #     }
