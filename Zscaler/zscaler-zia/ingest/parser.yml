@@ -1,0 +1,122 @@
+name: withsecure-elements
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parse_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.event.datetime}}"
+        output_field: result
+
+  - name: parse_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.event.time}}"
+        output_field: result
+
+  - name: set_common_fields
+  - name: set_event_category
+
+stages:
+  set_event_category:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: "{{json_event.message.get('sourcetype') == 'zscalernss-web' or json_event.message.get('sourcetype') == 'zscalernss-dns'}}"
+
+      - set:
+          event.category: ["threat"]
+          event.type: ["info"]
+        filter: "{{json_event.message.get('sourcetype') == 'zscalernss-fw'}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: "{{json_event.message.get('sourcetype') == 'zscalernss-casb' or json_event.message.get('sourcetype') == 'zscalernss-dlp' or json_event.message.get('sourcetype') == 'zscalernss-audit'}}"
+
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_datetime.result}}"
+        filter: "{{parse_datetime.result != None}}"
+
+      - set:
+          "@timestamp": "{{parse_time.result}}"
+        filter: "{{parse_time.result != None}}"
+
+      - set:
+          zscaler.zia.threat.category: "{{json_event.message.event.threatcategory}}"
+        filter: "{{json_event.message.event.threatcategory != None}}"
+
+      - set:
+          zscaler.zia.threat.category: "{{json_event.message.event.threatcat}}"
+        filter: "{{json_event.message.event.threatcat != None}}"
+
+      - set:
+          network.protocol: "{{json_event.message.event.protocol}}"
+        filter: "{{json_event.message.event.protocol != None}}"
+
+      - set:
+          network.protocol: "{{json_event.message.event.proto}}"
+        filter: "{{json_event.message.event.proto != None}}"
+
+      - set:
+          user.name: "{{json_event.message.event.user}}"
+        filter: "{{json_event.message.event.user != None}}"
+
+      - set:
+          user.name: "{{json_event.message.event.login}}"
+        filter: "{{json_event.message.event.login != None}}"
+
+      - set:
+          event.kind: "event"
+          event.duration: "{{json_event.message.event.duration}}"
+          event.action: "{{json_event.message.event.action | lower}}"
+
+          zscaler.zia.event_id: "{{json_event.message.event.event_id}}"
+          zscaler.zia.source_type: "{{json_event.message.sourcetype}}"
+          zscaler.zia.action.result: "{{json_event.message.event.result}}"
+          zscaler.zia.vendor: "{{json_event.message.event.vendor}}"
+          zscaler.zia.product: "{{json_event.message.event.product}}"
+          zscaler.zia.appname: "{{json_event.message.event.appname}}"
+          zscaler.zia.category: "{{json_event.message.event.category}}"
+          zscaler.zia.sub_category: "{{json_event.message.event.subcategory}}"
+          zscaler.zia.department: "{{json_event.message.event.department}}"
+          zscaler.zia.audit.log_type: "{{json_event.message.event.auditlogtype}}"
+
+          zscaler.zia.threat.name: "{{json_event.message.event.threatname}}"
+          zscaler.zia.threat.class: "{{json_event.message.event.threatclass}}"
+          zscaler.zia.device.hostname: "{{json_event.message.event.devicehostname}}"
+          zscaler.zia.device.owner: "{{json_event.message.event.deviceowner}}"
+          zscaler.zia.keyprotectiontype: "{{json_event.message.event.keyprotectiontype}}"
+          zscaler.zia.tuntype: "{{json_event.message.event.tuntype}}"
+          zscaler.zia.avgduration: "{{json_event.message.event.avgduration}}"
+
+          http.request.method: "{{json_event.message.event.requestmethod}}"
+          http.request.bytes: "{{json_event.message.event.requestsize}}"
+          http.request.referrer: "{{json_event.message.event.referrerURL}}"
+          http.response.status_code: "{{json_event.message.properties.status}}"
+          http.response.bytes: "{{json_event.message.event.responsesize}}"
+          http.response.mime_type: "{{json_event.message.event.contenttype}}"
+
+          server.ip: "{{json_event.message.event.serverip}}"
+          source.ip: "{{json_event.message.event.ClientIP}}"
+          source.bytes: "{{json_event.message.event.inbytes}}"
+          destination.bytes: "{{json_event.message.event.outbytes}}"
+          destination.geo.country_name: "{{json_event.message.event.destcountry}}"
+
+          user_agent.original: "{{json_event.message.event.useragent}}"
+
+          host.name: "{{json_event.message.event.hostname}}"
+
+          file.type: "{{json_event.message.event.filetype}}"
+
+          dns.type: "{{json_event.message.event.dns_reqtype}}"
