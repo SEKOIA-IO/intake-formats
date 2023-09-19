@@ -28,6 +28,10 @@ stages:
   set_event_category:
     actions:
       - set:
+          event.category: ["process"]
+          event.type: ["info"]
+
+      - set:
           event.category: ["network"]
           event.type: ["info"]
         filter: "{{json_event.message.get('sourcetype') == 'zscalernss-web' or json_event.message.get('sourcetype') == 'zscalernss-dns'}}"
@@ -38,43 +42,24 @@ stages:
         filter: "{{json_event.message.get('sourcetype') == 'zscalernss-fw'}}"
 
       - set:
-          event.category: ["process"]
-          event.type: ["info"]
-        filter: "{{json_event.message.get('sourcetype') == 'zscalernss-casb' or json_event.message.get('sourcetype') == 'zscalernss-dlp' or json_event.message.get('sourcetype') == 'zscalernss-audit'}}"
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{json_event.message.get('sourcetype') == 'zscalernss-audit' and json_event.message.event.action.lower() == 'sign_in'}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{json_event.message.get('sourcetype') == 'zscalernss-audit' and json_event.message.event.action.lower() == 'update'}}"
 
   set_common_fields:
     actions:
       - set:
-          "@timestamp": "{{parse_datetime.result}}"
+          "@timestamp": "{{parse_datetime.result or parse_time.result}}"
         filter: "{{parse_datetime.result != None}}"
 
       - set:
           "@timestamp": "{{parse_time.result}}"
         filter: "{{parse_time.result != None}}"
-
-      - set:
-          zscaler.zia.threat.category: "{{json_event.message.event.threatcategory}}"
-        filter: "{{json_event.message.event.threatcategory != None}}"
-
-      - set:
-          zscaler.zia.threat.category: "{{json_event.message.event.threatcat}}"
-        filter: "{{json_event.message.event.threatcat != None}}"
-
-      - set:
-          network.protocol: "{{json_event.message.event.protocol}}"
-        filter: "{{json_event.message.event.protocol != None}}"
-
-      - set:
-          network.protocol: "{{json_event.message.event.proto}}"
-        filter: "{{json_event.message.event.proto != None}}"
-
-      - set:
-          user.name: "{{json_event.message.event.user}}"
-        filter: "{{json_event.message.event.user != None}}"
-
-      - set:
-          user.name: "{{json_event.message.event.login}}"
-        filter: "{{json_event.message.event.login != None}}"
 
       - set:
           event.kind: "event"
@@ -94,7 +79,7 @@ stages:
 
           zscaler.zia.threat.name: "{{json_event.message.event.threatname}}"
           zscaler.zia.threat.class: "{{json_event.message.event.threatclass}}"
-          zscaler.zia.device.hostname: "{{json_event.message.event.devicehostname}}"
+          zscaler.zia.threat.category: "{{json_event.message.event.threatcategory or json_event.message.event.threatcat}}"
           zscaler.zia.device.owner: "{{json_event.message.event.deviceowner}}"
           zscaler.zia.keyprotectiontype: "{{json_event.message.event.keyprotectiontype}}"
           zscaler.zia.tuntype: "{{json_event.message.event.tuntype}}"
@@ -108,15 +93,29 @@ stages:
           http.response.mime_type: "{{json_event.message.event.contenttype}}"
 
           server.ip: "{{json_event.message.event.serverip}}"
-          source.ip: "{{json_event.message.event.ClientIP}}"
-          source.bytes: "{{json_event.message.event.inbytes}}"
-          destination.bytes: "{{json_event.message.event.outbytes}}"
-          destination.geo.country_name: "{{json_event.message.event.destcountry}}"
+
+          network.application: "{{json_event.message.event.applicationname}}"
 
           user_agent.original: "{{json_event.message.event.useragent}}"
 
-          host.name: "{{json_event.message.event.hostname}}"
-
           file.type: "{{json_event.message.event.filetype}}"
+          file.name: "{{json_event.message.event.object_name_1}}"
 
-          dns.type: "{{json_event.message.event.dns_reqtype}}"
+          url.domain: "{{json_event.message.event.url}}"
+
+          user.email: "{{json_event.message.event.user or json_event.message.event.login}}"
+          network.protocol: "{{json_event.message.event.protocol or json_event.message.event.proto}}"
+
+          source.ip: "{{json_event.message.event.ClientIP or json_event.message.event.clientip or json_event.message.event.clt_sip}}"
+          source.bytes: "{{json_event.message.event.inbytes}}"
+
+          destination.port: "{{json_event.message.event.srv_dport}}"
+          destination.ip: "{{json_event.message.event.srv_dip}}"
+          destination.bytes: "{{json_event.message.event.outbytes}}"
+          destination.geo.country_name: "{{json_event.message.event.destcountry}}"
+
+          dns.question.name: "{{json_event.message.event.dns_req}}"
+          dns.response_code: "{{json_event.message.event.dns_resp}}"
+          dns.question.type: "{{json_event.message.event.dns_reqtype}}"
+
+          host.name: "{{json_event.message.event.hostname or json_event.message.event.devicehostname}}"
