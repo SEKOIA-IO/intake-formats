@@ -11,6 +11,20 @@ pipeline:
         input_field: "{{parsed_event.message.event_timestamp}}"
         output_field: date
 
+  - name: parsed_cert_expiry_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.certificate_expiry_date}}"
+        output_field: date
+
+  - name: parsed_cert_start_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.certificate_start_date}}"
+        output_field: date
+
   - name: set_ecs_fields
 
 stages:
@@ -25,12 +39,12 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["connection"]
-        filter: "{{parsed_event.message.username == None}}"
+        filter: "{{parsed_event.message.username == null}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["info"]
-        filter: "{{parsed_event.message.username != None}}"
+        filter: "{{parsed_event.message.username != null}}"
 
       - set:
           event.severity: "{{parsed_event.message.Severity}}"
@@ -65,10 +79,22 @@ stages:
           tls.server.x509.subject.organization: "{{parsed_event.message.certificate_O}}"
           tls.server.x509.subject.organizational_unit: "{{parsed_event.message.certificate_OU}}"
           tls.server.x509.subject.state_or_province: "{{parsed_event.message.certificate_ST}}"
-          tls.server.x509.not_after: "{{parsed_event.message.certificate_expiry_date}}"
-          tls.server.x509.not_before: "{{parsed_event.message.certificate_start_date}}"
+          tls.server.x509.not_after: "{{parsed_cert_expiry_date.date}}"
+          tls.server.x509.not_before: "{{parsed_cert_start_date.date}}"
           tls.server.hash.sha1: "{{parsed_event.message.certificate_thumbprint}}"
-        filter: "{{parsed_event.message.certificate_type in ('server', 'client') }}"
+        filter: "{{parsed_event.message.certificate_type != null and parsed_event.message.certificate_type.lower() == 'server' }}"
+
+      - set:
+          tls.client.x509.subject.common_name: "{{parsed_event.message.certificate_CN}}"
+          tls.client.x509.subject.country: "{{parsed_event.message.certificate_C}}"
+          tls.client.x509.subject.locality: "{{parsed_event.message.certificate_L}}"
+          tls.client.x509.subject.organization: "{{parsed_event.message.certificate_O}}"
+          tls.client.x509.subject.organizational_unit: "{{parsed_event.message.certificate_OU}}"
+          tls.client.x509.subject.state_or_province: "{{parsed_event.message.certificate_ST}}"
+          tls.client.x509.not_after: "{{parsed_cert_expiry_date.date}}"
+          tls.client.x509.not_before: "{{parsed_cert_start_date.date}}"
+          tls.client.hash.sha1: "{{parsed_event.message.certificate_thumbprint}}"
+        filter: "{{parsed_event.message.certificate_type != null and parsed_event.message.certificate_type.lower() == 'client' }}"
 
       - set:
           claroty.xdome.client_id: "{{parsed_event.message.client_id}}"
