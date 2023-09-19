@@ -1,11 +1,21 @@
 name: Microsoft Windows
 pipeline:
   - name: json
+    description: "Bypass wrong syslog configuration which adds : before the json message"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message.replace(':{', '{')}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{")}}'
+
+  - name: json
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
         output_field: event
+    filter: '{{original.message.startswith(":{") == False}}'
 
   - name: parsed_message_kv
     description: "Extract fields from Message field"
@@ -94,6 +104,7 @@ pipeline:
         pattern: >-
           (%{GREEDYDATA}Accesses:%{DATA:Accesses}#NEWLINE#\t\t\t\t#NEWLINE#%{GREEDYDATA})
 
+  - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
   - name: process_executable
@@ -117,6 +128,12 @@ pipeline:
   - name: finalize
 
 stages:
+  delete_process_name:
+    description: "Delete the process.name field added by rsyslog. This stage is not covered by the tests since the unwanted field value is added by the rsyslog server."
+    actions:
+      - delete:
+          - process.name
+
   destination:
     actions:
       - set:
