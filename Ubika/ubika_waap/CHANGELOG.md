@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2023-09-20 - 1.0.2
+
+### Fixed
+
+- Change the way to get the datetime from the event
+
 ## 2023-06-21 - 1.0.1
 
 ### Fixed
