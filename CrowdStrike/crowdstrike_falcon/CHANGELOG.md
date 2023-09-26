@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2023-09-26 - 1.0.2
+
+### Changed
+
+- Fix the way to define timestamp for IDP events
+
 ## 2023-08-15 - 1.0.1
 
 ### Added
