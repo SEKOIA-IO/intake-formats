@@ -33,6 +33,8 @@ pipeline:
     filter: "{{json_event.message.RecordType == 2}}"
   - name: parse_exchange_item_group
     filter: "{{json_event.message.RecordType == 3}}"
+  - name: parse_share_point
+    filter: "{{json_event.message.RecordType == 4}}"
   - name: parse_exchange_item_aggregated
     filter: "{{json_event.message.RecordType == 50}}"
   - name: parse_network_traffic
@@ -49,6 +51,10 @@ pipeline:
     filter: "{{json_event.message.RecordType == 22}}"
   - name: parse_automated_investigation_and_response
     filter: "{{json_event.message.RecordType == 64}}"
+  - name: parse_mcas_alerts
+    filter: "{{json_event.message.RecordType == 98}}"
+  - name: parse_security_compliance_alerts
+    filter: "{{json_event.message.RecordType == 40}}"
 
 stages:
   set_common_fields:
@@ -162,12 +168,71 @@ stages:
           event.action: event.type
         fallback: '["info"]'
       - set:
+          user.id: "{{json_event.message.MailboxOwnerSid}}"
+          office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
+          office365.exchange.modified_properties: "{{json_event.message.ModifiedProperties}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
 
   parse_exchange_item_group:
     actions:
       - set:
+          event.category: ["email", "file"]
+
+      - translate:
+        dictionary:
+          "Create": ["info", "creation"]
+          "Update": ["info", "change"]
+          "HardDelete": ["info", "deletion"]
+          "SoftDelete": ["info", "deletion"]
+          "MoveToDeletedItems": ["info", "deletion"]
+          "MailItemsAccessed": ["info"]
+          "MailboxLogin": ["start"]
+        mapping:
+          event.action: event.type
+        fallback: ["info"]
+
+      - set:
+          process.name: "{{json_event.message.ClientProcessName}}"
+          office365.exchange.client_version: "{{json_event.message.ClientVersion}}"
+          office365.exchange.email.subjects: >
+            [
+              {% if json_event.message.AffectedItems != null %}
+                {% for item in json_event.message.AffectedItems %}
+                  {{ item.Subject }}
+                {% endfor %}
+              {% endif %}  
+            ]
+          office365.exchange.email.paths: >
+            [
+              {% if json_event.message.AffectedItems != null %}
+                {% for item in json_event.message.AffectedItems %}
+                  {{ item.ParentFolder.Path }}
+                {% endfor %}
+              {% endif %}  
+            ]
+
+          email.attachments: >
+            [
+              {% for email in json_event.message.AffectedItems %}
+                {% for file in email.Attachments.split("; ") %}
+                  {"file":{ "name": "{{ file.split(" (")[0] }}", "size": "{{ file.split(" (")[1].strip('b)') }}" }},
+                {% endfor %}
+              {% endfor %}
+            ]
+      - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+  parse_share_point:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+
+          office365.audit.site: "{{json_event.message.Site}}"
+          office365.audit.event_source: "{{json_event.message.EventSource}}"
+          office365.audit.item_type: "{{json_event.message.ItemType}}"
+          office365.audit.platform: "{{json_event.message.Platform}}"
+
+          user_agent.original: "{{json_event.message.UserAgent}}"
 
   parse_exchange_item_aggregated:
     actions:
@@ -182,6 +247,16 @@ stages:
           event.type: ["info"]
           office365.logon_error: "{{json_event.message.LogonError}}"
           office365.error_number: "{{json_event.message.ErrorNumber}}"
+
+      - set:
+          host.os.full: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "OS" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          host.name: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "DisplayName" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.id: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "Id" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.is_compliant: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "IsCompliant" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.is_compliant_and_managed: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "IsCompliantAndManaged" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.trust_type: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "TrustType" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+        filter: '{{json_event.message.get("DeviceProperties") != None}}'
+
       - set:
           user_agent.original: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "UserAgent" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
           office365.auth.user_authentication_method: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "UserAuthenticationMethod" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
@@ -221,8 +296,9 @@ stages:
           event.category: ["file"]
           event.type: ["info"]
           user_agent.original: "{{json_event.message.UserAgent}}"
+          file.extension: "{{json_event.message.SourceFileExtension}}"
           action.outcome: "success"
-          url.full: "{{json_event.message.ObjectId}}"
+          url.full: "{{json_event.message.SiteUrl}}"
           url.original: "{{json_event.message.ObjectId}}"
           action.properties: >
             [
@@ -292,6 +368,14 @@ stages:
           office365.defender.additional_actions: "{{json_event.message.AdditionalActionsAndResults}}"
           office365.defender.auth_details: "{{json_event.message.AuthDetails}}"
           office365.defender.system_overrides: "{{json_event.message.SystemOverrides}}"
+
+      - set:
+          file.name: "{{json_event.message.FileData.FileName}}"
+          file.hash.sha256: "{{json_event.message.FileData.SHA256}}"
+          url.original: "{{json_event.message.FileData.FilePath}}"
+          office365.defender.malware_family: "{{json_event.message.FileData.MalwareFamily}}"
+        filter: '{{json_event.message.get("FileData") != None}}'
+
       - set:
           email.message_id: "{{json_event.message.InternetMessageId[1:-1]}}"
         filter: '{{json_event.message.get("InternetMessageId") != None}}'
@@ -376,3 +460,33 @@ stages:
           email.from.address: '[{% for Property in parse_data.ParsedData.Entities %} "{{Property.Sender}}", {% endfor %}]'
           email.to.address: '[{% for Property in parse_data.ParsedData.Entities %} "{{Property.Recipient}}", {% endfor %}]'
         filter: "{{parse_data.ParsedData.Entities != None and parse_data.ParsedData.Entities | length > 0}}"
+
+  parse_mcas_alerts:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+
+      - set:
+          office365.alert.category: "{{json_event.message.AlertCategory}}"
+          office365.alert.display_name: "{{json_event.message.AlertDisplayName}}"
+          office365.alert.description: "{{json_event.message.AlertDescription}}"
+          office365.alert.severity: "{{json_event.message.AlertSeverity}}"
+          office365.alert.client_ips: "{{json_event.message.ClientIPs}}"
+
+  parse_security_compliance_alerts:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+
+      - set:
+          office365.alert.category: "{{json_event.message.Category}}"
+          office365.alert.display_name: "{{json_event.message.Name}}"
+          office365.alert.severity: "{{json_event.message.Severity}}"
+
+          office365.alert.policy_id: "{{json_event.message.PolicyId}}"
+          office365.alert.source: "{{json_event.message.Source}}"
+          office365.alert.status: "{{json_event.message.Status}}"
