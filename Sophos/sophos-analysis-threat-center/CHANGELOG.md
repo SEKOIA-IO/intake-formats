@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2023-09-20 - 1.0.2
+
+### Changed
+
+- Fix extraction of ml_score_data
+
+## 2023-09-19 - 1.0.1
+
+### Added
+
+- Extract ml_score_data, global_rep, pua_score, process identifier
+
 ## 2023-07-11 - 1.0.0
 
 ### Added
