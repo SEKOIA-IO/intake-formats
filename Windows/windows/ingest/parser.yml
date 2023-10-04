@@ -1,11 +1,21 @@
 name: Microsoft Windows
 pipeline:
   - name: json
+    description: "Bypass wrong syslog configuration which adds : before the json message"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message.replace(':{', '{')}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{")}}'
+
+  - name: json
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
         output_field: event
+    filter: '{{original.message.startswith(":{") == False}}'
 
   - name: parsed_message_kv
     description: "Extract fields from Message field"
@@ -94,6 +104,7 @@ pipeline:
         pattern: >-
           (%{GREEDYDATA}Accesses:%{DATA:Accesses}#NEWLINE#\t\t\t\t#NEWLINE#%{GREEDYDATA})
 
+  - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
   - name: process_executable
@@ -117,6 +128,12 @@ pipeline:
   - name: finalize
 
 stages:
+  delete_process_name:
+    description: "Delete the process.name field added by rsyslog. This stage is not covered by the tests since the unwanted field value is added by the rsyslog server."
+    actions:
+      - delete:
+          - process.name
+
   destination:
     actions:
       - set:
@@ -261,7 +278,6 @@ stages:
           destination.port: "{{json.event.DestPort or json.event.DestinationPort}}"
           event.code: "{{json.event.EventID}}"
           action.id: "{{json.event.EventID}}"
-          event.message: "{{json.event.Message}}"
           event.provider: "{{json.event.SourceName}}"
           event.reason: "{{json.event.Description}}"
           file.created: "{{json.event.CreationUtcTime}}"
@@ -286,6 +302,11 @@ stages:
           user.target.name: "{{json.event.TargetUserName}}"
           user.target.domain: "{{json.event.TargetDomainName}}"
           user.target.id: "{{json.event.TargetUserSid}}"
+
+      - set:
+          event.message: "{{json.event.Message}}"
+          # do not include Message containing a json document
+        filter: "{{json.event.Message.strip().startswith('{') == False}}"
 
   set_action_properties:
     actions:
@@ -544,9 +565,6 @@ stages:
           action.properties.ProxyServer: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "ProxyServer" in component%}{{component["ProxyServer"].strip()}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
-
-      - set:
-          action.properties: ["{{ final.action.properties }}"]
 
   action_target:
     actions:
