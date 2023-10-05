@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2023-09-29
+
+### Added
+
+- Support of AAATM messages
+
+## [1.0.1] - 2023-08-04
+
+### Added
+
+- Support of audit logs
+
 ## [1.0.0] - 2023-06-08
 
 ### Added
