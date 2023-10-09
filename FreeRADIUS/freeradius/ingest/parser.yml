@@ -6,9 +6,10 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: >-
-          \(%{INT}\)\s%{DATA:event_outcome}(\s\(%{GREEDYDATA:event_reason}\))?:\s\[%{USER}\]\s\(from\sclient\s%{DATA:network_name}\sport\s%{INT:client_port}(\scli\s(%{MAC:client_mac}|%{IP:client_ip}))?(\svia\s%{PROTOCOL})?\)
+        pattern: "%{USUAL}|%{IGNREQ}"
         custom_patterns:
+          USUAL: '\s?\(%{INT}\)\s%{DATA:event_outcome}(\s\(%{GREEDYDATA:event_reason}\))?\)?:\s\[%{USER}\]\s\(from\sclient\s%{DATA:network_name}\sport\s%{INT:client_port}(\scli\s(%{MAC:client_mac}|%{IP:client_ip}|(?P<client_mac_unsplitted>[0-9A-Fa-f]{12})))?(\svia\s%{PROTOCOL})?\)'
+          IGNREQ: '\s?Ignoring request to auth address (%{IP:destination_ip}|\*) port %{INT:destination_port} bound to server default from unknown client %{IP:client_ip} port %{INT:client_port} proto %{DATA:network_transport}'
           USER: "%{USER_EMAIL:user_email}|%{HOST}|%{DOM}|%{DATA:user_name}"
           HOST: "host/%{HOSTNAME:client_domain}"
           DOM: '%{DATA:user_domain}\\%{HOSTNAME:user_name}'
@@ -29,11 +30,20 @@ stages:
           user.email: "{{ parsing.message.user_email }}"
           user.name: "{{ parsing.message.user_name }}"
           user.domain: "{{ parsing.message.user_domain }}"
+          user.id: "{{ parsing.message.user_id }}"
           network.name: "{{ parsing.message.network_name }}"
           source.port: "{{ parsing.message.client_port }}"
-          source.mac: "{{ parsing.message.client_mac }}"
+          source.mac: >
+            {%- if parsing.message.client_mac -%}
+              {{parsing.message.client_mac}}
+            {%- elif parsing.message.client_mac_unsplitted -%}
+              {{'{}{}-{}{}-{}{}-{}{}-{}{}-{}{}'.format(*parsing.message.client_mac_unsplitted)}}
+            {%- endif -%}
           source.domain: "{{ parsing.message.client_domain }}"
+          destination.port: "{{ parsing.message.destination_port }}"
+          destination.ip: "{{ parsing.message.destination_ip }}"
           network.protocol: "{{ parsing.message.network_protocol }}"
+          network.transport: "{{ parsing.message.network_transport }}"
           freeradius.outcome: "{{ parsing.message.event_outcome }}"
 
       - set:
