@@ -31,10 +31,10 @@ def test_linting_test_files(intakes_root, test_path):
     """Ensure that keys are sorted in tests files"""
     test_fullpath = os.path.join(intakes_root, test_path)
     with open(test_fullpath) as f:
-        current_test_file = json.load(f)
+        current_test_file: dict = json.load(f)
 
     new_test_file = format_test(current_test_file)
     with open(test_fullpath, "w") as out:
         json.dump(new_test_file, out, indent=2)
 
-    assert new_test_file == current_test_file
+    assert current_test_file == new_test_file
