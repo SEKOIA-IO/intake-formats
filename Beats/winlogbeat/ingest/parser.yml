@@ -5,6 +5,15 @@ pipeline:
       name: json.parse-json
       properties:
         output_field: event
+  - name: parse_kv_hashes
+    filter: "{{json.event.winlog.event_data.Hashes != null}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{json.event.winlog.event_data.Hashes}}"
+        output_field: hash
+        value_sep: "="
+        item_sep: ","
   - name: fields
 stages:
   fields:
@@ -39,6 +48,11 @@ stages:
           event.provider: "{{json.event.event.provider}}"
           event.type: "{{json.event.event.type}}"
           event.original: "{{json.event.message}}"
+          file.directory: "{{json.event.winlog.event_data.TargetFileName | dirname}}"
+          file.name: "{{json.event.winlog.event_data.TargetFileName | basename}}"
+          file.path: "{{json.event.winlog.event_data.TargetFileName}}"
+          file.extension: "{{json.event.winlog.event_data.TargetFileName.split('.') | last}}"
+          file.drive_letter: "{{json.event.winlog.event_data.TargetFileName.split(':') | first}}"
           action.outcome: "{{json.event.event.outcome}}"
           file: "{{json.event.file}}"
           jolokia: "{{json_event.event.jolokia}}"
@@ -48,7 +62,19 @@ stages:
           network: "{{json.event.network}}"
           powershell: "{{json.event.powershell}}"
           process: "{{json.event.process}}"
+          process.command_line: "{{json.event.winlog.event_data.CommandLine}}"
+          process.executable: "{{json.event.winlog.event_data.Image}}"
+          process.name: "{{json.event.winlog.event_data.Image | basename}}"
+          process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
+          process.parent.name: "{{json.event.winlog.event_data.ParentImage| basename}}"
+          process.working_directory: "{{json.event.winlog.event_data.CurrentDirectory}}"
+          process.pe.original_file_name: "{{json.event.winlog.event_data.OriginalFileName}}"
           registry: "{{json.event.registry}}"
+          registry.path: "{{json.event.winlog.event_data.TargetObject}}"
+          registry.data.strings: "{{json.event.winlog.event_data.Details}}"
+          registry.value: '{{json.event.winlog.event_data.TargetObject.split("\\") | last}}'
+          registry.hive: '{{json.event.winlog.event_data.TargetObject.split("\\") | first}}'
+          registry.key: '{{json.event.winlog.event_data.TargetObject.split("\\")[:-1] | join("\\")}}'
           source: "{{json.event.source}}"
           sysmon: "{{json.event.sysmon}}"
           timeseries: "{{json_event.event.timeseries}}"
@@ -61,3 +87,16 @@ stages:
       - set:
           winlog.activity_id: "{{json.event.winlog.activity_id | lower}}"
         filter: '{{json.event.winlog.get("activity_id") != None}}'
+      - set:
+          process.hash.md5: "{{parse_kv_hashes.hash.MD5}}"
+          process.hash.sha1: "{{parse_kv_hashes.hash.SHA1}}"
+          process.hash.sha256: "{{parse_kv_hashes.hash.SHA256}}"
+          process.hash.sha384: "{{parse_kv_hashes.hash.SHA384}}"
+          process.hash.sha512: "{{parse_kv_hashes.hash.SHA512}}"
+          process.hash.ssdeep: "{{parse_kv_hashes.hash.SSDEEP}}"
+          process.hash.tlsh: "{{parse_kv_hashes.hash.TLSH}}"
+          winlog.process.hash: >
+            { {%- for (key,value) in parse_kv_hashes.hash.items() -%}
+              "{{key | lower}}": "{{value}}",
+            {%- endfor -%} }
+        filter: "{{parse_kv_hashes.hash != None}}"
