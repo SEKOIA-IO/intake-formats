@@ -30,13 +30,42 @@ pipeline:
   - name: set_timestamp
   - name: set_default_fields
   - name: set_category
+  - name: set_source_destination_fields
 
 stages:
+  set_source_destination_fields:
+    actions:
+      - set:
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          destination.mac: "{{parsed_event.message.dmac}}"
+
+          source.port: "{{parsed_event.message.spt}}"
+          source.ip: "{{parsed_event.message.src}}"
+          source.domain: "{{parsed_event.message.shost}}"
+          source.mac: "{{parsed_event.message.smac}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.get('Victim IP')}}"
+        filter: "{{parsed_event.message.get('Victim IP') != None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.get('Attacker IP')}}"
+        filter: "{{parsed_event.message.get('Attacker IP') != None}}"
+
   set_category:
     actions:
       - set:
-          event.category: ["network"]
           event.type: ["info"]
+
+      - translate:
+        dictionary:
+          "malware-object": '["malware"]'
+          "riskware-object": '["malware"]'
+          "domain-match": '["network"]'
+        mapping:
+          parsed_event.message.Name: event.category
+        fallback: '["intrusion_detection"]'
 
   set_timestamp:
     actions:
@@ -67,18 +96,9 @@ stages:
           observer.vendor: "{{parsed_event.message.DeviceVendor}}"
           observer.product: "{{parsed_event.message.DeviceProduct}}"
           observer.version: "{{parsed_event.message.DeviceVersion}}"
-          observer.ip: "{{parsed_event.message.dvc}}"
+          observer.ip: ["{{parsed_event.message.dvc}}"]
           observer.hostname: "{{parsed_event.message.dvchost}}"
-          observer.mac: "{{parsed_event.message.dvcmac}}"
-
-          destination.port: "{{parsed_event.message.dpt}}"
-          destination.ip: "{{parsed_event.message.dst}}"
-          destination.mac: "{{parsed_event.message.dmac}}"
-
-          source.port: "{{parsed_event.message.spt}}"
-          source.ip: "{{parsed_event.message.src}}"
-          source.domain: "{{parsed_event.message.shost}}"
-          source.mac: "{{parsed_event.message.smac}}"
+          observer.mac: ["{{parsed_event.message.dvcmac}}"]
 
           network.transport: "{{parsed_event.message.proto}}"
           url.original: "{{parsed_event.message.request}}"
@@ -93,3 +113,8 @@ stages:
           file.extension: "{{parsed_event.message.fileType}}"
 
           process.parent.title: "{{parsed_event.message.sproc}}"
+
+          trellix.nx.sname: "{{parsed_event.message.sname}}"
+          trellix.nx.cnc_port: "{{parsed_event.message.cncPort}}"
+          trellix.nx.cnc_host: "{{parsed_event.message.cncHost}}"
+#         "{{parsed_event.message.get('Attacker IP')}}"
