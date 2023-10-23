@@ -2,6 +2,10 @@ import copy
 import json
 import os
 
+import yaml
+
+from helpers import sort_json_keys, YamlDumper, format_expected
+
 constant_fields = {
     "sekoiaio": {
         "intake": {
@@ -14,48 +18,6 @@ constant_fields = {
     "event": {"id": "00000000-0000-0000-0000-000000000000", "outcome": "success"},
     "ecs": {"version": "1.10.0"},
 }
-
-
-class JsonSorterEncoder(json.JSONEncoder):
-    """Custom json encoder to sort lists and dicts recursively."""
-
-    def encode(self, obj: dict) -> str:
-        """
-        Encode function with additional sorting.
-
-        Arguments:
-            obj: dict
-
-        Returns:
-            str: sorted json string
-        """
-
-        def _sort(item: any) -> any:
-            """
-            Recursive function to perform sorting.
-
-            Arguments:
-                item: any
-
-            Returns:
-                any:
-            """
-            match item:
-                case _ if isinstance(item, list):
-                    # As we might have a case when list contains dicts, we should sort them as well
-                    if len(item) > 0 and isinstance(item[0], dict):
-                        return sorted(item, key=lambda i: i.keys())
-
-                    return sorted(_sort(i) for i in item)
-
-                case _ if isinstance(item, dict):
-                    return {k: _sort(v) for k, v in item.items()}
-
-                case _:
-                    return item
-
-        return super(JsonSorterEncoder, self).encode(_sort(obj))
-
 
 # Tests inside this file are actually parametrized depending on arguments
 # See `pytest_generate_tests` in conftest.py for details
@@ -119,14 +81,13 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
 
     if request.config.getoption("fix_expectations") and parsed != expected:
         testcase["expected"] = build_fixed_expectation(parsed)
+        testcase["expected"] = format_expected(testcase["expected"])
 
         with open(test_fullpath, "w") as out:
             json.dump(testcase, out, indent=2)
 
-    # Perform sorting on all fields(including lists) using custom encoder to make sure we have a consistent order
-    # The most simple way is to encode to json string and decode it back :)
-    expected_sorted = json.loads(json.dumps(expected, sort_keys=True, cls=JsonSorterEncoder))
-    parsed_sorted = json.loads(json.dumps(parsed, sort_keys=True, cls=JsonSorterEncoder))
+    expected_sorted = sort_json_keys(expected)
+    parsed_sorted = sort_json_keys(parsed)
 
     assert parsed_sorted == expected_sorted
 
@@ -143,15 +104,37 @@ def test_intake_format_coverage(manager, module, intake_format):
     assert coverage["percent"] >= 75
 
 
-def test_intake_format_unused_fields(manager, module, intake_format):
-    taxonomy = manager.get_taxonomy(module, intake_format)
+def prune_taxonomy(format_fields_path, taxonomy):
+    """Remove unused keys from fields.yml"""
 
+    # read the field and remove identified keys
+    with open(file=format_fields_path, mode="r", encoding="utf-8") as f:
+        fields: dict = yaml.safe_load(f)
+        for missing_field in taxonomy["unused"]:
+            fields.pop(missing_field)
+
+    # write new file
+    with open(file=format_fields_path, mode="w", encoding="utf-8") as f:
+        updated_fields = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
+        f.write(updated_fields)
+
+    print(f"{len(taxonomy['unused'])} removed from fields.yml")
+    print("Please run the following commandline to ensure yaml is properly linted")
+    print(f"npx prettier --write {format_fields_path}")
+
+
+def test_intake_format_unused_fields(request, manager, format_fields_path, module, intake_format):
+    taxonomy = manager.get_taxonomy(module, intake_format)
     number_of_unused_fields = len(taxonomy["unused"])
 
-    print(f"Unused fields ({number_of_unused_fields}):\n")
+    if number_of_unused_fields > 0:
+        print(f"Unused fields ({number_of_unused_fields}) in {format_fields_path}:\n {taxonomy['unused']}")
 
-    for unused in taxonomy["unused"]:
-        print(unused)
+    # Remove each unused field from fields.yml
+    if request.config.getoption("prune_taxonomy"):
+        prune_taxonomy(format_fields_path, taxonomy)
+    else:
+        print("use --prune-taxonomy cleanup unused fields")
 
     assert number_of_unused_fields == 0
 
