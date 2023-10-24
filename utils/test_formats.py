@@ -73,7 +73,9 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     if "related" in parsed:
         for related_field in ["hosts", "ip", "user", "hash"]:
             if related_field in parsed["related"]:
-                parsed["related"][related_field] = sorted(parsed["related"][related_field])
+                parsed["related"][related_field] = sorted(
+                    parsed["related"][related_field]
+                )
 
     pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
 
@@ -104,42 +106,82 @@ def test_intake_format_coverage(manager, module, intake_format):
     assert coverage["percent"] >= 75
 
 
+def read_taxonomy(format_fields_path) -> dict:
+    """Read the taxonomy file and return input as dict"""
+    with open(file=format_fields_path, mode="r", encoding="utf-8") as f:
+        fields = yaml.safe_load(f) or dict()
+    return fields
+
+
+def write_taxonomy(format_fields_path, fields):
+    """Write to the taxonomy file"""
+    with open(file=format_fields_path, mode="w", encoding="utf-8") as f:
+        updated_fields = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
+        f.write(updated_fields)
+
+
+def fix_unused_fields(format_fields_path, taxonomy):
+    """Add missing fields into the taxonomy"""
+    fields = read_taxonomy(format_fields_path)
+    for missing_field in taxonomy["missing"]:
+        # create the missing field
+        field_to_be_added = {
+            missing_field: {
+                "description": "",
+                "name": missing_field,
+                "type": "keyword",
+            }
+        }
+
+        # merge the field in the taxonomy
+        fields = fields | field_to_be_added
+    write_taxonomy(format_fields_path, fields)
+    print(f"{len(taxonomy['missing'])} updated in fields.yml")
+    print("Please complete the description and adapt the field type")
+    print("Please run the following commandline to ensure yaml is properly linted")
+    print(f"npx prettier --write {format_fields_path}")
+
+
 def prune_taxonomy(format_fields_path, taxonomy):
     """Remove unused keys from fields.yml"""
 
     # read the field and remove identified keys
-    with open(file=format_fields_path, mode="r", encoding="utf-8") as f:
-        fields: dict = yaml.safe_load(f)
-        for missing_field in taxonomy["unused"]:
-            fields.pop(missing_field)
+    fields: dict = read_taxonomy(format_fields_path)
+    for missing_field in taxonomy["unused"]:
+        fields.pop(missing_field)
 
-    # write new file
-    with open(file=format_fields_path, mode="w", encoding="utf-8") as f:
-        updated_fields = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
-        f.write(updated_fields)
+    updated_fields: dict = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
+    write_taxonomy(format_fields_path, updated_fields)
 
     print(f"{len(taxonomy['unused'])} removed from fields.yml")
     print("Please run the following commandline to ensure yaml is properly linted")
     print(f"npx prettier --write {format_fields_path}")
 
 
-def test_intake_format_unused_fields(request, manager, format_fields_path, module, intake_format):
+def test_intake_format_unused_fields(
+    request, manager, format_fields_path, module, intake_format
+):
     taxonomy = manager.get_taxonomy(module, intake_format)
     number_of_unused_fields = len(taxonomy["unused"])
 
     if number_of_unused_fields > 0:
-        print(f"Unused fields ({number_of_unused_fields}) in {format_fields_path}:\n {taxonomy['unused']}")
+        print(
+            f"Unused fields ({number_of_unused_fields}) in {format_fields_path}:\n {taxonomy['unused']}"
+        )
 
     # Remove each unused field from fields.yml
+    print(request.config.getoption("prune_taxonomy"))
     if request.config.getoption("prune_taxonomy"):
         prune_taxonomy(format_fields_path, taxonomy)
-    else:
+    elif number_of_unused_fields > 0:
         print("use --prune-taxonomy cleanup unused fields")
 
     assert number_of_unused_fields == 0
 
 
-def test_intake_format_missing_fields(manager, module, intake_format):
+def test_intake_format_missing_fields(
+    manager, module, intake_format, request, format_fields_path
+):
     taxonomy = manager.get_taxonomy(module, intake_format)
 
     number_of_missing_fields = len(taxonomy["missing"])
@@ -148,6 +190,12 @@ def test_intake_format_missing_fields(manager, module, intake_format):
 
     for missing in taxonomy["missing"]:
         print(missing)
+
+    # Add missing fields to the taxonomy
+    if request.config.getoption("fix_missing_fields") and number_of_missing_fields > 0:
+        fix_unused_fields(format_fields_path=format_fields_path, taxonomy=taxonomy)
+    else:
+        print("use --fix-missing-fields to add missing fields")
 
     assert number_of_missing_fields == 0
 
