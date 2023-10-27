@@ -1,0 +1,180 @@
+name: OpenSSH
+pipeline:
+  - name: event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: "%{SPACE}%{SSHD_INFO}|%{SSHD_ERROR}"
+        custom_patterns:
+          SSHD_CLIENT_ADDRESS: "%{IP:source_ip}|%{HOSTNAME:source_domain}"
+          SSHD_ERROR: "%{SSHD_ERROR_IDENTIFICATION}|%{SSHD_ERROR_INVALID_USER}|%{SSHD_ERROR_NEGOCIATE}|%{SSHD_ERROR_DISCONNECTING_USER}|%{SSHD_ERROR_FOR_USER}|%{SSHD_ERROR_AUTH_REQUEST}|%{SSHD_ERROR_PAM}|%{SSHD_ERROR_USER_NOT_ALLOWED}|%{SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION}"
+          SSHD_ERROR_AUTH_REQUEST: '%{SSHD_MESSAGE_ERROR_AUTH_REQUEST:sshd_message} %{SSHD_MESSAGE_USER}( \[preauth\])?'
+          SSHD_ERROR_BAD_PROTOCOL: >-
+            %{SSHD_MESSAGE_BAD_PROTOCOL:sshd_message} identification \'%{GREEDYDATA}\' from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}
+          SSHD_ERROR_DISCONNECTING_USER: '%{SSHD_MESSAGE_DISCONNECTING_USER:sshd_message} %{SSHD_MESSAGE_USER} %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}:%{SPACE}(%{GREEDYDATA:tmp_outcome_reason})? (\[preauth\])?'
+          SSHD_ERROR_FOR_USER: "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:tmp_outcome_reason} for %{SSHD_MESSAGE_USER} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}%{GREEDYDATA}"
+          SSHD_ERROR_IDENTIFICATION: "%{SSHD_ERROR_BAD_PROTOCOL}|%{SSHD_ERROR_IDENTIFICATION_NOT_RECEIVED}"
+          SSHD_ERROR_IDENTIFICATION_NOT_RECEIVED: "%{SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED:sshd_message} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}"
+          SSHD_ERROR_INVALID_USER: "(%{SSHD_MESSAGE_FAILED_PASSWORD:sshd_message} for|%{SSHD_MESSAGE_INVALID_USER2:sshd_message})%{SPACE}%{SSHD_MESSAGE_USER}%{SPACE}from %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port})?"
+          SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION: "%{SSHD_MESSAGE_ERROR_USER:sshd_message} kex_exchange_identification: %{GREEDYDATA:tmp_outcome_reason}"
+          SSHD_ERROR_NEGOCIATE: "%{SSHD_MESSAGE_ERROR_NEGOCIATE:sshd_message} %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}(: %{GREEDYDATA:tmp_outcome_reason})?"
+          SSHD_ERROR_PAM: "%{SSHD_ERROR_PAM_CHECK_PASS}|%{SSHD_ERROR_PAM_AUTH_FAILURE}"
+          SSHD_ERROR_PAM_AUTH_FAILURE: "%{SSHD_MESSAGE_PAM_AUTH_FAILURE:sshd_message} %{GREEDYDATA:tmp_pam}"
+          SSHD_ERROR_PAM_CHECK_PASS: "%{SSHD_MESSAGE_PAM_CHECK_PASS:sshd_message} %{SSHD_MESSAGE_USER}"
+          SSHD_ERROR_USER_NOT_ALLOWED: "%{SSHD_MESSAGE_USER2:sshd_message} %{USERNAME:user_name} from %{SSHD_CLIENT_ADDRESS} %{GREEDYDATA:tmp_outcome_reason}"
+          SSHD_EXPIRED_PASSWORD: '%{SSHD_MESSAGE_PAM_EXPIRED_PASSWORD:sshd_message} for user %{USERNAME:user_name} \(%{SSHD_TWO_WORDS:action_outcome_reason}\)'
+          SSHD_INFO: "%{SSHD_INFO_ACCEPTED}|%{SSHD_INFO_DISCONNECTION}|%{SSHD_INFO_PAM}|%{SSHD_EXPIRED_PASSWORD}"
+          SSHD_INFO_ACCEPTED: "%{SSHD_MESSAGE_ACCEPTED:sshd_message} %{NOTSPACE:tmp_outcome_reason} for %{USERNAME:user_name} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( ssh2: %{NOTSPACE} SHA256:%{NOTSPACE:file_hash_sha256}|%{GREEDYDATA})"
+          SSHD_INFO_CONNECTION_CLOSED: '%{SSHD_MESSAGE_CONNECTION_CLOSED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})? %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
+          SSHD_INFO_CONNECTION_RESET: '%{SSHD_MESSAGE_CONNECTION_RESET:sshd_message}( %{SSHD_MESSAGE_USER})? %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
+          SSHD_INFO_DISCONNECTED: '%{SSHD_MESSAGE_DISCONNECTED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})? %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
+          SSHD_INFO_DISCONNECTION: "%{SSHD_INFO_CONNECTION_CLOSED}|%{SSHD_INFO_DISCONNECTED}|%{SSHD_INFO_RECEIVED_DISCONNECT}|%{SSHD_INFO_CONNECTION_RESET}"
+          SSHD_INFO_PAM: "%{SSHD_INFO_PAM_SESSION_CLOSED}|%{SSHD_INFO_PAM_SESSION_OPENED}|%{SSHD_INFO_PAM_MORE_AUTH_FAIL}"
+          SSHD_INFO_PAM_MORE_AUTH_FAIL: "PAM %{INT} more authentication failure(s)?; (logname=(%{USERNAME:user_logname})? )?(uid=(%{INT:user_id})? )?(euid=(%{INT:user_euid})?)?%{SPACE}(tty=ssh )?(ruser=(%{USERNAME:user_ruser})?)?%{SPACE}(rhost=(%{IP:source_ip})?)?%{SPACE}(user=%{USERNAME:user_name})?"
+          SSHD_INFO_PAM_SESSION_CLOSED: "%{SSHD_MESSAGE_PAM_SESSION_CLOSED:sshd_message} %{WORD:user_name}"
+          SSHD_INFO_PAM_SESSION_OPENED: '%{SSHD_MESSAGE_PAM_SESSION_OPENED:sshd_message} %{WORD:user_name} by \(%{GREEDYDATA}\)'
+          SSHD_INFO_RECEIVED_DISCONNECT: >-
+            %{SSHD_MESSAGE_RECEIVED_DISCONNECT:sshd_message} %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}:%{INT}:%{SPACE}%{SSHD_TEXT:tmp_outcome_reason}( \[preauth\])?
+          SSHD_MESSAGE_ACCEPTED: "Accepted"
+          SSHD_MESSAGE_AUTHENTICATING_USER: "authenticating user"
+          SSHD_MESSAGE_BAD_PROTOCOL: "Bad protocol version"
+          SSHD_MESSAGE_CONNECTION_CLOSED: "Connection closed by"
+          SSHD_MESSAGE_CONNECTION_RESET: "Connection reset by"
+          SSHD_MESSAGE_DISCONNECTED: "Disconnected from"
+          SSHD_MESSAGE_DISCONNECTING_USER: "Disconnecting"
+          SSHD_MESSAGE_ERROR_AUTH_REQUEST: "input_userauth_request:"
+          SSHD_MESSAGE_ERROR_NEGOCIATE: "Unable to negotiate with"
+          SSHD_MESSAGE_ERROR_USER: "error:"
+          SSHD_MESSAGE_FAILED_PASSWORD: "Failed password"
+          SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED: "Did not receive identification string"
+          SSHD_MESSAGE_ILLEGAL_USER: "illegal user"
+          SSHD_MESSAGE_INVALID_USER2: "Invalid"
+          SSHD_MESSAGE_INVALID_USER: "invalid user"
+          SSHD_MESSAGE_NORMAL_USER: "user"
+          SSHD_MESSAGE_PAM_AUTH_FAILURE: 'pam_unix\(sshd:auth\): authentication failure;'
+          SSHD_MESSAGE_PAM_CHECK_PASS: 'pam_unix\(sshd:auth\): check pass;'
+          SSHD_MESSAGE_PAM_EXPIRED_PASSWORD: 'pam_unix\(sshd:account\): expired password'
+          SSHD_MESSAGE_PAM_SESSION_CLOSED: 'pam_unix\(sshd:session\): session closed for user'
+          SSHD_MESSAGE_PAM_SESSION_OPENED: 'pam_unix\(sshd:session\): session opened for user'
+          SSHD_MESSAGE_RECEIVED_DISCONNECT: "Received disconnect from"
+          SSHD_MESSAGE_USER2: "User"
+          SSHD_MESSAGE_USER: "%{SSHD_MESSAGE_USER_QUALITY:tmp_userquality} %{USERNAME:user_name}"
+          SSHD_MESSAGE_USER_QUALITY: "%{SSHD_MESSAGE_AUTHENTICATING_USER}|%{SSHD_MESSAGE_ILLEGAL_USER}|%{SSHD_MESSAGE_INVALID_USER}|(%{SSHD_MESSAGE_NORMAL_USER})?"
+          SSHD_TEXT: "(%{WORD}%{SPACE})*"
+          SSHD_TWO_WORDS: "%{WORD}%{SPACE}%{WORD}"
+  - name: main_stage
+
+stages:
+  main_stage:
+    actions:
+      - set:
+          action.outcome_reason: "{{event.message.tmp_outcome_reason}}"
+          event.reason: "{{event.message}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.port: "{{event.message.source_port}}"
+          user.name: "{{event.message.user_name}}"
+      - set:
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Received disconnect')}}"
+      - set:
+          action.type: "open"
+          action.name: "session"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Accepted')}}"
+      - set:
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Connection closed by')
+          or event.message.SSHD_INFO.startswith('Received disconnect from')}}"
+      - set:
+          action.outcome_reason: "reset"
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Connection reset by')}}"
+      - set:
+          action.type: "close"
+          action.name: "sshd:session"
+          action.outcome: "success"
+          action.target: "user"
+        filter:
+          "{{event.message.SSHD_INFO.startswith('pam_unix(sshd:session): session closed for user')
+          or event.message.SSHD_INFO.startswith('pam_unix(sshd:session): session opened for user')}}"
+      - set:
+          action.type: "open"
+          action.name: "negociate"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Bad protocol version')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Did not receive identification string')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Disconnecting')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('error:')}}"
+      - set:
+          action.type: "open"
+          action.name: "negociate"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Unable to negotiate with')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('input_userauth_request:')}}"
+      - set:
+          action.type: "check"
+          action.name: "sshd:auth"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('pam_unix(sshd:auth): check pass;')}}"
+      - set:
+          action.type: "authentication"
+          action.name: "sshd:auth"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('pam_unix(sshd:auth): authentication failure;')}}"
+      - set:
+          action.type: "account"
+          action.name: "expired password"
+        filter: "{{event.message.SSHD_INFO.startswith('pam_unix(sshd:account): expired password')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Failed password')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('Invalid')}}"
+      - set:
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.SSHD_INFO.startswith('User')}}"
