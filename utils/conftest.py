@@ -34,7 +34,9 @@ class IntakeTestManager:
                         module_path, intake_formats
                     )
 
-    def _get_formats(self, module_path: str, intake_formats: list[str]) -> list[str]:
+    def _get_formats(
+        self, module_path: str, intake_formats: list[str]
+    ) -> dict[str, list[str]]:
         formats = {}
 
         filtered_elements = {"_meta"}
@@ -169,6 +171,20 @@ def pytest_addoption(parser):
         help="update test files to replace expected with the actual result",
     )
 
+    parser.addoption(
+        "--prune-taxonomy",
+        action="store_true",
+        default=False,
+        help="Remove unused fields from fields.yml (aka taxonomy)",
+    )
+
+    parser.addoption(
+        "--fix-missing-fields",
+        action="store_true",
+        default=False,
+        help="Add missing fields into fields.yml (aka taxonomy)",
+    )
+
 
 def pytest_configure(config):
     modules = config.getoption("module")
@@ -219,3 +235,28 @@ def manager():
 @pytest.fixture
 def intakes_root():
     return INTAKES_PATH
+
+
+@pytest.fixture
+def module(config):
+    return config.getoption("module")
+
+
+@pytest.fixture
+def module_path(intakes_root, module):
+    return os.path.join(INTAKES_PATH, module)
+
+
+@pytest.fixture
+def format_path(module_path, intake_format):
+    return os.path.join(module_path, intake_format)
+
+
+@pytest.fixture
+def module_fields_path(module_path):
+    return os.path.join(module_path, "_meta", "fields.yml")
+
+
+@pytest.fixture
+def format_fields_path(format_path):
+    return os.path.join(format_path, "_meta", "fields.yml")
