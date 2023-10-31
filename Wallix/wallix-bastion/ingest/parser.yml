@@ -3,12 +3,26 @@ pipeline:
   - name: parsed_event
     external:
       name: kv.parse-kv
+      properties:
+        input_field: "{{original.message.replace(' ; ', ' ')}}"
+
+  - name: parse_pam_unix_fields
+    filter: '{{original.message.startswith("pam_unix(")}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: 'pam_unix\((cron|sudo):session\): %{EVENT_REASON:event_reason} for user %{WORD:user_name}.*'
+        custom_patterns:
+          EVENT_REASON: "session (opened|closed)"
 
   - name: set_extracted_fields
   - name: set_ecs_fields
   - name: set_provider
   - name: set_auditd
   - name: set_ip_fields
+  - name: set_pam_unix_fields
+    filter: '{{original.message.startswith("pam_unix(")}}'
 
 stages:
   set_ecs_fields:
@@ -58,6 +72,7 @@ stages:
           service.name: "{{ parsed_event.message.service}}"
           source.port: "{{parsed_event.message.src_port}}"
           event.reason: "{{ parsed_event.message.infos }}"
+          process.working_directory: "{{ parsed_event.message.PWD }}"
 
   set_auditd:
     actions:
@@ -111,3 +126,9 @@ stages:
       - set:
           source.ip: "{{ parsed_event.message.src_ip }}"
         filter: "{{ parsed_event.message.src_ip| is_ipaddress }}"
+
+  set_pam_unix_fields:
+    actions:
+      - set:
+          user.name: "{{ parse_pam_unix_fields.message.user_name }}"
+          event.reason: "{{ parse_pam_unix_fields.message.event_reason }}"
