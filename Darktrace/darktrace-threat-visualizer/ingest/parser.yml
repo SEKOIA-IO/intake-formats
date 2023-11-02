@@ -7,7 +7,7 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.time}}"
+        input_field: "{{json_event.message.time or json_event.message.createdAt}}"
         output_field: datetime
         format: timestamp
   - name: parsed_date_mod
@@ -17,8 +17,11 @@ pipeline:
         input_field: "{{json_event.message.model.then.modified}}"
         output_field: datetime
         format: "%Y-%m-%d %H:%M:%S"
+  - name: set_aianalyst_fields
+    filter: "{{json_event.message.log_type == 'aianalyst/incidentevents'}}"
   - name: set_common_fields
-  - name: set_custom_fields
+  - name: set_modelbreaches_fields
+    filter: "{{json_event.message.log_type == 'modelbreaches'}}"
 
 stages:
   set_common_fields:
@@ -61,7 +64,7 @@ stages:
             ]
             {% endif %}
 
-  set_custom_fields:
+  set_modelbreaches_fields:
     actions:
       - set:
           darktrace.threat_visualizer.creationTime: "{{json_event.message.creationTime}}"
@@ -116,3 +119,39 @@ stages:
           darktrace.threat_visualizer.device.lastSeen: "{{json_event.message.device.lastSeen}}"
           darktrace.threat_visualizer.device.typename: "{{json_event.message.device.typename}}"
           darktrace.threat_visualizer.device.typelabel: "{{json_event.message.device.typelabel}}"
+
+  set_aianalyst_fields:
+    actions:
+      - set:
+          device.id: "{{json_event.message.breachDevices[0].did}}"
+          event.action: "{{json_event.message.breachDevices[0].title}}"
+          host.hostname: "{{json_event.message.breachDevices[0].hostname}}"
+          host.id: "{{json_event.message.breachDevices[0].did}}"
+          host.mac: "{{json_event.message.breachDevices[0].mac}}"
+          host.name: "{{json_event.message.breachDevices[0].identifier}}"
+        filter: "{{json_event.message.breachDevices | length > 0}}"
+      - set:
+          host.ip: "{{json_event.message.breachDevices[0].ip}}"
+        filter: "{{json_event.message.breachDevices | length > 0 and (json_event.message.breachDevices[0].ip | is_ipaddress)}}"
+      - set:
+          event.kind: "alert"
+          event.category: "threat" 
+        filter: "{{json_event.message.category == 'critical'}}"
+      - set:
+          darktrace.threat_visualizer.mitreTactics: '{{json_event.message.mitreTactics}}'
+          darktrace.threat_visualizer.acknowledged: '{{json_event.message.acknowledged}}'
+          darktrace.threat_visualizer.attackPhases: '{{json_event.message.attackPhases}}'
+          #darktrace.threat_visualizer.details: '{{json_event.message.details}}'
+          darktrace.threat_visualizer.category: '{{json_event.message.category}}'
+          darktrace.threat_visualizer.children: '{{json_event.message.children}}'
+          darktrace.threat_visualizer.currentGroup: '{{json_event.message.currentGroup}}'
+          darktrace.threat_visualizer.groupCategory: '{{json_event.message.groupCategory}}'
+          darktrace.threat_visualizer.groupScore: '{{json_event.message.groupScore}}'
+          darktrace.threat_visualizer.activityId: '{{json_event.message.activityId}}'
+          darktrace.threat_visualizer.groupingIds: '{{json_event.message.groupingIds}}'
+          darktrace.threat_visualizer.externalTriggered: '{{json_event.message.externalTriggered}}'
+          darktrace.threat_visualizer.aiaScore: '{{json_event.message.aiaScore}}'
+          darktrace.threat_visualizer.periods: '{{json_event.message.periods}}'
+          darktrace.threat_visualizer.breachDevices: '{{json_event.message.breachDevices}}'
+          darktrace.threat_visualizer.relatedBreaches: '{{json_event.message.relatedBreaches}}'
+          darktrace.threat_visualizer.userTriggered: '{{json_event.message.userTriggered}}'
