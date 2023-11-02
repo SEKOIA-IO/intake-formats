@@ -30,17 +30,25 @@ class IntakeTestManager:
             if subdir not in filtered_elements and (not modules or subdir in modules):
                 module_path = os.path.join(INTAKES_PATH, subdir)
                 if os.path.isdir(module_path):
-                    self._intakes[subdir] = self._get_formats(module_path, intake_formats)
+                    self._intakes[subdir] = self._get_formats(
+                        module_path, intake_formats
+                    )
 
-    def _get_formats(self, module_path: str, intake_formats: list[str]) -> dict[str, list[str]]:
+    def _get_formats(
+        self, module_path: str, intake_formats: list[str]
+    ) -> dict[str, list[str]]:
         formats = {}
 
         filtered_elements = {"_meta"}
 
         for subdir in os.listdir(module_path):
-            if subdir not in filtered_elements and (not intake_formats or subdir in intake_formats):
+            if subdir not in filtered_elements and (
+                not intake_formats or subdir in intake_formats
+            ):
                 format_path = os.path.join(module_path, subdir)
-                if os.path.isdir(format_path) and os.path.isfile(os.path.join(format_path, "ingest", "parser.yml")):
+                if os.path.isdir(format_path) and os.path.isfile(
+                    os.path.join(format_path, "ingest", "parser.yml")
+                ):
                     formats[subdir] = self._get_tests(format_path)
 
         return formats
@@ -105,7 +113,9 @@ class IntakeTestManager:
                 },
             )
             if not response.ok:
-                raise FormatError(f"{response.status_code} {response.reason} for {response.url}: {response.content} ")
+                raise FormatError(
+                    f"{response.status_code} {response.reason} for {response.url}: {response.content} "
+                )
             response.raise_for_status()
             self._results[module][intake_format] = response.json()
             self._results[module][intake_format]["parsed_messages"] = {
@@ -168,6 +178,13 @@ def pytest_addoption(parser):
         help="Remove unused fields from fields.yml (aka taxonomy)",
     )
 
+    parser.addoption(
+        "--fix-missing-fields",
+        action="store_true",
+        default=False,
+        help="Add missing fields into fields.yml (aka taxonomy)",
+    )
+
 
 def pytest_configure(config):
     modules = config.getoption("module")
@@ -178,7 +195,9 @@ def pytest_configure(config):
         changed_modules = set()
         changed_formats = set()
 
-        result = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "origin/main"], capture_output=True
+        )
         for changed_file in result.stdout.splitlines():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
