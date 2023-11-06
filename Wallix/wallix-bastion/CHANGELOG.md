@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2023-11-02 - 1.0.2
+
+### Added
+
+- Extract more data from `cron` and `sudo` events
+
 ## 2023-10-23 - 1.0.1
 
 ### Added
