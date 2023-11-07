@@ -15,6 +15,9 @@ pipeline:
         value_sep: "="
         item_sep: ","
   - name: fields
+  - name: sysmon_fields
+    filter: "{{json.event.event.get('module') == 'sysmon'}}"
+
 stages:
   fields:
     actions:
@@ -88,11 +91,185 @@ stages:
           winlog.activity_id: "{{json.event.winlog.activity_id | lower}}"
         filter: '{{json.event.winlog.get("activity_id") != None}}'
       - set:
-          process.hash.md5: "{{parse_kv_hashes.hash.MD5}}"
-          process.hash.sha1: "{{parse_kv_hashes.hash.SHA1}}"
-          process.hash.sha256: "{{parse_kv_hashes.hash.SHA256}}"
-          process.hash.sha384: "{{parse_kv_hashes.hash.SHA384}}"
-          process.hash.sha512: "{{parse_kv_hashes.hash.SHA512}}"
-          process.hash.ssdeep: "{{parse_kv_hashes.hash.SSDEEP}}"
-          process.hash.tlsh: "{{parse_kv_hashes.hash.TLSH}}"
-        filter: "{{parse_kv_hashes.hash != None}}"
+          process.hash.md5: "{{parse_kv_hashes.hash.MD5| lower }}"
+          process.hash.sha1: "{{parse_kv_hashes.hash.SHA1| lower }}"
+          process.hash.sha256: "{{parse_kv_hashes.hash.SHA256| lower }}"
+          process.hash.sha384: "{{parse_kv_hashes.hash.SHA384| lower }}"
+          process.hash.sha512: "{{parse_kv_hashes.hash.SHA512| lower }}"
+          process.hash.ssdeep: "{{parse_kv_hashes.hash.SSDEEP| lower }}"
+          process.hash.tlsh: "{{parse_kv_hashes.hash.TLSH| lower }}"
+          process.pe.imphash: "{{parse_kv_hashes.hash.IMPHASH| lower }}"
+        filter: "{{parse_kv_hashes.hash != None and json.event.event.get('code') in ['1', '23', '24', '25', '26']}}"
+      - set:
+          file.hash.md5: "{{parse_kv_hashes.hash.MD5| lower }}"
+          file.hash.sha1: "{{parse_kv_hashes.hash.SHA1| lower }}"
+          file.hash.sha256: "{{parse_kv_hashes.hash.SHA256| lower }}"
+          file.hash.sha384: "{{parse_kv_hashes.hash.SHA384| lower }}"
+          file.hash.sha512: "{{parse_kv_hashes.hash.SHA512| lower }}"
+          file.hash.ssdeep: "{{parse_kv_hashes.hash.SSDEEP| lower }}"
+          file.hash.tlsh: "{{parse_kv_hashes.hash.TLSH| lower }}"
+          file.pe.imphash: "{{parse_kv_hashes.hash.IMPHASH| lower }}"
+        filter: "{{parse_kv_hashes.hash != None and json.event.event.get('code') in ['6', '7', '15']}}"
+
+  sysmon_fields:
+    actions:
+      - set:
+          destination.domain: "{{json.event.winlog.event_data.DestinationHostname}}"
+          destination.ip: "{{json.event.winlog.event_data.DestinationIp}}"
+          destination.port: "{{json.event.winlog.event_data.DestinationPort | int}}"
+          dns.question.name: "{{json.event.winlog.event_data.QueryName}}"
+          dns.answers: >
+            {% set mapping = {
+              "1": "A",
+              "2": "NS",
+              "3": "MD",
+              "4": "MF",
+              "5": "CNAME",
+              "6": "SOA",
+              "7": "MB",
+              "8": "MG",
+              "9": "MR",
+              "10": "NULL",
+              "11": "WKS",
+              "12": "PTR",
+              "13": "HINFO",
+              "14": "MINFO",
+              "15": "MX",
+              "16": "TXT",
+              "17": "RP",
+              "18": "AFSDB",
+              "19": "X25",
+              "20": "ISDN",
+              "21": "RT",
+              "22": "NSAP",
+              "23": "NSAPPTR",
+              "24": "SIG",
+              "25": "KEY",
+              "26": "PX",
+              "27": "GPOS",
+              "28": "AAAA",
+              "29": "LOC",
+              "30": "NXT",
+              "31": "EID",
+              "32": "NIMLOC",
+              "33": "SRV",
+              "34": "ATMA",
+              "35": "NAPTR",
+              "36": "KX",
+              "37": "CERT",
+              "38": "A6",
+              "39": "DNAME",
+              "40": "SINK",
+              "41": "OPT",
+              "43": "DS",
+              "46": "RRSIG",
+              "47": "NSEC",
+              "48": "DNSKEY",
+              "49": "DHCID",
+              "100": "UINFO",
+              "101": "UID",
+              "102": "GID",
+              "103": "UNSPEC",
+              "248": "ADDRS",
+              "249": "TKEY",
+              "250": "TSIG",
+              "251": "IXFR",
+              "252": "AXFR",
+              "253": "MAILB",
+              "254": "MAILA",
+              "255": "ANY",
+              "65281": "WINS",
+              "65282": "WINSR",
+              }
+            %}
+            [ {% for answer in json.event.winlog.event_data.QueryResults.split(";")|select('ne', '')|list %}
+              {% if "type:" in answer %}
+              {% set list_answer = answer.split(" ")|select('ne', '')|list %}
+              {"type": '{{mapping.get(list_answer[1])}}'
+              {%- if list_answer|length > 2 -%}
+              ,
+              "data": '{{list_answer[2:]|join(" ")}}'
+              {%- endif -%}
+              },
+              {% else %}
+              {% set type = "A" %}
+              {% set ip = answer[7:] %}
+              {% if ip[-1] != ":" %}
+              {% set type = "AAAA" %}
+              {% endif %}
+              {"type": '{{type}}',
+              "data": '{{ip}}'},
+              {% endif %}
+              {% endfor %} ]
+          dns.resolved_ip: >
+            {% set ips = [] %}
+            {%- for answer in json.event.winlog.event_data.QueryResults.split(";")|select('ne', '')|list -%}
+            {%- if "type:" not in answer -%}
+            {% set ips = ips.append(answer[7:]) %}
+            {%- endif -%}
+            {%- endfor -%}
+            {{ips}}
+          file.code_signature.subject_name: "{{json.event.winlog.event_data.Signature}}"
+          file.code_signature.status: "{{json.event.winlog.event_data.SignatureStatus}}"
+          file.name: "{{json.event.winlog.event_data.PipeName}}"
+          file.path: "{{json.event.winlog.event_data.Device or json.event.winlog.event_data.ImageLoaded or json.event.winlog.event_data.TargetFilename}}"
+          network.transport: "{{json.event.winlog.event_data.Protocol}}"
+          network.direction: >
+            {%- if json.event.winlog.event_data.get("Initiated") == "true" -%}
+              "egress"
+            {%- elif json.event.winlog.event_data.get("Initiated") == "false" -%}
+              "ingress"
+            {%- endif -%}
+          network.type: >
+            {%- if json.event.winlog.event_data.get("SourceIsIpv6") == "true" -%}
+              "ipv6"
+            {%- elif json.event.winlog.event_data.get("SourceIsIpv6") == "false" -%}
+              "ipv4"
+            {%- endif -%}
+          process.entity_id: "{{json.event.winlog.event_data.ProcessGuid or json.event.winlog.event_data.SourceProcessGuid or json.event.winlog.event_data.SourceProcessGUID}}"
+          process.executable: "{{json.event.winlog.event_data.SourceImage or json.event.winlog.event_data.Destination}}"
+          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
+          process.parent.entity_id: "{{json.event.winlog.event_data.ParentProcessGuid}}"
+          process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
+          process.parent.pid: "{{json.event.winlog.event_data.ParentProcessId}}"
+          process.pid: "{{json.event.winlog.event_data.ProcessId or json.event.winlog.event_data.SourceProcessId}}"
+          process.thread.id: "{{json.event.winlog.event_data.SourceThreadId}}"
+          process.working_directory: "{{json.event.winlog.event_data.CurrentDirectory}}"
+          rule.name: "{{json.event.winlog.event_data.RuleName}}"
+          source.domain: "{{json.event.winlog.event_data.SourceHostname}}"
+          source.ip: "{{json.event.winlog.event_data.SourceIp}}"
+          source.port: "{{json.event.winlog.event_data.SourcePort | int}}"
+          sysmon.dns.status: "{{json.event.winlog.event_data.QueryStatus}}"
+          sysmon.file.archived: "{{json.event.winlog.event_data.Archived}}"
+          sysmon.file.is_executable: "{{json.event.winlog.event_data.IsExecutable}}"
+          user.id: "{{json.event.winlog.user.identifier}}"
+      - set:
+          error.code: "{{json.event.winlog.event_data.ID}}"
+        filter: "{{json.event.event.get('code') == '255'}}"
+      - set:
+          process.pe.company: "{{json.event.winlog.event_data.Company}}"
+          process.pe.description: "{{json.event.winlog.event_data.Description}}"
+          process.pe.file_version: "{{json.event.winlog.event_data.FileVersion}}"
+          process.pe.original_file_name: "{{json.event.winlog.event_data.OriginalFileName}}"
+          process.pe.product: "{{json.event.winlog.event_data.Product}}"
+        filter: "{{json.event.event.get('code') != '7'}}"
+      - set:
+          file.pe.company: "{{json.event.winlog.event_data.Company}}"
+          file.pe.description: "{{json.event.winlog.event_data.Description}}"
+          file.pe.file_version: "{{json.event.winlog.event_data.FileVersion}}"
+          file.pe.original_file_name: "{{json.event.winlog.event_data.OriginalFileName}}"
+          file.pe.product: "{{json.event.winlog.event_data.Product}}"
+        filter: "{{json.event.event.get('code') == '7'}}"
+      - set:
+          file.code_signature.valid: "{{json.event.winlog.event_data.get('SignatureStatus') == 'Valid' }}"
+        filter: "{{json.event.winlog.event_data.get('Signed') == true }}"
+      - set:
+          network.protocol: "{{json.event.winlog.event_data.DestinationPortName or json.event.winlog.event_data.SourcePortName}}"
+        filter: "{{json.event.event.get('code') != '22'}}"
+      - set:
+          network.protocol: "dns"
+        filter: "{{json.event.event.get('code') == '22'}}"
+      - set:
+          user.domain: '{{json.event.winlog.event_data.User.split("\\") | first}}'
+          user.name: '{{json.event.winlog.event_data.User.split("\\") | last}}'
+        filter: '{{ json.event.winlog.event_data.User.split("\\") | length == 2 }}'
