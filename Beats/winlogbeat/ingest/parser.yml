@@ -281,8 +281,8 @@ stages:
       - set:
           event.module: "security"
           service.name: "{{json.event.winlog.event_data.ServiceName}}"
-          user.changes.name: "{{json.event.winlog.event_data.NewTargetUserName}}"
-          user.target.name: "{{json.event. winlog.event_data.OldTargetUserName}}"
+          user.changes.name: "{{json.event.winlog.event_data.NewTargetUserName.split('$')|first}}"
+          user.target.name: "{{json.event. winlog.event_data.OldTargetUserName.split('$')|first}}"
           winlog.logon.id: "{{json.event.winlog.event_data.SubjectLogonId}}"
       - set:
           winlog.logon.id: "{{json.event.winlog.event_data.TargetLogonId}}"
@@ -549,7 +549,7 @@ stages:
       - set:
           user.domain: "{{json.event.winlog.event_data.SubjectDomainName}}"
           user.id: "{{json.event.winlog.event_data.SubjectUserSid}}"
-          user.name: "{{json.event.winlog.event_data.SubjectUserName}}"
+          user.name: "{{json.event.winlog.event_data.SubjectUserName.split('$')|first}}"
         filter: '{{ json.event.event.get("code") in ["4657", "4670", "4672", "4673", "4674", "4688", "4689", "4697","4698", "4699", "4700", "4701", "4702", "4706", "4707", "4713","4716", "4717", "4718", "4719", "4720", "4722", "4723", "4724","4725", "4726", "4727", "4728", "4729", "4730", "4731", "4732","4733", "4734", "4735", "4737", "4738", "4739", "4740", "4741","4742", "4743", "4744", "4745", "4746", "4747", "4748", "4749","4750", "4751", "4752", "4753", "4754", "4755", "4756", "4757","4758", "4759", "4760", "4761", "4762", "4763", "4764", "4767","4781", "4798", "4799", "4817", "4904", "4905", "4907", "4912","4648", "4797", "5140", "5145", "5379", "5380", "5381", "5382"]}}'
       - set:
           user.effective.domain: "{{json.event.winlog.event_data.TargetDomainName}}"
@@ -558,7 +558,7 @@ stages:
         filter: '{{ json.event.event.get("code") in ["4648", "4688"]}}'
       - set:
           user.domain: "{{json.event.winlog.event_data.AccountDomain}}"
-          user.name: "{{json.event.winlog.event_data.AccountName}}"
+          user.name: "{{json.event.winlog.event_data.AccountName.split('$')|first}}"
           source.ip: >
             {%- if json.event.winlog.event_data.get("ClientAddress") != None -%}
               {%- set ip = json.event.winlog.event_data.get("ClientAddress") -%}
@@ -573,7 +573,7 @@ stages:
       - set:
           user.domain: "{{json.event.winlog.user_data.SubjectDomainName}}"
           user.id: "{{json.event.winlog.user_data.SubjectUserSid}}"
-          user.name: "{{json.event.winlog.user_data.SubjectUserName}}"
+          user.name: "{{json.event.winlog.user_data.SubjectUserName.split('$')|first}}"
           winlog.logon.id: "{{json.event.winlog.user_data.SubjectLogonId}}"
         filter: '{{ json.event.event.get("code") == "1102"}}'
       - set:
@@ -608,7 +608,9 @@ stages:
       - set:
           process.executable: "{{json.event.winlog.event_data.ProcessName}}"
           process.name: '{{json.event.winlog.event_data.ProcessName.split("\\")|last}}'
-          process.pid: "{{json.event.winlog.event_data.ProcessId}}"
+          process.pid: >
+            {% set value = json.event.winlog.event_data.ProcessId %}
+            {{value|int(value,16)}}
           source.domain: "{{json.event.winlog.event_data.WorkstationName}}"
           source.ip: "{{json.event.winlog.event_data.IpAddress}}"
           source.port: "{{json.event.winlog.event_data.IpPort}}"
@@ -621,19 +623,19 @@ stages:
             {%- set al = [] -%}
             {%- for i in range (len(json.event.winlog.event_data.CommandLine)) -%}
               {%- set end = i -%}
-              {%- if json.event.winlog.event_data.CommandLine.[i] == "\" -%}
+              {%- if json.event.winlog.event_data.CommandLine[i] == '\"' -%}
                 {%- if in_quote -%}
                   {%- set in_quote = false -%}
                 {%- else -%}
                   {%- set in_quote = true -%}
                 {%- endif -%}
               {%- endif -%}
-              {%- if json.event.winlog.event_data.CommandLine.[i] == " " and in_quote == false -%}
-                {%- set al = al.append(json.event.winlog.event_data.CommandLine.[start:end]) -%}
+              {%- if json.event.winlog.event_data.CommandLine[i] == " " and in_quote == false -%}
+                {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end]) -%}
                 {%- set start = i + 1 -%}
               {%- endif -%}
               {%- if (i == len(json.event.winlog.event_data.CommandLine) - 1) -%}
-                {%- set al = al.append(json.event.winlog.event_data.CommandLine.[start:end+1]) -%}
+                {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end+1]) -%}
               {%- endif -%}
             {%- endfor -%}
             {{al}}
@@ -642,8 +644,12 @@ stages:
           process.name: '{{json.event.winlog.event_data.NewProcessName.split("\\")|last}}'
           process.parent.executable: "{{json.event.winlog.event_data.ParentProcessName}}"
           process.parent.name: '{{json.event.winlog.event_data.ParentProcessName.split("\\")|last}}'
-          process.parent.pid: "{{json.event.winlog.event_data.ProcessId}}"
-          process.pid: "{{json.event.winlog.event_data.NewProcessId}}"
+          process.parent.pid: >
+            {% set value = json.event.winlog.event_data.ProcessId %}
+            {{value|int(value,16)}}
+          process.pid: >
+            {% set value = json.event.winlog.event_data.NewProcessId %}
+            {{value|int(value,16)}}
         filter: '{{json.event.event.get("code") == "4688"}}'
       - translate:
         dictionary:
