@@ -14,11 +14,31 @@ pipeline:
         output_field: hash
         value_sep: "="
         item_sep: ","
+  - name: parse_kv_event_data
+    filter: "{{json.event.event.get('module') == 'powershell' and json.event.event.get('code')=='800' and json.event.event_data.get('param2') != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{json.event.event_data.param2}}"
+        output_field: data
+        value_sep: "="
+        item_sep: "\n\t"
+  - name: parse_kv_event_data
+    filter: "{{json.event.event.get('module') == 'powershell' and json.event.event.get('code')!='800' and json.event.event_data.get('param3') != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{json.event.event_data.param3}}"
+        output_field: data
+        value_sep: "="
+        item_sep: "\n\t"
   - name: fields
   - name: sysmon_fields
     filter: "{{json.event.event.get('module') == 'sysmon'}}"
   - name: security_fields
     filter: "{{json.event.winlog.get('channel') == 'Security'}}"
+  - name: powershell_fields
+    filter: "{{json.event.event.get('module') == 'powershell'}}"
 
 stages:
   fields:
@@ -1781,3 +1801,128 @@ stages:
           "16903": "Publish"
         mapping:
           json.event.winlog.event_data.FailureReason.replace("%%",""): winlog.logon.failure.reason
+
+  powershell_fields:
+    actions:
+      - set:
+          event.code: '{{json.event.winlog.event_id}}'
+          event.module: 'powershell'
+          event.sequence: '{{json.event.winlog.event_data.SequenceNumber}}'
+          file.path: '{{json.event.winlog.event_data.ScriptName}}'
+          log.level: '{{json.event.winlog.level}}'
+          powershell.command.name: '{{json.event.winlog.event_data.CommandName}}'
+          powershell.command.path: '{{json.event.winlog.event_data.CommandPath}}'
+          powershell.command.type: '{{json.event.winlog.event_data.CommandType}}'
+          powershell.command.value: '{{json.event.winlog.event_data.CommandLine}}'
+          powershell.engine.new_state: '{{json.event.winlog.event_data.NewEngineState}}'
+          powershell.engine.previous_state: '{{json.event.winlog.event_data.PreviousEngineState}}'
+          powershell.engine.version: '{{json.event.winlog.event_data.EngineVersion}}'
+          powershell.file.script_block_id: '{{json.event.winlog.event_data.ScriptBlockId}}'
+          powershell.file.script_block_text: '{{json.event.winlog.event_data.ScriptBlockText}}'
+          powershell.id: '{{json.event.winlog.event_data.ShellID}}'
+          powershell.pipeline_id: '{{json.event.winlog.event_data.PipelineId}}'
+          powershell.process.executable_version: '{{json.event.winlog.event_data.HostVersion}}'
+          powershell.provider.name: '{{json.event.winlog.event_data.ProviderName}}'
+          powershell.provider.new_state: '{{json.event.winlog.event_data.NewProviderState}}'
+          powershell.runspace_id: '{{json.event.winlog.event_data.RunspaceId}}'
+          powershell.sequence: '{{json.event.winlog.event_data.DetailSequence or json.event.winlog.event_data.MessageNumber}}'
+          powershell.total: '{{json.event.winlog.event_data.DetailTotal or json.event.winlog.event_data.MessageTotal}}'
+          process.args: '{{json.event.process.command_line.split(" ")}}'
+          process.args_count: '{{json.event.process.command_line.split(" ")|length}}'
+          process.command_line: '{{json.event.winlog.event_data.HostApplication}}'
+          process.entity_id: '{{json.event.winlog.event_data.HostId}}'
+          process.title: '{{json.event.winlog.event_data.HostName}}'
+          user.domain: '{{json.event.winlog.event_data.UserId.split("\\")|first}}'
+          user.id: '{{json.event.winlog.user.identifier}}'
+          user.name: '{{json.event.winlog.event_data.UserId.split("\\")|last}}'
+      - set:
+          event.type: 'info'
+        filter: '{{json.event.event.get("type") == None}}'
+      - set:
+          event.category: 'process'
+        filter: '{{json.event.event.get("category") == None}}'
+      - set:
+          user.domain: '{{json.event.winlog.event_data.User.split("\\")|first}}'
+          user.name: '{{json.event.winlog.event_data.User.split("\\")|last}}'
+        filter: '{{json.event.winlog.event_data.User.split("\\")|length == 2}}'
+      - set:
+          source.user.domain: '{{json.event.winlog.event_data.ConnectedUser.split("\\")|first}}'
+          source.user.name: '{{json.event.winlog.event_data.ConnectedUser.split("\\")|last}}'
+        filter: '{{json.event.winlog.event_data.ConnectedUser.split("\\")|length == 2}}'
+      - set:
+          powershell.command.invocation_details: >
+            {%- set results = [] -%}
+            {%- set param3 = json.event.winlog.event_data.param3.split("\n") -%}
+            {%- for v in param3 -%}
+            {%- set detailRegex = '^([^:(]+)\(([^)]+)\)\:\s*(.+)?$' -%}
+            {%- set parameterBindingRegex = 'name\=(.+);\s*value\=(.+)$' -%}
+            {%- if re.match(detailRegex, v) == None -%}
+            {%- set results = results.append({"value":v}) -%}
+            {%- else -%}
+            {%- set matches = [] -%}
+            {%- for i in re.search(detailRegex,v).groups() -%}
+            {%- set matches = matches.append(i) -%}
+            {%- endfor -%}
+            {%- if len(matches) != 4 -%}
+            {%- set results = results.append({"value":v}) -%}
+            {%- elif matches[1] != "ParameterBinding" -%}
+            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"value": matches[3]}) -%}
+            {%- elif re.match(parameterBindingRegex,matches[3]) == None -%}
+            {%- set results = results.append({"value": matches[4]}) -%}
+            {%- else -%}
+            {%- set nameValMatches = [] -%}
+            {%- for i in re.search(parameterBindingRegex,matches[3]).groups() -%}
+            {%- set nameValMatches = nameValMatches.append(i) -%}
+            {%- endfor -%}
+            {%- if len(nameValMatches) != 3 -%}
+            {%- set results = results.append({"value": matches[3]}) -%}
+            {%- else -%}
+            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"name": nameValMatches[1],"value": nameValMatches[2]}) -%}
+            {%- endif -%}
+            {%- endif -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {{results}}
+        filter: '{{json.event.event.get("code") == "800"}}'
+      - set:
+          powershell.command.invocation_details: >
+            {%- set results = [] -%}
+            {%- set payload = json.event.winlog.event_data.Payload.split("\n") -%}
+            {%- for v in payload -%}
+            {%- set detailRegex = '^([^:(]+)\(([^)]+)\)\:\s*(.+)?$' -%}
+            {%- set parameterBindingRegex = 'name\=(.+);\s*value\=(.+)$' -%}
+            {%- if re.match(detailRegex, v) == None -%}
+            {%- set results = results.append({"value":v}) -%}
+            {%- else -%}
+            {%- set matches = [] -%}
+            {%- for i in re.search(detailRegex,v).groups() -%}
+            {%- set matches = matches.append(i) -%}
+            {%- endfor -%}
+            {%- if len(matches) != 4 -%}
+            {%- set results = results.append({"value":v}) -%}
+            {%- elif matches[1] != "ParameterBinding" -%}
+            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"value": matches[3]}) -%}
+            {%- elif re.match(parameterBindingRegex,matches[3]) == None -%}
+            {%- set results = results.append({"value": matches[4]}) -%}
+            {%- else -%}
+            {%- set nameValMatches = [] -%}
+            {%- for i in re.search(parameterBindingRegex,matches[3]).groups() -%}
+            {%- set nameValMatches = nameValMatches.append(i) -%}
+            {%- endfor -%}
+            {%- if len(nameValMatches) != 3 -%}
+            {%- set results = results.append({"value": matches[3]}) -%}
+            {%- else -%}
+            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"name": nameValMatches[1],"value": nameValMatches[2]}) -%}
+            {%- endif -%}
+            {%- endif -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {{results}}
+        filter: '{{json.event.event.get("code") == "4103"}}'
+      - set:
+          file.name: '{{json.event..winlog.event_data.ScriptName.split("\\")|last}}'
+          file.directory: '{{json.event.winlog.event_data.ScriptName.split("\\")[:-1]|join}}'
+        filter: '{{json.event.winlog.event_data.ScriptName.split("\\")|length > 1}}'
+      - set:
+          file.extension: '{{json.event.winlog.event_data.ScriptName.split(".")|last}}'
+        filter: '{{json.event.winlog.event_data.ScriptName.split(".")|length > 1}}'
