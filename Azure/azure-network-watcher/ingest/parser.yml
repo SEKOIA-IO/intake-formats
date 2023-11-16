@@ -11,7 +11,12 @@ pipeline:
       properties:
         input_field: "{{json_event.message.get('flow.0')}}"
         output_field: result
-        pattern: "%{NUMBER:timestamp},%{IP:source_ip},%{IP:destination_ip},%{NUMBER:source_port},%{NUMBER:destination_port}%{GREEDYDATA}"
+        pattern: "%{NUMBER:timestamp},%{IP:source_ip},%{IP:destination_ip},%{NUMBER:source_port},%{NUMBER:destination_port},%{PROTOCOL:protocol},%{TRAFFICFLOW:traffic_flow},%{TRAFFICDECISION:traffic_decision}(|,(%{FLOWSTATE:flow_state}|),(%{INT:source_packets}|),(%{INT:source_bytes}|),(%{INT:destination_packets}|),(%{INT:destination_bytes}|))"
+        custom_patterns:
+          "PROTOCOL": "T|U"
+          "TRAFFICFLOW": "I|O"
+          "TRAFFICDECISION": "A|D"
+          "FLOWSTATE": "B|C|E"
 
   - name: set_common_fields
   - name: set_network_fields
@@ -24,8 +29,8 @@ stages:
       - set:
           source.ip: "{{json_event.message.source_addr or parsed_flow_0.result.source_ip}}"
           source.port: "{{json_event.message.source_port or parsed_flow_0.result.source_port}}"
-          source.packets: "{{json_event.message.source_packets}}"
-          source.bytes: "{{json_event.message.source_bytes}}"
+          source.packets: "{{parsed_flow_0.result.source_packets}}"
+          source.bytes: "{{parsed_flow_0.result.source_bytes}}"
           source.mac: "{{json_event.message.macAddress}}"
 
   set_destination_fields:
@@ -33,13 +38,17 @@ stages:
       - set:
           destination.ip: "{{json_event.message.destination_addr or parsed_flow_0.result.destination_ip}}"
           destination.port: "{{json_event.message.destination_port or parsed_flow_0.result.destination_port}}"
-          destination.packets: "{{json_event.message.destination_packets}}"
-          destination.bytes: "{{json_event.message.destination_bytes}}"
+          destination.packets: "{{parsed_flow_0.result.destination_packets}}"
+          destination.bytes: "{{parsed_flow_0.result.destination_bytes}}"
 
   set_network_fields:
     actions:
-      - set:
-          network.transport: "{{json_event.message.protocol or 'tcp'}}"
+      - translate:
+        dictionary:
+          "T": "tcp"
+        mapping:
+          parsed_flow_0.result.protocol: network.transport
+        fallback: "udp"
 
       - translate:
         dictionary:
@@ -53,14 +62,14 @@ stages:
     actions:
       - set:
           event.kind: "event"
+          event.category: ["network"]
           event.code: "{{json_event.message.operationName}}"
-          event.action: "{{json_event.message.traffic_decision}}"
           "@timestamp": "{{json_event.message.flowtime}}"
 
           rule.name: "{{json_event.message.rule}}"
 
-          action.name: "{{json_event.message.traffic_decision}}"
           action.type: "{{json_event.message.rule}}"
+          action.target: "network-traffic"
           action.properties: >
             [
               {
@@ -77,3 +86,24 @@ stages:
             ]
 
           host.name: "{{json_event.message.resourceId}}"
+
+      - translate:
+        dictionary:
+          "A": "accept"
+        mapping:
+          parsed_flow_0.result.traffic_decision: event.action
+        fallback: "reject"
+
+      - translate:
+        dictionary:
+          "A": "accept"
+        mapping:
+          parsed_flow_0.result.traffic_decision: action.name
+        fallback: "reject"
+
+      - translate:
+        dictionary:
+          "A": ["allowed"]
+        mapping:
+          parsed_flow_0.result.traffic_decision: event.type
+        fallback: ["denied"]
