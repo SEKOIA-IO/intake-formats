@@ -5,7 +5,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '%{CRON}|%{ARROW}|%{LOG}'
+        pattern: "%{CRON}|%{ARROW}|%{LOG}"
         custom_patterns:
           TLS: "TLSv"
           ACTION: "(SSL Handshake)|Connection|Rule"
@@ -28,7 +28,7 @@ pipeline:
     external:
       name: grok.match
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: message
         pattern: '\s*Rule %{DATA:rule_name} %{DATA}\:\s*%{GREEDYDATA:kvs}'
     filter: '{{"CEF:0|" not in original.message}}'
@@ -41,7 +41,7 @@ pipeline:
         output_field: message
         value_sep: "="
         item_sep: " "
-    filter: '{{parse_kv_header.message != None and parse_kv_header.message.kvs != None}}'
+    filter: "{{parse_kv_header.message != None and parse_kv_header.message.kvs != None}}"
 
   - name: parse_timestamp
     external:
@@ -49,7 +49,7 @@ pipeline:
       properties:
         input_field: "{{ parse_cef_event.message.rt }}"
         output_field: datetime
-    filter: '{{ parse_cef_event.message != None }}'
+    filter: "{{ parse_cef_event.message != None }}"
 
   - name: parse_apm_event
     external:
@@ -59,7 +59,7 @@ pipeline:
         pattern: '%{HEADER}?%{DATA:rule_name}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{PAYLOAD}'
         custom_patterns:
           HEADER: '\s*%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
-          PAYLOAD: '%{PAYLOAD_USER}|%{PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{PAYLOAD_USER_AUTH}|%{PAYLOAD_NEW_SESSION}'
+          PAYLOAD: "%{PAYLOAD_USER}|%{PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{PAYLOAD_USER_AUTH}|%{PAYLOAD_NEW_SESSION}"
           PAYLOAD_USER: "Username '%{DATA:user_name}'"
           PAYLOAD_USER_AUTH: ".*authenticate with '%{DATA:user_name}'.*"
           PAYLOAD_USER_AUTH_WITH_DOMAIN: ".*authenticate with '%{DATA:user_name}@%{DATA:user_domain}'.*"
@@ -69,47 +69,47 @@ pipeline:
     filter: "{{ parse_apm_event.message != None }}"
 
   - name: set_cef_fields
-    filter: '{{ parse_cef_event.message != None }}'
+    filter: "{{ parse_cef_event.message != None }}"
 
   - name: set_grokked_fields
-    filter: '{{ parse_grok_event.message != None }}'
+    filter: "{{ parse_grok_event.message != None }}"
 
   - name: set_kv_fields
-    filter: '{{ parse_kv_event.message != None }}'
+    filter: "{{ parse_kv_event.message != None }}"
 
 stages:
   set_grokked_fields:
     actions:
       - set:
-           rule.name: "{{parse_grok_event.message.rule_name}}"
+          rule.name: "{{parse_grok_event.message.rule_name}}"
 
-           event.reason: "{{parse_grok_event.message.msg}}"
-           user.name: "{{parse_grok_event.message.user_name}}"
-           action.name: "{{parse_grok_event.message.action_name}}"
-           process.command_line: "{{parse_grok_event.message.process_command_line}}"
+          event.reason: "{{parse_grok_event.message.msg}}"
+          user.name: "{{parse_grok_event.message.user_name}}"
+          action.name: "{{parse_grok_event.message.action_name}}"
+          process.command_line: "{{parse_grok_event.message.process_command_line}}"
 
-           action.type: "{{parse_grok_event.message.action_type}}"
-           action.outcome: "{{parse_grok_event.message.action_outcome}}"
-           network.transport: "{{parse_grok_event.message.network_transport.lower()}}"
-           source.ip: "{{parse_grok_event.message.source_ip}}"
-           source.port: "{{parse_grok_event.message.source_port}}"
-           destination.ip: "{{parse_grok_event.message.destination_ip}}"
-           destination.port: "{{parse_grok_event.message.destination_port}}"
+          action.type: "{{parse_grok_event.message.action_type}}"
+          action.outcome: "{{parse_grok_event.message.action_outcome}}"
+          network.transport: "{{parse_grok_event.message.network_transport.lower()}}"
+          source.ip: "{{parse_grok_event.message.source_ip}}"
+          source.port: "{{parse_grok_event.message.source_port}}"
+          destination.ip: "{{parse_grok_event.message.destination_ip}}"
+          destination.port: "{{parse_grok_event.message.destination_port}}"
 
-           url.original: "{{parse_grok_event.message.url_original}}"
+          url.original: "{{parse_grok_event.message.url_original}}"
 
-           url.full: >                            
+          url.full: >
             {%- if parse_grok_event.message.url_original.startswith('http') -%}
               {{parse_grok_event.message.url_original}}
             {%- elif parse_grok_event.message.url_original.endswith(':443') -%}
               https://{{parse_grok_event.message.url_original.strip(':443')}}
             {%- elif parse_grok_event.message.url_original.endswith(':80') -%}
               http://{{parse_grok_event.message.url_original.strip(':80')}}
-            {%- endif -%} 
+            {%- endif -%}
 
-           http.response.status_code: "{{parse_grok_event.message.http_response_status_code}}"
-           tls.version_protocol: "{{parse_grok_event.message.tls_version_protocol.lower()}}"
-           tls.version: "{{parse_grok_event.message.tls_version.lower()}}"
+          http.response.status_code: "{{parse_grok_event.message.http_response_status_code}}"
+          tls.version_protocol: "{{parse_grok_event.message.tls_version_protocol.lower()}}"
+          tls.version: "{{parse_grok_event.message.tls_version.lower()}}"
 
       - set:
           action.target: "network-traffic"
@@ -167,13 +167,11 @@ stages:
           event.reason: "{{parse_cef_event.message.violation_details}}"
         filter: "{{parse_cef_event.message.DeviceProduct == 'PSM'}}"
 
-
       - set:
           user_agent.original: >
             {%- for item in parse_cef_event.message.cs3.split("\\r\\n") -%}
                 {%- if item.split(':')[0] == 'User-Agent'-%}{{ item.split(':')[1] }}{%- endif -%}                
-            {%- endfor -%} 
-
+            {%- endfor -%}
 
   set_kv_fields:
     actions:
@@ -188,17 +186,17 @@ stages:
           http.response.status_code: "{{parse_kv_event.message.server_status}}"
           user_agent.original: "{{parse_kv_event.message.user_agent}}"
           url.original: "{{parse_kv_event.message.username}}"
-          url.full: >                            
+          url.full: >
             {%- if parse_kv_event.message.url_original.startswith('http') -%}
               {{parse_grok_event.message.url_original}}
             {%- elif parse_kv_event.message.url_original.endswith(':443') -%}
               https://{{parse_grok_event.message.url_original.strip(':443')}}
             {%- elif parse_kv_event.message.url_original.endswith(':80') -%}
               http://{{parse_grok_event.message.url_original.strip(':80')}}
-            {%- endif -%} 
+            {%- endif -%}
 
           http.request.referrer: "{{parse_kv_event.message.referer}}"
-          http.request.method: "{{parse_kv_event.message.request.strip('\"').split(' ')[0]}}"
+          http.request.method: '{{parse_kv_event.message.request.strip(''"'').split('' '')[0]}}'
 
       - set:
           destination.ip: "{{parse_kv_event.message.lb_server.split(':')[0]}}"
