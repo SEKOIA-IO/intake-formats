@@ -26,6 +26,16 @@ pipeline:
         input_field: '{{original.message.replace("PSM:CEF:0|", "CEF:0|").replace("ASM:CEF:0|", "CEF:0|")}}'
     filter: '{{"CEF:0|" in original.message}}'
 
+  - name: parse_cef_full_request
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parse_cef_event.message.full_request }}"
+        output_field: message
+        value_sep: ": "
+        item_sep: '\r\n'
+    filter: "{{parse_cef_event.message != null and parse_cef_event.message.full_request != null}}"
+
   - name: parse_kv_header
     external:
       name: grok.match
@@ -183,10 +193,10 @@ stages:
 
       - set:
           url.original: "{{parse_cef_event.message.request}}"
-          user_agent.original: >
-            {%- for item in parse_cef_event.message.full_request.split("\r\n") -%}
-                {%- if item.split(':')[0] == 'User-Agent'-%}{{ item.split(':')[1].strip() }}{%- endif -%}                
-            {%- endfor -%}
+
+      - set:
+          user_agent.original: "{{parse_cef_full_request.message.get('User-Agent')}}"
+        filter: "{{parse_cef_full_request.message != None and parse_cef_full_request.message.get('User-Agent') != None}}"
 
   set_kv_fields:
     actions:
