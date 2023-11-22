@@ -150,8 +150,7 @@ def prune_taxonomy(format_fields_path, taxonomy):
     for missing_field in taxonomy["unused"]:
         fields.pop(missing_field)
 
-    updated_fields: dict = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
-    write_taxonomy(format_fields_path, updated_fields)
+    write_taxonomy(format_fields_path, fields)
 
     print(f"{len(taxonomy['unused'])} removed from fields.yml")
     print("Please run the following commandline to ensure yaml is properly linted")
