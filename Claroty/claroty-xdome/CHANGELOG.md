@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2023-11-03
+
+- Added parsing of `malicious_*` and `alert_*` fields
+
 ## [1.0.0] - 2023-09-20
 
 ### Added
