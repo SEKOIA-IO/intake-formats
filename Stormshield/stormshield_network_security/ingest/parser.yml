@@ -127,6 +127,7 @@ stages:
           client.ip: "{{ kv.result.address }}"
           stormshield.session.id: "{{ kv.result.sessionid }}"
           process.command_line: "{{ kv.result.msg }}"
+          action.outcome: '{% if kv.result.error == "0" %}success{% else %}failure{% endif %}'
         filter: '{{ kv.result.logtype == "server" }}'
 
       - set:
@@ -182,6 +183,8 @@ stages:
           stormshield.auth.configid: "{{ kv.result.confid }}"
           stormshield.auth.totpused: "{{ kv.result.totp }}"
           stormshield.auth.method: "{{ kv.result.method }}"
+          action.outcome: '{% if kv.result.error == "0" %}success{% else %}failure{% endif %}'
+          network.protocol: "{% if 'SSH' in kv.result.msg %}ssh{% else %}https{% endif %}"
         filter: '{{ kv.result.logtype == "auth" }}'
 
       - set:
@@ -195,11 +198,6 @@ stages:
         filter: '{{ kv.result.logtype == "server" and kv.result.msg == "logged in" }}'
 
       - set:
-          action.outcome: "{% if 'authentication failed' in kv.result.msg or 'invalid' in kv.result.msg %}failure{% else %}success{% endif %}"
-          network.protocol: "{% if 'SSH' in kv.result.msg %}ssh{% else %}https{% endif %}"
-        filter: '{{ kv.result.logtype == "auth" }}'
-
-      - set:
           event.type: ["info"]
           event.category: ["authentication"]
           event.action: authentication
@@ -210,11 +208,9 @@ stages:
 
       - set:
           event.type: ["info"]
-          event.category: ["web"]
-          user.effective.group.name: "{{ kv.result.group }}"
-          http.request.method: "{{ kv.result.op }}"
-          http.response.status_code: "{{ kv.result.result }}"
-          url.path: "{{ kv.result.arg }}"
+          stormshield.plugin.operation: "{{ kv.result.op }}"
+          stormshield.plugin.result: "{{ kv.result.result }}"
+          stormshield.plugin.arg: "{{ kv.result.arg }}"
           stormshield.plugin.unit_id: "{{ kv.result.unit_id }}"
           stormshield.plugin.clientappid: "{{ kv.result.clientappid }}"
           stormshield.plugin.serverappid: "{{ kv.result.serverappid }}"
@@ -229,6 +225,14 @@ stages:
           stormshield.plugin.format: "{{ kv.result.format }}"
           stormshield.plugin.groupid: "{{ kv.result.groupid }}"
         filter: '{{ kv.result.logtype == "plugin" }}'
+
+      - set:
+          event.category: ["web"]
+          http.request.method: "{{ kv.result.op }}"
+          http.response.status_code: "{{ kv.result.result }}"
+          url.domain: "{{ kv.result.dstname }}"
+          url.path: "{{ kv.result.arg }}"
+        filter: '{{ kv.result.logtype == "plugin" and kv.result.proto == "http" }}'
 
   set_startime:
     actions:
