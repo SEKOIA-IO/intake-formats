@@ -1,11 +1,21 @@
 name: Microsoft Windows
 pipeline:
   - name: json
+    description: "Bypass wrong syslog configuration which adds : before the json message"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message.strip(':')}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{")}}'
+
+  - name: json
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
         output_field: event
+    filter: '{{original.message.startswith(":{") == False}}'
 
   - name: parsed_message_kv
     description: "Extract fields from Message field"
@@ -115,6 +125,7 @@ pipeline:
   - name: dns_fields
   - name: action_target
   - name: destination
+  - name: rule
   - name: finalize
 
 stages:
@@ -250,7 +261,7 @@ stages:
     actions:
       - name: set
         set:
-          "@timestamp": "{{json.event.UtcTime}}"
+          "@timestamp": "{{json.event.UtcTime or json.event.EventTime}}"
           file.name: "{{json.event.name}}"
           process.command_line: "{{json.event.CommandLine}}"
           process.parent.command_line: "{{json.event.ParentCommandLine}}"
@@ -357,6 +368,10 @@ stages:
           action.properties.ProxyServer: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "ProxyServer" in component%}{{component["ProxyServer"].strip()}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          action.properties.AdditionalActionsID: "{{ json.event.get('Additional Actions ID') }}"
+          action.properties.AdditionalActionsString: "{{ json.event.get('Additional Actions String') }}"
 
   action_target:
     actions:
@@ -1068,3 +1083,13 @@ stages:
       - set:
           source.address: "{{json.event.SourceHostname}}"
         filter: "{{json.event.SourceHostname != null and json.event.SourceHostname != '-'}}"
+
+      - set:
+          source.address: "{{json_event.message.SourceAddr}}"
+        filter: "{{json.event.SourceAddr != null and json.event.SourceAddr != '-'}}"
+
+  rule:
+    actions:
+      - set:
+          rule.name: "{{json.event.RuleName}}"
+        filter: "{{json.event.RuleName != null and json.event.RuleName != '-'}}"
