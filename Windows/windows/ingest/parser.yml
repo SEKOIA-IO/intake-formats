@@ -1,11 +1,22 @@
 name: Microsoft Windows
+ignored_values: ["-", "N/A"]
 pipeline:
+  - name: json
+    description: "Bypass wrong syslog configuration which adds : before the json message"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message.strip(':')}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{")}}'
+
   - name: json
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
         output_field: event
+    filter: '{{original.message.startswith(":{") == False}}'
 
   - name: parsed_message_kv
     description: "Extract fields from Message field"
@@ -40,7 +51,7 @@ pipeline:
         output_field: result
 
   - name: source_ip_ip_address
-    filter: "{{json.event.IpAddress != null and json.event.IpAddress != '-'}}"
+    filter: "{{json.event.IpAddress != null}}"
     external:
       name: grok.match
       properties:
@@ -115,6 +126,7 @@ pipeline:
   - name: dns_fields
   - name: action_target
   - name: destination
+  - name: rule
   - name: finalize
 
 stages:
@@ -129,25 +141,8 @@ stages:
       - set:
           destination.ip: "{{json.event.DestinationIp or json.event.DestAddress}}"
           destination.port: "{{json.event.DestinationPort or json.event.DestPort}}"
-
-      - set:
-          destination.domain: "{{json.event.DestinationHostname}}"
-        filter: "{{json.event.DestinationHostname != null and json.event.DestinationHostname != '-'}}"
-
-      - set:
-          destination.address: "{{json.event.DestinationAddress}}"
-        filter: "{{json.event.DestinationAddress != null and json.event.DestinationAddress != '-'}}"
-
-      - set:
-          destination.address: "{{json.event.DestAddress}}"
-        filter: "{{json.event.DestAddress != null and json.event.DestAddress != '-'}}"
-
-      - set:
-          destination.domain: "{{final.url.domain}}"
-          destination.address: "{{final.url.domain}}"
-
-      - set:
-          destination.address: "{{final.destination.domain or final.destination.ip }}"
+          destination.domain: "{{json.event.DestinationHostname or final.url.domain}}"
+          destination.address: "{{json.event.DestinationAddress or json.event.DestAddress or final.url.domain}}"
 
   set_dll:
     actions:
@@ -357,6 +352,10 @@ stages:
           action.properties.ProxyServer: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "ProxyServer" in component%}{{component["ProxyServer"].strip()}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          action.properties.AdditionalActionsID: "{{ json.event.get('Additional Actions ID') }}"
+          action.properties.AdditionalActionsString: "{{ json.event.get('Additional Actions String') }}"
 
   action_target:
     actions:
@@ -1019,7 +1018,6 @@ stages:
       # does the following override the previous fields ?
       - set:
           process.executable: "{{json.event.ProcessName }}"
-        filter: "{{json.event.ProcessName not in ['null', '-'] }}"
 
   action_outcome:
     actions:
@@ -1055,16 +1053,25 @@ stages:
     actions:
       - set:
           source.address: "{{json.event.SourceIp}}"
-        filter: "{{json.event.SourceIp != '-'}}"
+        filter: "{{json.event.SourceIp | is_ipaddress}}"
 
       - set:
           source.address: "{{json.event.IpAddress}}"
-        filter: "{{json.event.IpAddress != null and json.event.IpAddress != '-'}}"
+        filter: "{{json.event.IpAddress | is_ipaddress}}"
 
       - set:
           source.address: "{{source.ip}}"
-        filter: "{{(json.event.IpAddress == null and json.event.IpAddress == '-') and final.source.ip != null }}"
+        filter: "{{json.event.IpAddress | is_ipaddress and final.source.ip != null }}"
 
       - set:
           source.address: "{{json.event.SourceHostname}}"
-        filter: "{{json.event.SourceHostname != null and json.event.SourceHostname != '-'}}"
+        filter: "{{json.event.SourceHostname | is_ipaddress}}"
+
+      - set:
+          source.address: "{{json_event.message.SourceAddr}}"
+        filter: "{{json.event.SourceAddr | is_ipaddress}}"
+
+  rule:
+    actions:
+      - set:
+          rule.name: "{{json.event.RuleName}}"
