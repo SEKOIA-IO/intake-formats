@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 2023-10-06 - 1.0.0
+## 2023-12-01 - 1.0.0
 
-#### Added
+### Added
 
-- initial version of the connector
+- initial version of the format
