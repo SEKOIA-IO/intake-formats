@@ -2,17 +2,17 @@ import copy
 import json
 import os
 
+from dictdiffer import diff, patch
+
 constant_fields = {
     "sekoiaio": {
         "intake": {
-            "coverage": None,
             "parsing_status": "success",
             "dialect": "test",
             "dialect_uuid": "00000000-0000-0000-0000-000000000000",
         }
     },
-    "event": {"id": "00000000-0000-0000-0000-000000000000", "outcome": "success"},
-    "ecs": {"version": "1.10.0"},
+    "event": {"id": "00000000-0000-0000-0000-000000000000"},
 }
 
 
@@ -75,7 +75,7 @@ def pop_field(event: dict, dotted_field: str):
                 event.pop(parts[0])
 
 
-def build_fixed_expectation(parsed_message):
+def build_fixed_expectation(parsed_message, expected_message):
     """Build a new and improved expectation from the parsed message"""
     new_expectation = copy.deepcopy(parsed_message)
 
@@ -85,10 +85,11 @@ def build_fixed_expectation(parsed_message):
     pop_field(new_expectation, "sekoiaio.intake.dialect")
     pop_field(new_expectation, "sekoiaio.intake.dialect_uuid")
     pop_field(new_expectation, "event.id")
-    pop_field(new_expectation, "event.outcome")
     pop_field(new_expectation, "ecs.version")
 
-    return new_expectation
+    diff_result = diff(expected_message, new_expectation)
+
+    return patch(diff_result, expected_message)
 
 
 def test_intakes_produce_expected_messages(request, manager, intakes_root, test_path):
@@ -111,22 +112,28 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     if "related" in parsed:
         for related_field in ["hosts", "ip", "user", "hash"]:
             if related_field in parsed["related"]:
-                parsed["related"][related_field] = sorted(parsed["related"][related_field])
+                parsed["related"][related_field] = sorted(
+                    parsed["related"][related_field]
+                )
 
     pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
 
     expected = testcase["expected"]
 
     if request.config.getoption("fix_expectations") and parsed != expected:
-        testcase["expected"] = build_fixed_expectation(parsed)
+        testcase["expected"] = build_fixed_expectation(parsed, expected)
 
         with open(test_fullpath, "w") as out:
             json.dump(testcase, out, indent=2)
 
     # Perform sorting on all fields(including lists) using custom encoder to make sure we have a consistent order
     # The most simple way is to encode to json string and decode it back :)
-    expected_sorted = json.loads(json.dumps(expected, sort_keys=True, cls=JsonSorterEncoder))
-    parsed_sorted = json.loads(json.dumps(parsed, sort_keys=True, cls=JsonSorterEncoder))
+    expected_sorted = json.loads(
+        json.dumps(expected, sort_keys=True, cls=JsonSorterEncoder)
+    )
+    parsed_sorted = json.loads(
+        json.dumps(parsed, sort_keys=True, cls=JsonSorterEncoder)
+    )
 
     assert parsed_sorted == expected_sorted
 
