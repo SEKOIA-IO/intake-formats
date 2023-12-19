@@ -12,6 +12,22 @@ pipeline:
       properties:
         input_field: "{{json_event.message.clientTimestamp}}"
         output_field: datetime
+  - name: parse_username
+    filter: "{{json_event.message.details.userName != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.details.userName}}"
+        output_field: user
+        pattern: "(%{DATA:domain}[/\\\\]+)?(%{USERNAME:name})"
+  - name: parse_username
+    filter: "{{json_event.message.userName != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.userName}}"
+        output_field: user
+        pattern: "(%{DATA:domain}[/\\\\]+)?(%{USERNAME:name})"
   - name: set_common_fields
   - name: set_malicious_file_fields
     filter: '{{json_event.message.engine == "manualScanning" or json_event.message.engine == "fileScaning" or json_event.message.engine == "deepGuard"}}'
@@ -55,13 +71,15 @@ stages:
           organization.id: "{{json_event.message.organization.id}}"
           organization.name: "{{json_event.message.organization.name}}"
 
+          user.domain: "{{parse_username.user.domain}}"
+          user.name: "{{parse_username.user.name}}"
+
           process.pid: "{{json_event.message.details.systemDataProcessId}}"
           process.executable: "{{json_event.message.details.creator}}"
           process.hash.sha1: "{{json_event.message.details.creatorSha1}}"
           process.command_line: "{{json_event.message.details.commandLine}}"
           process.name: "{{json_event.message.details.process}}"
 
-          user.name: "{{json_event.message.details.userName}}"
           url.full: "{{json_event.message.details.url}}"
 
           file.hash.sha1: "{{json_event.message.details.sha1}}"
@@ -79,11 +97,6 @@ stages:
           withsecure.file.reputation: "{{json_event.message.details.reputation}}"
           withsecure.file.rarity: "{{json_event.message.details.rarity}}"
           withsecure.recommended_action: "{{json_event.message.details.recommandedAction}}"
-
-      - set:
-          user.name: '{{json_event.message.userName.split("\\")[-1]}}'
-          user.domain: '{{json_event.message.userName.split("\\")[0]}}'
-        filter: "{{json_event.message.userName != None and json_event.message.userName != ''}}"
 
       - set:
           event.reason: "{{json_event.message.details.description}}"
