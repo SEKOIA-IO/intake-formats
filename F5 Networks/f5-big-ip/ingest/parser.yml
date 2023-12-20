@@ -1,4 +1,5 @@
 name: f5-big-ip
+ignored_values: ["-", "N/A", ""]
 pipeline:
   - name: set_common_fields
 
@@ -7,7 +8,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{CRON}|%{ARROW}|%{LOG}"
+        pattern: "%{CRON}|%{ARROW}|%{LOG}|%{RULE_LOG}"
         custom_patterns:
           TLS: "TLSv"
           ACTION: "(SSL Handshake)|Connection|Rule"
@@ -17,6 +18,7 @@ pipeline:
           CRON: '%{WORD}\[\d*\]:\s*\(%{NOTSPACE:user_name}\) %{NOTSPACE:action_name} \(%{DATA:process_command_line}\)'
           ARROW: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )(%{ACTION:action_name} %{ACTION_OUTCOME:action_outcome} (for)? %{PROTOCOLE:network_transport} )?%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}(: %{ACTION:action_name} %{ACTION_OUTCOME:action_outcome}: %{DATA:msg})?'
           LOG: '\s*%{WORD:action_type}\[\d*\]:\s*(\[%{WORD}\]( %{IP:source_ip} - - \[%{HTTPDATE}\] \"%{NOTSPACE:url_original}\" %{NUMBER:http_response_status_code} (%{NUMBER}|-)|\[%{HTTPDATE}\] %{IP:source_ip} %{DATA} \"%{NOTSPACE:url_original}\" (%{NUMBER}|-))|(%{RULE}|%{DATA}) %{IPORHOST:destination_ip}:%{POSINT:destination_port}: HTTP: %{POSINT:http_response_status_code} response to( %{IPORHOST:destination_ip}:%{POSINT:destination_port})? from( %{IPORHOST:source_ip}:%{POSINT:source_port} )?URL: %{NOTSPACE:url_original} %{DATA} %{TLS:tls_version_protocol}%{NUMBER:tls_version})'
+          RULE_LOG: '%{WORD:action_type}\[\d*\]:\s*%{RULE} LOGS: (Referer: %{NOTSPACE:referer}|Request: %{WORD:http_method} %{NOTSPACE:path_name}|DNT: %{INT:number})'
     filter: '{{"CEF:0|" not in original.message}}'
 
   - name: parse_cef_event
@@ -113,6 +115,12 @@ stages:
         filter: "{{parse_grok_event.message.ARROW != None and 'alert' in parse_grok_event.message.ARROW}}"
 
       - set:
+          url.path: "{{parse_grok_event.message.path_name}}"
+          http.request.method: "{{parse_grok_event.message.http_method}}"
+          http.request.referrer: "{{parse_grok_event.message.referer}}"
+        filter: "{{parse_grok_event.message.RULE_LOG != None }}"
+
+      - set:
           rule.name: "{{parse_grok_event.message.rule_name}}"
 
           event.reason: "{{parse_grok_event.message.msg}}"
@@ -171,15 +179,20 @@ stages:
       - set:
           observer.ip: "{{parse_cef_event.message.dvc}}"
           observer.hostname: "{{parse_cef_event.message.dvchost}}"
+          observer.type: "firewall"
+          host.name: "{{parse_cef_event.message.dvchost}}"
 
       - set:
           source.ip: "{{parse_cef_event.message.src}}"
           source.port: "{{parse_cef_event.message.spt}}"
+          source.user.id: "{{parse_cef_event.message.suid}}"
+          source.user.name: "{{parse_cef_event.message.suser}}"
 
           destination.ip: "{{parse_cef_event.message.dst}}"
           destination.port: "{{parse_cef_event.message.dpt}}"
 
           network.transport: "{{parse_cef_event.message.proto}}"
+          network.protocol: "{{parse_cef_event.message.app}}"
 
           http.response.status_code: "{{parse_cef_event.message.response_code}}"
           http.request.method: "{{parse_cef_event.message.requestMethod}}"
@@ -204,7 +217,6 @@ stages:
           destination.address: "{{parse_cef_event.message.destination_address}}"
 
       - set:
-          network.application: "{{parse_cef_event.message.app}}"
           event.reason: "{{parse_cef_event.message.violation_details}}"
         filter: "{{parse_cef_event.message.DeviceProduct == 'PSM'}}"
 
