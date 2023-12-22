@@ -9,14 +9,12 @@ from helpers import sort_json_keys, YamlDumper, format_expected
 constant_fields = {
     "sekoiaio": {
         "intake": {
-            "coverage": None,
             "parsing_status": "success",
             "dialect": "test",
             "dialect_uuid": "00000000-0000-0000-0000-000000000000",
         }
     },
-    "event": {"id": "00000000-0000-0000-0000-000000000000", "outcome": "success"},
-    "ecs": {"version": "1.10.0"},
+    "event": {"id": "00000000-0000-0000-0000-000000000000"}
 }
 
 # Tests inside this file are actually parametrized depending on arguments
