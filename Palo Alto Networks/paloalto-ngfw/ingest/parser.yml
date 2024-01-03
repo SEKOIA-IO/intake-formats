@@ -20,64 +20,7 @@ pipeline:
 
   # TRAFFIC CSV
   - name: parsed_event
-    filter: "{{parsed_dsv.message.Type == 'TRAFFIC' and original.message.split(',')|length <= 75}}"
-    external:
-      name: dsv.parse-dsv
-      properties:
-        input_field: original.message
-        output_field: message
-        columnnames:
-          - PaloAltoDomain
-          - ReceiveTime
-          - DeviceSN
-          - Type
-          - Subtype
-          - ConfigVersion
-          - GenerateTime
-          - SourceAddress
-          - DestinationAddress
-          - NATSourceIP
-          - NATDestinationIP
-          - Rule
-          - SourceUser
-          - DestinationUser
-          - Application
-          - VirtualLocation
-          - SourceZone
-          - DestinationZone
-          - InboundInterface
-          - OutboundInterface
-          - LogAction
-          - TimeLogged
-          - SessionID
-          - RepeatCount
-          - SourcePort
-          - DestinationPort
-          - NATSourcePort
-          - NATDestinationPort
-          - Flags
-          - IPProtocol
-          - Action
-          - Bytes
-          - BytesSent
-          - BytesReceived
-          - Packets
-          - StartTime
-          - ElapsedTimeInSec
-          - Category
-          - Padding
-          - seqno
-          - ActionFlags
-          - SourceLocation
-          - DestinationLocation
-          - cpadding
-          - pkts_sent
-          - pkts_received
-        delimiter: ","
-
-  # TRAFFIC CSV with hight Resolution timestamp
-  - name: parsed_event
-    filter: "{{parsed_dsv.message.Type == 'TRAFFIC' and original.message.split(',')|length >= 103}}"
+    filter: "{{parsed_dsv.message.Type == 'TRAFFIC'}}"
     external:
       name: dsv.parse-dsv
       properties:
@@ -435,6 +378,14 @@ pipeline:
         output_field: datetime
     filter: '{{parsed_event.message.get("EventTime") != None or parsed_event.message.get("TimeGenerated") != None or parsed_event.message.get("ReceiveTime") != None}}'
 
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.HighResolutionTimestamp}}"
+        output_field: datetime
+    filter: '{{parsed_event.message.get("HighResolutionTimestamp") != None}}'
+
   - name: parsed_start
     external:
       name: date.parse
@@ -603,10 +554,6 @@ stages:
           rule.name: "{{parsed_event.message.Rule}}"
           rule.uuid: "{{parsed_event.message.PanOSRuleUUID or parsed_event.message.RuleUUID}}"
           source.bytes: "{{parsed_event.message.BytesSent or parsed_event.message.in}}"
-
-      - set:
-          event.timezone: "{{'+' + parsed_event.message.HighResolutionTimestamp.split('+')[1]}}"
-        filter: "{{parsed_event.message.HighResolutionTimestamp != None}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIP}}"
