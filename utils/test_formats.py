@@ -45,8 +45,7 @@ def build_fixed_expectation(parsed_message):
     pop_field(new_expectation, "sekoiaio.intake.dialect")
     pop_field(new_expectation, "sekoiaio.intake.dialect_uuid")
     pop_field(new_expectation, "event.id")
-    pop_field(new_expectation, "event.outcome")
-    pop_field(new_expectation, "ecs.version")
+    pop_field(new_expectation, "ecs")
 
     return new_expectation
 
@@ -76,6 +75,7 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
                 )
 
     pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
+    pop_field(parsed, "ecs")
 
     expected = testcase["expected"]
 
