@@ -1,7 +1,9 @@
 # Veeam
 
 ## Description
-The description of the module
+
+This module contains necessary parser configurations to work with Veeam Backup logs format
 
 ## Intakes
-*
+
+-
