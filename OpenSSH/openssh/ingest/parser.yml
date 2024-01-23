@@ -16,6 +16,7 @@ pipeline:
           SSHD_MESSAGE_CONNECTION_RESET: Connection reset by
           SSHD_MESSAGE_PAM_SESSION_CLOSED: 'pam_unix\(sshd:session\): session closed for user'
           SSHD_MESSAGE_PAM_SESSION_OPENED: 'pam_unix\(sshd:session\): session opened for user'
+          SSHD_MESSAGE_PAM: 'PAM service\(sshd\)'
           SSHD_MESSAGE_BAD_PROTOCOL: Bad protocol version
           SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED: Did not receive identification string
           SSHD_MESSAGE_DISCONNECTING_USER: Disconnecting
@@ -26,7 +27,7 @@ pipeline:
           SSHD_MESSAGE_PAM_CHECK_PASS: 'pam_unix\(sshd:auth\): check pass;'
           SSHD_MESSAGE_PAM_AUTH_FAILURE: 'pam_unix\(sshd:auth\): authentication failure;'
           SSHD_MESSAGE_PAM_EXPIRED_PASSWORD: 'pam_unix\(sshd:account\): expired password'
-          SSHD_MESSAGE_PAM_WIN_GRANTED_ACCESS: 'pam_winbind\(sshd:account\): user \''%{USERNAME:user_name}@%{HOSTNAME:source_domain}\'' granted access'
+          SSHD_MESSAGE_PAM_WIN_GRANTED_ACCESS: 'pam_winbind\(sshd:account\)'
           SSHD_MESSAGE_FAILED_PASSWORD: "Failed password|Failed none"
           SSHD_MESSAGE_INVALID_USER2: Invalid
           SSHD_MESSAGE_USER2: User
@@ -62,7 +63,9 @@ pipeline:
             (%{SSHD_INFO_PAM_MORE_AUTH_FAIL_MESSAGE:sshd_message}); (logname=(%{USERNAME:user_logname})?
             )?(uid=(%{INT:user_id})? )?(euid=(%{INT:user_euid})?)?%{SPACE}(tty=ssh )?(ruser=(%{USERNAME:user_ruser})?)?%{SPACE}(rhost=(%{IP:source_ip})?)?%{SPACE}(user=%{USERNAME:user_name})?
           SSHD_INFO_PAM_MORE_AUTH_FAIL_MESSAGE: "PAM %{INT} more authentication failure(s)?"
-          SSHD_INFO_PAM: "%{SSHD_INFO_PAM_SESSION_CLOSED}|%{SSHD_INFO_PAM_SESSION_OPENED}|%{SSHD_INFO_PAM_MORE_AUTH_FAIL}"
+          SSHD_INFO_PAM_IGNORE_MAX_RETRIES: "%{SSHD_MESSAGE_PAM:sshd_message} %{GREEDYDATA:tmp_outcome_reason}"
+          SSHD_INFO_PAM_WIN_GRANTED_ACCESS: '%{SSHD_MESSAGE_PAM_WIN_GRANTED_ACCESS:sshd_message}: user \''%{USERNAME:user_name}@%{HOSTNAME:source_domain}\'' granted access'
+          SSHD_INFO_PAM: "%{SSHD_INFO_PAM_SESSION_CLOSED}|%{SSHD_INFO_PAM_SESSION_OPENED}|%{SSHD_INFO_PAM_MORE_AUTH_FAIL}|%{SSHD_INFO_PAM_IGNORE_MAX_RETRIES}|%{SSHD_INFO_PAM_WIN_GRANTED_ACCESS}"
           SSHD_INFO: "%{SSHD_INFO_ACCEPTED}|%{SSHD_INFO_DISCONNECTION}|%{SSHD_INFO_PAM}|%{SSHD_EXPIRED_PASSSOWRD}"
           SSHD_ERROR_BAD_PROTOCOL:
             "%{SSHD_MESSAGE_BAD_PROTOCOL:sshd_message} identification
@@ -97,13 +100,14 @@ pipeline:
           SSHD_ERROR_NEGOCIATE:
             "%{SSHD_MESSAGE_ERROR_NEGOCIATE:sshd_message} %{SSHD_CLIENT_ADDRESS}
             port %{NUMBER:source_port}(: %{GREEDYDATA:tmp_outcome_reason})?"
+          SSHD_ERROR_SEND_FAILURE_PACKET: "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:tmp_outcome_reason}"
           SSHD_ERROR_PAM_CHECK_PASS: "%{SSHD_MESSAGE_PAM_CHECK_PASS:sshd_message} %{SSHD_MESSAGE_USER}"
           SSHD_ERROR_PAM_AUTH_FAILURE: "%{SSHD_MESSAGE_PAM_AUTH_FAILURE:sshd_message} %{GREEDYDATA:tmp_pam}"
-          SSHD_ERROR_PAM: "%{SSHD_ERROR_PAM_CHECK_PASS}|%{SSHD_ERROR_PAM_AUTH_FAILURE}|%{SSHD_MESSAGE_PAM_WIN_GRANTED_ACCESS}"
+          SSHD_ERROR_PAM: "%{SSHD_ERROR_PAM_CHECK_PASS}|%{SSHD_ERROR_PAM_AUTH_FAILURE}"
           SSHD_EXPIRED_PASSSOWRD:
             '%{SSHD_MESSAGE_PAM_EXPIRED_PASSWORD:sshd_message} for user
             %{USERNAME:user_name} \(%{SSHD_TWO_WORDS:action_outcome_reason}\)'
-          SSHD_ERROR: "%{SSHD_ERROR_IDENTIFICATION}|%{SSHD_ERROR_INVALID_USER}|%{SSHD_ERROR_NEGOCIATE}|%{SSHD_ERROR_DISCONNECTING_USER}|%{SSHD_ERROR_FOR_USER}|%{SSHD_ERROR_FOR_USER_2}|%{SSHD_ERROR_AUTH_REQUEST}|%{SSHD_ERROR_PAM}|%{SSHD_ERROR_USER_NOT_ALLOWED}|%{SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION}|%{SSHD_ERROR_CONNECTION}"
+          SSHD_ERROR: "%{SSHD_ERROR_IDENTIFICATION}|%{SSHD_ERROR_INVALID_USER}|%{SSHD_ERROR_NEGOCIATE}|%{SSHD_ERROR_DISCONNECTING_USER}|%{SSHD_ERROR_FOR_USER}|%{SSHD_ERROR_FOR_USER_2}|%{SSHD_ERROR_AUTH_REQUEST}|%{SSHD_ERROR_PAM}|%{SSHD_ERROR_USER_NOT_ALLOWED}|%{SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION}|%{SSHD_ERROR_CONNECTION}|%{SSHD_ERROR_SEND_FAILURE_PACKET}"
 
   - name: parse_kv
     filter: "{{parse_event.message != None and parse_event.message.tmp_pam != None}}"
@@ -221,6 +225,17 @@ stages:
 
           process.name: "sshd"
         filter: "{{parse_event.message.sshd_message == 'pam_unix(sshd:session): session opened for user'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
+          action.type: "open"
+          action.name: "sshd:session"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{parse_event.message.sshd_message == 'pam_winbind(sshd:account)'}}"
 
       - set:
           event.category: ["network"]
@@ -372,3 +387,15 @@ stages:
           action.target: "user"
 
         filter: "{{parse_event.message.sshd_message.endswith('more authentication failures')}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+
+        filter: "{{parse_event.message.sshd_message == 'PAM service(sshd)'}}"
