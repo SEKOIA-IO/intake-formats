@@ -57,8 +57,9 @@ pipeline:
             '%{SSHD_MESSAGE_PAM_SESSION_OPENED:sshd_message} %{WORD:user_name}
             by \(%{GREEDYDATA}\)'
           SSHD_INFO_PAM_MORE_AUTH_FAIL:
-            PAM %{INT} more authentication failure(s)?; (logname=(%{USERNAME:user_logname})?
+            (%{SSHD_INFO_PAM_MORE_AUTH_FAIL_MESSAGE:sshd_message}); (logname=(%{USERNAME:user_logname})?
             )?(uid=(%{INT:user_id})? )?(euid=(%{INT:user_euid})?)?%{SPACE}(tty=ssh )?(ruser=(%{USERNAME:user_ruser})?)?%{SPACE}(rhost=(%{IP:source_ip})?)?%{SPACE}(user=%{USERNAME:user_name})?
+          SSHD_INFO_PAM_MORE_AUTH_FAIL_MESSAGE: "PAM %{INT} more authentication failure(s)?"
           SSHD_INFO_PAM: "%{SSHD_INFO_PAM_SESSION_CLOSED}|%{SSHD_INFO_PAM_SESSION_OPENED}|%{SSHD_INFO_PAM_MORE_AUTH_FAIL}"
           SSHD_INFO: "%{SSHD_INFO_ACCEPTED}|%{SSHD_INFO_DISCONNECTION}|%{SSHD_INFO_PAM}|%{SSHD_EXPIRED_PASSSOWRD}"
           SSHD_ERROR_BAD_PROTOCOL:
@@ -252,7 +253,7 @@ stages:
           event.category: ["session"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
+          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
@@ -342,3 +343,15 @@ stages:
           action.outcome: "failure"
           action.target: "user"
         filter: "{{parse_event.message.sshd_message == 'User'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
+          action.type: "authentication"
+          action.name: "sshd:auth"
+          action.outcome: "failure"
+          action.target: "user"
+
+        filter: "{{parse_event.message.sshd_message.endswith('more authentication failures')}}"
