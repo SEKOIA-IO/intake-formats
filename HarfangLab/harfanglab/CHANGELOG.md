@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 2024-01-18 - 1.1.1
+
+### Fixed
+
+- retrieve file name
+- retrieve registry value
+
 ### 2023-12-04 - 1.1.0
 
 ### Changed
