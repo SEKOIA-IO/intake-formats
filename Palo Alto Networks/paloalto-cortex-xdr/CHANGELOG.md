@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2024-01-02
+## 2024-01-29
 
-### Changed
+### Add
 
-- add new field vadesecure.overdict
+- Add for the first time Cortex format
