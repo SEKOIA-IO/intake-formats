@@ -72,7 +72,7 @@ class SmartDescriptionManager(IntakeTestManager):
             if type(field_parsed_value) == list:
                 field_parsed_value = ", ".join(field_parsed_value)
 
-            return "**%s**" % str(field_parsed_value)
+            return "`%s`" % str(field_parsed_value)
 
         message = re.sub(r"(\{[a-zA-Z\.\_]+\})", sub_fields, message)
 
