@@ -1,0 +1,50 @@
+name: fastly-waf
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_event.message.timestamp}}"
+
+          observer.vendor: "Fastly"
+          observer.product: "Fastly Next-Gen WAF"
+
+          event.kind: "alert"
+          event.module: "fastly.waf"
+          event.category: ["network"]
+
+      - translate:
+        dictionary:
+          "flagged": ["denied"]
+          "info": ["info"]
+        fallback: ["info"]
+        mapping:
+          parse_event.message.action: event.type
+
+      - set:
+          user_agent.original: "{{parse_event.message.userAgents[0]}}"
+        filter: "{{parse_event.message.userAgents != null }}"
+
+      - set:
+          event.action: "{{parse_event.message.action}}"
+          source.ip: "{{parse_event.message.source}}"
+
+          host.geo.country_iso_code: "{{parse_event.message.remoteCountryCode}}"
+          host.name: "{{parse_event.message.remoteHostname}}"
+
+          fastly.waf.reasons: "{{parse_event.message.reasons}}"
+          fastly.waf.request_count: "{{parse_event.message.requestCount}}"
+          fastly.waf.tag_count: "{{parse_event.message.tagCount}}"
+          fastly.waf.window: "{{parse_event.message.window}}"
+          fastly.waf.expires: "{{parse_event.message.expires}}"
+          fastly.waf.expired_by: "{{parse_event.message.expiredBy}}"
+          fastly.waf.user_agents: "{{parse_event.message.userAgents}}"
