@@ -75,7 +75,6 @@ class SmartDescriptionManager(IntakeTestManager):
             return "`%s`" % str(field_parsed_value)
 
         message = re.sub(r"(\{[a-zA-Z0-9\.\_]+\})", sub_fields, message)
-
         return message
 
     def run(self, prsha: str | None = None):
