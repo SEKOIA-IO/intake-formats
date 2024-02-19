@@ -6,6 +6,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+
   - name: read_event_date
     external:
       name: date.parse
@@ -14,6 +15,7 @@ pipeline:
         output_field: datetime
         timezone: UTC
     filter: '{{parsed_event.message.metadata.eventType != "Vertex"}}'
+
   - name: read_event_date
     external:
       name: date.parse
@@ -44,27 +46,39 @@ pipeline:
         output_field: datetime
 
   - name: set_common_fields
-  - name: detectionsummaryevent
+
+  - name: detection_summary_event
     filter: '{{parsed_event.message.metadata.eventType == "DetectionSummaryEvent"}}'
-  - name: useractivityauditevent
+
+  - name: user_activity_audit_event
     filter: '{{parsed_event.message.metadata.eventType == "UserActivityAuditEvent"}}'
-  - name: authactivityauditevent
+
+  - name: auth_activity_audit_event
     filter: '{{parsed_event.message.metadata.eventType == "AuthActivityAuditEvent"}}'
-  - name: incidentsummaryevent
+
+  - name: incident_summary_event
     filter: '{{parsed_event.message.metadata.eventType == "IncidentSummaryEvent"}}'
-  - name: idpdetectionsummaryevent
+
+  - name: idp_detection_summary_event
     filter: '{{parsed_event.message.metadata.eventType == "IdpDetectionSummaryEvent"}}'
-  - name: identityprotectionevent
+
+  - name: identity_protection_event
     filter: '{{parsed_event.message.metadata.eventType == "IdentityProtectionEvent"}}'
+
+  - name: mobile_detection_summary_event
+    filter: '{{parsed_event.message.metadata.eventType == "MobileDetectionSummaryEvent"}}'
+
   - name: vertex
     filter: '{{parsed_event.message.metadata.eventType == "Vertex"}}'
+
 stages:
   set_common_fields:
     actions:
       - set:
           "@timestamp": "{{read_event_date.datetime}}"
           crowdstrike.event_type: "{{parsed_event.message.metadata.eventType}}"
-  detectionsummaryevent:
+
+  detection_summary_event:
     actions:
       - set:
           host.ip: "{{parsed_event.message.event.LocalIP}}"
@@ -99,7 +113,6 @@ stages:
           event.severity: "{{parsed_event.message.event.Severity}}"
           crowdstrike.severity_name: "{{parsed_event.message.event.SeverityName}}"
           crowdstrike.host_groups: '{{parsed_event.message.event.HostGroups.split(",")}}'
-        name: set
 
       - set:
           process.end: "{{parsed_event.message.event.ProcessEndTime | string | to_rfc3339}}"
@@ -114,7 +127,7 @@ stages:
           threat.indicator.type: "file"
         filter: "{{parsed_event.message.event.IOCType == 'hash_sha256'}}"
 
-  useractivityauditevent:
+  user_activity_audit_event:
     actions:
       - set:
           source.ip: "{{parsed_event.message.event.UserIp}}"
@@ -128,8 +141,8 @@ stages:
           user.id: "{{parsed_event.message.event.UserId}}"
           crowdstrike.detect_id: "{% for item in parsed_event.message.event.AuditKeyValues if item.Key == 'detection_id' %}{{item.ValueString}}{% endfor %}"
           crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
-        name: set
-  authactivityauditevent:
+
+  auth_activity_audit_event:
     actions:
       - set:
           source.ip: "{{parsed_event.message.event.UserIp}}"
@@ -140,7 +153,6 @@ stages:
           service.name: "{{parsed_event.message.event.ServiceName}}"
           user.id: "{{parsed_event.message.event.UserId}}"
           crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
-        name: set
       - translate:
         dictionary:
           "streamStarted": ["session"]
@@ -155,7 +167,8 @@ stages:
         mapping:
           crowdstrike.operation_name: event.type
         fallback: ["change"]
-  incidentsummaryevent:
+
+  incident_summary_event:
     actions:
       - set:
           event.kind: alert
@@ -166,9 +179,8 @@ stages:
           crowdstrike.incident_id: "{{parsed_event.message.event.IncidentID}}"
           crowdstrike.incident_end: "{{parsed_event.message.event.IncidentEndTime}}"
           crowdstrike.incident_start: "{{parsed_event.message.event.IncidentStartTime}}"
-        name: set
 
-  idpdetectionsummaryevent:
+  idp_detection_summary_event:
     actions:
       - translate:
         dictionary:
@@ -259,7 +271,7 @@ stages:
           user.target.id: "{{ parsed_event.message.event.TargetAccountObjectSid }}"
           user.target.name: "{{ parsed_event.message.event.TargetAccountName }}"
 
-  identityprotectionevent:
+  identity_protection_event:
     actions:
       - set:
           crowdstrike.incident_description: "{{ parsed_event.message.event.IncidentDescription }}"
@@ -496,3 +508,38 @@ stages:
           "255": "reserved"
         mapping:
           parsed_event.message.event.properties.Protocol: network.transport
+
+  mobile_detection_summary_event:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: "info"
+          event.severity: "{{parsed_event.message.event.Severity}}"
+          event.url: "{{parsed_event.message.event.FalconHostLink}}"
+          event.action: "{{parsed_event.message.event.NetworkDetectionType}}"
+          event.dataset: ["MobileDetection"]
+          observer.vendor: "CrowdStrike"
+          observer.product: "Falcon for Mobile"
+
+          user.name: "{{parsed_event.message.event.UserName}}"
+          host.name: "{{parsed_event.message.event.ComputerName}}"
+
+          threat.tactic.name: "{{parsed_event.message.event.Tactic}}"
+          threat.tactic.id: "{{parsed_event.message.event.TacticId}}"
+          threat.technique.name: "{{parsed_event.message.event.Technique}}"
+          threat.technique.id: "{{parsed_event.message.event.TechniqueId}}"
+
+          crowdstrike.customer_id: "{{parsed_event.message.metadata.customerIDString}}"
+          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
+          crowdstrike.detect_name: "{{parsed_event.message.event.DetectName}}"
+          crowdstrike.detect_description: "{{parsed_event.message.event.DetectDescription}}"
+          crowdstrike.event_objective: "{{parsed_event.message.event.Objective}}"
+
+          agent.id: "{{parsed_event.message.event.SensorId}}"
+
+          network.application: "{{parsed_event.message.event.ApplicationName}}"
+
+          process.pid: "{{parsed_event.message.event.ProcessId}}"
+
+          file.name: "{{parsed_event.message.event.TargetFilename}}"

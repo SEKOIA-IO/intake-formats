@@ -1,11 +1,22 @@
 name: Microsoft Windows
+ignored_values: ["-", "N/A"]
 pipeline:
+  - name: json
+    description: "Bypass wrong syslog configuration which adds : before the json message"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message.strip(':')}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{")}}'
+
   - name: json
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
         output_field: event
+    filter: '{{original.message.startswith(":{") == False}}'
 
   - name: parsed_message_kv
     description: "Extract fields from Message field"
@@ -40,7 +51,7 @@ pipeline:
         output_field: result
 
   - name: source_ip_ip_address
-    filter: "{{json.event.IpAddress != null and json.event.IpAddress != '-'}}"
+    filter: "{{json.event.IpAddress != null}}"
     external:
       name: grok.match
       properties:
@@ -115,6 +126,7 @@ pipeline:
   - name: dns_fields
   - name: action_target
   - name: destination
+  - name: rule
   - name: finalize
 
 stages:
@@ -129,25 +141,8 @@ stages:
       - set:
           destination.ip: "{{json.event.DestinationIp or json.event.DestAddress}}"
           destination.port: "{{json.event.DestinationPort or json.event.DestPort}}"
-
-      - set:
-          destination.domain: "{{json.event.DestinationHostname}}"
-        filter: "{{json.event.DestinationHostname != null and json.event.DestinationHostname != '-'}}"
-
-      - set:
-          destination.address: "{{json.event.DestinationAddress}}"
-        filter: "{{json.event.DestinationAddress != null and json.event.DestinationAddress != '-'}}"
-
-      - set:
-          destination.address: "{{json.event.DestAddress}}"
-        filter: "{{json.event.DestAddress != null and json.event.DestAddress != '-'}}"
-
-      - set:
-          destination.domain: "{{final.url.domain}}"
-          destination.address: "{{final.url.domain}}"
-
-      - set:
-          destination.address: "{{final.destination.domain or final.destination.ip }}"
+          destination.domain: "{{json.event.DestinationHostname or final.url.domain}}"
+          destination.address: "{{json.event.DestinationAddress or json.event.DestAddress or final.url.domain}}"
 
   set_dll:
     actions:
@@ -192,16 +187,10 @@ stages:
   finalize:
     actions:
       - set:
-          process.executable: "{{final.process.executable | lower }}" # to keep ?
-          process.parent.executable: "{{final.process.parent.executable | lower }}" # to keep ?
-          process.working_directory: "{{final.process.working_directory | lower}}"
-          process.parent.working_directory: "{{final.process.parent.working_directory | lower}}"
-          file.name: "{{final.file.name | lower }}" # to keep ?
-          file.path: "{{final.file.path | lower}}"
           log.level: "{{final.log.level | lower }}" # to keep ?
-          process.command_line: '{{final.process.command_line | replace(''"'', '''')| lower}}'
+          process.command_line: '{{final.process.command_line | replace(''"'', '''')}}'
+          process.parent.command_line: '{{final.process.parent.command_line | replace(''"'', '''')}}'
 
-          process.parent.command_line: '{{final.process.parent.command_line | replace(''"'', '''')| lower}}'
           process.hash.imphash: "{{final.process.hash.imphash | lower}}"
           process.hash.md5: "{{final.process.hash.md5 | lower}}"
           process.hash.sha1: "{{final.process.hash.sha1 | lower}}"
@@ -214,10 +203,9 @@ stages:
           dll.hash.imphash: "{{final.dll.hash.imphash | lower}}"
           dll.hash.md5: "{{final.dll.hash.md5 | lower}}"
           dll.hash.sha256: "{{final.dll.hash.sha256 | lower}}"
-          dll.path: "{{final.dll.path | lower}}"
 
       - set:
-          process.parent.command_line: "{{final.process.parent.executable | lower}}"
+          process.parent.command_line: "{{final.process.parent.executable}}"
         filter: "{{final.process.parent.command_line  | lower in final.process.parent.executable | lower }}"
 
       - set:
@@ -233,7 +221,7 @@ stages:
         filter: "{{final.process.executable != null and final.process.name == null}}"
 
       - set:
-          process.working_directory: "{{final.process.executable | dirname | lower}}\\"
+          process.working_directory: "{{final.process.executable | dirname}}\\"
         filter: "{{final.process.executable != null and final.process.working_directory == null}}"
 
       - set:
@@ -241,7 +229,7 @@ stages:
         filter: "{{final.process.parent.executable != null and final.process.parent.name == null}}"
 
       - set:
-          process.parent.working_directory: "{{final.process.parent.executable | dirname  | lower }}\\"
+          process.parent.working_directory: "{{final.process.parent.executable | dirname }}\\"
         filter: "{{final.process.parent.executable != null and final.process.parent.working_directory == null}}"
 
       - set:
@@ -306,21 +294,16 @@ stages:
           action.properties.Accesses: "{{ network_object.event.Accesses.replace('#NEWLINE#', '\\r\\n').replace('#NEWLINE2#', '\\n') }}" # issue with this multi-line field
 
           action.properties.MessEventType: "{{ parsed_message_kv.result.EventType.strip() }}"
-          action.properties.ParentImage: "{{ parsed_message_kv.result.ParentImage.strip() | lower}}"
+          action.properties.ParentImage: "{{ parsed_message_kv.result.ParentImage.strip()}}"
           action.properties.StartFunction: "{{ parsed_message_kv.result.StartFunction.strip() }}"
-          action.properties.StartModule: "{{ parsed_message_kv.result.StartModule.strip() | lower}}"
+          action.properties.StartModule: "{{ parsed_message_kv.result.StartModule.strip()}}"
           action.properties.FailureCode: "{{parsed_message_kv.result.get('Failure Code')}}"
 
           action.properties.TaskContentNew_Args: "{{parsed_message_xml.result.Task.Actions.Exec.Arguments}}"
           action.properties.TaskContentNew_Command: "{{parsed_message_xml.result.Task.Actions.Exec.Command}}"
-          action.properties.Image: "{{ (json.event.Image or parsed_message_kv.result.Image.strip()) | lower}}"
+          action.properties.Image: "{{ (json.event.Image or parsed_message_kv.result.Image.strip()) }}"
 
-          action.properties.CallTrace: "{{ json.event.CallTrace | lower }}"
           action.properties.ContextInfo: '{{ json.event.ContextInfo.replace(" "," ") }}'
-          action.properties.ImageLoaded: "{{ json.event.ImageLoaded | lower }}"
-          action.properties.Path: "{{ json.event.Path | lower }}"
-          action.properties.SourceImage: "{{ json.event.SourceImage | lower}}"
-          action.properties.TargetImage: "{{ json.event.TargetImage |lower }}"
           action.properties.DestinationPort: "{{json.event.DestinationPort or json.event.DestPort}}"
           action.properties.ErrorCode: '{{ json.event.get("Error Code") or json.event.ErrorCode }}'
           action.properties.ProcessName: '{{ json.event.ProcessName or json.event.get("Process Name") }}'
@@ -344,9 +327,6 @@ stages:
           action.properties.BytesTotal: "{{json.event.bytesTotal}}"
           action.properties.ConfigurationFile: "{{ json.event.Configuration }}"
 
-      - set:
-          action.properties.ProcessName: "{{ final.action.properties.ProcessName | lower }}"
-        filter: "{{final.action != null and final.action.properties != null and final.action.properties.ProcessName != null }}"
       - set:
           action.properties.BytesTotal: "-1"
         filter: "{{final.action != null and final.action.properties != null and final.action.properties.BytesTotal == '18446744073709551615'}}"
@@ -372,6 +352,10 @@ stages:
           action.properties.ProxyServer: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "ProxyServer" in component%}{{component["ProxyServer"].strip()}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          action.properties.AdditionalActionsID: "{{ json.event.get('Additional Actions ID') }}"
+          action.properties.AdditionalActionsString: "{{ json.event.get('Additional Actions String') }}"
 
   action_target:
     actions:
@@ -1034,7 +1018,6 @@ stages:
       # does the following override the previous fields ?
       - set:
           process.executable: "{{json.event.ProcessName }}"
-        filter: "{{json.event.ProcessName not in ['null', '-'] }}"
 
   action_outcome:
     actions:
@@ -1070,16 +1053,25 @@ stages:
     actions:
       - set:
           source.address: "{{json.event.SourceIp}}"
-        filter: "{{json.event.SourceIp != '-'}}"
+        filter: "{{json.event.SourceIp | is_ipaddress}}"
 
       - set:
           source.address: "{{json.event.IpAddress}}"
-        filter: "{{json.event.IpAddress != null and json.event.IpAddress != '-'}}"
+        filter: "{{json.event.IpAddress | is_ipaddress}}"
 
       - set:
           source.address: "{{source.ip}}"
-        filter: "{{(json.event.IpAddress == null and json.event.IpAddress == '-') and final.source.ip != null }}"
+        filter: "{{json.event.IpAddress | is_ipaddress and final.source.ip != null }}"
 
       - set:
           source.address: "{{json.event.SourceHostname}}"
-        filter: "{{json.event.SourceHostname != null and json.event.SourceHostname != '-'}}"
+        filter: "{{json.event.SourceHostname | is_ipaddress}}"
+
+      - set:
+          source.address: "{{json_event.message.SourceAddr}}"
+        filter: "{{json.event.SourceAddr | is_ipaddress}}"
+
+  rule:
+    actions:
+      - set:
+          rule.name: "{{json.event.RuleName}}"

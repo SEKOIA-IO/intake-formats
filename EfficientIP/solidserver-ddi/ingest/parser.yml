@@ -1,0 +1,104 @@
+name: solidserver-ddi
+pipeline:
+  - name: parse_event
+    external:
+      name: grok.match
+      properties:
+        output_field: message
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}"
+        custom_patterns:
+          EFFICIENTIP_DNS_QUERY: '^%{EFFICIENTIP_TIMESTAMP:timestamp} %{HOSTNAME:hostname} named\[%{INT:process_id}\]: client( @0x[0-9A-Fa-f]+)? %{IP:client_ip}#%{POSINT:client_port:int}( \(%{GREEDYDATA:log_query_name}\))?: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
+          EFFICIENTIP_DNS_ANSWER: '^%{EFFICIENTIP_TIMESTAMP:timestamp} %{HOSTNAME:hostname} named\[%{INT:process_id}\]: client( @0x[0-9A-Fa-f]+)? %{IP:client_ip}#%{POSINT:client_port:int}( \(%{GREEDYDATA:log_query_name}\))?: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
+          EFFICIENTIP_DNS_GUARDIAN: '^%{EFFICIENTIP_TIMESTAMP:timestamp} %{HOSTNAME:hostname} named\[%{INT:process_id}\]: %{GUARDIAN_ACTION:guardian_action} trigger on %{IP:client_ip}(.%{GREEDYDATA})? \(action:%{WORD:action}\) \(%{GREEDYDATA:trigger_name}\)$'
+          EFFICIENTIP_TIMESTAMP: "%{MONTH} %{MONTHDAY} %{TIME}"
+          QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
+          QUERY_FLAGS_RD: '[\+\-]'
+          QUERY_FLAGS_SIGNED: "S?"
+          QUERY_FLAGS_EDNS: 'E(\(%{INT}\))?'
+          QUERY_FLAGS_TCP: "T"
+          QUERY_FLAGS_DNSSEC: "D"
+          QUERY_FLAGS_CD: "C"
+          QUERY_FLAGS_DNS_SERVER_COOKIE: "V"
+          QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER: "K"
+          QUERY_CLASS: "IN"
+          QUESTION_TYPE: "A|AAAA|CAA|CDNSKEY|CDS|CERT|CNAME|CSYNC|DLV|DNAME|DNSKEY|DS|HINFO|LOC|MX|NAPTR|NS|NSEC|NSEC3|OPENPGPKEY|PTR|RRSIG|RP|SIG|SMIMEA|SOA|SRV|TSIG|TXT|URI|TYPE65|HTTPS"
+          GUARDIAN_ACTION: "(DIS)?ARMING"
+
+  - name: parse_date
+    filter: "{{parse_event.message.timestamp != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.message.timestamp}}"
+        output_field: timestamp
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.dataset: "solidserver-ddi"
+          event.category: ["network"]
+          event.type: ["info"]
+          host.name: "{{parse_event.message.hostname}}"
+          observer.vendor: "EfficientIp"
+          "@timestamp": "{{parse_date.timestamp}}"
+
+      - set:
+          client.ip: "{{parse_event.message.client_ip}}"
+        filter: "{{parse_event.message.client_ip | is_ipaddress}}"
+
+      - set:
+          server.ip: "{{parse_event.message.server_ip}}"
+        filter: "{{parse_event.message.server_ip | is_ipaddress}}"
+
+      - set:
+          dns.type: "query"
+        filter: '{{parse_event.message.get("response_code") == None and parse_event.message.get("guardian_action") == None}}'
+
+      - set:
+          dns.type: "answer"
+          dns.response_code: "{{parse_event.message.response_code}}"
+        filter: '{{parse_event.message.get("response_code") != None}}'
+
+      - set:
+          source.port: "{{parse_event.message.client_port}}"
+          dns.question.class: "{{parse_event.message.dns_question_class}}"
+          dns.question.type: "{{parse_event.message.dns_question_type}}"
+          dns.question.name: "{{parse_event.message.dns_question_name}}"
+          dns.header_flags: >
+            [
+              {% if parse_event.message.flags_rd == "+" %}"RD",{% endif %}
+              {% if parse_event.message.flags_cd == "C" %}"CD",{% endif %}
+            ]
+        filter: '{{parse_event.message.get("guardian_action") == None}}'
+
+      - set:
+          network.transport: "tcp"
+        filter: '{{parse_event.message.flags_tcp == "T"}}'
+
+      - set:
+          network.transport: "udp"
+        filter: '{{parse_event.message.flags_tcp != "T"  and parse_event.message.get("guardian_action") == None}}'
+
+      - set:
+          dns.answers: >
+            [
+                {% for record in parse_event.message.dns_records.split() %}
+                    {% if loop.index % 3 == 1 %}
+                      {"ttl": "{{record}}",
+                    {% elif loop.index % 3 == 2 %}
+                      "type": "{{record}}",
+                    {% elif loop.index % 3 == 0 %}
+                      "data": "{{record}}",},
+                    {% endif %}
+                {% endfor %}
+            ]
+        filter: '{{parse_event.message.get("dns_records") != None}}'
+
+      - set:
+          efficientip.guardian_action: "{{parse_event.message.guardian_action | lower}}"
+          event.action: "{{parse_event.message.action | lower}}"
+          efficientip.guardian_trigger_name: "{{parse_event.message.trigger_name}}"
+        filter: '{{parse_event.message.get("guardian_action") != None}}'

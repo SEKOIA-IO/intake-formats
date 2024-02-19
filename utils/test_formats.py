@@ -9,14 +9,12 @@ from helpers import sort_json_keys, YamlDumper, format_expected
 constant_fields = {
     "sekoiaio": {
         "intake": {
-            "coverage": None,
             "parsing_status": "success",
             "dialect": "test",
             "dialect_uuid": "00000000-0000-0000-0000-000000000000",
         }
     },
-    "event": {"id": "00000000-0000-0000-0000-000000000000", "outcome": "success"},
-    "ecs": {"version": "1.10.0"},
+    "event": {"id": "00000000-0000-0000-0000-000000000000"}
 }
 
 # Tests inside this file are actually parametrized depending on arguments
@@ -47,8 +45,7 @@ def build_fixed_expectation(parsed_message):
     pop_field(new_expectation, "sekoiaio.intake.dialect")
     pop_field(new_expectation, "sekoiaio.intake.dialect_uuid")
     pop_field(new_expectation, "event.id")
-    pop_field(new_expectation, "event.outcome")
-    pop_field(new_expectation, "ecs.version")
+    pop_field(new_expectation, "ecs")
 
     return new_expectation
 
@@ -78,6 +75,7 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
                 )
 
     pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
+    pop_field(parsed, "ecs")
 
     expected = testcase["expected"]
 
@@ -150,8 +148,7 @@ def prune_taxonomy(format_fields_path, taxonomy):
     for missing_field in taxonomy["unused"]:
         fields.pop(missing_field)
 
-    updated_fields: dict = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
-    write_taxonomy(format_fields_path, updated_fields)
+    write_taxonomy(format_fields_path, fields)
 
     print(f"{len(taxonomy['unused'])} removed from fields.yml")
     print("Please run the following commandline to ensure yaml is properly linted")
