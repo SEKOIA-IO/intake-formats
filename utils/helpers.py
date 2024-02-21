@@ -8,9 +8,7 @@ class YamlDumper(yaml.SafeDumper):
 
     def write_line_break(self, data=None):
         super().write_line_break(data)
-
-        if len(self.indents) == 1:
-            super().write_line_break()
+        super().represent_scalar("tag:yaml.org,2002:str", data, style='"')
 
 
 class JsonSorterEncoder(json.JSONEncoder):
