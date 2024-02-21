@@ -26,6 +26,8 @@ def test_linting_taxonomy(format_fields_path, module_fields_path):
             updated_fields = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
             f.write(updated_fields)
 
+        assert updated_fields == yaml.dump(data=fields)
+
 
 def test_linting_test_files(intakes_root, test_path):
     """Ensure that keys are sorted in tests files"""
@@ -36,5 +38,4 @@ def test_linting_test_files(intakes_root, test_path):
     new_test_file = format_test(current_test_file)
     with open(test_fullpath, "w") as out:
         json.dump(new_test_file, out, indent=2)
-
-    assert current_test_file == new_test_file
+    assert json.dumps(current_test_file) == json.dumps(new_test_file)
