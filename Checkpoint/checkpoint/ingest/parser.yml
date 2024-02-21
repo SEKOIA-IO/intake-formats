@@ -1,9 +1,12 @@
 name: cef
+ignored_values: ["-"]
 pipeline:
   - name: checkpoint
     filter: "{{original.message.startswith('CEF') == True or original.message.startswith('0|') == True}}"
     external:
       name: cef.parse-cef
+      properties:
+        input_field: '{{ original.message.replace("CEF:0||Check Point", "CEF:0|Check Point") }}'
 
   - name: checkpoint
     filter: "{{original.message.startswith('syslog') == True}}"
@@ -42,15 +45,43 @@ pipeline:
         delimiter: " "
 
   - name: main_stage
+  - name: finalizer
 
 stages:
+  finalizer:
+    actions:
+      - set:
+          log.hostname: "{{final.host.name}}"
+          host.hostname: "{{final.host.name}}"
+
+      - set:
+          destination.size_in_char: "{{final.destination.domain | length}}"
+        filter: "{{final.destination.domain != null}}"
+      - set:
+          source.size_in_char: "{{final.source.domain | length}}"
+        filter: "{{final.source.domain != null }}"
+
+      - set:
+          action.target: network-traffic
+        filter: "{{final.network.transport != null  and (final.source | length > 0 or final.destination | length > 0)}}"
+
+      - set:
+          action.outcome: success
+        filter: "{{final.action.outcome == null  and final.action.name != null}}"
+
+      - translate:
+        dictionary:
+          "0": "inbound"
+          "1": "outbound"
+        mapping:
+          checkpoint.message.deviceDirection: network.direction
+        filter: "{{final.network.direction == null }}"
+
   main_stage:
     actions:
       - set:
-          action.name: "{{checkpoint.message.act or checkpoint.message.action}}"
+          action.name: "{{checkpoint.message.act | lower  or checkpoint.message.action | lower }}"
           action.outcome_reason: "{{checkpoint.message.msg}}"
-
-      - set:
           action.properties.__policy_id_tag: "{{checkpoint.message.get('__policy_id_tag')}}"
           action.properties.community: "{{checkpoint.message.community}}"
           action.properties.destination_key_id: "{{checkpoint.message.dstkeyid}}"
@@ -64,37 +95,34 @@ stages:
           action.properties.ike_initiator_cookie: "{{checkpoint.message.cookiei}}"
           action.properties.ike_mode: "{{checkpoint.message.ike}}"
           action.properties.ike_responder_cookie: "{{checkpoint.message.cookier}}"
+          action.properties.loguid: "{{checkpoint.message.loguid}}"
           action.properties.nat_addtnl_rulenum: "{{checkpoint.message.nat_addtnl_rulenum}}"
           action.properties.nat_rulenum: "{{checkpoint.message.nat_rulenum}}"
+          action.properties.observer_type: "{{checkpoint.message.DeviceProduct}}"
           action.properties.origin: "{{checkpoint.message.origin}}"
           action.properties.origin_sic_name: "{{checkpoint.message.origin_sic_name}}"
+          action.properties.originsicname: "{{checkpoint.message.originsicname.replace('\\\\', '')}}"
           action.properties.product: "{{checkpoint.message.product}}"
           action.properties.reject_category: "{{checkpoint.message.reject_category}}"
+          action.properties.rule_name: "{{checkpoint.message.get('Rule Name')}}"
           action.properties.source_key_id: "{{checkpoint.message.srckeyid}}"
           action.properties.subproduct: "{{checkpoint.message.fw_subproduct}}"
           action.properties.vpn_feature_name: "{{checkpoint.message.vpn_feature_name}}"
           action.properties.vpn_peer_gateway: "{{checkpoint.message.peer_gateway}}"
-          action.properties.loguid: "{{checkpoint.message.loguid}}"
-          action.properties.observer_type: "{{checkpoint.message.DeviceProduct}}"
-          action.properties.originsicname: "{{checkpoint.message.originsicname.replace('\\\\', '')}}"
-          action.properties.rule_name: "{{checkpoint.message.get('Rule Name')}}"
-
-      - set:
-          action.properties: ["{{final.action.properties}}"]
-        filter: "{{final.action.properties != null}}"
-
-      - set:
-          destination.ip: "{{checkpoint.message.dst}}"
           destination.address: "{{checkpoint.message.dst}}"
           destination.domain: "{{checkpoint.message.dhost}}"
-          destination.user.name: "{{checkpoint.message.duser}}"
+          destination.ip: "{{checkpoint.message.dst}}"
           destination.nat.ip: "{{checkpoint.message.destinationTranslatedAddress or checkpoint.message.xlatedst}}"
           destination.nat.port: "{{checkpoint.message.destinationTranslatedPort or checkpoint.message.xlatedport}}"
           destination.port: "{{checkpoint.message.service or checkpoint.message.dpt}}"
-          event.code: "{{checkpoint.message.DeviceEventClassID or checkpoint.message.loguid}}"
+          destination.user.name: "{{checkpoint.message.duser}}"
+          event.code: "{{checkpoint.message.DeviceVendor or checkpoint.message.loguid or checkpoint.message.DeviceEventClassID}}"
           event.message: "{{checkpoint.message.msg}}"
-          network.direction: "{{checkpoint.message.conn_direction or checkpoint.message.ifdir}}"
-          network.transport: "{{checkpoint.message.proto}}"
+          host.name: "{{checkpoint.message.hostname}}"
+          http.request.method: "{{checkpoint.message.requestMethod}}"
+          network.direction: "{{checkpoint.message.conn_direction | lower or checkpoint.message.ifdir | lower }}"
+          network.protocol: "{{checkpoint.message.app | lower}}"
+          network.transport: "{{checkpoint.message.proto | lower}}"
           observer.egress.zone: "{{checkpoint.message.outzone}}"
           observer.ingress.interface.name: "{{checkpoint.message.ifname}}"
           observer.ingress.zone: "{{checkpoint.message.inzone}}"
@@ -103,41 +131,16 @@ stages:
           rule.uuid: "{{checkpoint.message.rule_uid}}"
           rule.version: "{{checkpoint.message.version}}"
           service.id: "{{checkpoint.message.service_id}}"
-          source.ip: "{{checkpoint.message.src}}"
           source.address: "{{checkpoint.message.src}}"
+          source.domain: "{{checkpoint.message.shost}}"
+          source.ip: "{{checkpoint.message.src}}"
           source.nat.ip: "{{checkpoint.message.sourceTranslatedAddress or checkpoint.message.xlatesrc}}"
           source.nat.port: "{{checkpoint.message.sourceTranslatedPort or checkpoint.message.xlatesport}}"
           source.port: "{{checkpoint.message.s_port or checkpoint.message.spt}}"
-          source.domain: "{{checkpoint.message.shost}}"
           source.user.name: "{{checkpoint.message.suser}}"
-          host.name: "{{checkpoint.message.hostname}}"
-
-      - set:
-          log.hostname: "{{final.host.name}}"
-          host.hostname: "{{final.host.name}}"
-
-      - set:
-          destination.size_in_char: "{{checkpoint.message.dhost | length}}"
-        filter: "{{checkpoint.message.dhost != null }}"
-      - set:
-          source.size_in_char: "{{checkpoint.message.shost | length}}"
-        filter: "{{checkpoint.message.shost != null }}"
-
-      - set:
-          action.target: network-traffic
-        filter: "{{final.network.transport != null  and (final.source != null or final.destination != null)}}"
-
-      - set:
-          action.outcome: success
-        filter: "{{final.action.outcome == null  and final.action.name != null}}"
-
-      - translate:
-        dictionary:
-          0: "inbound"
-          1: "outbound"
-        mapping:
-          checkpoint.message.deviceDirection: network.direction
-        filter: "{{final.network.direction== null }}"
+          url.full: "{{checkpoint.message.request}}"
+          url.original: "{{checkpoint.message.request}}"
+          user_agent.original: "{{checkpoint.message.user_agent}}"
 
       - translate:
         dictionary:
