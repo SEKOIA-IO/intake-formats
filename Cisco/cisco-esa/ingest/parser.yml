@@ -57,18 +57,18 @@ pipeline:
   - name: json_event_esaattachmentdetails
     filter: "{{ parsed_event.message.get('ESAAttachmentDetails') != None }}"
     external:
-      name: json.parse-json
+      name: dict.parse
       properties:
         input_field: >
-          {{ parsed_event.message.ESAAttachmentDetails | replace("\\'", "<quote>") | replace('"', '\\"') | replace ("'", '"') | replace("<quote>", "'") }}
+          {{ parsed_event.message.ESAAttachmentDetails }}
 
   - name: json_event_url_details
     filter: "{{ parsed_event.message.get('ESAURLDetails') != None }}"
     external:
-      name: json.parse-json
+      name: dict.parse
       properties:
         input_field: >
-          {{ parsed_event.message.ESAURLDetails | replace('\"', "'") | replace('"', '\\"') | replace ("'", '"') | replace("\\", "\\\\") }}
+          {{ parsed_event.message.ESAURLDetails }}
 
   - name: set_timestamp
   - name: set_cef_header_fields
@@ -196,13 +196,18 @@ stages:
           rule.name: "{{parsed_event.message.MailPolicy}}"
           email.attachments: >-
             [{% for filename, info in json_event_esaattachmentdetails.message.items() -%}
-              {%- if not loop.first %},{% endif %}
-              {
-                "file": {
-                  "name": "{{ filename }}"{% if info.get("AMP", {}).get("fileHash") is not none %},
-                  "hash": { "sha256": "{{ info.AMP.fileHash }}" }{% endif %}
-                }
-              }
+              {% set hashes = info.get("AMP", {}).get("fileHash") %}
+              {% if hashes is none %}
+                {"file":{ "name": "{{ filename }}"}},
+              {% else %}
+                {% if hashes is string %}
+                  {"file":{"name": "{{ filename }}", "hash":{"sha256": "{{ hashes }}"}}},
+                {% else %}
+                  {% for hash in hashes %}
+                    {"file":{"name": "{{ filename }}", "hash":{"sha256": "{{ hash }}"}}},
+                  {% endfor %}
+                {% endif %}
+              {% endif %}
             {%- endfor %}]
           cisco.esa.url: >-
             [{% for url, details in dict(json_event_url_details.message).items() %}
@@ -220,13 +225,15 @@ stages:
           cisco.esa.authentication.spf.verdict: "{{parsed_event.message.ESASPFVerdict}}"
           cisco.esa.authentication.dkim.verdict: "{{parsed_event.message.ESADKIMVerdict}}"
           cisco.esa.source.domain.age: "{{parsed_event.message.ESASDRDomainAge}}"
+          cisco.esa.email.message_size: "{{parsed_event.message.ESAMsgSize}}"
+          cisco.esa.event.action_details: "{{parsed_event.message.ESAFinalActionDetails}}"
 
       - set:
-          cisco.esa.helo.ip: "{{parsed_event.message.HeloIP}}"
-        filter: "{{parsed_event.message.HeloIP | is_ipaddress}}"
+          cisco.esa.helo.ip: "{{parsed_event.message.ESAHeloIP}}"
+        filter: "{{parsed_event.message.ESAHeloIP | is_ipaddress}}"
 
       - set:
-          cisco.esa.helo.domain: "{{parsed_event.message.HeloDomain}}"
+          cisco.esa.helo.domain: "{{parsed_event.message.ESAHeloDomain}}"
           cisco.esa.sender_group: "{{parsed_event.message.ESASenderGroup}}"
           cisco.esa.status: "{{parsed_event.message.ESAStatus}}"
 
