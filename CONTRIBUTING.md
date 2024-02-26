@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for being interested in contributing to SEKOIA.IO intake formats. This document describes how to contribute to this repository.
+Thanks for being interested in contributing to Sekoia.io intake formats. This document describes how to contribute to this repository.
 
 ## Prerequisites
 
