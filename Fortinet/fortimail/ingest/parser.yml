@@ -12,7 +12,7 @@ pipeline:
       properties:
         input_field: parsed_event.message.msg
         output_field: file
-        pattern: '%{DATA:type} name: %{DATA:name}(\(checksum:%{DATA:hash}\))?, scanned by Antivirus Scanner\(%{DATA:event_status}\)'
+        pattern: '%{DATA:type} name: %{DATA:name}(\(checksum:%{DATA:hash}\))?, scanned by Antivirus Scanner\(%{DATA:event_status}\)(, Content Filter\(clean\))?'
 
   - name: parse_starttls
     external:
@@ -79,13 +79,23 @@ pipeline:
     filter: "{{'stat=' not in parsed_event.message.get('msg') and parsed_event.message.get('type') == 'event'}}"
 
   - name: set_ecs_fields
+  - name: finalizer
 
 stages:
+  finalizer:
+    actions:
+      - set:
+          destination.size_in_char: "{{parse_stat_message.msg.destination_domain | length}}"
+        filter: "{{parse_stat_message.msg.destination_domain | length > 0}}"
+      - set:
+          source.size_in_char: "{{parsed_event.message.domain | length}}"
+        filter: "{{parsed_event.message.domain | length > 0}}"
+
   set_ecs_fields:
     actions:
       - set:
           action.outcome: "{{parsed_event.message.disposition}}"
-          destination.ip: "{{parsed_event.message.dst_ip}}"
+          destination.ip: "{{parsed_event.message.dst_ip or parse_stat_message.msg._destination_ip}}"
           action.outcome_reason: "{{parsed_event.message.msg}}"
           event.category: "{{parsed_event.message.subtype}}"
           event.kind: "{{parsed_event.message.type}}"
@@ -96,48 +106,46 @@ stages:
           source.address: "{{parsed_event.message.client_name}}"
           source.domain: "{{parsed_event.message.domain}}"
           source.ip: "{{parsed_event.message.client_ip}}"
+
       - set:
-          action.properties: >
-            [{
-              {% if 'device_id' in parsed_event.message %}'device_id': '{{parsed_event.message.device_id}}',{% endif %}
-              {% if 'resolved' in parsed_event.message %}'dns_resolution_attempt': '{{parsed_event.message.resolved}}',{% endif %}
-              {% if 'hfrom' in parsed_event.message %}'host_sender': '{{parsed_event.message.hfrom}}',{% endif %}
-              {% if 'log_id' in parsed_event.message %}'log_id': '{{parsed_event.message.log_id}}',{% endif %}
-              {% if 'mailer' in parsed_event.message %}'mailer': '{{parsed_event.message.mailer}}',{% endif %}
-              {% if 'polid' in parsed_event.message %}'policy_id': '{{parsed_event.message.polid}}',{% endif %}
-              {% if 'session_id' in parsed_event.message %}'session_id': '{{parsed_event.message.session_id}}',{% endif %}
-              {% if 'client_cc' in parsed_event.message %}'source_country': '{{parsed_event.message.client_cc}}',{% endif %}
-              {% if 'src_type' in parsed_event.message %}'src_type': '{{parsed_event.message.src_type}}',{% endif %}
-              {% if 'subject' in parsed_event.message %}'subject': '{{parsed_event.message.subject}}',{% endif %}
-              {% if 'virus' in parsed_event.message %}'virus': '{{parsed_event.message.virus}}',{% endif %}
-              {% if parsed_event.message.get('msg') and 'scanned by Antivirus Scanner' in parsed_event.message.get('msg') %}'event_status': '{{parsed_msg.file.event_status}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' %}'event_status': '{{parsed_event.message.status}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' %}'user_identifier': '{{parsed_event.message.ui}}',{% endif %}
-              {% if 'STARTTLS=server' in parsed_event.message.msg %}'start_tls': 'server',{% endif %}
-              {% if 'STARTTLS=client' in parsed_event.message.msg and 'verifymsg=' in parsed_event.message.msg %}'start_tls': 'client',{% endif %}
-              {% if 'has been scanned by FortiSandbox' in parsed_event.message.msg %}'event_status': '{{parse_file_information.msg.tmp_event_status}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'delay': '{{parse_stat_message.msg.tmp_delay}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'mailer': '{{parse_stat_message.msg.tmp_mailer}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'priority_level_msg': '{{parse_stat_message.msg.tmp_priority_level_msg}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'xdelay': '{{parse_stat_message.msg.tmp_xdelay}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' in parsed_event.message.get('msg') %}'dsn_version': '{{parse_stat_message.msg.tmp_dsn_version}}',{% endif %}
-              {% if 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg %}'spam_category': '{{parse_webfilter_full_url.msg.tmp_spam_category}}',{% endif %}
-              {% if 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg %}'spam_id': {{parse_webfilter_full_url.msg.tmp_spam_id}},{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'daemon' in parse_event_with_no_stat.msg %}'daemon': '{{parse_event_with_no_stat.msg.daemon}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'relay' in parse_event_with_no_stat.msg %}'relay': '{{parse_event_with_no_stat.msg.relay}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'msgid' in parse_event_with_no_stat.msg %}'message_id': '{{parse_event_with_no_stat.msg.msgid}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'STARTTLS' in parse_event_with_no_stat.msg %}'start_tls': '{{parse_event_with_no_stat.msg.STARTTLS}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'class' in parse_event_with_no_stat.msg %}'class': '{{parse_event_with_no_stat.msg.class}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'nrcpts' in parse_event_with_no_stat.msg %}'nrcpts': '{{parse_event_with_no_stat.msg.nrcpts}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'stat' in parse_event_with_no_stat.msg %}'stat': '{{parse_event_with_no_stat.msg.stat}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'verify' in parse_event_with_no_stat.msg %}'verify': '{{parse_event_with_no_stat.msg.verify}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'xdelay' in parse_event_with_no_stat.msg %}'xdelay': '{{parse_event_with_no_stat.msg.xdelay}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'mailer' in parse_event_with_no_stat.msg %}'mailer': '{{parse_event_with_no_stat.msg.mailer}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'bits' in parse_event_with_no_stat.msg %}'bits_sent_ratio': '{{parse_event_with_no_stat.msg.bits}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'dsn' in parse_event_with_no_stat.msg %}'dsn_version': '{{parse_event_with_no_stat.msg.dsn}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'Hostname' in parse_event_with_no_stat.msg %}'hostname_info': '{{parse_event_with_no_stat.msg.Hostname}}',{% endif %}
-              {% if parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'pri' in parse_event_with_no_stat.msg %}'priority_level_msg': '{{parse_event_with_no_stat.msg.pri}}',{% endif %}
-            }]
+          action.properties.bits_sent_ratio: "{{parse_event_with_no_stat.msg.bits}}"
+          action.properties.class: "{{parse_event_with_no_stat.msg.class}}"
+          action.properties.daemon: "{{parse_event_with_no_stat.msg.daemon}}"
+          action.properties.delay: "{{parse_stat_message.msg.tmp_delay}}"
+          action.properties.device_id: "{{parsed_event.message.device_id}}"
+          action.properties.dns_resolution_attempt: "{{parsed_event.message.resolved}}"
+          action.properties.dsn_version: "{{parse_stat_message.msg.tmp_dsn_version or parse_event_with_no_stat.msg.dsn}}"
+          action.properties.event_status: "{{parsed_event.message.status or parsed_msg.file.event_status or parse_file_information.msg.tmp_event_status}}"
+          action.properties.host_sender: "{{parsed_event.message.hfrom}}"
+          action.properties.hostname_info: "{{parse_event_with_no_stat.msg.Hostname}}"
+          action.properties.log_id: "{{parsed_event.message.log_id}}"
+          action.properties.mailer: "{{parsed_event.message.mailer or parse_stat_message.msg.tmp_mailer or parse_event_with_no_stat.msg.mailer}}"
+          action.properties.message_id: "{{parse_event_with_no_stat.msg.msgid.replace('<', '').replace('>', '')}}"
+          action.properties.nrcpts: "{{parse_event_with_no_stat.msg.nrcpts}}"
+          action.properties.policy_id: "{{parsed_event.message.polid}}"
+          action.properties.priority_level_msg: "{{parse_stat_message.msg.tmp_priority_level_msg or parse_event_with_no_stat.msg.pri}}"
+          action.properties.relay: '{{parse_event_with_no_stat.msg.relay.split(" ")[0].replace("[", "").replace("]", "")}}'
+          action.properties.session_id: "{{parsed_event.message.session_id}}"
+          action.properties.source_country: "{{parsed_event.message.client_cc}}"
+          action.properties.spam_category: "{{parse_webfilter_full_url.msg.tmp_spam_category}}"
+          action.properties.spam_id: "{{parse_webfilter_full_url.msg.tmp_spam_id}}"
+          action.properties.src_type: "{{parsed_event.message.src_type}}"
+          action.properties.stat: "{{parse_event_with_no_stat.msg.stat}}"
+          action.properties.subject: "{{parsed_event.message.subject}}"
+          action.properties.user_identifier: "{{parsed_event.message.ui}}"
+          action.properties.verify: "{{parse_event_with_no_stat.msg.verify}}"
+          action.properties.virus: "{{parsed_event.message.virus}}"
+          action.properties.xdelay: "{{parse_stat_message.msg.tmp_xdelay or parse_event_with_no_stat.msg.xdelay }}"
+      - set:
+          action.properties.start_tls: "server"
+        filter: "{{'STARTTLS=server' in parsed_event.message.msg}}"
+      - set:
+          action.properties.start_tls: "client"
+        filter: "{{'STARTTLS=client' in parsed_event.message.msg}}"
+      - set:
+          action.properties.start_tls: "{{parse_event_with_no_stat.msg.STARTTLS}}"
+        filter: "{{parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'STARTTLS' in parse_event_with_no_stat.msg}}"
+
       - set:
           event.action: "{{parsed_event.message.action}}"
           user.name: "{{parsed_event.message.user}}"
@@ -145,6 +153,8 @@ stages:
       - set:
           action.outcome_reason: "{{parsed_event.message.classifier}}"
         filter: "{{parsed_event.message.get('type') == 'statistics'}}"
+      - set:
+          email.from.address: "{{parse_event_with_no_stat.msg.from.replace('<', '').replace('>', '')}}"
       - set:
           email.from.address: "{% if parsed_event.message.get('from') %}{{parsed_event.message.from}}{% endif %}"
           email.to.address: "{% if parsed_event.message.get('to') %}{{parsed_event.message.to}}{% endif %}"
@@ -181,6 +191,7 @@ stages:
           user.email: "{{parse_stat_message.msg.user_email}}"
           user.name: "{{parse_stat_message.msg.mailer}}"
           destination.domain: "{{parse_stat_message.msg.destination_domain}}"
+          destination.address: "{{parse_stat_message.msg.destination_domain}}"
           destination.ip: "{{parse_stat_message.msg._destination_ip}}"
           event.reason: "{{parse_stat_message.msg.event_reason}}"
         filter: "{{parsed_event.message.get('type') == 'event' and parsed_event.message.get('msg') and 'stat=' in parsed_event.message.get('msg')}}"
