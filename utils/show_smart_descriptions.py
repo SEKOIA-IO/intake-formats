@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
 
 from conftest import IntakeTestManager
 
@@ -106,7 +107,10 @@ class SmartDescriptionManager(IntakeTestManager):
 
                     test_label = test
                     if prsha:
-                        test_url = f"https://github.com/SEKOIA-IO/intake-formats/blob/{prsha}/{test}"
+                        test_url = (
+                            "https://github.com/SEKOIA-IO/intake-formats/blob/%s/%s"
+                            % (prsha, urllib.parse.quote(test))
+                        )
                         test_label = f"[{test}]({test_url})"
 
                     table.append((test_label, test_smart_desc))
