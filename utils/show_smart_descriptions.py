@@ -3,7 +3,7 @@ import json
 import os
 import re
 import subprocess
-from pathlib import Path
+import urllib.parse
 
 from conftest import IntakeTestManager
 
@@ -43,7 +43,10 @@ class SmartDescriptionManager(IntakeTestManager):
 
                 if condition_value is not None:
                     if isinstance(parsed[condition_field], list):
-                        if condition_value not in parsed[condition_field]:
+                        if (
+                            len(parsed[condition_field]) == 0
+                            or parsed[condition_field][0] != condition_value
+                        ):
                             all_conditions_are_met = False
                             break
 
@@ -65,10 +68,14 @@ class SmartDescriptionManager(IntakeTestManager):
         message = longest_candidate["value"]
 
         def sub_fields(g: re.Match) -> str:
-            return str(parsed.get(g.group(0).strip("{").strip("}"), "NULL"))
+            field_name = g.group(0).strip("{").strip("}")
+            field_parsed_value = parsed.get(field_name, "NULL")
+            if type(field_parsed_value) == list:
+                field_parsed_value = ", ".join(field_parsed_value)
 
-        message = re.sub(r"(\{[a-zA-Z\.\_]+\})", sub_fields, message)
+            return "`%s`" % str(field_parsed_value)
 
+        message = re.sub(r"(\{[a-zA-Z0-9\.\_]+\})", sub_fields, message)
         return message
 
     def run(self, prsha: str | None = None):
@@ -100,10 +107,16 @@ class SmartDescriptionManager(IntakeTestManager):
 
                     test_label = test
                     if prsha:
-                        test_url = f"https://github.com/SEKOIA-IO/intake-formats/blob/{prsha}/{test}"
+                        test_url = (
+                            "https://github.com/SEKOIA-IO/intake-formats/blob/%s/%s"
+                            % (prsha, urllib.parse.quote(test))
+                        )
                         test_label = f"[{test}]({test_url})"
 
                     table.append((test_label, test_smart_desc))
+
+        # sort the first column (with test paths)
+        table = sorted(table, key=lambda x: x[0])
 
         # generate markdown table
         markdown = "| Test File | Smart Description |\n|---|---|\n"
@@ -121,9 +134,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--format", action="append", default=[], help="name of the format to test"
     )
-    parser.add_argument(
-        "--prsha", default=None, help="SHA-1 of PR"
-    )
+    parser.add_argument("--prsha", default=None, help="SHA-1 of PR")
     parser.add_argument(
         "--changes", action="store_true", help="only check formats that were modified"
     )
