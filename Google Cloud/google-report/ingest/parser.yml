@@ -1,0 +1,55 @@
+name: google-report
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.id.time}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.kind: "event"
+          event.category: ["file"]
+          event.type: ["access"]
+          event.action: "{{json_event.message.events[0].name}}"
+          event.dataset: "{{json_event.message.kind}}"
+
+          user.id: "{{json_event.message.id.customerId}}"
+          google.report.actor.email: "{{json_event.message.actor.email}}"
+
+          network.application: "{{json_event.message.id.applicationName}}"
+          source.ip: "{{json_event.message.ipAddress}}"
+
+      - set:
+          event.type: ["change"]
+        filter: '{{ json_event.message.events[0].name in ["edit", "rename", "update"]}}'
+
+      - set:
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.events[0].name == "delete"}}'
+
+      - set:
+          event.type: ["creation"]
+        filter: '{{ json_event.message.events[0].name == "create"}}'
+
+      - set:
+          user.email: "{{json_event.message.actor.email}}"
+        filter: '{{ json_event.message.actor.callerType == "USER"}}'
+
+      - set:
+          file.gid: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner_team_drive_id" %}{{param.value}}{% endif %}{% endfor %}'
+          file.owner: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner" %}{{param.value}}{% endif %}{% endfor %}'
+          file.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_type" %}{{param.value}}{% endif %}{% endfor %}'
+          file.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_title" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.parameters.visibility: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "visibility" %}{{param.value}}{% endif %}{% endfor %}'
+          user.target.email: '{% for param in json_event.message.events[1].parameters %}{% if param.name == "target_user" %}{{param.value}}{% endif %}{% endfor %}'

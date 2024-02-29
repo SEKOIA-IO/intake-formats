@@ -20,16 +20,22 @@ pipeline:
         output_field: message
         pattern: "%{Group_1}|%{Group_2}|%{Group_3}|%{Group_4}|%{Group_5}|%{Group_6}|%{Group_7}|%{Group_8}|%{Group_9}|%{Group_10}"
         custom_patterns:
-          Group_1: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> IPv4 Address <%{IPV4}> IPv6 address <%{IPV6}> assigned to session"
+          Group_1: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:nat_ip}> %{Group_1_message:cisco_message}"
+          Group_1_message: "IPv4 Address <%{IPV4:source_ip4}?> IPv6 address <%{IPV6:source_ip6}?> assigned to session"
           Group_2: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> Client Type: %{GREEDYDATA:client_type}"
           Group_3: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> SVC closing connection: %{GREEDYDATA:action_outcome_reason}."
           Group_4: "Group = %{GREEDYDATA:user_group}, Username = %{WORD:user_name}, IP = %{IP:source_ip}, %{DATA:action_outcome_reason}.Session Type: %{DATA:session_type}, Duration: %{DATA:special_duration}, Bytes xmt: %{DATA:bytes_xmt}, Bytes rcv: %{DATA:bytes_rcv}, Reason: %{GREEDYDATA:action_outcome_reason}"
           Group_5: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> AnyConnect session resumed connection from IP <%{IP:destination_ip}>."
-          Group_6: Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:action_name}\. Waiting to resume.
-          Group_7: "TunnelGroup <%{GREEDYDATA:user_group}> GroupPolicy <%{DATA:group_policy}> User <%{WORD:user_name}> IP <%{IP:source_ip}> No IPv6 address available for SVC connection"
+          Group_6: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{Group_6_message:cisco_message}"
+          Group_6_message: "%{GREEDYDATA:action_name}. Waiting to resume."
+          Group_7: "TunnelGroup <%{GREEDYDATA:user_group}> GroupPolicy <%{DATA:group_policy}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:cisco_message}"
           Group_8: "POOLIP: Pool=%{GREEDYDATA:user_group}, WARN: %{GREEDYDATA:action_outcome_reason}"
-          Group_9: "Tunnel group search using certificate maps (failed|succed) for peer certificate: serial number: %{DATA:serial_number}, subject name: UID=%{DATA:uid},CN=%{DATA:user_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{DATA:contry_code}, issuer_name: CN=%{DATA:agent_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{GREEDYDATA:contry_code}."
-          Group_10: "Task ran for %{DATA:duration} msec, Process = %{DATA:process_name}, PC = %{DATA:host_name}, Call stack = %{GREEDYDATA:call_stack}"
+          Group_9: "%{Group_9_message:cisco_message}: serial number: %{DATA:serial_number}, subject name: %{Group_9_subject}, issuer_name: %{Group_9_issuer}."
+          Group_9_subject: "UID=%{DATA:uid},CN=%{DATA:user_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{DATA:contry_code}"
+          Group_9_issuer: "CN=%{DATA:agent_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{GREEDYDATA:contry_code}"
+          Group_9_message: "Tunnel group search using certificate maps (failed|succed) for peer certificate"
+          Group_10: "%{Group_10_message:cisco_message}, Process = %{DATA:process_name}, PC = %{DATA:instruction_pointer}, Call stack = %{GREEDYDATA:call_stack}"
+          Group_10_message: "Task ran for %{DATA:duration} msec"
 
   - name: parsed_event
     external:
@@ -199,7 +205,7 @@ stages:
           destination.port: "{{parsed_event.message.destination_port}}"
           destination.nat.port: "{{parsed_event.message.destination_nat_port}}"
           event.action: "{{parsed_event.message.result}}"
-          event.reason: "{{parsed_event.message.block_reason}}"
+          event.reason: "{{parsed_event.message.block_reason or parsed_event.message.action_outcome_reason}}"
           cisco.ftd.event.duration: "{{parsed_event.message.event_duration}}"
           file.name: "{{parsed_event.message.filename}}"
           host.name: "{{parsed_event.message.client_system_name or parsed_event.message.log_host}}"
@@ -251,7 +257,13 @@ stages:
           user.domain: "{{parsed_event_withoutproduct.message.user_group}}"
           user.name: "{{parsed_event_withoutproduct.message.user_name}}"
           cisco.ftd.event.duration: "{{parsed_event_withoutproduct.message.duration}}"
-          host.name: "{{parsed_event_withoutproduct.message.host_name}}"
+          event.reason: "{{parsed_event_withoutproduct.message.action_outcome_reason or parsed_event_withoutproduct.message.cisco_message}}"
+      - set:
+          source.ip: "{{parsed_event_withoutproduct.message.source_ip6}}"
+        filter: "{{parsed_event_withoutproduct.message.source_ip6 | is_ipaddress}}"
+      - set:
+          source.ip: "{{parsed_event_withoutproduct.message.source_ip4}}"
+        filter: "{{parsed_event_withoutproduct.message.source_ip4 | is_ipaddress}}"
       - set:
           source.ip: "{{parsed_event_withoutproduct.message.source_ip}}"
         filter: "{{parsed_event_withoutproduct.message.source_ip | is_ipaddress}}"
@@ -261,6 +273,20 @@ stages:
       - set:
           destination.ip: "{{parsed_event_withoutproduct.message.destination_ip}}"
         filter: "{{parsed_event_withoutproduct.message.destination_ip | is_ipaddress}}"
+      - set:
+          source.nat.ip: "{{parsed_event_withoutproduct.message.nat_ip}}"
+        filter: "{{parsed_event_withoutproduct.message.nat_ip | is_ipaddress}}"
+      - set:
+          rule.name: "{{parsed_event_withoutproduct.message.group_policy}}"
+          cisco.client_type: "{{parsed_event_withoutproduct.message.client_type}}"
+      - set:
+          tls.client.x509.serial_number: "{{parsed_event_withoutproduct.message.serial_number}}"
+          tls.client.x509.issuer.distinguished_name: "{{parsed_event_withoutproduct.message.Group_9_issuer}}"
+          tls.client.x509.subject.distinguished_name: "{{parsed_event_withoutproduct.message.Group_9_subject}}"
+      - set:
+          process.name: "{{parsed_event_withoutproduct.message.process_name}}"
+          cisco.process.call_stack: "{{parsed_event_withoutproduct.message.call_stack.strip()}}"
+          cisco.process.instruction_pointer: "{{parsed_event_withoutproduct.message.instruction_pointer}}"
 
   set_ecs_fields_from_kv:
     actions:
@@ -273,6 +299,20 @@ stages:
           cisco.ftd.spero_disposition: "{{parse_kv2.parse_kv2_field.SperoDisposition}}"
           destination.bytes: "{{parse_kv2.parse_kv2_field.ResponderBytes}}"
           destination.domain: "{{parse_kv2.parse_kv2_field.destination_host or parse_kv2.parse_kv2_field.requested_host }}"
+          url.original: "{{parse_kv2.parse_kv2_field.URL}}"
+          cisco.url_category: "{{parse_kv2.parse_kv2_field.URLCategory}}"
+
+      - set:
+          cisco.device_id: "{{parse_kv2.parse_kv2_field.DeviceUUID}}"
+          cisco.ac.rule_action: "{{parse_kv2.parse_kv2_field.AccessControlRuleAction}}"
+          cisco.web_application: "{{parse_kv2.parse_kv2_field.WebApplication}}"
+
+      - set:
+          dns.question.name: "{{parse_kv2.parse_kv2_field.DNSQuery}}"
+          dns.response_code: "{{parse_kv2.parse_kv2_field.DNSResponseType}}"
+          cisco.dns.record_type: "{{parse_kv2.parse_kv2_field.DNSRecordType}}"
+          cisco.dns.ttl: "{{parse_kv2.parse_kv2_field.DNS_TTL}}"
+        filter: '{{pre_parsing.pre_message.message_number_grok in ["430003", "430002"]}}'
 
       - set:
           destination.ip: "{{parse_kv2.parse_kv2_field.DstIP}}"
@@ -329,6 +369,10 @@ stages:
           event.category: ["network"]
           event.type: ["connection", "end"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430003"}}'
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: '{{pre_parsing.pre_message.message_number_grok in ["716058", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722034", "722033", "722037"]}}'
       - set:
           event.action: "file-detected"
           event.category: ["file"]

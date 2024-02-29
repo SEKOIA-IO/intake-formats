@@ -12,3 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extract Target fields for type 'AppInstance'
+
+## 2023-08-29 - 1.0.2
+
+### Changed
+
+- Extract dtHash field from debugContext.debugData
