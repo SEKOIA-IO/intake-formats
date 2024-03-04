@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2024-03-01 - 1.0.2
+
+### Fixed
+
+- cast `time-taken` into a integer
+
 ## 2024-01-15 - 1.0.1
 
 ### Fixed
