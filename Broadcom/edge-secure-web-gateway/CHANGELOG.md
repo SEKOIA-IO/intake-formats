@@ -7,14 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2024-01-15 - 1.0.1
-
-### Fixed
-
-- `time-taken` field might not be present or have incorrect value
-
-## 2024-01-15 - 1.0.0
+## 2024-02-23 - 1.0.0
 
 ### Added
 
-- New format for Broadcom Secure Web Gateway
+- New format for Broadcom Edge Secure Web Gateway
