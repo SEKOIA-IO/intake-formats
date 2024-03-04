@@ -6,7 +6,7 @@ pipeline:
       properties:
         # For security events: <date> <observer_name> <tunnel_uuid> - - - <payload>
         # For access logs: <date> <observer_name> <tunnel_uuid>: - - - <payload>
-        pattern: "%{TIMESTAMP_ISO8601:timestamp} %{USERNAME:observer} %{USERNAME:tunnel_uuid}(:?) - - - %{GREEDYDATA:payload}"
+        pattern: "(%{TIMESTAMP_ISO8601:timestamp} %{USERNAME:observer} %{USERNAME:tunnel_uuid}(:?) - - - )?%{GREEDYDATA:payload}"
 
   # Security Events
   - name: parse_event
@@ -15,6 +15,14 @@ pipeline:
       properties:
         input_field: "parse_header.message.payload"
         output_field: "json"
+    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.json.timestamp}}"
+        output_field: date
     filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$")}}'
 
   # Access Logs
@@ -33,8 +41,10 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_header.message.timestamp}}"
+        input_field: "{{parse_event.plain.date}}"
         output_field: date
+        format: "%d/%b/%Y:%H:%M:%S %z"
+    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$") == False }}'
 
   - name: set_base_fields
 
@@ -73,6 +83,9 @@ stages:
           event.kind: "alert"
           event.category: ["threat"]
           event.type: ["indicator"]
+          event.action: "block"
+          event.provider: "{{ parse_event.json.events[0].tokens.engineName}}"
+          event.severity: "{{ parse_event.json.events[0].tokens.severity}}"
 
           host.name: "{{ parse_event.json.request.hostname }}"
           source.ip: "{{ parse_event.json.request.ipSrc }}"
@@ -94,5 +107,12 @@ stages:
 
           rule.name: "{{ parse_event.json.events[0].tokens.botMitigationRuleName or parse_event.json.events[0].tokens.icxPolicyName }}"
           rule.id: "{{ parse_event.json.events[0].tokens.botMitigationRuleUid or parse_event.json.events[0].tokens.icxPolicyUid}}"
+          rule.description: "{{ parse_event.json.events[0].tokens.reason}}"
+
+          vulnerability.id: "{{ parse_event.json.events[0].tokens.cwe}}"
+
+          threat.indicator.type: "{{ parse_event.json.events[0].tokens.attackFamily}}"
+
+          ubika.waap.tokens.risk.level: "{{ parse_event.json.events[0].tokens.riskLevel}}"
 
         filter: "{{ parse_event.json != null }}"

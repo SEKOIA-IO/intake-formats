@@ -1,4 +1,5 @@
 name: sophos
+ignored_values: ["-"]
 pipeline:
   - name: kv_event
     external:
@@ -26,6 +27,7 @@ stages:
           sophos.status: "{{kv_event.message.status}}"
           sophos.sub: "{{kv_event.message.sub}}"
 
+          sophos.log_type: "{{kv_event.message.log_type}}"
           sophos.log_subtype: "{{kv_event.message.log_subtype}}"
 
           # HTTP
@@ -41,7 +43,11 @@ stages:
           source.packets: "{{kv_event.message.sent_pkts}}"
           destination.bytes: "{{kv_event.message.recv_bytes}}"
           destination.packets: "{{kv_event.message.recv_pkts}}"
-          destination.domain: "{{kv_event.message.domain}}"
+          destination.domain: "{{kv_event.message.domain or kv_event.message.sni}}"
+
+          # General Network 2
+          destination.nat.port: "{{kv_event.message.tran_dst_port}}"
+          log.origin.function: "{{kv_event.message.log_type}}"
 
           # Network L2
           source.mac: "{{kv_event.message.srcmac or kv_event.message.src_mac}}"
@@ -69,7 +75,10 @@ stages:
           destination.nat.port: "{{kv_event.message.tran_dst_port}}"
 
           # User
-          user.name: "{{kv_event.message.user or kv_event.message.user_name}}"
+      - set:
+          user.name: "{{kv_event.message.user_name or kv_event.message.user}}"
+
+      - set:
           user.group.name: "{{kv_event.message.group or kv_event.message.user_group}}"
 
       - set:
@@ -92,3 +101,16 @@ stages:
       - set:
           event.kind: "event"
           event.category: ["network"]
+          event.reason: "{{kv_event.message.message}}"
+          event.module: "{{kv_event.message.log_component}}"
+          event.dataset: "{{kv_event.message.log_type}}"
+          rule.name: "{{kv_event.message.rule_name}}"
+          rule.id: "{{kv_event.message.rule_id}}"
+          network.application: "{{kv_event.message.application}}"
+
+      - translate:
+        dictionary:
+          "Deny": '["denied"]'
+        fallback: '["info"]'
+        mapping:
+          kv_event.message.status: event.type

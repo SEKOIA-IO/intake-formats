@@ -1,0 +1,110 @@
+name: jumpclooud-directory-insights
+pipeline:
+  - name: json_parse
+    external:
+      name: json.parse-json
+  - name: set_ecs_fields
+  - name: set_jumcploud_fields
+  - name: set_action_outcome
+  - name: set_sso_fields
+    filter: '{{json_parse.message.event_type == "sso_auth"}}'
+  - name: set_useragent_fields
+    filter: '{{json_parse.message.get("useragent") != None}}'
+  - name: set_host_fields
+  - name: set_process_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+        filter: '{{json_parse.message.event_type in ("user_password_warning_email", "user_password_reset_request", "user_activation_email", "user_unlocked")}}'
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+        filter: '{{json_parse.message.event_type in ("ldap_bind", "user_login_attempt", "sso_auth", "admin_login_attempt", "login_attempt")}}'
+      - set:
+          client.ip: "{{json_parse.message.client_ip}}"
+          "@timestamp": "{{json_parse.message.timestamp}}"
+          event.action: "{{json_parse.message.event_type}}"
+          event.module: "{{json_parse.message.event.service}}"
+          observer.vendor: "Jumpcloud"
+          user.name: "{{json_parse.message.username}}"
+          source.user.name: "{{json_parse.message.initiated_by.username}}"
+          source.user.email: "{{json_parse.message.initiated_by.email}}"
+          source.user.id: "{{json_parse.message.initiated_by.id}}"
+          user.target.name: "{{json_parse.message.resource.username}}"
+          user.target.email: "{{json_parse.message.resource.email}}"
+          user.target.id: "{{json_parse.message.resource.id}}"
+      - set:
+          source.ip: "{{json_parse.message.client_ip}}"
+        filter: "{{json_parse.message.client_ip | is_ipaddress}}"
+
+  set_jumcploud_fields:
+    actions:
+      - set:
+          jumpcloud.id: "{{json_parse.message.id}}"
+          jumpcloud.event_type: "{{json_parse.message.event_type}}"
+      - set:
+          jumpcloud.changes: >
+            [
+              {% for change in json_parse.message.changes %}
+              {
+                {% if change.field in ("activated", "password_date", "state", "suspended", "enable_user_portal_multifactor", "mfa.exclusion", "mfa.exclusionUntil", "totp_enabled") %}
+                  "field": "{{change.field}}",
+                  "from": "{{change.from | string() | lower()}}",
+                  "to": "{{change.to | string()  | lower()}}",
+                {% else %}
+                  "field": "{{change.field}}",
+                {% endif %}
+              },
+              {% endfor %}
+            ]
+        filter: '{{json_parse.message.get("changes") != None}}'
+      - set:
+          jumpcloud.association: "{{json_parse.message.association}}"
+        filter: '{{json_parse.message.get("association") != None}}'
+
+  set_action_outcome:
+    actions:
+      - set:
+          action.outcome: failure
+          action.outcome_reason: "{{json_parse.message.error_message}}"
+        filter: "{{json_parse.message.success == false }}"
+      - set:
+          action.outcome: success
+        filter: "{{json_parse.message.success == true }}"
+
+  set_sso_fields:
+    actions:
+      - set:
+          service.name: "{{json_parse.message.application.name}}"
+      - set:
+          action.outcome: success
+        filter: "{{json_parse.message.sso_token_success == true}}"
+      - set:
+          action.outcome: failure
+          action.outcome_reason: "{{json_parse.message.error_message}}"
+        filter: "{{json_parse.message.sso_token_success == false}}"
+
+  set_useragent_fields:
+    actions:
+      - set:
+          user_agent.device.name: "{{json_parse.message.useragent.device}}"
+          user_agent.name: "{{json_parse.message.useragent.name}}"
+          user_agent.version: "{{json_parse.message.useragent.version}}"
+          user_agent.os.name: "{{json_parse.message.useragent.os_name}}"
+          user_agent.os.version: "{{json_parse.message.useragent.os_version}}"
+          user_agent.os.full: "{{json_parse.message.useragent.os_full}}"
+
+  set_host_fields:
+    actions:
+      - set:
+          host.id: "{{json_parse.message.system.id}}"
+          host.name: "{{json_parse.message.system.hostname}}"
+
+  set_process_fields:
+    actions:
+      - set:
+          process.name: "{{json_parse.message.process_name}}"
