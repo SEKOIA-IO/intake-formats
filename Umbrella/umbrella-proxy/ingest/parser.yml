@@ -1,6 +1,6 @@
 name: umbrella-proxy
 pipeline:
-  - name: parsed_event
+  - name: event
     external:
       name: dsv.parse-dsv
       properties:
@@ -13,7 +13,7 @@ pipeline:
           - destination_ip
           - mime_type
           - outcome_reason
-          - data
+          - http_request_url
           - http_request_referrer
           - user_agent_original
           - http_response_status_code
@@ -22,6 +22,15 @@ pipeline:
           - http_response_body_bytes
           - GREEDYDATA
         delimiter: ","
+
+  - name: grok_url
+    external:
+      name: grok.match
+      properties:
+        input_field: "event.message.http_request_url"
+        output_field: message
+        pattern: "(%{URIPROTO:url_scheme}://)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
+
   - name: set_ecs_fields
 
 stages:
@@ -29,19 +38,23 @@ stages:
     actions:
       - set:
           action.name: "request"
-          action.target: "network-traffic"
           action.outcome: "success"
-          action.outcome_reason: "{{parsed_event.message.outcome_reason.split('.')[0] | lower}}"
-          destination.ip: "{{parsed_event.message.destination_ip}}"
-          host.hostname: "{{parsed_event.message.log_hostname}}"
-          host.name: "{{parsed_event.message.log_hostname}}"
-          http.request.bytes: "{{parsed_event.message.http_request_bytes}}"
-          http.request.referrer: "{{parsed_event.message.http_request_referrer}}"
-          http.response.body.bytes: "{{parsed_event.message.http_response_body_bytes}}"
-          http.response.bytes: "{{parsed_event.message.http_response_bytes}}"
-          http.response.status_code: "{{parsed_event.message.http_response_status_code}}"
-          http.response.mime_type: "{{parsed_event.message.mime_type}}"
-          source.ip: "{{parsed_event.message.source_ip}}"
-          source.nat.ip: "{{parsed_event.message.source_nat_ip}}"
-          user_agent.original: "{{parsed_event.message.user_agent_original}}"
-          url.original: "{{parsed_event.message.data}}"
+          action.outcome_reason: "{{event.message.outcome_reason.split('.')[0] | lower}}"
+          action.target: "network-traffic"
+          destination.address: "{{grok_url.message.url_domain}}"
+          destination.domain: "{{grok_url.message.url_domain}}"
+          destination.ip: "{{event.message.destination_ip}}"
+          host.hostname: "{{event.message.log_hostname}}"
+          host.name: "{{event.message.log_hostname}}"
+          http.request.bytes: "{{event.message.http_request_bytes}}"
+          http.request.referrer: "{{event.message.http_request_referrer}}"
+          http.response.body.bytes: "{{event.message.http_response_body_bytes}}"
+          http.response.bytes: "{{event.message.http_response_bytes}}"
+          http.response.mime_type: "{{event.message.mime_type}}"
+          http.response.status_code: "{{event.message.http_response_status_code}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.nat.ip: "{{event.message.source_nat_ip}}"
+          url.full: "{{event.message.http_request_url}}"
+          url.original: "{{event.message.http_request_url}}"
+          url.path: "{{grok_url.message.url_path}}"
+          user_agent.original: "{{event.message.user_agent_original}}"
