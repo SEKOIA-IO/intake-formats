@@ -1,4 +1,5 @@
 name: Palo Alto networks next-generation firewall
+ignored_values: ["N/A"]
 pipeline:
   - name: parsed_event
     external:
@@ -73,6 +74,63 @@ pipeline:
           - cpadding
           - pkts_sent
           - pkts_received
+          - SessionEndReason
+          - DeviceGroupHierarchyLevel1
+          - DeviceGroupHierarchyLevel2
+          - DeviceGroupHierarchyLevel3
+          - DeviceGroupHierarchyLevel4
+          - VirtualSystemName
+          - DeviceName
+          - ActionSource
+          - SourceVMUUID
+          - DestinationVMUUID
+          - TunnelID/IMSI
+          - MonitorTag/IMEI
+          - ParentSessionID
+          - ParentStartTime
+          - TunnelType
+          - SCTPAssociationID
+          - SCTPChunks
+          - SCTPChunksSent
+          - SCTPChunksReceived
+          - RuleUUID
+          - HTTP/2Connection
+          - AppFlapCount
+          - PolicyID
+          - LinkSwitches
+          - SD-WANCluster
+          - SD-WANDeviceType
+          - SD-WANClusterType
+          - SD-WANSite
+          - DynamicUserGroupName
+          - XFFAddress
+          - SourceDeviceCategory
+          - SourceDeviceProfile
+          - SourceDeviceModel
+          - SourceDeviceVendor
+          - SourceDeviceOSFamily
+          - SourceDeviceOSVersion
+          - SourceHostname
+          - SourceMacAddress
+          - DestinationDeviceCategory
+          - DestinationDeviceProfile
+          - DestinationDeviceModel
+          - DestinationDeviceVendor
+          - DestinationDeviceOSFamily
+          - DestinationDeviceOSVersion
+          - DestinationHostname
+          - DestinationMacAddress
+          - ContainerID
+          - PODNamespace
+          - PODName
+          - SourceExternalDynamicList
+          - DestinationExternalDynamicList
+          - HostID
+          - SerialNumber
+          - SourceDynamicAddressGroup
+          - DestinationDynamicAddressGroup
+          - SessionOwner
+          - HighResolutionTimestamp
         delimiter: ","
 
   # USERID CSV
@@ -114,10 +172,10 @@ pipeline:
           - FactorType
           - FactorCompletionTime
           - FactorNumber
-          - FUTURE_USE
-          - FUTURE_USE2
           - UserGroupFlags
           - UserbySource
+          - TagName
+          - HighResolutionTimestamp
         delimiter: ","
 
   # GLOBALPROTECT CSV
@@ -165,6 +223,7 @@ pipeline:
           - Portal
           - SequenceNumber
           - ActionFlags
+          - HighResolutionTimestamp
         delimiter: ","
 
   # SYSTEM CSV
@@ -199,6 +258,9 @@ pipeline:
           - DGHierarchyLevel4
           - VirtualSystemName
           - DeviceName
+          - FUTURE_USE
+          - FUTURE_USE
+          - HighResolutionTimestamp
         delimiter: ","
 
   # THREAT CSV
@@ -285,6 +347,39 @@ pipeline:
           - SCTPAssociationID
           - PayloadProtocolID
           - HttpHeaders
+          - URLCategoryList
+          - RuleUUID
+          - HTTP/2Connection
+          - DynamicUserGroupName
+          - XFFAddress
+          - SourceDeviceCategory
+          - SourceDeviceProfile
+          - SourceDeviceModel
+          - SourceDeviceVendor
+          - SourceDeviceOSFamily
+          - SourceDeviceOSVersion
+          - SourceHostname
+          - SourceMACAddress
+          - DestinationDeviceCategory
+          - DestinationDeviceProfile
+          - DestinationDeviceModel
+          - DestinationDeviceVendor
+          - DestinationDeviceOSFamily
+          - DestinationDeviceOSVersion
+          - DestinationHostname
+          - DestinationMACAddress
+          - ContainerID
+          - PODNamespace
+          - PODName
+          - SourceExternalDynamicList
+          - DestinationExternalDynamicList
+          - HostID
+          - SerialNumber
+          - DomainEDL
+          - SourceDynamicAddressGroup
+          - DestinationDynamicAddressGroup
+          - PartialHash
+          - HighResolutionTimestamp
         delimiter: ","
 
   - name: parsed_timestamp
@@ -317,9 +412,17 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{parsed_event.message.EventTime or parsed_event.message.TimeGenerated}}"
+        input_field: "{{parsed_event.message.EventTime or parsed_event.message.TimeGenerated or parsed_event.message.ReceiveTime}}"
         output_field: datetime
-    filter: '{{parsed_event.message.get("EventTime") != None or parsed_event.message.get("TimeGenerated") != None}}'
+    filter: '{{parsed_event.message.get("EventTime") != None or parsed_event.message.get("TimeGenerated") != None or parsed_event.message.get("ReceiveTime") != None}}'
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.HighResolutionTimestamp}}"
+        output_field: datetime
+    filter: '{{parsed_event.message.get("HighResolutionTimestamp") != None}}'
 
   - name: parsed_start
     external:
@@ -473,7 +576,7 @@ stages:
           log.hostname: "{{parsed_event.message.DeviceName or parsed_event.message.dvchost}}"
           log.level: "{{parsed_event.message.VendorSeverity}}"
           log.logger: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
-          network.application: "{{parsed_event.message.app}}"
+          network.application: "{{parsed_event.message.Application or parsed_event.message.app}}"
           network.bytes: "{{parsed_event.message.Bytes or parsed_event.message.PanOSBytes}}"
           network.transport: "{{parsed_event.message.IPProtocol or parsed_event.message.proto}}"
           network.protocol: "{{parsed_description.message.proto}}"
@@ -556,11 +659,23 @@ stages:
           user_agent.os.name: "{{parsed_event.message.ClientOS}}"
           user_agent.os.version: "{{parsed_event.message.ClientOSVersion}}"
           user.name: "{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}"
-          paloalto: '{ {% for key, value in parsed_event.message.items() %}{% if value not in ["null", "", None] %}"{{key}}": r"{{ value }}",{% endif %}{% endfor %} }'
+          paloalto: >-
+            { 
+            {% set ns = namespace(first_iteration=True) %}
+            {% for key, value in parsed_event.message.items() %}
+            {% if value not in ["null", "", None] %}
+            {% if not ns.first_iteration %},{% endif %}
+            {{key|tojson}}: {{(value | replace('\x00', ''))|tojson}}
+            {% set ns.first_iteration = false %}
+            {% endif %}
+            {% endfor %}
+            }
           paloalto.Threat_ContentType: "{{parsed_event.message.Subtype}}"
           paloalto.connection.stage: "{{parsed_event.message.Stage or parsed_event.message.PanOSStage}}"
           paloalto.authentication.method: "{{parsed_event.message.AuthMethod or parsed_event.message.PanOSAuthMethod}}"
           paloalto.connection.method: "{{parsed_event.message.ConnectionMethod or parsed_event.message.PanOSConnectionMethod}}"
+          paloalto.endpoint.serial_number: "{{parsed_event.message.EndpointSerialNumber or parsed_event.message.PanOSEndpointSerialNumber}}"
+          paloalto.threat.id: "{{parsed_event.message.ThreatID or parsed_event.message.PanOSThreatID}}"
 
   set_category_fields:
     actions:
