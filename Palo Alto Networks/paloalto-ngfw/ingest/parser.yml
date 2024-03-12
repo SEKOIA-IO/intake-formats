@@ -465,6 +465,7 @@ pipeline:
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
   - name: set_extracted_fields
+  - name: set_finalize_user_name
   - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
     filter: '{{parsed_event.message.get("deviceOutboundInterface") != None}}'
@@ -663,7 +664,7 @@ stages:
           user_agent.name: "{{parsed_event.message.UserAgent}}"
           user_agent.os.name: "{{parsed_event.message.ClientOS}}"
           user_agent.os.version: "{{parsed_event.message.ClientOSVersion}}"
-          user.name: "{{parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}"
+          user.name_tmp: "{{parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}"
           paloalto: >-
             { 
             {% set ns = namespace(first_iteration=True) %}
@@ -683,8 +684,19 @@ stages:
           paloalto.threat.id: "{{parsed_event.message.ThreatID or parsed_event.message.PanOSThreatID}}"
       - set:
           source.user.name: "{{parsed_event.message.SourceUser}}"
-          user.name: "{{parsed_event.message.SourceUser}}"
+          user.name_tmp: "{{parsed_event.message.SourceUser}}"
         filter: '{{parsed_event.message.SourceUser.startswith("x-fwd-for") == False}}'
+
+
+  set_finalize_user_name:
+    actions:
+      - set:
+          user.domain: '{{user.name_tmp.split("\\\\") | first}}'
+          user.name: '{{user.name_tmp.split("\\\\") | last}}'
+        filter: '{{user.get("name_tmp") != None and "\\\\" in user.name_tmp}}'
+      - set:
+          user.name: '{{user.name_tmp}}'
+        filter: '{{user.get("name_tmp") != None and and "\\\\" not in user.name_tmp}}'
 
   set_category_fields:
     actions:
