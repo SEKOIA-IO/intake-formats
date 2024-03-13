@@ -1,0 +1,37 @@
+name: spamassassin
+pipeline:
+  - name: event
+    external:
+      name: grok.match
+      properties:
+        pattern: >-
+          %{SPAMD_HEADER} (%{SPAMD_CHILD}|%{SPAMD_DNS}|%{SPAMD_CONNECTION}|%{SPAMD_PROCESSING}|%{SPAMD_SCANINFO}|%{SPAMD_RESULT}|%{SPAMD_PREFORK})
+        custom_patterns:
+          SPAMD_HEADER: >-
+            (%{TIMESTAMP_ISO8601} %{HOSTNAME} spamd\[%{INT}\]:)?
+          SPAMD_CHILD: >-
+            spamd: server successfully spawned child process, pid %{NUMBER:process_pid}
+          SPAMD_DNS: >-
+            dns: new_dns_packet: domain is utf8 flagged: %{HOSTNAME:source_domain}
+          SPAMD_CONNECTION: >-
+            spamd: connection from (%{IP:source_ip}|%{HOSTNAME:source_domain}) \[%{IP:source_ip}\] at port %{INT:source_port}
+          SPAMD_PROCESSING: >-
+            spamd: processing message (\(%{GREEDYDATA:source_domain}\)|<%{GREEDYDATA}\@%{GREEDYDATA:source_domain}\>) for %{GREEDYDATA:user_name}:%{INT:user_id}
+          SPAMD_SCANINFO: >-
+            spamd: result: . %{NUMBER} - %{GREEDYDATA}\ scantime=%{NUMBER},size=%{INT},user=%{GREEDYDATA:user_name}\,uid=%{INT:user_id},required_score=%{NUMBER},rhost=(%{IP:tmp_ip}|%{HOSTNAME}:source_domain}),raddr=%{IP:source_ip},rport=%{INT:source_port},mid=(\(unknown\)|<%{GREEDYDATA}\@%{GREEDYDATA:source_domain}\>)(,bayes=%{BASE10NUM})?,autolearn=%{NOTSPACE}( autolearn_force=%{GREEDYDATA})?
+          SPAMD_RESULT: >-
+            spamd: %{GREEDYDATA:result} (spam|message) \(%{NUMBER}/%{NUMBER}\) for %{GREEDYDATA:user_name}\:%{INT:user_id} in %{NUMBER} seconds, %{NUMBER} bytes.
+          SPAMD_PREFORK: >-
+            prefork: %{GREEDYDATA}
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          source.domain: "{{event.message.source_domain}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.port: "{{event.message.source_port}}"
+          user.id: "{{event.message.user_id}}"
+          user.name: "{{event.message.user_name}}"
