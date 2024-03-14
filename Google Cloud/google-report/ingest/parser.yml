@@ -12,6 +12,20 @@ pipeline:
         output_field: datetime
 
   - name: set_ecs_fields
+  - name: set_drive_fields
+    filter: '{{ json_event.message.id.applicationName == "drive"}}'
+  - name: set_token_fields
+    filter: '{{ json_event.message.id.applicationName == "token"}}'
+  - name: set_meet_fields
+    filter: '{{ json_event.message.id.applicationName == "meet"}}'
+  - name: set_groups_enterprise_fields
+    filter: '{{ json_event.message.id.applicationName == "groups_enterprise"}}'
+  - name: set_chat_fields
+    filter: '{{ json_event.message.id.applicationName == "chat"}}'
+  - name: set_calendar_fields
+    filter: '{{ json_event.message.id.applicationName == "calendar"}}'
+  - name: set_admin_fields
+    filter: '{{ json_event.message.id.applicationName == "admin"}}'
 
 stages:
   set_ecs_fields:
@@ -19,9 +33,6 @@ stages:
       - set:
           "@timestamp": "{{parsed_date.datetime}}"
           event.kind: "event"
-          event.category: ["file"]
-          event.type: ["access"]
-          event.action: "{{json_event.message.events[0].name}}"
           event.dataset: "{{json_event.message.kind}}"
           cloud.account.id: "{{json_event.message.id.customerId}}"
           network.application: "{{json_event.message.id.applicationName}}"
@@ -44,21 +55,178 @@ stages:
         filter: "{{json_event.message.ipAddress | is_ipaddress}}"
 
       - set:
-          event.type: ["change"]
-        filter: '{{ json_event.message.events[0].name in ["edit", "rename", "update"]}}'
+          event.action: "{{json_event.message.events[0].name}}"
+        filter: "{{ json_event.message.events|length == 1}}"
 
       - set:
-          event.type: ["deletion"]
-        filter: '{{ json_event.message.events[0].name == "delete"}}'
+          event.action: >
+            {% set actions = [] %}
+            {% for event in json_event.message.events %}
+            {% set actions = actions.append(event.name) %}
+            {% endfor %}
+            {{actions}}
+        filter: "{{ json_event.message.events|length > 1}}"
 
+  set_drive_fields:
+    actions:
       - set:
-          event.type: ["creation"]
-        filter: '{{ json_event.message.events[0].name == "create"}}'
+          event.category: ["file"]
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("change" in event.type) or ("add" in event.name) or (event.name in ["edit", "rename", "update"]) -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+                {%- if event.type == "access" -%}
+                    {% set _ = types.append("access") %}
+                {%- endif -%}
+                {%- if event.name == "delete" -%}
+                    {% set _ = types.append("deletion") %}
+                {%- endif -%}
+                {%- if event.name == "create" -%}
+                    {% set _ = types.append("creation") %}
+                {%- endif -%}
+                {%- if event.name == "authorize" -%}
+                    {% set _ = types.append("allowed") %}
+                    {% set _ = types.append("access") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
 
-      - set:
+          # Since file information exists in all events, we extract it from the initial one.
           file.gid: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner_team_drive_id" %}{{param.value}}{% endif %}{% endfor %}'
           file.owner: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner" %}{{param.value}}{% endif %}{% endfor %}'
           file.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_type" %}{{param.value}}{% endif %}{% endfor %}'
           file.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_title" %}{{param.value}}{% endif %}{% endfor %}'
-          google.report.parameters.visibility: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "visibility" %}{{param.value}}{% endif %}{% endfor %}'
-          user.target.email: '{% for param in json_event.message.events[1].parameters %}{% if param.name == "target_user" %}{{param.value}}{% endif %}{% endfor %}'
+
+          # These fields may appear in either the initial event or the nth event.
+          google.report.parameters.visibility: >
+            {%- set visibilities = [] -%}
+            {%- for event in json_event.message.events -%}
+            {%- for param in event.parameters -%}
+            {%- if param.name == "visibility"-%}
+            {%- set visibilities = visibilities.append(param.value) -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endfor -%}
+            {%- set visibilities = visibilities|unique|list -%}
+            {%- if visibilities|length == 0 or visibilities|length == 1 -%}
+            {{visibilities[0]}}
+            {%- else -%}
+            {{visibilities}}
+            {%- endif -%}
+          user.target.email: >
+            {%- set mails = [] -%}
+            {%- for event in json_event.message.events -%}
+            {%- for param in event.parameters -%}
+            {%- if param.name == "target_user" -%}
+            {%- set mails = mails.append(param.value) -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endfor -%}
+            {%- set mails = mails|unique|list -%}
+            {%- if mails|length == 0 or mails|length == 1 -%}
+            {{mails[0]}}
+            {%- else -%}
+            {{mails}}
+            {%- endif -%}
+
+  set_token_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["access", "connection"]
+
+          client.user.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "client_id" %}{{param.value}}{% endif %}{% endfor %}'
+
+          google.report.token.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "client_type" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.token.app_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "app_name" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_meet_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+          event.type: ["connection"]
+
+          client.geo.country_iso_code: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "location_country" %}{{param.value}}{% endif %}{% endfor %}'
+          client.geo.region_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "location_region" %}{{param.value}}{% endif %}{% endfor %}'
+
+          network.transport: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "network_transport_protocol" %}{{param.value}}{% endif %}{% endfor %}'
+
+          google.report.meet.code: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "meeting_code" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_groups_enterprise_fields:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["admin"]
+
+          user.group.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "group_id" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_chat_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+          event.type: ["connection"]
+
+          google.report.chat.room.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "room_name" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.chat.message.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "message_id" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_calendar_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("change" in event.type) or ("add" in event.name) or (event.name in ["edit", "rename", "update"]) -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+                {%- if "delete" in event.name -%}
+                    {% set _ = types.append("deletion") %}
+                {%- endif -%}
+                {%- if "create" in event.name -%}
+                    {% set _ = types.append("creation") %}
+                {%- endif -%}
+                {%- if event.type == "notification" -%}
+                    {% set _ = types.append("info") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
+
+          destination.user.email: >
+            {%- set mails = [] -%}
+            {%- for event in json_event.message.events -%}
+            {%- for param in event.parameters -%}
+            {%- if param.name == "recipient_email" or param.name == "event_guest" -%}
+            {%- set mails = mails.append(param.value) -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endfor -%}
+            {%- set mails = mails|unique|list -%}
+            {{mails[0]}}
+
+  set_admin_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("change" in event.name|lower) -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+                {%- if "delete" in event.name|lower -%}
+                    {% set _ = types.append("deletion") %}
+                {%- endif -%}
+                {%- if "create" in event.name|lower -%}
+                    {% set _ = types.append("creation") %}
+                {%- endif -%}
+                {%- if "authentication" in event.name|lower -%}
+                    {% set _ = types.append("access") %}
+                {%- endif -%}
+                {%- if "alert" in event.name|lower -%}
+                    {% set _ = types.append("info") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
