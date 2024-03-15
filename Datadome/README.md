@@ -1,0 +1,9 @@
+# Datadome
+
+## Description
+
+Datadome is a cybersecurity company specializing in bot protection and security solutions, offering advanced tools to mitigate online threats, safeguard digital assets, and ensure the integrity of web applications for businesses and enterprises.
+
+## Intakes
+
+-
