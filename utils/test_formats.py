@@ -14,7 +14,7 @@ constant_fields = {
             "dialect_uuid": "00000000-0000-0000-0000-000000000000",
         }
     },
-    "event": {"id": "00000000-0000-0000-0000-000000000000"}
+    "event": {"id": "00000000-0000-0000-0000-000000000000"},
 }
 
 # Tests inside this file are actually parametrized depending on arguments
@@ -50,6 +50,18 @@ def build_fixed_expectation(parsed_message):
     return new_expectation
 
 
+def test_intake_format_parsing_warnings(manager, test_path):
+    """Assert that the events has no parsing warnings"""
+    parsed = manager.get_parsed_message(test_path)
+    assert parsed["sekoiaio"]["intake"].get("parsing_warnings", []) == []
+
+
+def test_intake_format_parsing_errors(manager, test_path):
+    """Assert that the events has no parsing errors"""
+    parsed = manager.get_parsed_message(test_path)
+    assert parsed["sekoiaio"]["intake"].get("parsing_error", []) == []
+
+
 def test_intakes_produce_expected_messages(request, manager, intakes_root, test_path):
     test_fullpath = os.path.join(intakes_root, test_path)
     with open(test_fullpath) as f:
@@ -70,9 +82,7 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     if "related" in parsed:
         for related_field in ["hosts", "ip", "user", "hash"]:
             if related_field in parsed["related"]:
-                parsed["related"][related_field] = sorted(
-                    parsed["related"][related_field]
-                )
+                parsed["related"][related_field] = sorted(parsed["related"][related_field])
 
     pop_field(parsed, "sekoiaio.intake.parsing_duration_ms")
     pop_field(parsed, "ecs")
@@ -155,16 +165,12 @@ def prune_taxonomy(format_fields_path, taxonomy):
     print(f"npx prettier --write {format_fields_path}")
 
 
-def test_intake_format_unused_fields(
-    request, manager, format_fields_path, module, intake_format
-):
+def test_intake_format_unused_fields(request, manager, format_fields_path, module, intake_format):
     taxonomy = manager.get_taxonomy(module, intake_format)
     number_of_unused_fields = len(taxonomy["unused"])
 
     if number_of_unused_fields > 0:
-        print(
-            f"Unused fields ({number_of_unused_fields}) in {format_fields_path}:\n {taxonomy['unused']}"
-        )
+        print(f"Unused fields ({number_of_unused_fields}) in {format_fields_path}:\n {taxonomy['unused']}")
 
     # Remove each unused field from fields.yml
     print(request.config.getoption("prune_taxonomy"))
@@ -176,9 +182,7 @@ def test_intake_format_unused_fields(
     assert number_of_unused_fields == 0
 
 
-def test_intake_format_missing_fields(
-    manager, module, intake_format, request, format_fields_path
-):
+def test_intake_format_missing_fields(manager, module, intake_format, request, format_fields_path):
     taxonomy = manager.get_taxonomy(module, intake_format)
 
     number_of_missing_fields = len(taxonomy["missing"])

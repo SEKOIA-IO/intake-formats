@@ -1,0 +1,42 @@
+name: datadome-protection
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+          observer.product: "Datadome protection"
+          observer.vendor: "Datadome"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.startDateTime.replace('UTC +', 'UTC+') | to_rfc3339}}"
+        filter: "{{parsed_event.message.startDateTime | length > 0}}"
+
+      - set:
+          event.start: "{{parsed_event.message.startDateTime.replace('UTC +', 'UTC+') | to_rfc3339}}"
+        filter: "{{parsed_event.message.startDateTime | length > 0}}"
+
+      - set:
+          event.end: "{{parsed_event.message.endDateTime.replace('UTC +', 'UTC+') | to_rfc3339}}"
+        filter: "{{parsed_event.message.endDateTime | length > 0}}"
+
+      - set:
+          event.duration: "{{parsed_event.message.duration | float * 1_000_000_000}}"
+        filter: "{{parsed_event.message.duration | length > 0}}"
+
+      - set:
+          cloud.account.name: "{{parsed_event.message.accountName}}"
+          host.name: "{{parsed_event.message.endpointName}}"
+          threat.indicator.name: "{{parsed_event.message.threatName}}"
