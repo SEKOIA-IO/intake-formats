@@ -59,7 +59,6 @@ def check_module_formats(
     module_result: CheckResult, formats: list[str] | None, args: argparse.Namespace
 ) -> list[CheckResult]:
     module_formats = find_formats(module_result.options["path"], formats=formats)
-    print("module_formats", module_formats)
 
     result = [
         check_format(path=module_format, module_result=module_result, args=args)
