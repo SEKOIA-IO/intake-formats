@@ -22,3 +22,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `postfix_relay_service`                     | `postfix.relay_service`                                                                                                                    |
 | `postfix_scache_timestamp`                  | `postfix.scache_timestamp`                                                                                                                 |
 | `os.family: linux, os.platform: linux`      | removed                                                                                                                                    |
+| `postfix_relay_service`                     | removed                                                                                                                                    |
+| `postfix_scache_timestamp`                  | removed                                                                                                                                    |
