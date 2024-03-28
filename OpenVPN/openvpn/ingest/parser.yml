@@ -6,7 +6,10 @@ pipeline:
       properties:
         input_field: "original.message"
         output_field: pre_message
-        pattern: '\s*%{DATA:date} %{DATA:time} %{DATA:raw_message}'
+        pattern: '\s*(%{LOG_DATE:date} %{LOG_TIME:time} )?%{DATA:raw_message}'
+        custom_patterns:
+          LOG_DATE: '%{YEAR}\-%{MONTHNUM}\-%{MONTHDAY}'
+          LOG_TIME: '%{HOUR}\:%{MINUTE}\:%{SECOND}'
 
   - name: parsed_event
     external:
@@ -61,6 +64,7 @@ pipeline:
       properties:
         input_field: "{{pre_parsing.pre_message.date}} {{pre_parsing.pre_message.time}}"
         output_field: datetime
+    filter: "{{ pre_parsing.pre_message.date != None }}"
 
   - name: set_common_fields
 
@@ -68,11 +72,14 @@ stages:
   set_common_fields:
     actions:
       - set:
+          "@timestamp": "{{parse_date.datetime}}"
+        filter: "{{parse_date != null }}"
+
+      - set:
           event.kind: "event"
           event.category: ["network"]
           event.type: ["info"]
           event.reason: "{{parsed_event.message.event_reason}}"
-          "@timestamp": "{{parse_date.datetime}}"
 
           client.ip: "{{parsed_event.message.client_ip}}"
           client.port: "{{parsed_event.message.client_port}}"
