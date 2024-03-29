@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import sys
 
 from validators.constants import CheckResult
@@ -24,7 +25,7 @@ def find_modules(root_path: str) -> list[str]:
     return sorted(module_paths)
 
 
-def find_formats(root_path: str) -> list[str]:
+def find_formats(root_path: str, formats: list[str] | None = None) -> list[str]:
     """
     Return the path to all the potential formats
     """
@@ -36,6 +37,10 @@ def find_formats(root_path: str) -> list[str]:
         if element not in filtered_elements:
             element_path = os.path.join(root_path, element)
             if os.path.isdir(element_path):
+                if formats:
+                    if element not in formats:
+                        continue
+
                 format_paths.append(element_path)
 
     return sorted(format_paths)
@@ -51,9 +56,9 @@ def check_format(
 
 
 def check_module_formats(
-    module_result: CheckResult, args: argparse.Namespace
+    module_result: CheckResult, formats: list[str] | None, args: argparse.Namespace
 ) -> list[CheckResult]:
-    module_formats = find_formats(module_result.options["path"])
+    module_formats = find_formats(module_result.options["path"], formats=formats)
 
     result = [
         check_format(path=module_format, module_result=module_result, args=args)
@@ -145,6 +150,9 @@ def check_module(path: str, args: argparse.Namespace) -> CheckResult:
 def main():
     parser = argparse.ArgumentParser(description="Check formats")
     parser.add_argument(
+        "--changes", action="store_true", help="Only check modified formats and modules"
+    )
+    parser.add_argument(
         "--ignore_missing_parsers",
         action="store_true",
         help="Ignore missing parser.yml",
@@ -167,6 +175,28 @@ def main():
     args = parser.parse_args()
 
     modules = find_modules(".")
+    intake_formats = None
+
+    if args.changes:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "origin/main"], capture_output=True
+        )
+        changed_modules = set()
+        changed_formats = set()
+        for changed_file in result.stdout.splitlines():
+            changed_file = changed_file.decode()
+            parts = changed_file.split("/")
+
+            if parts[-1] in ["conftest.py", "test_formats.py"]:
+                break
+
+            if len(parts) > 2 and parts[0] != "utils":
+                changed_modules.add(parts[0])
+                changed_formats.add(parts[1])
+
+        modules = list(changed_modules)
+        intake_formats = list(changed_formats)
+
     in_error = False
 
     check_module_results = [check_module(module, args) for module in modules]
@@ -182,7 +212,9 @@ def main():
 
     check_format_results = []
     for check_module_result in check_module_results:
-        check_format_results.extend(check_module_formats(check_module_result, args))
+        check_format_results.extend(
+            check_module_formats(check_module_result, intake_formats, args)
+        )
     check_format_uuids_and_slugs(check_format_results)
 
     print(f"🔎 {len(check_format_results)} formats found")
