@@ -18,12 +18,13 @@ pipeline:
         output_field: message
         pattern: "%{DHCP}|%{USER_LOG}"
         custom_patterns:
-          USER_LOG: "%{USER_LOGIN_REJECTED}|%{USER_LOGGED_OUT}|%{USER_WAS_ACCEPTED}"
+          USER_LOG: "%{USER_LOGIN_REJECTED}|%{USER_LOGGED_OUT}|%{USER_AUTH_WAS_ACCEPTED}|%{USER_AUTH_WAS_REJECTED}"
           USER_LABEL: "\\[?%{DATA:user_name}@%{DATA}(\\])?"
           USER_LOG_PREFIX: "%{DATA:client_type} (U|u)ser %{USER_LABEL} from %{IP:user_ip}"
           USER_LOGIN_REJECTED: "%{USER_LOG_PREFIX} logged out assigned virtual IP is %{IP:virtual_ip}"
           USER_LOGGED_OUT: "%{USER_LOG_PREFIX} log in attempt was rejected( - %{GREEDYDATA:reason})?"
-          USER_WAS_ACCEPTED: "Authentication of %{USER_LOG_PREFIX} was accepted"
+          USER_AUTH_WAS_ACCEPTED: "Authentication of %{USER_LOG_PREFIX} was accepted"
+          USER_AUTH_WAS_REJECTED: "Authentication of %{USER_LOG_PREFIX} was rejected(, %{GREEDYDATA:reason})?"
 
           DHCP: "DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?"
           DHCPD_VIA: "via (%{IP:dhcp_relay_ip}|(?P<dhcp_device>[^: ]+))"
@@ -124,6 +125,11 @@ stages:
           event.category: ["authentication"]
           event.type: ["end"]
         filter: "{{ 'log in attempt was rejected' in parsed_event.message.msg }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: "{{ parsed_event.message.msg | re_match('^Authentication.*?was rejected') }}"
 
       - set:
           event.category: ["authentication"]
