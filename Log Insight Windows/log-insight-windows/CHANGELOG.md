@@ -18,3 +18,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | (no impact expected) at the parser level `action.properties` is of type list | `action.properties` is of type dict                                                               |
 | `action.name: Démarrage`                                                     | is no more truncated for `Self-Service Plug-in` startup logs                                      |
 | `user.name: domain\user`                                                     | `user.name: user` is now split between username and domain for events type `Self-Service Plug-in` |
+| targeted user in `user`                                                      | targeted user in `user.target`                                                                    |
