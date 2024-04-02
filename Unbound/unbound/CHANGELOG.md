@@ -11,4 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Migrated parser (no changelog)
+- Migrated parser
+
+| Before update               | After update            |
+| --------------------------- | ----------------------- |
+| hostname in `host.hostname` | hostname in `host.name` |
