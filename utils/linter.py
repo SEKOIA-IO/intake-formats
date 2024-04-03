@@ -134,3 +134,6 @@ if __name__ == "__main__":
         print()
         print("To fix, use `python utils/linter.py fix --changes`")
         exit(1)
+
+    else:
+        print("Everything looks ok")
