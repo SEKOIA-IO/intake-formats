@@ -41,17 +41,18 @@ def check_taxonomy(taxonomy_path: str | Path, fix: bool = False) -> bool:
         return False
 
     expected_yaml = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
+    short_path = str(taxonomy_path).lstrip(str(INTAKES_PATH))
 
     if input_yaml != expected_yaml:
         if not fix:
             need_fix = True
-            print(f"{taxonomy_path} should be fixed")
+            print(f"{short_path} should be fixed")
 
         else:
             with open(taxonomy_path, "wt") as file:
                 file.write(expected_yaml)
 
-            print(f"{taxonomy_path} fixed")
+            print(f"{short_path} fixed")
 
     return need_fix
 
@@ -65,17 +66,18 @@ def check_test_file(test_path: str | Path, fix: bool = False) -> bool:
 
     expected_test_json = format_test(current_test_json)
     expected_test = json.dumps(expected_test_json, indent=2)
+    short_path = str(test_path).lstrip(str(INTAKES_PATH))
 
     if current_test != expected_test:
         if not fix:
             need_fix = True
-            print(f"{test_path} should be fixed")
+            print(f"{short_path} should be fixed")
 
         else:
             with open(test_path, "wt") as file:
                 file.write(expected_test)
 
-            print(f"{test_path} fixed")
+            print(f"{short_path} fixed")
 
     return need_fix
 
