@@ -7,6 +7,8 @@ from pathlib import Path
 from helpers import YamlDumper, format_test
 from conftest import IntakeTestManager
 
+INTAKES_PATH = Path(__file__).parent.parent
+
 
 def find_changed_modules_and_formats() -> (list, list):
     diff = subprocess.run(
@@ -124,11 +126,11 @@ if __name__ == "__main__":
     expect_fix = args.action == "fix"
 
     for path in taxonomies:
-        need_fix |= check_taxonomy(path, fix=expect_fix)
+        need_fix |= check_taxonomy(INTAKES_PATH / path, fix=expect_fix)
 
     # Collect tests to test
     for path in mngr.testcases():
-        need_fix |= check_test_file(path, fix=expect_fix)
+        need_fix |= check_test_file(INTAKES_PATH / path, fix=expect_fix)
 
     if need_fix:
         print()
