@@ -10,5 +10,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 2024-04-04 - 1.0.1
 
 ### Added
-
+- action.name field was removed as it was a duplicate of event.action.
 - action.properties fields were removed as they were duplicates and not needed.
