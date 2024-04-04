@@ -11,5 +11,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- "action.properties" fields were removed as they were duplicates and not needed.
-
+- action.properties fields were removed as they were duplicates and not needed.
