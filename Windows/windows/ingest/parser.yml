@@ -50,6 +50,24 @@ pipeline:
         input_field: "{{json.event.Message.replace('<?xml', '#BEGIN#<?xml').split('#BEGIN#')[-1].split('>')[:-1]|join('>')}}>"
         output_field: result
 
+  - name: parsed_task_content_xml
+    filter: "{{json.event.TaskContent != null and '<?xml' in json.event.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: "{{json.event.TaskContent.replace('<?xml', '#BEGIN#<?xml').split('#BEGIN#')[-1].split('>')[:-1]|join('>')}}>"
+        output_field: result
+
+  - name: parsed_task_content_xml
+    filter: "{{json.event.TaskContent != null and '&lt;?xml' in json.event.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: '{{json.event.TaskContent.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&").replace("<?xml", "#BEGIN#<?xml").split("#BEGIN#")[-1].split(">")[:-1]|join(">")}}>'
+        output_field: result
+
   - name: source_ip_ip_address
     filter: "{{json.event.IpAddress != null}}"
     external:
@@ -330,9 +348,16 @@ stages:
       - set:
           action.properties.BytesTotal: "-1"
         filter: "{{final.action != null and final.action.properties != null and final.action.properties.BytesTotal == '18446744073709551615'}}"
+
       - set:
           action.properties.Keywords: "{{ '%d' | format(final.action.properties.Keywords | int) }}"
         filter: "{{final.action.properties.Keywords != null and final.action.properties.Keywords.startswith('0x') != true}}"
+
+      - set:
+          action.properties.TaskContent: "{{json.event.TaskContent}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.result.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.result.Task.Actions.Exec.Command}}"
+        filter: "{{json.event.EventID in [4698]}}"
 
       # patch 4103
       - set:
