@@ -10,14 +10,23 @@ pipeline:
       properties:
         input_field: "LEEF:{{original.message}}"
     filter: '{{original.message.startswith("1.0|WatchGuard")}}'
-  - name: dhcp_event
+  - name: parsed_message
     external:
       name: grok.match
       properties:
         input_field: "{{parsed_event.message.msg}}"
         output_field: message
-        pattern: "DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?"
+        pattern: "%{DHCP}|%{USER_LOG}"
         custom_patterns:
+          USER_LOG: "%{USER_LOGIN_REJECTED}|%{USER_LOGGED_OUT}|%{USER_AUTH_WAS_ACCEPTED}|%{USER_AUTH_WAS_REJECTED}"
+          USER_LABEL: "\\[?%{DATA:user_name}@%{DATA}(\\])?"
+          USER_LOG_PREFIX: "%{DATA:client_type} (U|u)ser %{USER_LABEL} from %{IP:user_ip}"
+          USER_LOGIN_REJECTED: "%{USER_LOG_PREFIX} logged out assigned virtual IP is %{IP:virtual_ip}"
+          USER_LOGGED_OUT: "%{USER_LOG_PREFIX} log in attempt was rejected( - %{GREEDYDATA:reason})?"
+          USER_AUTH_WAS_ACCEPTED: "Authentication of %{USER_LOG_PREFIX} was accepted"
+          USER_AUTH_WAS_REJECTED: "Authentication of %{USER_LOG_PREFIX} was rejected(, %{GREEDYDATA:reason})?"
+
+          DHCP: "DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?"
           DHCPD_VIA: "via (%{IP:dhcp_relay_ip}|(?P<dhcp_device>[^: ]+))"
           DHCPD_DISCOVER: (?P<dhcp_operation>DISCOVER) from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
           DHCPD_OFFER_ACK: (?P<dhcp_operation>(OFFER|N?ACK)) on %{IP:dhcp_client_ip} to %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
@@ -48,8 +57,8 @@ stages:
           rule.category: "{{parsed_event.message.proxy_act}}"
           rule.ruleset: "{{parsed_event.message.policy}}"
           rule.name: "{{parsed_event.message.rule_name}}"
-          source.mac: "{{dhcp_event.message.dhcp_client_mac}}"
-          source.domain: "{{parsed_event.message.srcname or dhcp_event.message.dhcp_client_name}}"
+          source.mac: "{{parsed_message.message.dhcp_client_mac}}"
+          source.domain: "{{parsed_event.message.srcname or parsed_message.message.dhcp_client_name}}"
           source.port: "{{parsed_event.message.srcPort}}"
           source.nat.port: "{{parsed_event.message.srcPostNATPORT}}"
           source.geo.country_iso_code: "{{parsed_event.message.geo_src}}"
@@ -68,14 +77,23 @@ stages:
           tls.cipher: "{{parsed_event.message.server_ssl or parsed_event.message.client_ssl}}"
           tls.version: "{{parsed_event.message.tls_version}}"
           source.bytes: "{{parsed_event.message.sent_bytes}}"
+          dns.question.name: "{{parsed_event.message.question}}"
+
+      - set:
+          user.name: "{{parsed_message.message.user_name}}"
+        filter: "{{parsed_message.message.user_name != '<missing user name>'}}"
+
+      - set:
+          source.ip: "{{parsed_message.message.user_ip}}"
+        filter: "{{parsed_message.message.user_ip | is_ipaddress}}"
 
       - set:
           source.ip: "{{parsed_event.message.src}}"
         filter: "{{parsed_event.message.src| is_ipaddress}}"
 
       - set:
-          source.ip: "{{dhcp_event.message.dhcp_client_ip}}"
-        filter: "{{dhcp_event.message.dhcp_client_ip| is_ipaddress}}"
+          source.ip: "{{parsed_message.message.dhcp_client_ip}}"
+        filter: "{{parsed_message.message.dhcp_client_ip| is_ipaddress}}"
 
       - set:
           source.nat.ip: "{{parsed_event.message.srcPostNAT}}"
@@ -86,8 +104,8 @@ stages:
         filter: "{{parsed_event.message.dst| is_ipaddress}}"
 
       - set:
-          destination.ip: "{{dhcp_event.message.dhcp_relay_ip}}"
-        filter: "{{dhcp_event.message.dhcp_relay_ip| is_ipaddress}}"
+          destination.ip: "{{parsed_message.message.dhcp_relay_ip}}"
+        filter: "{{parsed_message.message.dhcp_relay_ip| is_ipaddress}}"
 
       - set:
           destination.nat.ip: "{{parsed_event.message.srcPreNAT}}"
@@ -103,6 +121,30 @@ stages:
           event.category: ["malware"]
           event.type: ["info"]
         filter: '{{"ProxyAvScan" in parsed_event.message.msg}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{ 'log in attempt was rejected' in parsed_event.message.msg }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{ parsed_event.message.msg | re_match('^Authentication.*?was rejected') }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: "{{ parsed_event.message.msg | re_match('^Authentication.*?was accepted') }}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{ parsed_event.message.msg | re_match('.*?user.*?logged out.*?') }}"
+
   set_custom_fields:
     actions:
       - set:
@@ -120,7 +162,11 @@ stages:
           watchguard.firebox.application.reputation: "{{parsed_event.message.reputation}}"
           watchguard.firebox.application.behavior: "{{parsed_event.message.app_behavior}}"
           watchguard.firebox.tls.profile: "{{parsed_event.message.tls_profile}}"
-          watchguard.firebox.dhcp.operation: "{{dhcp_event.message.dhcp_operation | lower}}"
+          watchguard.firebox.dhcp.operation: "{{parsed_message.message.dhcp_operation | lower}}"
+
+      - set:
+          watchguard.firebox.virtual_ip: "{{parsed_message.message.virtual_ip}}"
+        filter: "{{parsed_message.message.virtual_ip | is_ipaddress}}"
 
       - set:
           watchguard.firebox.application.duration: '{{parsed_event.message.elapsed_time.split(" ")[0]}}'

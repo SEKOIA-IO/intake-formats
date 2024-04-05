@@ -8,6 +8,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+
   - name: parsed_date
     description: ""
     filter: ""
@@ -18,7 +19,9 @@ pipeline:
         output_field: datetime
         format: null
         timezone: UTC
+
   - name: set_base_fields
+
 stages:
   set_base_fields:
     actions:
@@ -29,6 +32,7 @@ stages:
           destination.port: "{{json_event.message.dest_port}}"
           source.port: "{{json_event.message.src_port}}"
           network.protocol: "{{json_event.message.proto}}"
+          network.transport: "{{final.network.protocol}}" # legacy
           network.community_id: "{{json_event.message.community_id}}"
           url.original: "{{json_event.message.http.url}}"
           url.domain: "{{json_event.message.http.hostname}}"
@@ -75,10 +79,10 @@ stages:
         filter: '{{json_event.message.get("event_type") == "alert"}}'
 
       - set:
-          dns.question: >
-            {"type": "{{json_event.message.dns.rrtype}}",
-             "name": "{{json_event.message.dns.rrname}}"}
-        filter: '{{json_event.message.dns.get("type") == "query"}}'
+          dns.question.type: "{{json_event.message.dns.rrtype}}"
+          dns.question.name: "{{json_event.message.dns.rrname}}"
+        filter: '{{json_event.message.dns.get("type") == "query" or json_event.message.dns.get("grouped") != None}}'
+
       - set:
           dns.answers: >
             [ {"type": "{{json_event.message.dns.rrtype}}", "name": "{{json_event.message.dns.rrname}}"} ]
@@ -102,9 +106,6 @@ stages:
                     {% endfor %}
                 {% endfor %}
             ]
-          dns.question: >
-            {"type": "{{json_event.message.dns.rrtype}}",
-             "name": "{{json_event.message.dns.rrname}}"}
         filter: '{{json_event.message.dns.get("grouped") != None}}'
       - set:
           action.type: '{{json_event.message.get("tags")[0]}}'

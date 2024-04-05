@@ -12,3 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Migrated parser
+
+| Before update                                                           | After update                                                                                                    |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| incomplete `action.outcome_reason: 'Normal Shutdown'`                   | complete `action.outcome_reason: 'Normal Shutdown, Thank you for playing'`                                      |
+| `event.outcome: success` was set when the event was successfully parsed | No more linked to parsing status but to event result (e.g. auth failed will result in `event.outcome: failure`) |
+| `action.outcome_reason: pam_unix(sshd:auth): check pass`                | contains more info `action.outcome_reason: pam_unix(sshd:auth): check pass; user unknown`                       |
+| `action.name: negociate`                                                | `action.name: negotiate`                                                                                        |
