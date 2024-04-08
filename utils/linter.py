@@ -43,8 +43,6 @@ def check_taxonomy(taxonomy_path: str | Path, fix: bool = False) -> bool:
         return False
 
     expected_yaml = yaml.dump(data=fields, Dumper=YamlDumper, sort_keys=True)
-    expected_yaml = expected_yaml.replace("''", '""')  # support Prettier style for empty values
-
     short_path = str(taxonomy_path).replace(str(INTAKES_PATH), "")
 
     if input_yaml != expected_yaml:
