@@ -101,9 +101,9 @@ def check_format_parser(
                 f"Custom field `{field}` needs to be defined in _meta/fields.yml"
             )
 
-    # Check whether event.type event.kind event.categories are set
+    # Check whether event.type and event.category are set
     if not ignore_event_fieldset_errors:
-        required_fields = {"event.type", "event.kind", "event.category"}
+        required_fields = {"event.type", "event.category"}
         for field in required_fields:
             if field not in used_fields:
                 result.errors.append(f"Required field `{field}` was not set")
