@@ -7,6 +7,20 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
 
+  - name: parse_last_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.last_seen}}"
+        output_field: datetime
+
+  - name: parse_first_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.first_seen}}"
+        output_field: datetime
+
   - name: agent_info
 
   - name: network_info
@@ -26,6 +40,9 @@ pipeline:
 
   - name: alert_info
     filter: "{{json_event.message.log_type == 'alert'}}"
+
+  - name: threat_info
+    filter: "{{json_event.message.log_type == 'threat'}}"
 
   - name: alert_process_info
     filter: "{{json_event.message.alert_subtype == 'process'}}"
@@ -58,6 +75,18 @@ pipeline:
     filter: "{{json_event.message.log_type == 'injectedthread'}}"
 
 stages:
+  threat_info:
+    actions:
+      - set:
+          harfanglab.threat_id: "{{json_event.message.id}}"
+          harfanglab.status: "{{json_event.message.status}}"
+          harfanglab.level: "{{json_event.message.level}}"
+          harfanglab.count.users_impacted: "{{json_event.message.impacted_user_count | int}}"
+          harfanglab.count.rules: "{{json_event.message.rule_count | int}}"
+
+          event.start: "{{parse_first_seen.datetime}}"
+          event.end: "{{parse_last_seen.datetime}}"
+
   agent_info:
     actions:
       - set:
@@ -82,6 +111,13 @@ stages:
       - set:
           destination.port: "{{json_event.message.dport}}"
 
+      - translate:
+        dictionary:
+          "in": "inbound"
+          "out": "outbound"
+        mapping:
+          json_event.message.direction: network.direction
+
       - set:
           source.ip: "{{json_event.message.saddr}}"
         filter: "{{json_event.message.saddr | is_ipaddress}}"
@@ -95,9 +131,7 @@ stages:
 
           event.category: ["network"]
           event.type: ["connection"]
-      - set:
-          event.kind: "event"
-        filter: "{{ json_event.message.log_type == 'network'}}"
+
       - set:
           event.kind: "alert"
         filter: "{{ json_event.message.log_type == 'alert'}}"
@@ -126,7 +160,6 @@ stages:
 
           event.category: ["process"]
           event.type: ["start"]
-          event.kind: "event"
       - set:
           file.hash.md5: "{{json_event.message.hashes.md5}}"
           file.hash.sha256: "{{json_event.message.hashes.sha256}}"
@@ -150,6 +183,7 @@ stages:
     actions:
       - set:
           harfanglab.process.powershell.command: "{{json_event.message.details_powershell.PowershellCommand}}"
+          harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
 
   alert_info:
     actions:
@@ -198,7 +232,6 @@ stages:
   investigation_info:
     actions:
       - set:
-          event.kind: "event"
           event.type: ["info"]
 
           file.path: "{{json_event.message.binaryinfo.fullpath}}"
@@ -216,7 +249,6 @@ stages:
   eventlog_info:
     actions:
       - set:
-          event.kind: "event"
           event.type: ["info"]
           event.provider: "{{json_event.message.source_name}}"
           event.code: "{{json_event.message.event_id|string}}"
@@ -239,7 +271,6 @@ stages:
                 {% set type_value = ["start"] %}
             {% endif %}
             {{- type_value }}
-          event.kind: "event"
           source.ip: "{{json_event.message.source_address}}"
           process.name: "{{json_event.message.process_name}}"
           agent.version: "{{json_event.message.agent.version}}"
@@ -258,7 +289,6 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["info"]
-          event.kind: "event"
           process.pid: "{{json_event.message.pid}}"
           process.executable: "{{json_event.message.process_image_path}}"
           user.name: "{{json_event.message.username}}"
@@ -271,7 +301,6 @@ stages:
       - set:
           event.category: ["web"]
           event.type: ["access"]
-          event.kind: "event"
           http.request.method: "{{json_event.message.request_method}}"
           http.response.status_code: "{{json_event.message.response_status_code}}"
           url.path: "{{json_event.message.request_path}}"
@@ -286,7 +315,6 @@ stages:
     actions:
       - set:
           event.type: ["info"]
-          event.kind: "event"
           event.reason: "{{json_event.message.message}}"
           agent.id: "{{json_event.message.agent_id}}"
           host.name: "{{json_event.message.hostname}}"
@@ -297,7 +325,6 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["info"]
-          event.kind: "event"
           agent.id: "{{json_event.message.agent_id}}"
           organization.id: "{{json_event.message.tenant}}"
 
@@ -306,7 +333,6 @@ stages:
       - set:
           event.category: ["driver"]
           event.type: ["info"]
-          event.kind: "event"
 
           agent.id: "{{json_event.message.agent_id}}"
           agent.version: "{{json_event.message.agent.version}}"
@@ -327,7 +353,6 @@ stages:
       - set:
           event.category: ["process"]
           event.type: ["info"]
-          event.kind: "event"
 
           process.executable: "{{json_event.message.process_image}}"
           process.pid: "{{json_event.message.process_id}}"

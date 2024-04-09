@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
 
 from conftest import IntakeTestManager
 
@@ -42,9 +43,13 @@ class SmartDescriptionManager(IntakeTestManager):
 
                 if condition_value is not None:
                     if isinstance(parsed[condition_field], list):
+                        condition_value_set = set(
+                            item.strip() for item in condition_value.split(",")
+                        )
+
                         if (
                             len(parsed[condition_field]) == 0
-                            or parsed[condition_field][0] != condition_value
+                            or set(parsed[condition_field]) != condition_value_set
                         ):
                             all_conditions_are_met = False
                             break
@@ -74,8 +79,7 @@ class SmartDescriptionManager(IntakeTestManager):
 
             return "`%s`" % str(field_parsed_value)
 
-        message = re.sub(r"(\{[a-zA-Z\.\_]+\})", sub_fields, message)
-
+        message = re.sub(r"(\{[a-zA-Z0-9\.\_]+\})", sub_fields, message)
         return message
 
     def run(self, prsha: str | None = None):
@@ -107,7 +111,10 @@ class SmartDescriptionManager(IntakeTestManager):
 
                     test_label = test
                     if prsha:
-                        test_url = f"https://github.com/SEKOIA-IO/intake-formats/blob/{prsha}/{test}"
+                        test_url = (
+                            "https://github.com/SEKOIA-IO/intake-formats/blob/%s/%s"
+                            % (prsha, urllib.parse.quote(test))
+                        )
                         test_label = f"[{test}]({test_url})"
 
                     table.append((test_label, test_smart_desc))

@@ -43,16 +43,24 @@ pipeline:
     filter: '{{json_event.message.engine == "browsingProtection" or json_event.message.engine == "reputationBasedBrowsing" or json_event.message.engine == "webContentControl"}}'
   - name: connection_control
     filter: '{{json_event.message.engine == "connectionControl"}}'
+  - name: application_control
+    filter: '{{json_event.message.engine == "applicationControl"}}'
 stages:
   set_common_fields:
     actions:
       - set:
-          host.ip: "{{json_event.message.details.hostIpAddress}}"
-        filter: "{{json_event.message.details.hostIpAddress| is_ipaddress}}"
+          host.ip: >
+            [
+              {%- for item in json_event.message.details.hostIpAddress.split(' ') -%}
+                {%- if item | re_match("[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?") -%}
+                  '{{ item.split('/')[0] }}',
+                {%- endif -%}
+              {%- endfor -%}
+            ]
+        filter: '{{ json_event.message.details.hostIpAddress | re_match("[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?") }}'
 
       - set:
           "@timestamp": "{{read_event_date.datetime}}"
-          event.kind: "event"
           event.dataset: "{{json_event.message.engine}}"
           event.action: "{{json_event.message.action}}"
           event.reason: "{{json_event.message.details.reason}}"
@@ -73,6 +81,7 @@ stages:
 
           user.domain: "{{parse_username.user.domain}}"
           user.name: "{{parse_username.user.name}}"
+          action.properties.UserPrincipalName: "{{json_event.message.details.userPrincipalName}}"
 
           process.pid: "{{json_event.message.details.systemDataProcessId}}"
           process.executable: "{{json_event.message.details.creator}}"
@@ -174,6 +183,46 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["denied"]
+
+  application_control:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+
+      - set:
+          withsecure.profile.id: "{{json_event.message.profileId}}"
+          withsecure.profile.name: "{{json_event.message.profileName}}"
+          withsecure.profile.version: "{{json_event.message.profileVersion}}"
+
+      - set:
+          rule.name: "{{json_event.message.details.ruleEvent}}"
+          rule.id: "{{json_event.message.details.ruleId}}"
+          rule.description: "{{json_event.message.details.ruleName}}"
+
+      - set:
+          file.hash.sha256: "{{json_event.message.details.targetSha256}}"
+          file.hash.sha1: "{{json_event.message.details.targetSha1}}"
+
+          process.command_line: "{{json_event.message.details.targetCommandLine}}"
+          process.executable: "{{json_event.message.details.targetPath}}"
+
+          process.parent.command_line: "{{json_event.message.details.parentCommandLine}}"
+          process.parent.executable: "{{json_event.message.details.parentPath}}"
+
+      - set:
+          withsecure.profile.id: "{{json_event.message.details.profileId}}"
+          withsecure.profile.name: "{{json_event.message.details.profileName}}"
+          withsecure.profile.version: "{{json_event.message.details.profileVersion}}"
+          withsecure.target.copyright.text: "{{json_event.message.details.targetCopyrightText}}"
+          withsecure.target.file.description: "{{json_event.message.details.targetFileDescription}}"
+          withsecure.target.file.version: "{{json_event.message.details.targetFileVersion}}"
+          withsecure.target.product.name: "{{json_event.message.details.targetProductName}}"
+          withsecure.target.product.version: "{{json_event.message.details.targetProductVersion}}"
+          withsecure.target.signature_signer_name: "{{json_event.message.details.targetSignatureSignerName}}"
+          withsecure.target.company_name: "{{json_event.message.details.targetVersionCompanyName}}"
+          withsecure.alert.type: "{{json_event.message.details.alertType}}"
+          withsecure.throttled.count: "{{json_event.message.details.throttledCount}}"
 
   ## https://connect.withsecure.com/api-reference/security-events#get-Browsing-protection-harmful-or-suspicious-page-blocked
 

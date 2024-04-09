@@ -1,12 +1,13 @@
 name: openssh
 pipeline:
-  - name: parse_event
+  - name: event
     external:
       name: grok.match
       properties:
-        output_field: message
-        pattern: "%{SPACE}(%{SSHD_INFO}|%{SSHD_ERROR})"
+        pattern: >-
+          %{SSHD_HEADER}%{SPACE}(%{SSHD_INFO}|%{SSHD_ERROR})
         custom_patterns:
+          SSHD_HEADER: (%{MONTH:month} %{MONTHDAY:month_day} %{TIME:time} %{HOSTNAME:hostname} sshd\[%{INT}\]:)?
           SSHD_TEXT: ((%{WORD}|,)%{SPACE})*
           SSHD_TWO_WORDS: "%{WORD}%{SPACE}%{WORD}"
           SSHD_MESSAGE_ACCEPTED: Accepted
@@ -33,10 +34,10 @@ pipeline:
           SSHD_MESSAGE_AUTHENTICATING_USER: authenticating user
           SSHD_MESSAGE_NORMAL_USER: user
           SSHD_MESSAGE_USER_QUALITY: "%{SSHD_MESSAGE_AUTHENTICATING_USER}|%{SSHD_MESSAGE_ILLEGAL_USER}|%{SSHD_MESSAGE_INVALID_USER}|(%{SSHD_MESSAGE_NORMAL_USER})?"
-          SSHD_MESSAGE_USER: "%{SSHD_MESSAGE_USER_QUALITY:tmp_userquality} %{USERNAME:user_name}"
+          SSHD_MESSAGE_USER: "%{SSHD_MESSAGE_USER_QUALITY:userquality} %{USERNAME:user_name}"
           SSHD_CLIENT_ADDRESS: "%{IP:source_ip}|%{HOSTNAME:source_domain}"
           SSHD_INFO_ACCEPTED:
-            "%{SSHD_MESSAGE_ACCEPTED:sshd_message} %{NOTSPACE:tmp_outcome_reason}
+            "%{SSHD_MESSAGE_ACCEPTED:sshd_message} %{NOTSPACE:outcome_reason}
             for %{USERNAME:user_name} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}(
             ssh2: %{NOTSPACE} SHA256:%{NOTSPACE:file_hash_sha256}|%{GREEDYDATA})"
           SSHD_INFO_CONNECTION_CLOSED:
@@ -47,7 +48,7 @@ pipeline:
             %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
           SSHD_INFO_RECEIVED_DISCONNECT:
             '%{SSHD_MESSAGE_RECEIVED_DISCONNECT:sshd_message} %{SSHD_CLIENT_ADDRESS}
-            port %{NUMBER:source_port}:%{INT}:%{SPACE}%{SSHD_TEXT:tmp_outcome_reason}( \[preauth\])?'
+            port %{NUMBER:source_port}:%{INT}:%{SPACE}%{SSHD_TEXT:outcome_reason}( \[preauth\])?'
           SSHD_INFO_CONNECTION_RESET:
             '%{SSHD_MESSAGE_CONNECTION_RESET:sshd_message}( %{SSHD_MESSAGE_USER})?
             %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
@@ -74,25 +75,25 @@ pipeline:
             %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port})?(%{SPACE}ssh2)?
           SSHD_ERROR_DISCONNECTING_USER:
             '%{SSHD_MESSAGE_DISCONNECTING_USER:sshd_message} %{SSHD_MESSAGE_USER}
-            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}:%{SPACE}(%{GREEDYDATA:tmp_outcome_reason})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}:%{SPACE}(%{GREEDYDATA:outcome_reason})?
             (\[preauth\])?'
           SSHD_ERROR_FOR_USER:
-            "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:tmp_outcome_reason}
+            "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:outcome_reason}
             for %{SSHD_MESSAGE_USER} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}%{GREEDYDATA}"
           SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION:
             "%{SSHD_MESSAGE_ERROR_USER:sshd_message} kex_exchange_identification:
-            %{GREEDYDATA:tmp_outcome_reason}"
+            %{GREEDYDATA:outcome_reason}"
           SSHD_ERROR_USER_NOT_ALLOWED:
             "%{SSHD_MESSAGE_USER2:sshd_message} %{USERNAME:user_name}
-            from %{SSHD_CLIENT_ADDRESS} %{GREEDYDATA:tmp_outcome_reason}"
+            from %{SSHD_CLIENT_ADDRESS} %{GREEDYDATA:outcome_reason}"
           SSHD_ERROR_AUTH_REQUEST:
             '%{SSHD_MESSAGE_ERROR_AUTH_REQUEST:sshd_message} %{SSHD_MESSAGE_USER}(
             \[preauth\])?'
           SSHD_ERROR_NEGOCIATE:
             "%{SSHD_MESSAGE_ERROR_NEGOCIATE:sshd_message} %{SSHD_CLIENT_ADDRESS}
-            port %{NUMBER:source_port}(: %{GREEDYDATA:tmp_outcome_reason})?"
+            port %{NUMBER:source_port}(: %{GREEDYDATA:outcome_reason})?"
           SSHD_ERROR_PAM_CHECK_PASS: "%{SSHD_MESSAGE_PAM_CHECK_PASS:sshd_message} %{SSHD_MESSAGE_USER}"
-          SSHD_ERROR_PAM_AUTH_FAILURE: "%{SSHD_MESSAGE_PAM_AUTH_FAILURE:sshd_message} %{GREEDYDATA:tmp_pam}"
+          SSHD_ERROR_PAM_AUTH_FAILURE: "%{SSHD_MESSAGE_PAM_AUTH_FAILURE:sshd_message} %{GREEDYDATA:pam}"
           SSHD_ERROR_PAM: "%{SSHD_ERROR_PAM_CHECK_PASS}|%{SSHD_ERROR_PAM_AUTH_FAILURE}"
           SSHD_EXPIRED_PASSSOWRD:
             '%{SSHD_MESSAGE_PAM_EXPIRED_PASSWORD:sshd_message} for user
@@ -100,11 +101,11 @@ pipeline:
           SSHD_ERROR: "%{SSHD_ERROR_IDENTIFICATION}|%{SSHD_ERROR_INVALID_USER}|%{SSHD_ERROR_NEGOCIATE}|%{SSHD_ERROR_DISCONNECTING_USER}|%{SSHD_ERROR_FOR_USER}|%{SSHD_ERROR_AUTH_REQUEST}|%{SSHD_ERROR_PAM}|%{SSHD_ERROR_USER_NOT_ALLOWED}|%{SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION}"
 
   - name: parse_kv
-    filter: "{{parse_event.message != None and parse_event.message.tmp_pam != None}}"
+    filter: "{{event.message != None and event.message.pam != None}}"
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{parse_event.message.tmp_pam}}"
+        input_field: "{{event.message.pam}}"
         output_field: message
         value_sep: "="
         item_sep: '\s'
@@ -115,21 +116,24 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          event.kind: "event"
           observer.product: "openssh"
           observer.vendor: "openbsd project"
           observer.type: "server"
+          process.name: "sshd"
+          action.outcome_reason: "{{ event.message.SSHD_INFO or event.message.SSHD_ERROR }}"
+          event.outcome: "success" # legacy
 
       - set:
-          source.domain: "{{parse_event.message.source_domain}}"
-          source.ip: "{{parse_event.message.source_ip}}"
-          source.port: "{{parse_event.message.source_port}}"
+          source.domain: "{{event.message.source_domain}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.port: "{{event.message.source_port}}"
 
-          user.id: "{{parse_event.message.user_id}}"
-          user.name: "{{parse_event.message.user_name}}"
-          source.user.name: "{{parse_event.message.user_name}}"
+          user.id: "{{event.message.user_id}}"
+          user.euid: "{{event.message.user_id}}"
+          user.name: "{{event.message.user_name}}"
+          source.user.name: "{{event.message.user_name}}"
 
-          file.hash.sha256: "{{parse_event.message.file_hash_sha256}}"
+          file.hash.sha256: "{{event.message.file_hash_sha256}}"
 
       - set:
           user.id: "{{parse_kv.message.ruser}}"
@@ -139,26 +143,14 @@ stages:
       - set:
           event.category: ["authentication"]
           event.type: ["start"]
-
-          action.outcome_reason: "{{ parse_event.message.sshd_message }} {{ parse_event.message.tmp_outcome_reason }}"
           action.type: "open"
           action.name: "session"
           action.outcome: "success"
           action.target: "user"
 
-          openssh.auth.method: "{{ parse_event.message.tmp_outcome_reason }}"
+          openssh.auth.method: "{{ event.message.outcome_reason }}"
 
-        filter: "{{parse_event.message.sshd_message == 'Accepted'}}"
-
-      - set:
-          event.category: ["network"]
-          event.type: ["end"]
-
-          action.type: "close"
-          action.name: "connection"
-          action.outcome: "success"
-          action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Connection closed by'}}"
+        filter: "{{event.message.sshd_message == 'Accepted'}}"
 
       - set:
           event.category: ["network"]
@@ -168,7 +160,7 @@ stages:
           action.name: "connection"
           action.outcome: "success"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Disconnected from'}}"
+        filter: "{{event.message.sshd_message == 'Connection closed by'}}"
 
       - set:
           event.category: ["network"]
@@ -178,8 +170,18 @@ stages:
           action.name: "connection"
           action.outcome: "success"
           action.target: "user"
-          action.outcome_reason: "{{parse_event.message.tmp_outcome_reason}}"
-        filter: "{{parse_event.message.sshd_message == 'Received disconnect from'}}"
+        filter: "{{event.message.sshd_message == 'Disconnected from'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+          action.outcome_reason: "{{event.message.outcome_reason}}"
+        filter: "{{event.message.sshd_message == 'Received disconnect from'}}"
 
       - set:
           event.category: ["network"]
@@ -190,7 +192,7 @@ stages:
           action.outcome: "success"
           action.target: "user"
           action.outcome_reason: "reset"
-        filter: "{{parse_event.message.sshd_message == 'Connection reset by'}}"
+        filter: "{{event.message.sshd_message == 'Connection reset by'}}"
 
       - set:
           event.category: ["session"]
@@ -201,8 +203,7 @@ stages:
           action.outcome: "success"
           action.target: "user"
 
-          process.name: "sshd"
-        filter: "{{parse_event.message.sshd_message == 'pam_unix(sshd:session): session closed for user'}}"
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:session): session closed for user'}}"
 
       - set:
           event.category: ["session"]
@@ -213,74 +214,72 @@ stages:
           action.outcome: "success"
           action.target: "user"
 
-          process.name: "sshd"
-        filter: "{{parse_event.message.sshd_message == 'pam_unix(sshd:session): session opened for user'}}"
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:session): session opened for user'}}"
 
       - set:
           event.category: ["network"]
           event.type: ["protocol"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
+          action.outcome_reason: "{{ event.message.sshd_message }}"
           action.type: "open"
           action.name: "negotiate"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Bad protocol version'}}"
+        filter: "{{event.message.sshd_message == 'Bad protocol version'}}"
 
       - set:
           event.category: ["session"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
+          action.outcome_reason: "{{ event.message.sshd_message }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Did not receive identification string'}}"
+        filter: "{{event.message.sshd_message == 'Did not receive identification string'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
+          action.outcome_reason: "{{ event.message.sshd_message }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Disconnecting'}}"
+        filter: "{{event.message.sshd_message == 'Disconnecting'}}"
 
       - set:
           event.category: ["session"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'error:'}}"
+        filter: "{{event.message.sshd_message == 'error:'}}"
 
       - set:
           event.category: ["session"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
           action.type: "open"
           action.name: "negotiate"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Unable to negotiate with'}}"
+        filter: "{{event.message.sshd_message == 'Unable to negotiate with'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.tmp_userquality }}"
+          action.outcome_reason: "{{ event.message.userquality }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'input_userauth_request:'}}"
+        filter: "{{event.message.sshd_message == 'input_userauth_request:'}}"
 
       - set:
           event.category: ["authentication"]
@@ -290,68 +289,68 @@ stages:
           action.name: "sshd:auth"
           action.outcome: "success"
           action.target: "user"
-          process.name: "sshd"
-        filter: "{{parse_event.message.sshd_message == 'pam_unix(sshd:auth): check pass;'}}"
+
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:auth): check pass;'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
+          action.outcome_reason: "{{ event.message.sshd_message }}"
           action.type: "authentication"
           action.name: "sshd:auth"
           action.outcome: "failure"
           action.target: "user"
-          process.name: "sshd"
-        filter: "{{parse_event.message.sshd_message == 'pam_unix(sshd:auth): authentication failure;'}}"
+
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:auth): authentication failure;'}}"
 
       - set:
           action.type: "account"
           action.name: "expired password"
-          process.name: "sshd"
-        filter: "{{parse_event.message.sshd_message == 'pam_unix(sshd:account): expired password'}}"
+
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:account): expired password'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }}"
+          action.outcome_reason: "{{ event.message.sshd_message }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Failed password'}}"
+        filter: "{{event.message.sshd_message == 'Failed password'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.sshd_message }} {{ parse_event.message.tmp_userquality }}"
+          action.outcome_reason: "{{ parse_event.message.sshd_message }} {{ parse_event.message.userquality }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'Invalid'}}"
+        filter: "{{event.message.sshd_message == 'Invalid'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
           action.type: "open"
           action.name: "connection"
           action.outcome: "failure"
           action.target: "user"
-        filter: "{{parse_event.message.sshd_message == 'User'}}"
+        filter: "{{event.message.sshd_message == 'User'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
 
-          action.outcome_reason: "{{ parse_event.message.tmp_outcome_reason }}"
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
           action.type: "authentication"
           action.name: "sshd:auth"
           action.outcome: "failure"
           action.target: "user"
 
-        filter: "{{parse_event.message.sshd_message.endswith('more authentication failures')}}"
+        filter: "{{event.message.sshd_message.endswith('more authentication failures')}}"
