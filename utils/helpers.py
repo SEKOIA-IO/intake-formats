@@ -7,8 +7,11 @@ class YamlDumper(yaml.SafeDumper):
     """This class adds linebreak between each root keys in fields.yml"""
 
     def write_line_break(self, data=None):
-        super().write_line_break(data)
         super().represent_scalar("tag:yaml.org,2002:str", data, style='"')
+        super().write_line_break(data)
+
+        if len(self.indents) == 1:
+            super().write_line_break()
 
 
 class JsonSorterEncoder(json.JSONEncoder):
@@ -82,7 +85,7 @@ def format_expected(test_file):
     return expected
 
 
-def format_test(test_file) -> dict:
+def format_test(test_file: dict) -> dict:
     # keep the message on top of each parts
 
     return {

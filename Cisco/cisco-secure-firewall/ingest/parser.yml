@@ -58,6 +58,7 @@ pipeline:
           "110002": "%{CISCO_110002}"
           "110003": "%{CISCO_110003}"
           "111007": "%{CISCO_111007}"
+          "113004": "%{CISCO_113004}"
           "199019": "%{CISCO_199019}"
           "302013": "%{CISCO_302013_302014_302015_302016}"
           "302014": "%{CISCO_302013_302014_302015_302016}"
@@ -118,6 +119,7 @@ pipeline:
           CISCO_110002: "%{CISCO_REASON:action_name} for %{DATA:network_transport} from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port}"
           CISCO_110003: '%{GREEDYDATA:action_name} from %{WORD}\:%{IP:source_ip}\/([1-2]?[0-9]|3[0-2]) to %{WORD}\:%{IP:destination_ip}\/([1-2]?[0-9]|3[0-2])(, %{GREEDYDATA:action_outcome_reason})?'
           CISCO_111007: '%{GREEDYDATA:action_name}: %{IP:source_ip} reading from %{NOTSPACE:network_transport} \[%{DATA:http_method}\]'
+          CISCO_113004: "%{GREEDYDATA} user authentication %{WORD} : server = (\\s*)?%{IP:destination_ip} : user = %{DATA:user_name}"
           CISCO_199019: '%{GREEDYDATA} %{DURATION} %{WORD:process_name}\[%{GREEDYDATA:process_id}\]: %{WORD:log_host} %{GREEDYDATA:result}'
           CISCO_302013_302014_302015_302016: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection %{INT} for %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}( \(%{IP:source_nat_ip}/%{INT:source_nat_port}\))?(\(%{DATA}\))? to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}( \(%{IP:destination_nat_ip}/%{INT:destination_nat_port}\))?(\(%{DATA}\))?( duration %{DATA:network_duration} bytes %{INT:network_bytes})?%{DATA}( \(%{DATA:user_name}\))?'
           CISCO_302020_302021: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection for faddr %{IP:destination_ip}/%{INT:destination_port}(\(%{DATA:user_group}\\%{DATA}\))? gaddr %{IP}/%{INT} laddr %{IP:source_ip}/%{INT}( \(%{DATA:user_name}\))?( type %{INT:icmp_type} code %{INT:icmp_code})?%{DATA}'
@@ -166,7 +168,7 @@ pipeline:
 
   - name: set_common_fields
   - name: set_ecs_fields
-    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "111007", "199019", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "313001", "313004", "313005", "313008", "305012", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "609001", "609002", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016", "852001"]}}'
+    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "111007", "113004", "199019", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "313001", "313004", "313005", "313008", "305012", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "609001", "609002", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016", "852001"]}}'
   - name: set_ecs_fields_from_kv
     filter: '{{pre_parsing.pre_message.message_number_grok in ["430001","430002","430003","430004","430005"]}}'
   - name: set_ecs_fields_from_condition
@@ -177,7 +179,6 @@ stages:
     actions:
       - set:
           event.code: "{{pre_parsing.pre_message.message_number_grok}}"
-          event.kind: "event"
           event.category: ["network"]
           observer.vendor: "Cisco"
           action.target: "network-traffic"
@@ -384,6 +385,11 @@ stages:
           event.category: ["malware"]
           event.type: ["info"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430005"}}'
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{pre_parsing.pre_message.message_number_grok == "113004"}}'
       - set:
           network.transport: "{{parsed_event.message.network_transport|lower }}"
         filter: '{{parsed_event.message.get("network_transport") != None}}'
