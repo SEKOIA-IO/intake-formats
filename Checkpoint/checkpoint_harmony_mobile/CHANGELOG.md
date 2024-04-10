@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 2024-02-20 - 1.1.1
+
+#### Added
+
+- Extract the severity of the event
+
 ### 2023-11-24 - 1.1.0
 
 #### Added

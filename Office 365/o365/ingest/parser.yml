@@ -11,7 +11,7 @@ pipeline:
         output_field: message
         pattern: "%{EMAILADDRESS:email}"
   - name: parse_data
-    filter: "{{json_event.message.RecordType == 64}}"
+    filter: "{{json_event.message.RecordType == 64 or (json_event.message.RecordType == 40 and json_event.message.Name == 'Mass download by a single user')}}"
     external:
       name: json.parse-json
       properties:
@@ -25,6 +25,7 @@ pipeline:
         output_field: result
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+
   - name: set_common_fields
   - name: set_office365_fields
   - name: parse_exchange_admin
@@ -69,7 +70,6 @@ stages:
           "@timestamp": "{{json_event.message.CreationTime}}"
           service.name: "{{json_event.message.Workload}}"
           event.action: "{{json_event.message.Operation}}"
-          event.kind: "event"
           event.code: "{{json_event.message.RecordType | string}}"
           event.reason: "{{json_event.message.ActionName}}"
           user.name: "{{json_event.message.UserId}}"
@@ -178,6 +178,10 @@ stages:
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
           office365.exchange.modified_properties: "{{json_event.message.ModifiedProperties}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+      - set:
+          email.subject: "{{json_event.message.Item.Subject}}"
+          email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
+        filter: '{{json_event.message.get("Item") != None}}'
 
   parse_exchange_item_group:
     actions:
@@ -248,6 +252,7 @@ stages:
           event.type: ["info"]
           office365.logon_error: "{{json_event.message.LogonError}}"
           office365.error_number: "{{json_event.message.ErrorNumber}}"
+          office365.context.client.id: "{{json_event.message.ApplicationId}}"
 
       - set:
           host.os.full: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "OS" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
@@ -298,6 +303,7 @@ stages:
           event.category: ["file"]
           event.type: ["info"]
           user_agent.original: "{{json_event.message.UserAgent}}"
+          file.size: "{{json_event.message.FileSizeBytes}}"
           file.extension: "{{json_event.message.SourceFileExtension}}"
           action.outcome: "success"
           url.full: "{{json_event.message.ObjectId or json_event.message.SiteUrl}}"
@@ -558,6 +564,10 @@ stages:
           office365.alert.source: "{{json_event.message.Source}}"
           office365.alert.status: "{{json_event.message.Status}}"
           rule.id: "{{json_event.message.PolicyId}}"
+
+      - set:
+          source.user.email: "{{parse_data.ParsedData.f3u}}"
+        filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
 
   parse_power_bi:
     actions:
