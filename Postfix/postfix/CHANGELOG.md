@@ -26,3 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `postfix_scache_timestamp`                                 | removed                                                                                                                                    |
 | `"outcome_reason": "SMTP code do not match in dictionary"` | removed                                                                                                                                    |
 | Support for `log.syslog.appname: postfix/scache`           | removed (no valuable info to extract)                                                                                                      |
+| `email.from` and `email.to` could contain an email address | the content moved to valid ECS fields such as `email.from.address`                                                                         |
