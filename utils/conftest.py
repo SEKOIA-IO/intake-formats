@@ -90,18 +90,18 @@ class IntakeTestManager:
                         if content and isinstance(content, dict):
                             fields.update(content)
 
-            messages = []
+            events = []
             for test in self._intakes[module][intake_format]:
                 with open(os.path.join(INTAKES_PATH, test)) as f:
                     message = json.load(f)
-                    messages.append(message["input"]["message"])
+                    events.append(message["input"])
 
             response = requests.post(
                 VALIDATION_URL,
                 json={
                     "parser": parser,
                     "taxonomy": list(fields.values()),
-                    "messages": messages,
+                    "events": events,
                 },
             )
             if not response.ok:
