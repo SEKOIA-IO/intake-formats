@@ -22,8 +22,15 @@ pipeline:
   - name: set_network_fields
   - name: set_source_fields
   - name: set_destination_fields
+  - name: finalizer
 
 stages:
+  finalizer:
+    actions:
+      - set:
+          action.outcome: success
+        filter: "{{final.action.outcome == null and final.action.name != null}}"
+
   set_source_fields:
     actions:
       - set:
@@ -41,6 +48,38 @@ stages:
           destination.packets: "{{parsed_flow_0.result.destination_packets}}"
           destination.bytes: "{{parsed_flow_0.result.destination_bytes}}"
 
+  set_common_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          event.category: ["network"]
+          event.code: "{{json_event.message.operationName}}"
+          "@timestamp": "{{json_event.message.time}}"
+          # backward compatibility
+          event.start: "{{final.get('@timestamp')}}"
+
+          rule.name: "{{json_event.message.rule}}"
+
+          action.type: "{{json_event.message.rule}}"
+          action.target: "network-traffic"
+          action.properties.OperationName: "{{json_event.message.operationName}}"
+          action.properties.Version: "{{json_event.message.version}}"
+          action.properties.FlowState: "{{json_event.message.flow_state}}"
+
+          host.name: "{{json_event.message.resourceId}}"
+
+      - set:
+          event.action: "accept"
+          action.name: "accept"
+          event.type: ["allowed"]
+        filter: "{{parsed_flow_0.result.traffic_decision == 'A'}}"
+
+      - set:
+          event.action: "reject"
+          action.name: "reject"
+          event.type: ["denied"]
+        filter: "{{parsed_flow_0.result.traffic_decision == 'D'}}"
+
   set_network_fields:
     actions:
       - translate:
@@ -52,57 +91,16 @@ stages:
 
       - translate:
         dictionary:
-          "begin": "inbound"
-          "end": "outbound"
+          "B": "begin"
+          "C": "continue"
+          "E": "end"
         mapping:
-          json_event.message.flow_state: network.direction
-        fallback: "{{json_event.message.traffic_flow}}"
-
-  set_common_fields:
-    actions:
-      - set:
-          event.category: ["network"]
-          event.code: "{{json_event.message.operationName}}"
-          "@timestamp": "{{json_event.message.flowtime}}"
-
-          rule.name: "{{json_event.message.rule}}"
-
-          action.type: "{{json_event.message.rule}}"
-          action.target: "network-traffic"
-          action.properties: >
-            [
-              {
-                {% if json_event.message.get("operationName") != None %}
-                'OperationName': '{{json_event.message.operationName}}',
-                {% endif %}
-                {% if json_event.message.get("flow_state") != None %}
-                'FlowState': '{{json_event.message.flow_state}}',
-                {% endif %}
-                {% if json_event.message.get("version") != None %}
-                'Version': '{{json_event.message.version}}',
-                {% endif %}
-              }
-            ]
-
-          host.name: "{{json_event.message.resourceId}}"
+          parsed_flow_0.result.flow_state: action.properties.FlowState
 
       - translate:
         dictionary:
-          "A": "accept"
+          "I": "inbound"
+          "O": "outbound"
         mapping:
-          parsed_flow_0.result.traffic_decision: event.action
-        fallback: "reject"
-
-      - translate:
-        dictionary:
-          "A": "accept"
-        mapping:
-          parsed_flow_0.result.traffic_decision: action.name
-        fallback: "reject"
-
-      - translate:
-        dictionary:
-          "A": ["allowed"]
-        mapping:
-          parsed_flow_0.result.traffic_decision: event.type
-        fallback: ["denied"]
+          parsed_flow_0.result.traffic_flow: network.direction
+        fallback: "{{parsed_flow_0.result.traffic_flow}}"
