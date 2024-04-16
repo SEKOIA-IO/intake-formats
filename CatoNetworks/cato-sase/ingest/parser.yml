@@ -15,9 +15,34 @@ pipeline:
         output_field: datetime
     filter: "{{json_event.output.event_time != None}}"
 
+  - name: parse_mitre_tactics
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.output.mitre_attack_tactics}}"
+        output_field: message
+        pattern: '%{DATA:tactic_name_1} \(%{DATA:tactic_id_1}\)\, %{DATA:tactic_name_2} \(%{DATA:tactic_id_2}\)'
+    filter: "{{json_event.output.mitre_attack_tactics != None}}"
+
+  - name: parse_mitre_techniques
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.output.mitre_attack_techniques}}"
+        output_field: message
+        pattern: '%{DATA:technique_name_1} \(%{DATA:technique_id_1}\)\, %{DATA:technique_name_2} \(%{DATA:technique_id_2}\)'
+    filter: "{{json_event.output.mitre_attack_tactics != None}}"
+
   - name: set_common_fields
   - name: set_os_info
   - name: set_event_fields
+  - name: set_tactics_and_techniques
+
+  - name: set_ips_fields
+    filter: "{{json_event.output.event_sub_type == 'IPS'}}"
+
+  - name: set_ng_malware_fields
+    filter: "{{json_event.output.event_sub_type == 'NG Anti Malware'}}"
 
 stages:
   set_event_fields:
@@ -113,3 +138,49 @@ stages:
           cato.sase.event_type: "{{json_event.output.event_type}}"
           cato.sase.event_sub_type: "{{json_event.output.event_sub_type}}"
           cato.sase.custom_category: "{{json_event.output.custom_category}}"
+
+  set_tactics_and_techniques:
+    actions:
+      - set:
+          threat.tactic.id:
+            [
+              "{{parse_mitre_tactics.message.tactic_id_1}}",
+              "{{parse_mitre_tactics.message.tactic_id_2}}",
+            ]
+          threat.tactic.name:
+            [
+              "{{parse_mitre_tactics.message.tactic_name_1}}",
+              "{{parse_mitre_tactics.message.tactic_name_2}}",
+            ]
+        filter: "{{parse_mitre_tactics.message != None}}"
+
+      - set:
+          threat.technique.id:
+            [
+              "{{parse_mitre_techniques.message.technique_id_1}}",
+              "{{parse_mitre_techniques.message.technique_id_2}}",
+            ]
+          threat.technique.name:
+            [
+              "{{parse_mitre_techniques.message.technique_name_1}}",
+              "{{parse_mitre_techniques.message.technique_name_2}}",
+            ]
+        filter: "{{parse_mitre_techniques.message != None}}"
+
+  set_ips_fields:
+    actions:
+      - set:
+          threat.indicator.ip: "{{json_event.output.src_ip}}"
+          threat.indicator.type: "ip"
+          threat.indicator.description: "{{json_event.output.threat_name}}"
+          threat.indicator.name: "{{json_event.output.src_ip}}"
+          threat.indicator.reference: "{{json_event.output.src_ip}}"
+
+  set_ng_malware_fields:
+    actions:
+      - set:
+          threat.indicator.file.name: "{{json_event.output.file_name}}"
+          threat.indicator.type: "file"
+          threat.indicator.description: "{{json_event.output.threat_name}}"
+          threat.indicator.name: "{{json_event.output.indicator}}"
+          cato.sase.threat_verdict: "{{json_event.output.threat_verdict}}"
