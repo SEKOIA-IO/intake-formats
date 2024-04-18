@@ -1,4 +1,6 @@
-from .base import Validator
+from pathlib import Path
+
+from .base import INTAKES_PATH, Validator
 from .changelog import ChangelogValidator
 from .data_sources import ManifestDataSourcesValidator
 from .logo import LogoValidator
