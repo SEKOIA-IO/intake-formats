@@ -1,0 +1,62 @@
+name: umbrella-proxy
+ignored_values: ["-", " "]
+pipeline:
+  - name: event
+    external:
+      name: dsv.parse-dsv
+      properties:
+        output_field: message
+        columnnames:
+          - datetime
+          - log_hostname
+          - source_nat_ip
+          - source_ip
+          - destination_ip
+          - mime_type
+          - outcome_reason
+          - http_request_url
+          - http_request_referrer
+          - user_agent_original
+          - http_response_status_code
+          - http_request_bytes
+          - http_response_bytes
+          - http_response_body_bytes
+          - GREEDYDATA
+        delimiter: ","
+
+  - name: grok_url
+    external:
+      name: grok.match
+      properties:
+        input_field: "event.message.http_request_url"
+        output_field: message
+        pattern: "(%{URIPROTO:url_scheme}://)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": '{{event.message.datetime.strip('' '').strip(''"'') | to_rfc3339 }}'
+          action.name: "request"
+          action.outcome: "success"
+          action.outcome_reason: "{{event.message.outcome_reason.split('.')[0] | lower}}"
+          action.target: "network-traffic"
+          destination.address: "{{grok_url.message.url_domain}}"
+          destination.domain: "{{grok_url.message.url_domain}}"
+          destination.ip: "{{event.message.destination_ip}}"
+          host.hostname: "{{event.message.log_hostname}}"
+          host.name: "{{event.message.log_hostname}}"
+          http.request.bytes: "{{event.message.http_request_bytes}}"
+          http.request.referrer: "{{event.message.http_request_referrer}}"
+          http.response.body.bytes: "{{event.message.http_response_body_bytes}}"
+          http.response.bytes: "{{event.message.http_response_bytes}}"
+          http.response.mime_type: "{{event.message.mime_type}}"
+          http.response.status_code: "{{event.message.http_response_status_code}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.nat.ip: "{{event.message.source_nat_ip}}"
+          url.full: "{{event.message.http_request_url}}"
+          url.original: "{{event.message.http_request_url}}"
+          url.path: "{{grok_url.message.url_path}}"
+          user_agent.original: "{{event.message.user_agent_original}}"

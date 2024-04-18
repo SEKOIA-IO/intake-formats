@@ -1,0 +1,49 @@
+name: umbrella-dns
+pipeline:
+  - name: event
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - datetime
+          - user_name
+          - DATA
+          - source_ip
+          - source_nat_ip
+          - action_type
+          - dns_question_type
+          - dns_response_code
+          - dns_question_name
+          - dns_question_categories
+          - GREEDYDATA
+        delimiter: ","
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": '{{event.message.datetime.strip('' '').strip(''"'') | to_rfc3339 }}'
+          action.name: "DNS query"
+          action.properties.Categories: "{{event.message.dns_question_categories}}"
+          action.target: "network-traffic"
+          action.type: "{{event.message.action_type | lower}}"
+          dns.question.name: "{{event.message.dns_question_name}}"
+          dns.size_in_char: "{{event.message.dns_question_name | length}}"
+          dns.question.type: "{{event.message.dns_question_type.split(' ')[1].replace('(', '').replace(')','')}}"
+          dns.response_code: "{{event.message.dns_response_code}}"
+          dns.type: "query"
+          source.ip: "{{event.message.source_ip}}"
+          source.nat.ip: "{{event.message.source_nat_ip}}"
+          user.name: "{{event.message.user_name}}"
+
+      - set:
+          action.outcome: "success"
+        filter: "{{event.message.dns_response_code == 'NOERROR'}}"
+
+      - set:
+          action.outcome: "failure"
+          action.outcome_reason: "{{event.message.dns_response_code}}"
+        filter: "{{event.message.dns_response_code != 'NOERROR'}}"
