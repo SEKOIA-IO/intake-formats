@@ -5,30 +5,65 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message[3:]}}"
+        output_field: message
+
+  - name: message_parse_grok
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.message
+        output_field: result
+        pattern: "%{CREATE_TRIAGE_FILTER}|%{EDIT_TRIAGE_FILTER}"
+        custom_patterns:
+          CREATE_TRIAGE_FILTER: '(?P<event_reason>create triage filter) *%{GREEDYDATA:json_data}'
+          EDIT_TRIAGE_FILTER: '(?P<event_reason>edit triage filter) \"%{DATA:filter_type}\" - id %{NUMBER} %{DATA:detection_type} - %{GREEDYDATA}'
+
+  - name: message_parse_json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: message_parse_grok.result.json_data
+        output_field: result
+    filter: "{{message_parse_grok.result.get('json_data', None) != None}}"
+
   - name: field_extraction
   - name: detection_details_ext
     filter: "{{final.vectra.detection != null}}"
+
 stages:
   field_extraction:
     actions:
       - set:
           event.action: "{{json_event.message.category}}"
+          event.outcome: "{{json_event.message.result}}"
           observer.version: "{{json_event.message.version}}"
           observer.name: "{{json_event.message.dvchost}}"
           observer.ip: "{{json_event.message.headend_addr}}"
+          action.name: "{{json_event.message.action}}"
           vectra.timestamp: "{{json_event.message.vectra_timestamp}}"
+          vectra.campaign.id: "{{json_event.message.campaign_id}}"
+          vectra.campaign.link: "{{json_event.message.campaign_link}}"
+          vectra.campaign.name: "{{json_event.message.campaign_name}}"
+          vectra.destination.id: "{{json_event.message.dest_id}}"
+          vectra.health.message: "{{json_event.message.message}}"
+
+          # Comes from grok match for specific events
+          event.reason: "{{message_parse_grok.result.event_reason}}"
+          vectra.filter.type: "{{message_parse_grok.result.filter_type}}"
+          vectra.detection.type: "{{message_parse_json.result.get('Detection Type')}}"
+          vectra.detection.category: "{{message_parse_json.result.get('Detection Category')}}"
 
       - set:
-          observer.ip: "{{json_event.message.headend_addr}}"
-        filter: "{{json_event.message.headend_addr| is_ipaddress}}"
+          vectra.detection.type: "{{message_parse_grok.result.detection_type}}"
+        filter: "{{message_parse_grok.result.get('detection_type', None) != None}}"
 
       - set:
           source.ip: "{{json_event.message.src_ip}}"
-        filter: "{{json_event.message.campaign_id != null and json_event.message.src_ip| is_ipaddress}}"
+        filter: "{{json_event.message.campaign_id != null and json_event.message.src_ip | is_ipaddress}}"
 
       - set:
           source.ip: "{{json_event.message.source_ip}}"
-        filter: "{{json_event.message.source_ip| is_ipaddress}}"
+        filter: "{{json_event.message.source_ip | is_ipaddress}}"
 
       - set:
           host.ip: "{{json_event.message.host_ip}}"
@@ -36,7 +71,7 @@ stages:
 
       - set:
           destination.ip: "{{json_event.message.dd_dst_ip}}"
-        filter: "{{json_event.message.dd_dst_ip| is_ipaddress}}"
+        filter: "{{json_event.message.dd_dst_ip | is_ipaddress}}"
 
       - set:
           observer.product: "{{json_event.message.sensor}}"
@@ -125,15 +160,8 @@ stages:
         filter: "{{json_event.message.category == 'HOST_LOCKDOWN'}}"
 
       - set:
-          action.name: "{{json_event.message.action}}"
-          vectra.campaign.id: "{{json_event.message.campaign_id}}"
-          vectra.campaign.link: "{{json_event.message.campaign_link}}"
-          vectra.campaign.name: "{{json_event.message.campaign_name}}"
-          vectra.destination.id: "{{json_event.message.dest_id}}"
-
-      - set:
           destination.ip: "{{json_event.message.dest_ip}}"
-        filter: "{{json_event.message.dest_ip| is_ipaddress}}"
+        filter: "{{json_event.message.dest_ip | is_ipaddress}}"
 
       - set:
           vectra.destination.name: "{{json_event.message.dest_name}}"
@@ -143,6 +171,7 @@ stages:
           vectra.source.name: "{{json_event.message.src_name}}"
         # If Campaign log event
         filter: "{{json_event.message.campaign_id != null}}"
+
       - set:
           vectra.audit.message: "{{json_event.message.message}}"
           event.outcome: "{{json_event.message.result}}"
@@ -150,10 +179,6 @@ stages:
           user.name: "{{json_event.message.user}}"
         # If Audit log event
         filter: "{{json_event.message.role != null}}"
-
-      - set:
-          vectra.health.message: "{{json_event.message.message}}"
-          event.outcome: "{{json_event.message.result}}"
 
       - set:
           event.action: "{{json_event.message.type}}"
@@ -307,7 +332,7 @@ stages:
 
       - set:
           vectra.detection.ip: "{{json_event.message.ip}}"
-        filter: "{{json_event.message.ip| is_ipaddress}}"
+        filter: "{{json_event.message.ip | is_ipaddress}}"
 
       - set:
           vectra.detection.protocol: "{{json_event.message.protocol}}"
