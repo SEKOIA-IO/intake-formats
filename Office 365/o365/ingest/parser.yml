@@ -11,7 +11,7 @@ pipeline:
         output_field: message
         pattern: "%{EMAILADDRESS:email}"
   - name: parse_data
-    filter: "{{json_event.message.RecordType == 64}}"
+    filter: "{{json_event.message.RecordType in (40, 64)}}"
     external:
       name: json.parse-json
       properties:
@@ -25,6 +25,7 @@ pipeline:
         output_field: result
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+
   - name: set_common_fields
   - name: set_office365_fields
   - name: parse_exchange_admin
@@ -69,7 +70,6 @@ stages:
           "@timestamp": "{{json_event.message.CreationTime}}"
           service.name: "{{json_event.message.Workload}}"
           event.action: "{{json_event.message.Operation}}"
-          event.kind: "event"
           event.code: "{{json_event.message.RecordType | string}}"
           event.reason: "{{json_event.message.ActionName}}"
           user.name: "{{json_event.message.UserId}}"
@@ -564,6 +564,32 @@ stages:
           office365.alert.source: "{{json_event.message.Source}}"
           office365.alert.status: "{{json_event.message.Status}}"
           rule.id: "{{json_event.message.PolicyId}}"
+
+      - set:
+          source.user.email: "{{parse_data.ParsedData.f3u}}"
+        filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
+
+      - set:
+          office365.alert.entity_type: "{{parse_data.ParsedData.etype}}"
+          email.message_id: "{{parse_data.ParsedData.imsgid[1:-1]}}"
+          email.cc.address: "{{parse_data.ParsedData.cc.split(',')}}"
+          email.subject: "{{parse_data.ParsedData.von or parse_data.ParsedData.ms}}"
+
+      - set:
+          email.from.address: "{{parse_data.ParsedData.mfrm.split(',')}}"
+        filter: "{{parse_data.ParsedData.mfrm != None}}"
+
+      - set:
+          email.from.address: "{{parse_data.ParsedData.tsd.split(',')}}"
+        filter: "{{parse_data.ParsedData.tsd != None}}"
+
+      - set:
+          email.to.address: "{{parse_data.ParsedData.to.split(',')}}"
+        filter: "{{parse_data.ParsedData.to != None}}"
+
+      - set:
+          email.to.address: "{{parse_data.ParsedData.trc.split(',')}}"
+        filter: "{{parse_data.ParsedData.trc != None}}"
 
   parse_power_bi:
     actions:
