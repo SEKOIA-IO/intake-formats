@@ -2,12 +2,10 @@ name: imperva-waf
 pipeline:
   - name: parse_kv
     external:
-      name: kv.parse-kv
+      name: cef.parse-cef
       properties:
-        input_field: '{{ original.message.split("| ")[1] }}'
+        input_field: "{{ original.message }}"
         output_field: message
-        value_sep: "="
-        item_sep: \s
   - name: parser_start
     external:
       name: date.parse
@@ -30,7 +28,6 @@ stages:
           user_agent.name: "{{ parse_kv.message.cs6 }}"
           client.geo.country_iso_code: "{{ parse_kv.message.ccode }}"
           client.geo.city_name: "{{ parse_kv.message.cicode }}"
-          client.geo.location: '{"lat": {{ parse_kv.message.cs7 }}, "lon": {{ parse_kv.message.cs8 }}}'
           url.full: "{{ parse_kv.message.request }}"
           url.original: "{{ parse_kv.message.request }}"
           url.query: "{{ parse_kv.message.qstr }}"
@@ -40,13 +37,14 @@ stages:
           http.request.bytes: "{{ parse_kv.message.in }}"
           http.request.id: "{{ parse_kv.message.deviceExternalId or parse_kv.message.deviceExternalID }}"
           network.protocol: "{{ parse_kv.message.app | lower }}"
+          network.forwarded_ip: "{{ parse_kv.message.xff }}"
           source.port: "{{ parse_kv.message.cpt }}"
+          destination.domain: "{{ parse_kv.message.sourceServiceName }}"
           event.action: "{{ parse_kv.message.act }}"
           event.start: "{{ parser_start.date }}"
           event.end: "{{ parse_end.date }}"
           event.duration: "{{ (parse_kv.message.end | int - parse_kv.message.start | int) | float }}"
           rule.name: "{{ parse_kv.message.cs9 }}"
-          event.kind: "event"
           event.category: ["network"]
           event.type: '["connection", "access"]'
           "@timestamp": "{{ parser_start.date }}"
@@ -55,6 +53,12 @@ stages:
           observer.product: "Web Application Firewall"
           event.dataset: "imperva-waf"
           event.module: "imperva.waf"
+          event.severity: "{{ parse_kv.message.Severity }}"
+          organization.name: "{{ parse_kv.message.Customer }}"
+
+      - set:
+          client.geo.location: '{"lat": {{ parse_kv.message.cs7 }}, "lon": {{ parse_kv.message.cs8 }}}'
+        filter: "{{ parse_kv.message.cs7 != null and parse_kv.message.cs8 != null }}"
 
       - set:
           source.ip: "{{ parse_kv.message.src }}"
@@ -147,6 +151,8 @@ stages:
           imperva.attack.type: "{{ parse_kv.message.filetype }}"
           imperva.attack.id: "{{ parse_kv.message.filepermission }}"
           imperva.rule.additional_info: "{{ parse_kv.message.cs11 }}"
+          imperva.event.class_id: "{{ parse_kv.message.Name }}"
+
       - set:
           imperva.rule.names: '{{ parse_kv.message.cs9.split(",") | select | list }}'
         filter: "{{ parse_kv.message.cs9 != null }}"

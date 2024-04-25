@@ -1,0 +1,52 @@
+name: unbound
+pipeline:
+  - name: event
+    external:
+      name: grok.match
+      properties:
+        pattern: "%{UNBOUND_HEADER}(%{UNBOUND_INFO_HISTOGRAM}|%{UNBOUND_INFO_RECURSION}|%{UNBOUND_INFO_SERVER_STATS}|%{UNBOUND_VALIDATION_FAILURE}|%{UNBOUND_KEYTAG}|%{UNBOUND}|%{UNBOUND_ERROR}|%{UNBOUND_ERROR_GENERIC})"
+        custom_patterns:
+          UNBOUND_HEADER: >-
+            (%{TIMESTAMP_ISO8601} %{HOSTNAME:hostname} unbound\[%{INT}\]: )?
+          UNBOUND_INFO_HISTOGRAM: >-
+            \[%{INT}:%{BASE16NUM}\] info: histogram of recursion processing times
+          UNBOUND_INFO_RECURSION: >-
+            \[%{INT}:%{BASE16NUM}\] info: average recursion processing time %{DATA}
+          UNBOUND_INFO_SERVER_STATS: >-
+            \[%{INT}:%{BASE16NUM}\] info: server stats for thread %{INT}: %{DATA}
+          UNBOUND_VALIDATION_FAILURE: >-
+            \[%{INT}:%{BASE16NUM}\] info: validation failure %{DATA}
+          UNBOUND_KEYTAG: >-
+            \[%{INT}:%{BASE16NUM}\] info: generate keytag query %{DATA}
+          UNBOUND: >-
+            \[%{INT}:%{BASE16NUM}\] info: %{IPORHOST:source_ip} %{DATA:dns_question_name} %{WORD:dns_question_type} %{WORD:dns_question_class}
+          UNBOUND_ERROR: >-
+            \[%{INT}:%{BASE16NUM}\] error: %{DATA:error_type}: %{GREEDYDATA:error_message}
+          UNBOUND_ERROR_GENERIC: >-
+            \[%{INT}:%{BASE16NUM}\] error: %{GREEDYDATA:error_message}
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          dns.question.class: "{{event.message.dns_question_class}}"
+          dns.question.name: "{{event.message.dns_question_name.strip('.')}}"
+          dns.question.type: "{{event.message.dns_question_type}}"
+          error.message: "{{event.message.error_message}}"
+          error.type: "{{event.message.error_type}}"
+          host.name: "{{event.message.hostname}}"
+          source.domain: "{{event.message.source_domain}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.port: "{{event.message.source_port}}"
+          user.id: "{{event.message.user_id}}"
+          user.name: "{{event.message.user_name}}"
+
+      - set:
+          dns.type: "query"
+        filter: "{{final.source.ip != null}}"
+
+      - set:
+          dns.size_in_char: "{{final.dns.question.name | length}}"
+        filter: "{{final.dns.question.name != null }}"
