@@ -2,43 +2,47 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from validators.constants import CheckResult
 from validators.format import FormatValidator
 from validators.module import ModuleValidator
 
+INTAKES_PATH = Path(__file__).parent.parent.parent
 
-def find_modules(root_path: str) -> list[str]:
+
+def find_modules(root_path: Path) -> list[Path]:
     """
     Return the path to all the potential modules
     """
-    module_paths: list[str] = []
+    module_paths: list[Path] = []
 
-    filtered_elements = {".git", ".github", "doc", "utils", ".idea"}
+    filtered_elements = {"doc", "utils"}
 
-    for element in os.listdir(root_path):
-        if element not in filtered_elements:
-            element_path = os.path.join(root_path, element)
-            if os.path.isdir(element_path):
+    for element_path in root_path.iterdir():
+        if (
+            element_path.name not in filtered_elements
+            and not element_path.name.startswith(".")
+        ):
+            if element_path.is_dir():
                 module_paths.append(element_path)
 
     return sorted(module_paths)
 
 
-def find_formats(root_path: str, formats: list[str] | None = None) -> list[str]:
+def find_formats(root_path: Path, formats: list[Path] | None = None) -> list[Path]:
     """
     Return the path to all the potential formats
     """
-    format_paths: list[str] = list()
+    format_paths: list[Path] = list()
 
     filtered_elements = {"_meta"}
 
-    for element in os.listdir(root_path):
-        if element not in filtered_elements:
-            element_path = os.path.join(root_path, element)
-            if os.path.isdir(element_path):
+    for element_path in root_path.iterdir():
+        if element_path.name not in filtered_elements:
+            if element_path.is_dir():
                 if formats:
-                    if element not in formats:
+                    if element_path.name not in formats:
                         continue
 
                 format_paths.append(element_path)
@@ -47,7 +51,7 @@ def find_formats(root_path: str, formats: list[str] | None = None) -> list[str]:
 
 
 def check_format(
-    path: str, module_result: CheckResult, args: argparse.Namespace
+    path: Path, module_result: CheckResult, args: argparse.Namespace
 ) -> CheckResult:
     valid = FormatValidator(path=path, module_result=module_result, args=args)
     valid.validate()
@@ -140,7 +144,7 @@ def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
             ] = format_result.options.get("manifest_slug", "unknown")
 
 
-def check_module(path: str, args: argparse.Namespace) -> CheckResult:
+def check_module(path: Path, args: argparse.Namespace) -> CheckResult:
     valid = ModuleValidator(path, args)
     valid.validate()
 
@@ -174,7 +178,7 @@ def main():
     )
     args = parser.parse_args()
 
-    modules = find_modules(".")
+    modules = find_modules(INTAKES_PATH)
     intake_formats = None
 
     if args.changes:
@@ -187,10 +191,10 @@ def main():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
 
-            if parts[-1] in ["conftest.py", "test_formats.py"]:
-                break
+            if "utils" in parts or parts[0].startswith("."):
+                continue
 
-            if len(parts) > 2 and parts[0] != "utils":
+            if len(parts) > 2:
                 changed_modules.add(parts[0])
                 changed_formats.add(parts[1])
 
@@ -199,14 +203,19 @@ def main():
 
     in_error = False
 
-    check_module_results = [check_module(module, args) for module in modules]
+    check_module_results = [
+        check_module(INTAKES_PATH / module, args) for module in modules
+    ]
     check_module_uuids_and_slugs(check_module_results)
 
-    print(f"🔎 {len(check_module_results)} modules found")
+    print(
+        f"🔎 {len(check_module_results)} module(s) found: %s"
+        % ",".join([str(module).replace(str(INTAKES_PATH), "") for module in modules])
+    )
     for res in check_module_results:
         if len(res.errors) > 0:
             in_error = True
-            module_name = os.path.basename(res.options.get("path"))
+            module_name = res.options.get("path").relative_to(INTAKES_PATH)
             for error in res.errors:
                 print(f"Module: {module_name} Error: {error}")
 
@@ -217,11 +226,14 @@ def main():
         )
     check_format_uuids_and_slugs(check_format_results)
 
-    print(f"🔎 {len(check_format_results)} formats found")
+    print(
+        f"🔎 {len(check_format_results)} format(s) found: %s"
+        % ",".join([item.options.get("path").name for item in check_format_results])
+    )
     for res in check_format_results:
         if len(res.errors) > 0:
             in_error = True
-            format_path = res.options.get("path")
+            format_path = res.options.get("path").relative_to(INTAKES_PATH)
             for error in res.errors:
                 print(f"Format: {format_path} Error: {error}")
 
