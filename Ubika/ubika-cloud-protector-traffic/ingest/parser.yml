@@ -1,0 +1,38 @@
+name: ubika-cloud-protector-traffic
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["web"]
+          event.type: ["access"]
+          observer.vendor: Ubika
+          observer.product: Cloud Protector
+
+      - set:
+          "@timestamp": "{{ parsed_event.message.timestamp | to_rfc3339 }}"
+          http.version: "{{ parsed_event.message.protocol.lstrip('HTTP/') }}"
+          http.request.method: "{{ parsed_event.message.http_method }}"
+          http.response.status_code: "{{ parsed_event.message.http_status_code }}"
+          source.ip: "{{ parsed_event.message.ip_source }}"
+          url.path: "{{ parsed_event.message.path }}"
+          user_agent.original: "{{ parsed_event.message.user_agent }}"
+          network.forwarded_ip: "{{ parsed_event.message.x_forwarded_for }}"
+          destination.bytes: "{{ parsed_event.message.response_size }}"
+          observer.name: "{{ parsed_event.message.hostname }}"
+
+      - set:
+          event.duration: "{{ parsed_event.message.total_response_time | int * 1_000_000 }}" # provided in ms
+        filter: "{{ parsed_event.message.total_response_time | int > 0 }}"
+
+      - set:
+          ubika.cloud_protector.application_id: "{{ parsed_event.message.application_id }}"
