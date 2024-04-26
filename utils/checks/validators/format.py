@@ -1,19 +1,27 @@
 import argparse
 import os
+from pathlib import Path
 
-from . import (ChangelogValidator, LogoValidator, ManifestDataSourcesValidator,
-               ManifestValidator, MetaValidator, ParserValidator,
-               TaxonomyValidator, TestFileValidator)
+from . import (
+    ChangelogValidator,
+    LogoValidator,
+    ManifestDataSourcesValidator,
+    ManifestValidator,
+    MetaValidator,
+    ParserValidator,
+    TaxonomyValidator,
+    TestFileValidator,
+)
 from .constants import CheckResult
 
 
 class FormatValidator:
     def __init__(
-        self, path: str, module_result: CheckResult, args: argparse.Namespace
+        self, path: Path, module_result: CheckResult, args: argparse.Namespace
     ) -> None:
         self.path = path
 
-        format_name = os.path.basename(path)
+        format_name = path.name
         self.result = CheckResult(
             name=f"check_format_{format_name}",
             description="Checks the format has a proper definition",
