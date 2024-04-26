@@ -2,8 +2,9 @@ import argparse
 import json
 import os
 import re
+from pathlib import Path
 
-from . import Validator
+from . import INTAKES_PATH, Validator
 from .constants import CheckResult, TestFile
 from .parser import check_event_category_to_type_mapping
 
@@ -11,10 +12,10 @@ from .parser import check_event_category_to_type_mapping
 class TestFileValidator(Validator):
     @classmethod
     def validate(cls, result: CheckResult, args: argparse.Namespace) -> None:
-        format_path = result.options["path"]
+        format_path: Path = result.options["path"]
 
-        test_folder = os.path.join(format_path, "tests")
-        if not os.path.exists(test_folder):
+        test_folder = format_path / "tests"
+        if not test_folder.exists():
             if not args.ignore_missing_tests:
                 result.errors.append("tests folder does not exist")
             return
@@ -33,18 +34,18 @@ class TestFileValidator(Validator):
             )
 
 
-def find_tests(tests_path: str) -> list[str]:
-    result: list[str] = []
+def find_tests(tests_path: Path) -> list[Path]:
+    result: list[Path] = []
 
-    for element in os.listdir(tests_path):
-        if element.endswith(".json"):
-            result.append(os.path.join(tests_path, element))
+    for element in tests_path.iterdir():
+        if element.name.endswith(".json"):
+            result.append(element)
 
     return result
 
 
 def check_test_file(
-    test_path: str, ignore_event_fieldset_errors: bool, result: CheckResult
+    test_path: Path, ignore_event_fieldset_errors: bool, result: CheckResult
 ) -> None:
     try:
         with open(test_path, "rt") as file:
@@ -69,7 +70,7 @@ def check_test_file(
             if "type" in event:
                 if type(event["type"]) != list:
                     result.errors.append(
-                        f"event.type is not a list in a test {test_path}"
+                        f"event.type is not a list in a test {test_path.relative_to(INTAKES_PATH)}"
                     )
                 else:
                     event_type_readable = True
@@ -77,7 +78,7 @@ def check_test_file(
             if "category" in event:
                 if type(event["category"]) != list:
                     result.errors.append(
-                        f"event.category is not a list in test {test_path}"
+                        f"event.category is not a list in test {test_path.relative_to(INTAKES_PATH)}"
                     )
                 else:
                     event_category_readable = True
@@ -88,12 +89,12 @@ def check_test_file(
                 )
                 if not check_mapping:
                     result.errors.append(
-                        f"`event.type` does not match the type associated to the `event.category` in {test_path}"
+                        f"`event.type` does not match the type associated to the `event.category` in {test_path.relative_to(INTAKES_PATH)}"
                     )
 
         elif not ignore_event_fieldset_errors:
             result.errors.append(
-                f"No event.category and event.type declared as `expected` in {test_path}"
+                f"No event.category and event.type declared as `expected` in {test_path.relative_to(INTAKES_PATH)}"
             )
 
     except Exception as any_error:
