@@ -30,8 +30,12 @@ pipeline:
       properties:
         input_field: parsed_event.message.msg
         output_field: msg
-        pattern: "FortiGuard-AntiSpam identified spam URL: %{GREEDYDATA:url_full}"
-    filter: "{{'FortiGuard-AntiSpam identified spam URL' in parsed_event.message.msg}}"
+        pattern: "%{URL_FULL_SPAM}|%{URL_FULL_1}|%{URL_ORIGINAL_1}|%{URL_ORIGINAL_2}"
+        custom_patterns:
+          URL_FULL_SPAM: "FortiGuard-AntiSpam identified spam URL: %{URI:url_full}"
+          URL_FULL_1: "%{DATA}identified URL: %{DATA:url_full},%{GREEDYDATA}"
+          URL_ORIGINAL_1: "%{DATA} identified URL(%{DATA}): %{URI:url_original}"
+          URL_ORIGINAL_2: "URL %{URI:url_original} %{GREEDYDATA}"
 
   - name: parse_verify_msg
     external:
@@ -88,6 +92,7 @@ stages:
       - set:
           destination.size_in_char: "{{parse_stat_message.msg.destination_domain | length}}"
         filter: "{{parse_stat_message.msg.destination_domain | length > 0}}"
+
       - set:
           source.size_in_char: "{{parsed_event.message.domain | length}}"
         filter: "{{parsed_event.message.domain | length > 0}}"
@@ -107,6 +112,8 @@ stages:
           source.address: "{{parsed_event.message.client_name}}"
           source.domain: "{{parsed_event.message.domain}}"
           source.ip: "{{parsed_event.message.client_ip}}"
+          url.full: "{{parse_full_url.msg.url_full}}"
+          url.original: "{{parse_full_url.msg.url_original}}"
 
       - set:
           action.properties.bits_sent_ratio: "{{parse_event_with_no_stat.msg.bits}}"
@@ -132,17 +139,23 @@ stages:
           action.properties.spam_id: "{{parse_webfilter_full_url.msg.tmp_spam_id}}"
           action.properties.src_type: "{{parsed_event.message.src_type}}"
           action.properties.stat: "{{parse_event_with_no_stat.msg.stat}}"
-          action.properties.subject: "{{parsed_event.message.subject}}"
           action.properties.user_identifier: "{{parsed_event.message.ui}}"
           action.properties.verify: "{{parse_event_with_no_stat.msg.verify}}"
           action.properties.virus: "{{parsed_event.message.virus}}"
           action.properties.xdelay: "{{parse_stat_message.msg.tmp_xdelay or parse_event_with_no_stat.msg.xdelay }}"
+
+      - set:
+          source.ip: "{{parsed_event.message.relay.replace('[', '').replace(']', '')}}"
+        filter: "{{parsed_event.message.get('relay') != None}}"
+
       - set:
           action.properties.start_tls: "server"
         filter: "{{'STARTTLS=server' in parsed_event.message.msg}}"
+
       - set:
           action.properties.start_tls: "client"
         filter: "{{'STARTTLS=client' in parsed_event.message.msg}}"
+
       - set:
           action.properties.start_tls: "{{parse_event_with_no_stat.msg.STARTTLS}}"
         filter: "{{parsed_event.message.get('type') == 'event' and 'stat=' not in parsed_event.message.get('msg') and 'STARTTLS' in parse_event_with_no_stat.msg}}"
@@ -151,38 +164,43 @@ stages:
           event.action: "{{parsed_event.message.action}}"
           user.name: "{{parsed_event.message.user}}"
         filter: "{{parsed_event.message.get('type') == 'event'}}"
+
       - set:
           action.outcome_reason: "{{parsed_event.message.classifier}}"
         filter: "{{parsed_event.message.get('type') == 'statistics'}}"
+
       - set:
           email.from.address: "{{parse_event_with_no_stat.msg.from.replace('<', '').replace('>', '')}}"
+
       - set:
-          email.from.address: "{% if parsed_event.message.get('from') %}{{parsed_event.message.from}}{% endif %}"
-          email.to.address: "{% if parsed_event.message.get('to') %}{{parsed_event.message.to}}{% endif %}"
-        filter: "{{parsed_event.message.get('type') in ['statistics', 'spam', 'virus']}}"
+          email.from.address: "{% if parsed_event.message.get('from') %}{{parsed_event.message.from.replace('<', '').replace('>', '')}}{% endif %}"
+          email.to.address: "{% if parsed_event.message.get('to') %}{{parsed_event.message.to.replace('<', '').replace('>', '')}}{% endif %}"
+        filter: "{{parsed_event.message.get('type', 'statistics') in ['statistics', 'spam', 'virus']}}"
+
       - set:
           file.size: "{{parse_event_with_no_stat.msg.size}}"
           network.protocol: "{{parse_event_with_no_stat.msg.proto}}"
           tls.cipher: "{{parse_event_with_no_stat.msg.cipher}}"
         filter: "{{'stat=' not in parsed_event.message.get('msg') and parsed_event.message.get('type') == 'event'}}"
+
       - set:
           file.hash.sha256: "{{parsed_msg.file.hash}}"
           file.name: "{{parsed_msg.file.name}}"
           file.type: "{{parsed_msg.file.type | lower}}"
         filter: "{{parsed_event.message.get('msg') and 'scanned by Antivirus Scanner' in parsed_event.message.get('msg')}}"
+
       - set:
           event.reason: "{{parse_starttls.msg.event_reason}}"
           tls.server.issuer: "{{parse_starttls.msg.tls_server_issuer}}"
           tls.server.subject: "{{parse_starttls.msg.tls_server_subject}}"
         filter: "{{parsed_event.message.get('msg') and 'STARTTLS=server' in parsed_event.message.msg}}"
-      - set:
-          url.full: "{{parse_full_url.msg.url_full}}"
-        filter: "{{'FortiGuard-AntiSpam identified spam URL' in parsed_event.message.msg}}"
+
       - set:
           event.reason: "{{parse_verify_msg.msg.event_reason}}"
           tls.client.issuer: "{{parse_verify_msg.msg.tls_client_issuer}}"
           tls.client.subject: "{{parse_verify_msg.msg.tls_client_subject}}"
         filter: "{{'verifymsg=' in parsed_event.message.msg}}"
+
       - set:
           file.hash.sha256: "{{parse_file_information.msg.file_hash_sha256}}"
           file.name: "{{parse_file_information.msg.file_name}}"
@@ -198,5 +216,10 @@ stages:
         filter: "{{parsed_event.message.get('type') == 'event' and parsed_event.message.get('msg') and 'stat=' in parsed_event.message.get('msg')}}"
 
       - set:
-          url.full: "{{parse_webfilter_full_url.msg.url_full}}"
-        filter: "{{ parsed_event.message.get('msg') and 'FortiGuard-WebFilter identified URL' in parsed_event.message.msg}}"
+          event.action: "{{parsed_event.message.action}}"
+          user.name: "{{parsed_event.message.user}}"
+        filter: "{{parsed_event.message.get('type') == 'kevent'}}"
+
+      - set:
+          email.subject: "{{parsed_event.message.subject}}"
+        filter: "{{parsed_event.message.get('type') == 'spam'}}"
