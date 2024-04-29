@@ -1,10 +1,11 @@
 import argparse
 import os
 import re
+from pathlib import Path
 
 import yaml
 
-from . import Validator
+from . import INTAKES_PATH, Validator
 from .constants import CheckResult
 
 
@@ -18,8 +19,8 @@ class ManifestValidator(Validator):
         if not result.options.get("meta_dir"):
             return
 
-        module_meta_dir = result.options["meta_dir"]
-        module_manifest_file = os.path.join(module_meta_dir, "manifest.yml")
+        module_meta_dir: Path = result.options["meta_dir"]
+        module_manifest_file = module_meta_dir / "manifest.yml"
 
         check_manifest(
             manifest_file_path=module_manifest_file, result=result, args=args
@@ -27,10 +28,12 @@ class ManifestValidator(Validator):
 
 
 def check_manifest(
-    manifest_file_path: str, result: CheckResult, args: argparse.Namespace
+    manifest_file_path: Path, result: CheckResult, args: argparse.Namespace
 ) -> None:
-    if not os.path.isfile(manifest_file_path):
-        result.errors.append(f"manifest file (`{manifest_file_path}`) is missing")
+    if not manifest_file_path.is_file():
+        result.errors.append(
+            f"manifest file (`{manifest_file_path.relative_to(INTAKES_PATH)}`) is missing"
+        )
         return
 
     # check the format/module has a valid manifest
