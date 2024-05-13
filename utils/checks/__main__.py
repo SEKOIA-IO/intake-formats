@@ -191,7 +191,13 @@ def main():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
 
-            if "utils" in parts or parts[0].startswith("."):
+            if "utils/checks/" in changed_file:
+                # to see all results whenever we change a code for the compliance check
+                changed_modules = set(modules)
+                changed_formats = set()
+                break
+
+            elif parts[0].startswith("."):
                 continue
 
             if len(parts) > 2:
