@@ -6,6 +6,8 @@
 	* [How to ?](#how-to-)
 		* [New module](#new-module)
 		* [New intake](#new-intake)
+        * [Publish intake-format](#publish-intake-format-to-sekoiaio)
+        * [Send events to platform](#send-events-to-sekoiaio)
 * [Parsers](#parsers)
 * [Events](#events)
 * [Manifests](#manifests)
@@ -621,3 +623,70 @@ data_sources:
 * Windows event logs
 * Windows Registry
 * WMI Objects
+
+## Send events to SEKOIA.IO
+
+### Usage
+
+```console
+Usage: send_events.py [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --install-completion  Install completion for the current shell.
+  --show-completion     Show completion for the current shell, to copy it or
+                        customize the installation.
+  --help                Show this message and exit.
+
+Commands:
+  from-cli
+  from-intake-formats
+  from-text-file
+```
+
+### Example
+
+### From intake-formats input files
+
+Each test file `["input"]["message"]` will be sent as an event.
+
+```console
+poetry run python send_events.py from-intake-formats "<intake-key>" ./../module/format/
+```
+
+### From text file
+
+Each line will be sent as an event
+
+```console
+poetry run python3 send_events.py from-text-file "<intake-key>" ../Downloads/example.txt
+```
+
+### From the terminal
+
+Send one line from the terminal
+
+```console
+poetry run python send_events.py from-cli "<intake-key>" '<event>'
+```
+
+## Publish intake-format to SEKOIA.IO
+
+### Usage
+
+```console
+usage: poetry run publish_format.py [-h] [--prod] path apikey
+publish_format.py: error: the following arguments are required: path, apikey
+```
+
+### Example
+
+### Publish in app.test.sekoia.io
+```
+poetry run python publish_format.py ./../module/format/ '<API KEY>'
+```
+
+### Publish in production
+
+```console
+poetry run python publish_format.py --prod ./../module/format/ '<api-key>'
+```
