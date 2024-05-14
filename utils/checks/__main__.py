@@ -78,7 +78,7 @@ def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
     for module_result in check_module_results:
         if (
             len(module_result.errors) == 0
-            and "manifest_slug" in module_result.options
+            and "manifest_uuid" in module_result.options
             and module_result.options["manifest_uuid"] in module_uuids
         ):
             module_result.errors.append(
@@ -88,7 +88,7 @@ def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
 
             module_uuids[
                 module_result.options["manifest_uuid"]
-            ] = module_result.options.get("manifest_slug", "unknown")
+            ] = module_result.options.get("manifest_uuid", "unknown")
 
     # module slugs are unique
     module_slugs: dict[str, str] = dict()
@@ -123,8 +123,8 @@ def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
             )
 
             format_uuids[
-                format_result.options["format_uuid"]
-            ] = format_result.options.get("manifest_slug", "unknown")
+                format_result.options["manifest_uuid"]
+            ] = format_result.options.get("manifest_uuid", "unknown")
 
     # format slugs are unique
     format_slugs: dict[str, str] = dict()
@@ -191,7 +191,13 @@ def main():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
 
-            if "utils" in parts or parts[0].startswith("."):
+            if "utils/checks/" in changed_file:
+                # to see all results whenever we change a code for the compliance check
+                changed_modules = set(modules)
+                changed_formats = set()
+                break
+
+            elif parts[0].startswith("."):
                 continue
 
             if len(parts) > 2:
