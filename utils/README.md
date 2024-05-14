@@ -680,13 +680,7 @@ publish_format.py: error: the following arguments are required: path, apikey url
 
 ### Example
 
-### Publish in app.test.sekoia.io
+### Publish
 ```
 poetry run python publish_format.py ./../module/format/ '<API KEY>' '<URL>'
-```
-
-### Publish in production
-
-```console
-poetry run python publish_format.py --prod ./../module/format/ '<api-key>' '<url>'
 ```
