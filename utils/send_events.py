@@ -10,8 +10,6 @@ import typer
 from requests.adapters import HTTPAdapter, Retry
 
 app = typer.Typer()
-TEST_URL: str = "https://intake.test.sekoia.io/batch"
-PROD_URL: str = "https://intake.sekoia.io/batch"
 CHUNK_SIZE: int = 1000
 TIME_BETWEEN_CHUNKS = 1  # seconds
 session = requests.Session()
@@ -61,11 +59,7 @@ def chunk_events(events: Sequence, chunk_size: int) -> Generator[list[Any], None
         yield chunk
 
 
-def send_events(intake_key: str, events: list, prod: bool, chunk_size: int) -> None:
-    url = TEST_URL
-    if prod:
-        url = PROD_URL
-
+def send_events(intake_key: str, url: str, events: list, chunk_size: int) -> None:
     intake_key_str = typer.style(f'sekoiaio.intake.key: "{intake_key}"', fg="green")
 
     params = {"return_response": "true"}
@@ -89,25 +83,25 @@ def send_events(intake_key: str, events: list, prod: bool, chunk_size: int) -> N
 
 
 @app.command()
-def from_intake_formats(intake_key: str, intake_path: Path, prod: bool = False, chunk_size: int = CHUNK_SIZE):
+def from_intake_formats(intake_key: str, url: str, intake_path: Path, chunk_size: int = CHUNK_SIZE):
     events: list = read_input_messages(intake_path)
-    send_events(intake_key=intake_key, events=events, prod=prod, chunk_size=chunk_size)
+    send_events(intake_key=intake_key, events=events, url=url, chunk_size=chunk_size)
 
 
 @app.command()
-def from_text_file(intake_key: str, file: Path, prod: bool = False, chunk_size: int = CHUNK_SIZE):
+def from_text_file(intake_key: str, url: str, file: Path, chunk_size: int = CHUNK_SIZE):
     with open(file) as input_file:
         send_events(
             events=[line[:-1] for line in input_file.readlines()],  # remove the line-feed at the end of the line
             intake_key=intake_key,
-            prod=prod,
+            url=url,
             chunk_size=chunk_size,
         )
 
 
 @app.command()
-def from_cli(intake_key: str, event: str, prod: bool = False, chunk_size: int = CHUNK_SIZE):
-    send_events(events=[event], intake_key=intake_key, prod=prod, chunk_size=chunk_size)
+def from_cli(intake_key: str, url: str, event: str, chunk_size: int = CHUNK_SIZE):
+    send_events(events=[event], intake_key=intake_key, url=url, chunk_size=chunk_size)
 
 
 if __name__ == "__main__":

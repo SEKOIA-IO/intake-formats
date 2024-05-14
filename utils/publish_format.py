@@ -523,7 +523,7 @@ def publish_format(format: Path, platform_url: str, apikey: str, ssl_verify: boo
 def main(
     format_path: Path,
     apikey: str,
-    prod: bool = False,
+    url: str,
     insecure: bool = False,
     host: str = None,
     no_diff: bool = False,
@@ -532,12 +532,11 @@ def main(
     Publish new format to ingestAPI.
     format_path: The location of the format to publish
     apikey: The APIKey to use
-    If --prod is used, the format is published to production
+    url: The URL of the ingestAPI
     If --insecure is used, it disables SSL verification (develop/test purpose)
     If --host is used, it takes a custom host
     If --no-diff is used, the changes will be not be displayed
     """
-    url = "https://app.test.sekoia.io"
     ssl_verify = True
 
     if insecure:
@@ -545,11 +544,6 @@ def main(
 
     if host:
         url = host
-
-    if prod:
-        url = "https://app.sekoia.io"
-        if typer.prompt("You are about to publish this format to production. Continue? [y/n]").lower() == "n":
-            raise typer.Exit()
 
     differ: Differ = AskForDiff(Console())
     if no_diff:

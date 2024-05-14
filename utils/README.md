@@ -650,7 +650,7 @@ Commands:
 Each test file `["input"]["message"]` will be sent as an event.
 
 ```console
-poetry run python send_events.py from-intake-formats "<intake-key>" ./../module/format/
+poetry run python send_events.py from-intake-formats "<intake-key>" "<url>" ./../module/format/
 ```
 
 ### From text file
@@ -658,7 +658,7 @@ poetry run python send_events.py from-intake-formats "<intake-key>" ./../module/
 Each line will be sent as an event
 
 ```console
-poetry run python3 send_events.py from-text-file "<intake-key>" ../Downloads/example.txt
+poetry run python3 send_events.py from-text-file "<intake-key>" "<url>" ../Downloads/example.txt
 ```
 
 ### From the terminal
@@ -666,7 +666,7 @@ poetry run python3 send_events.py from-text-file "<intake-key>" ../Downloads/exa
 Send one line from the terminal
 
 ```console
-poetry run python send_events.py from-cli "<intake-key>" '<event>'
+poetry run python send_events.py from-cli "<intake-key>" "<url>" '<event>'
 ```
 
 ## Publish intake-format to SEKOIA.IO
@@ -674,19 +674,19 @@ poetry run python send_events.py from-cli "<intake-key>" '<event>'
 ### Usage
 
 ```console
-usage: poetry run publish_format.py [-h] [--prod] path apikey
-publish_format.py: error: the following arguments are required: path, apikey
+usage: poetry run publish_format.py [-h] path apikey url
+publish_format.py: error: the following arguments are required: path, apikey url
 ```
 
 ### Example
 
 ### Publish in app.test.sekoia.io
 ```
-poetry run python publish_format.py ./../module/format/ '<API KEY>'
+poetry run python publish_format.py ./../module/format/ '<API KEY>' '<URL>'
 ```
 
 ### Publish in production
 
 ```console
-poetry run python publish_format.py --prod ./../module/format/ '<api-key>'
+poetry run python publish_format.py --prod ./../module/format/ '<api-key>' '<url>'
 ```
