@@ -6,206 +6,397 @@ pipeline:
       properties:
         input_field: "original.message"
         output_field: pre_message
-        pattern: '(<[0-9]+>)?(%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp})?(%{IP:log_ip})?(%{SPACE}%{DATA:log_hostname}%{SPACE})?(\:)?\%%{PRODUCT_NAME:product}\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{DATA:raw_message}'
-        custom_patterns: 
-          MESSAGE_NUMBER: '[0-9]{6}'
-          PRODUCT_NAME: '(FTD|ASA|NGIPS)'
+        pattern: '((<[0-9]+>)?(%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp})?(%{IP:log_ip})?(%{SPACE}%{DATA:log_hostname}%{SPACE})?(\:)?\%%{PRODUCT_NAME:product}\-[0-9]{1}\-%{MESSAGE_NUMBER:message_number_grok}\: %{GREEDYDATA:raw_message})|\s?%{GREEDYDATA:raw_message}'
+        custom_patterns:
+          MESSAGE_NUMBER: "[0-9]{6}"
+          PRODUCT_NAME: "(FTD|ASA|NGIPS)"
 
-  - name: parsed_event
-    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "111007", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "305012", "313001", "313004", "313005", "313008", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016"]}}'
+  - name: parsed_event_withoutproduct
+    filter: "{{not pre_parsing.pre_message.message_number_grok}}"
     external:
       name: grok.match
       properties:
         input_field: "{{pre_parsing.pre_message.raw_message}}"
         output_field: message
-        pattern: '%{CISCO_106001}|%{CISCO_106006_106007_106010}|%{CISCO_106012}|%{CISCO_106014}|%{CISCO_106015}|%{CISCO_110003}|%{CISCO_106021}|%{CISCO_106023}|%{CISCO_106100}|%{CISCO_110002}|%{CISCO_111007}|%{CISCO_302013_302014_302015_302016}|%{CISCO_302020_302021}|%{CISCO_304001}|%{CISCO_305011_305012}|%{CISCO_313001_313004_313008}|%{CISCO_313005}|%{CISCO_402117}|%{CISCO_402119}|%{CISCO_419001}|%{CISCO_419002}|%{CISCO_500004}|%{CISCO_602303_602304}|%{CISCO_710001_710002_710003_710005_710006}|%{CISCO_713172}|%{CISCO_716058}|%{CISCO_716059}|%{CISCO_722011}|%{CISCO_722012}|%{CISCO_722028}|%{CISCO_722032_722034}|%{CISCO_722033}|%{CISCO_722022_722023}|%{CISCO_722037}|%{CISCO_725001}|%{CISCO_733100}|%{CISCO_725002}|%{CISCO_725003}|%{CISCO_725006}|%{CISCO_725007}|%{CISCO_737016}'
+        pattern: "%{Group_1}|%{Group_2}|%{Group_3}|%{Group_4}|%{Group_5}|%{Group_6}|%{Group_7}|%{Group_8}|%{Group_9}|%{Group_10}"
         custom_patterns:
-          CISCO_106001: '%{DATA}%{CISCO_DIRECTION:network_direction} %{DATA:network_transport} connection %{CISCO_ACTION:action_name} from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port} flags %{GREEDYDATA} on interface %{GREEDYDATA:destination_address}' # Add parsing action.type= connection
+          Group_1: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:nat_ip}> %{Group_1_message:cisco_message}"
+          Group_1_message: "IPv4 Address <%{IPV4:source_ip4}?> IPv6 address <%{IPV6:source_ip6}?> assigned to session"
+          Group_2: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> Client Type: %{GREEDYDATA:client_type}"
+          Group_3: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> SVC closing connection: %{GREEDYDATA:action_outcome_reason}."
+          Group_4: "Group = %{GREEDYDATA:user_group}, Username = %{WORD:user_name}, IP = %{IP:source_ip}, %{DATA:action_outcome_reason}.Session Type: %{DATA:session_type}, Duration: %{DATA:special_duration}, Bytes xmt: %{DATA:bytes_xmt}, Bytes rcv: %{DATA:bytes_rcv}, Reason: %{GREEDYDATA:action_outcome_reason}"
+          Group_5: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> AnyConnect session resumed connection from IP <%{IP:destination_ip}>."
+          Group_6: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{Group_6_message:cisco_message}"
+          Group_6_message: "%{GREEDYDATA:action_name}. Waiting to resume."
+          Group_7: "TunnelGroup <%{GREEDYDATA:user_group}> GroupPolicy <%{DATA:group_policy}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:cisco_message}"
+          Group_8: "POOLIP: Pool=%{GREEDYDATA:user_group}, WARN: %{GREEDYDATA:action_outcome_reason}"
+          Group_9: "%{Group_9_message:cisco_message}: serial number: %{DATA:serial_number}, subject name: %{Group_9_subject}, issuer_name: %{Group_9_issuer}."
+          Group_9_subject: "UID=%{DATA:uid},CN=%{DATA:user_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{DATA:contry_code}"
+          Group_9_issuer: "CN=%{DATA:agent_name},OU=%{DATA:squad_name},O=%{DATA:company_name},C=%{GREEDYDATA:contry_code}"
+          Group_9_message: "Tunnel group search using certificate maps (failed|succed) for peer certificate"
+          Group_10: "%{Group_10_message:cisco_message}, Process = %{DATA:process_name}, PC = %{DATA:instruction_pointer}, Call stack = %{GREEDYDATA:call_stack}"
+          Group_10_message: "Task ran for %{DATA:duration} msec"
+
+  - name: parsed_event
+    external:
+      name: grok.case_match
+      properties:
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: message
+        pattern_key: "{{pre_parsing.pre_message.message_number_grok}}"
+        patterns:
+          "106001": "%{CISCO_106001}"
+          "106006": "%{CISCO_106006_106007_106010}"
+          "106007": "%{CISCO_106006_106007_106010}"
+          "106010": "%{CISCO_106006_106007_106010}"
+          "106012": "%{CISCO_106012}"
+          "106014": "%{CISCO_106014}"
+          "106015": "%{CISCO_106015}"
+          "106021": "%{CISCO_106021}"
+          "106023": "%{CISCO_106023}"
+          "106100": "%{CISCO_106100}"
+          "110002": "%{CISCO_110002}"
+          "110003": "%{CISCO_110003}"
+          "111007": "%{CISCO_111007}"
+          "113004": "%{CISCO_113004}"
+          "199019": "%{CISCO_199019}"
+          "302013": "%{CISCO_302013_302014_302015_302016}"
+          "302014": "%{CISCO_302013_302014_302015_302016}"
+          "302015": "%{CISCO_302013_302014_302015_302016}"
+          "302016": "%{CISCO_302013_302014_302015_302016}"
+          "302020": "%{CISCO_302020_302021}"
+          "302021": "%{CISCO_302020_302021}"
+          "304001": "%{CISCO_304001}"
+          "305011": "%{CISCO_305011_305012}"
+          "305012": "%{CISCO_305011_305012}"
+          "313001": "%{CISCO_313001_313004_313008}"
+          "313004": "%{CISCO_313001_313004_313008}"
+          "313005": "%{CISCO_313005}"
+          "313008": "%{CISCO_313001_313004_313008}"
+          "402117": "%{CISCO_402117}"
+          "402119": "%{CISCO_402119}"
+          "419001": "%{CISCO_419001}"
+          "419002": "%{CISCO_419002}"
+          "500004": "%{CISCO_500004}"
+          "602303": "%{CISCO_602303_602304}"
+          "602304": "%{CISCO_602303_602304}"
+          "609001": "%{CISCO_609001_609002}"
+          "609002": "%{CISCO_609001_609002}"
+          "710001": "%{CISCO_710001_710002_710003_710005_710006}"
+          "710002": "%{CISCO_710001_710002_710003_710005_710006}"
+          "710003": "%{CISCO_710001_710002_710003_710005_710006}"
+          "710005": "%{CISCO_710001_710002_710003_710005_710006}"
+          "710006": "%{CISCO_710001_710002_710003_710005_710006}"
+          "716058": "%{CISCO_716058}"
+          "713172": "%{CISCO_713172}"
+          "716059": "%{CISCO_716059}"
+          "722011": "%{CISCO_722011}"
+          "722012": "%{CISCO_722012}"
+          "722022": "%{CISCO_722022_722023}"
+          "722023": "%{CISCO_722022_722023}"
+          "722028": "%{CISCO_722028}"
+          "722032": "%{CISCO_722032_722034}"
+          "722033": "%{CISCO_722033}"
+          "722034": "%{CISCO_722032_722034}"
+          "722037": "%{CISCO_722037}"
+          "725001": "%{CISCO_725001}"
+          "733100": "%{CISCO_733100}"
+          "725002": "%{CISCO_725002}"
+          "725003": "%{CISCO_725003}"
+          "725006": "%{CISCO_725006}"
+          "725007": "%{CISCO_725007}"
+          "737016": "%{CISCO_737016}"
+          "852001": "%{CISCO_852001}"
+        custom_patterns:
+          CISCO_106001: "%{DATA}%{CISCO_DIRECTION:network_direction} %{DATA:network_transport} connection %{CISCO_ACTION:action_name} from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port} flags %{GREEDYDATA} on interface %{GREEDYDATA:destination_address}" # Add parsing action.type= connection
           CISCO_106006_106007_106010: '%{DATA}%{CISCO_ACTION:action_name} %{CISCO_DIRECTION:network_direction} %{DATA:network_transport} (?:from|src) %{IP:source_ip}/%{INT:source_port}(\(%{DATA}\))? (?:to|dst) %{IP:destination_ip}/%{INT:destination_port}(\(%{DATA}\))? (?:on interface %{DATA:destination_address}|due to %{CISCO_REASON:action_outcome_reason})'
-          CISCO_106012: '%{DATA}%{CISCO_ACTION:action_name} IP from %{IP:source_ip} to %{IP:destination_ip}, %{GREEDYDATA:action_outcome_reason}'
+          CISCO_106012: "%{DATA}%{CISCO_ACTION:action_name} IP from %{IP:source_ip} to %{IP:destination_ip}, %{GREEDYDATA:action_outcome_reason}"
           CISCO_106014: '%{DATA}%{CISCO_ACTION:action_name} %{CISCO_DIRECTION:network_direction} %{DATA:network_transport} src %{DATA:source_address}:%{IP:source_ip}(\(%{DATA}\))? dst %{DATA:destination_address}:%{IP:destination_ip}(\(%{DATA}\))? \(type %{INT:icmp_type}, code %{INT:icmp_code}\)'
           CISCO_106015: '%{CISCO_ACTION:action_name} %{DATA:network_transport} \(%{DATA:action_outcome_reason}\) from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port} flags %{DATA} on interface %{GREEDYDATA:destination_address}'
-          CISCO_106021: '%{CISCO_ACTION:action_name} %{DATA:network_transport} reverse path check from %{IP:source_ip} to %{IP:destination_ip} on interface %{GREEDYDATA:destination_address}'
+          CISCO_106021: "%{CISCO_ACTION:action_name} %{DATA:network_transport} reverse path check from %{IP:source_ip} to %{IP:destination_ip} on interface %{GREEDYDATA:destination_address}"
           CISCO_106023: '%{CISCO_ACTION:action_name}( protocol)? %{DATA:network_transport} src %{DATA:source_address}:%{DATA:source_ip}(/%{INT:source_port})?(\(%{DATA}\))? dst %{DATA:destination_address}:%{DATA:destination_ip}(/%{INT:destination_port})?(\(%{DATA}\))?( \(type %{INT:icmp_type}, code %{INT:icmp_code}\))? by access-group "?%{DATA:action_outcome_reason}"? \[%{DATA}, %{DATA}\]'
           CISCO_106100: 'access-list %{NOTSPACE:action_outcome_reason} %{CISCO_ACTION:action_name} %{DATA:network_transport} %{DATA:source_address}/%{IP:source_ip}\(%{INT:source_port}\)(\(%{DATA}\))? -> %{DATA:destination_address}/%{IP:destination_ip}\(%{INT:destination_port}\)(\(%{DATA}\))? hit-cnt %{INT:network_packets} %{CISCO_INTERVAL:network_duration} \[%{DATA}, %{DATA}\]'
-          CISCO_110002: '%{CISCO_REASON:action_name} for %{DATA:network_transport} from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port}'
+          CISCO_110002: "%{CISCO_REASON:action_name} for %{DATA:network_transport} from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port}"
           CISCO_110003: '%{GREEDYDATA:action_name} from %{WORD}\:%{IP:source_ip}\/([1-2]?[0-9]|3[0-2]) to %{WORD}\:%{IP:destination_ip}\/([1-2]?[0-9]|3[0-2])(, %{GREEDYDATA:action_outcome_reason})?'
           CISCO_111007: '%{GREEDYDATA:action_name}: %{IP:source_ip} reading from %{NOTSPACE:network_transport} \[%{DATA:http_method}\]'
+          CISCO_113004: "%{GREEDYDATA} user authentication %{WORD} : server = (\\s*)?%{IP:destination_ip} : user = %{DATA:user_name}"
+          CISCO_199019: '%{GREEDYDATA} %{DURATION} %{WORD:process_name}\[%{GREEDYDATA:process_id}\]: %{WORD:log_host} %{GREEDYDATA:result}'
           CISCO_302013_302014_302015_302016: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection %{INT} for %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}( \(%{IP:source_nat_ip}/%{INT:source_nat_port}\))?(\(%{DATA}\))? to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}( \(%{IP:destination_nat_ip}/%{INT:destination_nat_port}\))?(\(%{DATA}\))?( duration %{DATA:network_duration} bytes %{INT:network_bytes})?%{DATA}( \(%{DATA:user_name}\))?'
-          CISCO_302020_302021: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection for faddr %{IP:destination_ip}/%{INT:destination_port}(?:\(%{DATA}\))? gaddr %{IP}/%{INT} laddr %{IP:source_ip}/%{INT}(?: type %{INT:icmp_type} code %{INT})?( \(%{DATA:user_name}\))?%{DATA}'
+          CISCO_302020_302021: '%{CISCO_ACTION:action_name}(?: %{CISCO_DIRECTION:network_direction})? %{DATA:network_transport} connection for faddr %{IP:destination_ip}/%{INT:destination_port}(\(%{DATA:user_group}\\%{DATA}\))? gaddr %{IP}/%{INT} laddr %{IP:source_ip}/%{INT}( \(%{DATA:user_name}\))?( type %{INT:icmp_type} code %{INT:icmp_code})?%{DATA}'
           CISCO_304001: '%{IP:source_ip}(\(%{DATA}\))? Accessed URL %{IP:destination_ip}:%{GREEDYDATA:url_original}'
           CISCO_305011_305012: '%{CISCO_ACTION:action_name} %{CISCO_XLATE_TYPE} %{NOTSPACE:network_transport} translation from %{NOTSPACE:source_interface}( \[%{DATA}\])?:%{IP:source_ip}/%{INT:source_port}( \[%{CISCO_USER:user_name}\])? to %{NOTSPACE:destination_interface}:%{IP:destination_ip}/%{NUMBER:destination_port}( duration %{DURATION:network_duration})?'
           CISCO_USER: '((LOCAL\\)?(%{HOSTNAME}\\)?%{USERNAME}(@%{HOSTNAME})?(, *%{NUMBER})?)'
-          DURATION: '%{INT}:%{MINUTE}:%{SECOND}'
-          CISCO_313001_313004_313008: '%{CISCO_ACTION:action_name} %{DATA:network_transport} type=%{INT:icmp_type}, code=%{INT:icmp_code} from %{IP:source_ip} on interface %{DATA:destination_address}( to %{IP:destination_ip})?'
-          CISCO_313005: '%{CISCO_REASON:action_name} for %{DATA:network_transport} error message: %{WORD:action_outcome_reason} src %{DATA:source_address}:%{IP:source_ip}(\(%{DATA}\))? dst %{DATA:destination_address}:%{IP:destination_ip}(\(%{DATA}\))? \(type %{INT:icmp_type}, code %{INT:icmp_code}\) on %{DATA:destination_address} interface\.  Original IP payload: %{WORD} src %{IP}/%{INT}(\(%{DATA}\))? dst %{IP:orig_dst_ip}/%{INT}(\(%{DATA}\))?'
+          DURATION: "%{INT}:%{MINUTE}:%{SECOND}"
+          CISCO_313001_313004_313008: "%{CISCO_ACTION:action_name} %{DATA:network_transport} type=%{INT:icmp_type}, code=%{INT:icmp_code} from %{IP:source_ip} on interface %{DATA:destination_address}( to %{IP:destination_ip})?"
+          CISCO_313005: '%{CISCO_REASON:action_name} for %{DATA:network_transport} error message: %{DATA:action_outcome_reason} src %{DATA:src_interface_name}:%{IP:source_ip}(\(%{DATA:user_group}\\%{DATA:user_name}\))? dst %{DATA:dst_interface_name}:%{IP:destination_ip}(\(%{DATA}\))? \(type %{INT:icmp_type}, code %{INT:icmp_code}\) on %{DATA} interface\.  Original IP payload: %{WORD} src %{IP}/%{INT}(\(%{DATA}\))? dst %{IP:orig_dst_ip}/%{INT}(\(%{DATA}\))?.'
           CISCO_402117: '%{DATA:network_transport}: Received a non-IPSec packet \(protocol= %{WORD}\) from %{IP:source_ip} to %{IP:destination_ip}'
           CISCO_402119: '%{DATA:network_transport}: Received an %{WORD} packet \(SPI= %{DATA}, sequence number= %{DATA}\) from %{IP:source_ip} \(user= %{DATA:user_name}\) to %{IP:destination_ip} that failed anti-replay checking'
-          CISCO_419001: '%{CISCO_ACTION:action_name} %{DATA:network_transport} packet from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}, reason: %{GREEDYDATA:action_outcome_reason}'
-          CISCO_419002: '%{CISCO_REASON:action_name} from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port} with different initial sequence number'
-          CISCO_500004: '%{CISCO_REASON:action_name} for protocol=%{DATA:network_transport}, from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port}'
+          CISCO_419001: "%{CISCO_ACTION:action_name} %{DATA:network_transport} packet from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}, reason: %{GREEDYDATA:action_outcome_reason}"
+          CISCO_419002: "%{CISCO_REASON:action_name} from %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port} to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port} with different initial sequence number"
+          CISCO_500004: "%{CISCO_REASON:action_name} for protocol=%{DATA:network_transport}, from %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port}"
           CISCO_602303_602304: '%{DATA:network_transport}: An %{CISCO_DIRECTION:network_direction} %{GREEDYDATA} SA \(SPI= %{DATA}\) between %{IP:source_ip} and %{IP:destination_ip} \(user= %{DATA:user_name}\) has been %{CISCO_ACTION:action_name}'
-          CISCO_710001_710002_710003_710005_710006: '%{DATA:network_transport} (?:request|access) %{CISCO_ACTION:action_name} from %{IP:source_ip}/%{INT:source_port} to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}'
+          CISCO_609001_609002: "%{CISCO_ACTION:action_name} local-host (%{DATA:src_interface_name})?:%{IP:source_ip}( duration %{DURATION:event_duration})?"
+          CISCO_710001_710002_710003_710005_710006: "%{DATA:network_transport} (?:request|access) %{CISCO_ACTION:action_name} from %{IP:source_ip}/%{INT:source_port} to %{DATA:destination_address}:%{IP:destination_ip}/%{INT:destination_port}"
           CISCO_713172: 'Group = %{GREEDYDATA}, IP = %{IP:source_ip}, Automatic NAT Detection Status:\s+Remote end\s*%{DATA:is_remote_natted}\s*behind a NAT device\s+This\s+end\s*%{DATA}\s*behind a NAT device'
           CISCO_716058: Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{GREEDYDATA:action_name}\. Waiting to resume.
-          CISCO_716059: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{DATA:action_name} connection from IP <%{IP}>.'
-          CISCO_722011: 'Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}'
-          CISCO_722012: 'Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}'
-          CISCO_722022_722023: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{WORD:network_protocol} %{GREEDYDATA:action_name} (with|without) compression'
-          CISCO_722028: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> Stale SVC %{GREEDYDATA:action_name}'
-          CISCO_722032_722034: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> New %{WORD:network_protocol} SVC %{GREEDYDATA:action_name}'
-          CISCO_722033: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> First %{WORD:network_protocol} SVC %{GREEDYDATA:action_name}'
-          CISCO_722037: 'Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> SVC %{GREEDYDATA:action_name}: %{GREEDYDATA:action_outcome_reason}.'
+          CISCO_716059: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> %{DATA:action_name} connection from IP <%{IP}>."
+          CISCO_722011: "Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}"
+          CISCO_722012: "Group <%{DATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> SVC Message: %{INT}/%{WORD:action_type}: %{GREEDYDATA:action_name}"
+          CISCO_722022_722023: "Group <%{GREEDYDATA:user_group}> User <%{DATA:user_name}> IP <%{IP:source_ip}> %{WORD:network_protocol} %{GREEDYDATA:action_name} (with|without) compression"
+          CISCO_722028: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> Stale SVC %{GREEDYDATA:action_name}"
+          CISCO_722032_722034: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> New %{WORD:network_protocol} SVC %{GREEDYDATA:action_name}"
+          CISCO_722033: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> First %{WORD:network_protocol} SVC %{GREEDYDATA:action_name}"
+          CISCO_722037: "Group <%{GREEDYDATA:user_group}> User <%{WORD:user_name}> IP <%{IP:source_ip}> SVC %{GREEDYDATA:action_name}: %{GREEDYDATA:action_outcome_reason}."
           CISCO_725001: '%{DATA:action_name} with (client|server) %{DATA:source_address}\:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)?( for %{NOTSPACE} session|).'
-          CISCO_725002: '%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)?( for %{NOTSPACE} session|)'
-          CISCO_725003: '%{DATA:action_name} (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|) request to resume previous session'
-          CISCO_725006: '%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)'
-          CISCO_725007: '%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|) %{WORD:action_outcome_reason}.?'
+          CISCO_725002: "%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)?( for %{NOTSPACE} session|)"
+          CISCO_725003: "%{DATA:action_name} (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|) request to resume previous session"
+          CISCO_725006: "%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|)"
+          CISCO_725007: "%{DATA:action_name} with (client|server) %{DATA:source_address}:%{IP:source_ip}/%{INT:source_port}?( to %{IP:destination_ip}/%{INT:destination_port}|) %{WORD:action_outcome_reason}.?"
           CISCO_733100: '\[%{DATA:action_name}\] drop %{DATA} exceeded. Current burst rate is %{INT} per second, max configured rate is %{INT}; Current average rate is %{INT} per second, max configured rate is %{INT}; Cumulative total count is %{INT}'
-          CISCO_737016: 'IPAA: %{GREEDYDATA:action_name} %{IP:source_ip}'
+          CISCO_737016: "IPAA: %{GREEDYDATA:action_name} %{IP:source_ip}"
+          CISCO_852001: "Received Lightweight to full proxy event from application %{WORD:network_app} for %{DATA:network_transport} flow %{IP:source_ip}/%{INT:source_port} to %{IP:destination_ip}/%{INT:destination_port}"
 
   - name: parse_kv2
     filter: '{{pre_parsing.pre_message.message_number_grok in ["430001","430002","430003","430004","430005"]}}'
     external:
       name: kv.parse-kv
       properties:
-        input_field: '{{pre_parsing.pre_message.raw_message}}'
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
         output_field: parse_kv2_field
         value_sep: ':\s'
-        item_sep: ","
+        item_sep: ',\s'
 
   - name: set_common_fields
   - name: set_ecs_fields
-    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "111007", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "313001", "313004", "313005", "313008", "305012", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016"]}}'
+    filter: '{{pre_parsing.pre_message.message_number_grok in ["106001","110003", "106006", "106007", "106010", "106012", "106014", "106015", "106021", "106023", "106100", "110002", "111007", "113004", "199019", "302013", "302014", "302015", "302016", "302020", "302021", "304001", "305011", "313001", "313004", "313005", "313008", "305012", "402117", "402119", "419001", "419002", "500004", "602303", "602304", "609001", "609002", "710001", "710002", "710003", "710005", "710006", "716058", "713172", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722033", "722034", "722037", "725001", "733100", "725002", "725003", "725006", "725007", "737016", "852001"]}}'
   - name: set_ecs_fields_from_kv
     filter: '{{pre_parsing.pre_message.message_number_grok in ["430001","430002","430003","430004","430005"]}}'
   - name: set_ecs_fields_from_condition
+  - name: set_ecs_fields_without_productname
 
 stages:
   set_common_fields:
     actions:
       - set:
-          event.code: '{{pre_parsing.pre_message.message_number_grok}}'
-          event.kind: 'event'
-          event.category: ['network']
-          observer.vendor: 'Cisco'
-          action.target: 'network-traffic'
+          event.code: "{{pre_parsing.pre_message.message_number_grok}}"
+          event.category: ["network"]
+          observer.vendor: "Cisco"
+          action.target: "network-traffic"
           #Add default action.target = 'network-traffic' to be compliant with STIX2
-          
+
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{pre_parsing.pre_message.timestamp}}'
-          action.name: '{{parsed_event.message.action_name|lower }}'
+          "@timestamp": "{{pre_parsing.pre_message.timestamp}}"
 
-          cisco.ftd.icmp_code: '{{parsed_event.message.icmp_code}}'
-          cisco.ftd.icmp_type: '{{parsed_event.message.icmp_type}}'
-          destination.bytes: '{{parsed_event.message.server_to_client_bytes}}'
-          destination.domain: '{{parsed_event.message.destination_host or parsed_event.message.requested_host }}'
-          destination.ip: '{{parsed_event.message.destination_ip}}'
-          destination.port: '{{parsed_event.message.destination_port}}'
-          destination.nat.ip: '{{parsed_event.message.destination_nat_ip}}'
-          destination.nat.port: '{{parsed_event.message.destination_nat_port}}'
-          event.action: '{{parsed_event.message.result}}'
-          event.reason: '{{parsed_event.message.block_reason}}'
-          file.name: '{{parsed_event.message.filename}}'
-          host.name: '{{parsed_event.message.client_system_name}}'
-          http.request.bytes: '{{parsed_event.message.source_bytes}}'
-          http.request.method: '{{parse_first_line.message.http_method or parsed_event.message.http_action}}'
-          http.request.mime_type: '{{parsed_event.message.media_type}}'
-          http.response.bytes: '{{parsed_event.message.destination_bytes}}'
-          http.response.status_code: '{{parsed_event.message.http_status_code}}'
-          network.direction: '{{parsed_event.message.network_direction}}'
-          network.bytes: '{{parsed_event.message.network_bytes}}'
-          network.transport: '{{parsed_event.message.network_transport}}'
-          observer.hostname: '{{parsed_event.message.hostname}}'
-          process.name: '{{parsed_event.message.process_name}}'
-          rule.category: '{{parsed_event.message.category}}'
-          rule.name: '{{parsed_event.message.rule_name or parsed_event.message.last_rule}}'
-          rule.ruleset: '{{parsed_event.message.ruleset_name}}'
-          source.bytes: '{{parsed_event.message.client_to_server_bytes}}'
-          source.ip:  '{{parsed_event.message.source_ip}}'
-          source.port:  '{{parsed_event.message.source_port}}'
-          source.nat.ip:  '{{parsed_event.message.source_nat_ip}}'
-          source.nat.port:  '{{parsed_event.message.source_nat_port}}'
-          url.original: '{{parsed_event.message.uri}}'
-          url.path: '{{parsed_event.message.requested_path}}'
-          url.scheme: '{{parsed_event.message.uri_scheme}}'
-          user.domain: '{{parsed_event.message.user_group}}'
-          user.name: '{{parsed_event.message.user_name}}'
+          cisco.ftd.icmp_code: "{{parsed_event.message.icmp_code}}"
+          cisco.ftd.icmp_type: "{{parsed_event.message.icmp_type}}"
+          destination.bytes: "{{parsed_event.message.server_to_client_bytes}}"
+          destination.domain: "{{parsed_event.message.destination_host or parsed_event.message.requested_host }}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.destination_ip}}"
+        filter: "{{parsed_event.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.destination_nat_ip}}"
+        filter: "{{parsed_event.message.destination_nat_ip | is_ipaddress}}"
+
+      - set:
+          destination.port: "{{parsed_event.message.destination_port}}"
+          destination.nat.port: "{{parsed_event.message.destination_nat_port}}"
+          event.action: "{{parsed_event.message.result}}"
+          event.reason: "{{parsed_event.message.block_reason or parsed_event.message.action_outcome_reason}}"
+          cisco.ftd.event.duration: "{{parsed_event.message.event_duration}}"
+          file.name: "{{parsed_event.message.filename}}"
+          host.name: "{{parsed_event.message.client_system_name or parsed_event.message.log_host}}"
+          http.request.bytes: "{{parsed_event.message.source_bytes}}"
+          http.request.method: "{{parse_first_line.message.http_method or parsed_event.message.http_action}}"
+          http.request.mime_type: "{{parsed_event.message.media_type}}"
+          http.response.bytes: "{{parsed_event.message.destination_bytes}}"
+          http.response.status_code: "{{parsed_event.message.http_status_code}}"
+          log.syslog.procid: "{{parsed_event.message.proc_id}}"
+          network.direction: "{{parsed_event.message.network_direction}}"
+          network.bytes: "{{parsed_event.message.network_bytes}}"
+          network.transport: "{{parsed_event.message.network_transport}}"
+          network.application: "{{parsed_event.message.network_app}}"
+          observer.hostname: "{{parsed_event.message.hostname}}"
+          observer.ingress.interface.alias: "{{parsed_event.message.src_interface_name}}"
+          observer.egress.interface.alias: "{{parsed_event.message.dst_interface_name}}"
+          process.pid: "{{parsed_event.message.process_id}}"
+          process.name: "{{parsed_event.message.process_name}}"
+          rule.category: "{{parsed_event.message.category}}"
+          rule.name: "{{parsed_event.message.rule_name or parsed_event.message.last_rule}}"
+          rule.ruleset: "{{parsed_event.message.ruleset_name}}"
+          source.bytes: "{{parsed_event.message.client_to_server_bytes}}"
+      - set:
+          source.ip: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip | is_ipaddress}}"
+
+      - set:
+          source.port: "{{parsed_event.message.source_port}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.source_nat_ip}}"
+        filter: "{{parsed_event.message.source_nat_ip | is_ipaddress}}"
+
+      - set:
+          source.nat.port: "{{parsed_event.message.source_nat_port}}"
+          url.original: "{{parsed_event.message.uri}}"
+          url.path: "{{parsed_event.message.requested_path}}"
+          url.scheme: "{{parsed_event.message.uri_scheme}}"
+          user.domain: "{{parsed_event.message.user_group}}"
+          user.name: "{{parsed_event.message.user_name}}"
+
+      - set:
+          action.name: "{{parsed_event.message.action_name|lower }}"
+        filter: '{{parsed_event.message.get("action_name") != None}}'
+
+  set_ecs_fields_without_productname:
+    actions:
+      - set:
+          user.domain: "{{parsed_event_withoutproduct.message.user_group}}"
+          user.name: "{{parsed_event_withoutproduct.message.user_name}}"
+          cisco.ftd.event.duration: "{{parsed_event_withoutproduct.message.duration}}"
+          event.reason: "{{parsed_event_withoutproduct.message.action_outcome_reason or parsed_event_withoutproduct.message.cisco_message}}"
+      - set:
+          source.ip: "{{parsed_event_withoutproduct.message.source_ip6}}"
+        filter: "{{parsed_event_withoutproduct.message.source_ip6 | is_ipaddress}}"
+      - set:
+          source.ip: "{{parsed_event_withoutproduct.message.source_ip4}}"
+        filter: "{{parsed_event_withoutproduct.message.source_ip4 | is_ipaddress}}"
+      - set:
+          source.ip: "{{parsed_event_withoutproduct.message.source_ip}}"
+        filter: "{{parsed_event_withoutproduct.message.source_ip | is_ipaddress}}"
+      - set:
+          action.name: "{{parsed_event_withoutproduct.message.action_name|lower }}"
+        filter: '{{parsed_event_withoutproduct.message.get("action_name") != None}}'
+      - set:
+          destination.ip: "{{parsed_event_withoutproduct.message.destination_ip}}"
+        filter: "{{parsed_event_withoutproduct.message.destination_ip | is_ipaddress}}"
+      - set:
+          source.nat.ip: "{{parsed_event_withoutproduct.message.nat_ip}}"
+        filter: "{{parsed_event_withoutproduct.message.nat_ip | is_ipaddress}}"
+      - set:
+          rule.name: "{{parsed_event_withoutproduct.message.group_policy}}"
+          cisco.client_type: "{{parsed_event_withoutproduct.message.client_type}}"
+      - set:
+          tls.client.x509.serial_number: "{{parsed_event_withoutproduct.message.serial_number}}"
+          tls.client.x509.issuer.distinguished_name: "{{parsed_event_withoutproduct.message.Group_9_issuer}}"
+          tls.client.x509.subject.distinguished_name: "{{parsed_event_withoutproduct.message.Group_9_subject}}"
+      - set:
+          process.name: "{{parsed_event_withoutproduct.message.process_name}}"
+          cisco.process.call_stack: "{{parsed_event_withoutproduct.message.call_stack.strip()}}"
+          cisco.process.instruction_pointer: "{{parsed_event_withoutproduct.message.instruction_pointer}}"
 
   set_ecs_fields_from_kv:
     actions:
       - set:
-          '@timestamp': '{{pre_parsing.pre_message.timestamp}}'
-          action.name: '{{parse_kv2.parse_kv2_field.action_name}}'
-          cisco.ftd.file_sandbox_status: '{{parse_kv2.parse_kv2_field.FileSandboxStatus}}'
-          cisco.ftd.file_storage_status: '{{parse_kv2.parse_kv2_field.FileStorageStatus}}'
-          cisco.ftd.sha_disposition: '{{parse_kv2.parse_kv2_field.SHA_Disposition}}'
-          cisco.ftd.spero_disposition: '{{parse_kv2.parse_kv2_field.SperoDisposition}}'
-          destination.bytes: '{{parse_kv2.parse_kv2_field.ResponderBytes}}'
-          destination.domain: '{{parse_kv2.parse_kv2_field.destination_host or parse_kv2.parse_kv2_field.requested_host }}'
-          destination.ip: '{{parse_kv2.parse_kv2_field.DstIP}}'
-          destination.packets: '{{parse_kv2.parse_kv2_field.ResponderPackets}}'
-          destination.port: '{{parse_kv2.parse_kv2_field.DstPort}}'
-          file.extension: '{{ parse_kv2.parse_kv2_field.FileType|lower }}'
-          file.hash.sha256: '{{parse_kv2.parse_kv2_field.FileSHA256}}' 
-          file.name: '{{parse_kv2.parse_kv2_field.FileName}}' 
-          file.size: '{{parse_kv2.parse_kv2_field.FileSize}}'
-          host.hostname: '{{pre_parsing.pre_message.log_hostname}}'
-          host.ip: '{{pre_parsing.pre_message.log_ip}}'
-          log.level: '{{parse_kv2.parse_kv2_field.EventPriority}}'
-          network.application: '{{parse_kv2.parse_kv2_field.Client|lower }}'
-          network.direction: '{{parse_kv2.parse_kv2_field.network_direction}}'
-          network.protocol: '{{parse_kv2.parse_kv2_field.ApplicationProtocol}}'
-          network.transport: '{{parse_kv2.parse_kv2_field.Protocol}}'
-          network.bytes: '{{parsed_event.message.network_bytes}}'
-          rule.name: '{{parse_kv2.parse_kv2_field.AccessControlRuleName}}'
-          rule.ruleset: '{{parse_kv2.parse_kv2_field.ACPolicy}}'
-          source.bytes: '{{parse_kv2.parse_kv2_field.InitiatorBytes}}'
-          source.ip: '{{parse_kv2.parse_kv2_field.SrcIP}}'
-          source.packets: '{{parse_kv2.parse_kv2_field.InitiatorPackets}}'
-          source.port: '{{parse_kv2.parse_kv2_field.SrcPort}}'
-          threat.software.name: '{{parse_kv2.parse_kv2_field.ThreatName}}'
-          url.original: '{{parse_kv2.parse_kv2_field.URI}}'
-          user.name: '{{parse_kv2.parse_kv2_field.User}}'
-          user_agent.original: '{{parse_kv2.parse_kv2_field.UserAgent}}'
-          
+          "@timestamp": "{{pre_parsing.pre_message.timestamp}}"
+          action.name: "{{parse_kv2.parse_kv2_field.action_name}}"
+          cisco.ftd.file_sandbox_status: "{{parse_kv2.parse_kv2_field.FileSandboxStatus}}"
+          cisco.ftd.file_storage_status: "{{parse_kv2.parse_kv2_field.FileStorageStatus}}"
+          cisco.ftd.sha_disposition: "{{parse_kv2.parse_kv2_field.SHA_Disposition}}"
+          cisco.ftd.spero_disposition: "{{parse_kv2.parse_kv2_field.SperoDisposition}}"
+          destination.bytes: "{{parse_kv2.parse_kv2_field.ResponderBytes}}"
+          destination.domain: "{{parse_kv2.parse_kv2_field.destination_host or parse_kv2.parse_kv2_field.requested_host }}"
+          url.original: "{{parse_kv2.parse_kv2_field.URL}}"
+          cisco.url_category: "{{parse_kv2.parse_kv2_field.URLCategory}}"
+
+      - set:
+          cisco.device_id: "{{parse_kv2.parse_kv2_field.DeviceUUID}}"
+          cisco.ac.rule_action: "{{parse_kv2.parse_kv2_field.AccessControlRuleAction}}"
+          cisco.web_application: "{{parse_kv2.parse_kv2_field.WebApplication}}"
+
+      - set:
+          dns.question.name: "{{parse_kv2.parse_kv2_field.DNSQuery}}"
+          dns.response_code: "{{parse_kv2.parse_kv2_field.DNSResponseType}}"
+          cisco.dns.record_type: "{{parse_kv2.parse_kv2_field.DNSRecordType}}"
+          cisco.dns.ttl: "{{parse_kv2.parse_kv2_field.DNS_TTL}}"
+        filter: '{{pre_parsing.pre_message.message_number_grok in ["430003", "430002"]}}'
+
+      - set:
+          destination.ip: "{{parse_kv2.parse_kv2_field.DstIP}}"
+        filter: "{{parse_kv2.parse_kv2_field.DstIP | is_ipaddress}}"
+
+      - set:
+          destination.packets: "{{parse_kv2.parse_kv2_field.ResponderPackets}}"
+          destination.port: "{{parse_kv2.parse_kv2_field.DstPort}}"
+          file.extension: "{{ parse_kv2.parse_kv2_field.FileType|lower }}"
+          file.hash.sha256: "{{parse_kv2.parse_kv2_field.FileSHA256}}"
+          file.name: "{{parse_kv2.parse_kv2_field.FileName}}"
+          file.size: "{{parse_kv2.parse_kv2_field.FileSize}}"
+          host.hostname: "{{pre_parsing.pre_message.log_hostname}}"
+      - set:
+          host.ip: "{{pre_parsing.pre_message.log_ip}}"
+        filter: "{{pre_parsing.pre_message.log_ip | is_ipaddress}}"
+
+      - set:
+          log.level: "{{parse_kv2.parse_kv2_field.EventPriority}}"
+          network.application: "{{parse_kv2.parse_kv2_field.Client|lower }}"
+          network.direction: "{{parse_kv2.parse_kv2_field.network_direction}}"
+          network.protocol: "{{parse_kv2.parse_kv2_field.ApplicationProtocol}}"
+          network.transport: "{{parse_kv2.parse_kv2_field.Protocol}}"
+          network.bytes: "{{parsed_event.message.network_bytes}}"
+          rule.name: "{{parse_kv2.parse_kv2_field.AccessControlRuleName}}"
+          rule.ruleset: "{{parse_kv2.parse_kv2_field.ACPolicy}}"
+          source.bytes: "{{parse_kv2.parse_kv2_field.InitiatorBytes}}"
+      - set:
+          source.ip: "{{parse_kv2.parse_kv2_field.SrcIP}}"
+        filter: "{{parse_kv2.parse_kv2_field.SrcIP | is_ipaddress}}"
+
+      - set:
+          source.packets: "{{parse_kv2.parse_kv2_field.InitiatorPackets}}"
+          source.port: "{{parse_kv2.parse_kv2_field.SrcPort}}"
+          threat.software.name: "{{parse_kv2.parse_kv2_field.ThreatName}}"
+          url.original: "{{parse_kv2.parse_kv2_field.URI}}"
+          user.name: "{{parse_kv2.parse_kv2_field.User}}"
+          user_agent.original: "{{parse_kv2.parse_kv2_field.UserAgent}}"
+
   set_ecs_fields_from_condition:
     actions:
-    # ideas from https://gist.github.com/adriansr/902dea2b92f1ea8624714c1bc97a3c78
-      - set: 
-          event.action: 'intrusion-detected'
-          event.category: ['intrusion_detection']
+      # ideas from https://gist.github.com/adriansr/902dea2b92f1ea8624714c1bc97a3c78
+      - set:
+          event.action: "intrusion-detected"
+          event.category: ["intrusion_detection"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430001"}}'
-      - set: 
-          event.action: 'connection-started'
-          event.category: ['network']
-          event.type: ['connection', 'start']
+      - set:
+          event.action: "connection-started"
+          event.category: ["network"]
+          event.type: ["connection", "start"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430002"}}'
-      - set: 
-          event.action: 'connection-finished'
-          event.category: ['network']
-          event.type: ['connection', 'end']
+      - set:
+          event.action: "connection-finished"
+          event.category: ["network"]
+          event.type: ["connection", "end"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430003"}}'
-      - set: 
-          event.action: 'file-detected'
-          event.category: ['file']
-          event.type: ['change']
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: '{{pre_parsing.pre_message.message_number_grok in ["716058", "716059", "722011", "722012", "722022", "722023", "722028", "722032", "722034", "722033", "722037"]}}'
+      - set:
+          event.action: "file-detected"
+          event.category: ["file"]
+          event.type: ["change"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430004"}}'
-      - set: 
-          event.action: 'malware-detected'
-          event.kind: 'alert'
-          event.category: ['malware']
-          event.type: ['info']
+      - set:
+          event.action: "malware-detected"
+          event.kind: "alert"
+          event.category: ["malware"]
+          event.type: ["info"]
         filter: '{{pre_parsing.pre_message.message_number_grok == "430005"}}'
       - set:
-          network.transport: '{{parsed_event.message.network_transport|lower }}'
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{pre_parsing.pre_message.message_number_grok == "113004"}}'
+      - set:
+          network.transport: "{{parsed_event.message.network_transport|lower }}"
         filter: '{{parsed_event.message.get("network_transport") != None}}'
       - translate:
         dictionary:
-            'ASA': 'Adaptive Security Appliance'
-            'FTD': 'Firepower Threat Defense'
-            'NGIPS': 'Secure IPS'
+          "ASA": "Adaptive Security Appliance"
+          "FTD": "Firepower Threat Defense"
+          "NGIPS": "Secure IPS"
         mapping:
           pre_parsing.pre_message.product: observer.product

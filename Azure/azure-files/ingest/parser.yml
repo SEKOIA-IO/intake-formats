@@ -1,0 +1,80 @@
+name: azure-files
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.time}}"
+        output_field: date
+
+  - name: set_default_fields
+  - name: set_source_fields
+
+stages:
+  set_source_fields:
+    actions:
+      - set:
+          source.ip: "{{json_event.message.callerIpAddress.split(':')[0]}}"
+          source.port: "{{json_event.message.callerIpAddress.split(':')[1]}}"
+        filter: '{{json_event.message.get("callerIpAddress") != None}}'
+
+  set_default_fields:
+    actions:
+      - set:
+          event.category: '["network"]'
+          "@timestamp": "{{parsed_date.date}}"
+          event.provider: "{{json_event.message.resourceType}}"
+          event.action: "{{json_event.message.operationName}}"
+          event.dataset: "{{json_event.message.category}}"
+          user_agent.original: "{{json_event.message.properties.userAgentHeader}}"
+          url.original: "{{json_event.message.uri}}"
+          network.protocol: "{{json_event.message.protocol}}"
+          cloud.region: "{{json_event.message.location}}"
+          cloud.provider: "Azure"
+          cloud.service.name: "files"
+          cloud.account.name: "{{json_event.message.properties.accountName}}"
+          http.response.status_code: "{{json_event.message.statusCode}}"
+          azure.files.status: "{{json_event.message.statusText}}"
+
+      # https://learn.microsoft.com/en-us/rest/api/storageservices/storage-analytics-logged-operations-and-status-messages
+      # Allowed statuses are: https://www.elastic.co/guide/en/ecs/current/ecs-allowed-values-event-category.html#ecs-event-category-network
+      - translate:
+        dictionary:
+          "Success": '["info"]'
+          "SASSuccess": '["info"]'
+
+          "ThrottlingError": '["denied"]'
+          "AnonymousThrottlingError": '["denied"]'
+          "SASThrottlingError": '["denied"]'
+
+          "ClientTimeoutError": '["connection"]'
+          "AnonymousClientTimeoutError": '["connection"]'
+          "SASClientTimeoutError": '["connection"]'
+          "ServerTimeoutError": '["connection"]'
+          "AnonymousServerTimeoutError": '["connection"]'
+          "SASServerTimeoutError": '["connection"]'
+
+          "AuthorizationError": '["denied"]'
+          "AnonymousAuthorizationError": '["denied"]'
+          "SASAuthorizationError": '["denied"]'
+
+          "NetworkError": '["connection"]'
+          "AnonymousNetworkError": '["connection"]'
+          "SASNetworkError": '["connection"]'
+
+          "ClientOtherError": '["connection"]'
+          "SASClientOtherError": '["connection"]'
+          "AnonymousClientOtherError": '["connection"]'
+          "ServerOtherError": '["connection"]'
+          "AnonymousServerOtherError": '["connection"]'
+          "SASServerOtherError": '["connection"]'
+        fallback: '["info"]'
+        mapping:
+          azure.files.status: event.type

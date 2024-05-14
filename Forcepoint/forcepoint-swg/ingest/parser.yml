@@ -7,16 +7,16 @@ pipeline:
   - name: parsed_event
     external:
       properties:
-        input_field: 'CEF:{{original.message}}'
+        input_field: "CEF:{{original.message}}"
       name: cef.parse-cef
     filter: '{{original.message.startswith("CEF") == False}}'
   - name: parsed_timestamp
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.rt}}'
+        input_field: "{{parsed_event.message.rt}}"
         output_field: datetime
-    filter: '{{parsed_event.message.rt != null}}'
+    filter: "{{parsed_event.message.rt != null}}"
   - name: set_ecs_fields
   - name: set_forcepoint_fields
 
@@ -24,198 +24,208 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_timestamp.datetime}}'
-        filter: '{{parsed_event.message.rt != null}}' 
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+        filter: "{{parsed_event.message.rt != null}}"
       - set:
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
-          observer.product: 'Secure Web Gateway'
-          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "Secure Web Gateway"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
       - set:
-          event.action: '{{parsed_event.message.Name}}'
-          event.severity: '{{parsed_event.message.Severity}}'
-          event.code: '{{parsed_event.message.DispositionCode}}'
-          event.category: ['network']
-          event.kind: 'event'
-          event.duration: '{{parsed_event.ScanDuration}}'
+          event.action: "{{parsed_event.message.Name}}"
+          event.severity: "{{parsed_event.message.Severity}}"
+          event.code: "{{parsed_event.message.DispositionCode}}"
+          event.category: ["network"]
+          event.duration: "{{parsed_event.ScanDuration}}"
+
       - set:
-          host.ip: '{{parsed_event.message.dvc}}'
+          host.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc  | is_ipaddress}}"
+
       - set:
-          network.protocol: '{{parsed_event.message.app}}'
+          network.protocol: "{{parsed_event.message.app}}"
+
       - set:
-          destination.ip: '{{parsed_event.message.dst}}'
-          destination.port: '{{parsed_event.message.dpt}}'
-          destination.domain: '{{parsed_event.message.dhost}}'
+          destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+
       - set:
-          destination.nat.port: '{{parsed_event.message.destinationTranslatedPort}}'
-        filter: '{{parsed_event.message.destinationTranslatedPort != "0"}}' 
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.domain: "{{parsed_event.message.dhost}}"
       - set:
-          source.ip: '{{parsed_event.message.src}}'
-          source.port: '{{parsed_event.message.spt}}'
+          destination.nat.port: "{{parsed_event.message.destinationTranslatedPort}}"
+        filter: '{{parsed_event.message.destinationTranslatedPort != "0"}}'
+
       - set:
-          rule.id: '{{parsed_event.message.DeviceEventClassID}}'
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
       - set:
-          url.original: '{{parsed_event.message.request}}'
+          source.port: "{{parsed_event.message.spt}}"
       - set:
-          http.request.method: '{{parsed_event.message.requestMethod}}'
+          rule.id: "{{parsed_event.message.DeviceEventClassID}}"
       - set:
-          http.request.bytes: '{{parsed_event.message.out}}'
-        filter: '{{parsed_event.message.out != "0"}}' 
+          url.original: "{{parsed_event.message.request}}"
       - set:
-          http.request.mime_type: '{{parsed_event.message.ContentType}}'
-        filter: '{{parsed_event.message.ContentType != "-"}}' 
+          http.request.method: "{{parsed_event.message.requestMethod}}"
       - set:
-          http.response.bytes: '{{parsed_event.message.in}}'
-        filter: '{{parsed_event.message.in != "0"}}' 
+          http.request.bytes: "{{parsed_event.message.out}}"
+        filter: '{{parsed_event.message.out != "0"}}'
+      - set:
+          http.request.mime_type: "{{parsed_event.message.ContentType}}"
+        filter: '{{parsed_event.message.ContentType != "-"}}'
+      - set:
+          http.response.bytes: "{{parsed_event.message.in}}"
+        filter: '{{parsed_event.message.in != "0"}}'
       - set:
           user.domain: '{{parsed_event.message.suser[parsed_event.message.suser.index(" ")+1:].split("/") | first}}'
           user.name: '{{parsed_event.message.suser.split("/") | last}}'
-        filter: '{{parsed_event.message.get("suser") != None and parsed_event.message.suser != "-"}}' 
+        filter: '{{parsed_event.message.get("suser") != None and parsed_event.message.suser != "-"}}'
       - set:
-          user.id: '{{parsed_event.message.loginID}}'
-        filter: '{{parsed_event.message.loginID != "-"}}' 
+          user.id: "{{parsed_event.message.loginID}}"
+        filter: '{{parsed_event.message.loginID != "-"}}'
       - set:
-          user_agent.original: '{{parsed_event.message.requestClientApplication}}'
-        filter: '{{parsed_event.message.requestClientApplication != "-"}}' 
+          user_agent.original: "{{parsed_event.message.requestClientApplication}}"
+        filter: '{{parsed_event.message.requestClientApplication != "-"}}'
       - translate:
         dictionary:
-          '1024': ['connection', 'allowed']
-          '1025': ['connection', 'denied']
-          '1026': ['connection', 'allowed']
-          '1027': ['connection', 'denied']
-          '1028': ['connection', 'allowed']
-          '1029': ['connection', 'denied']
-          '1030': ['connection', 'allowed']
-          '1031': ['connection', 'denied']
-          '1032': ['connection', 'denied']
-          '1033': ['connection', 'denied']
-          '1034': ['connection', 'allowed']
-          '1035': ['connection', 'denied']
-          '1037': ['connection', 'allowed']
-          '1040': ['connection', 'allowed']
-          '1041': ['connection', 'denied']
-          '1042': ['connection', 'allowed']
-          '1043': ['connection', 'allowed']
-          '1044': ['connection', 'allowed']
-          '1045': ['connection', 'denied']
-          '1046': ['connection', 'denied']
-          '1047': ['connection', 'denied']
-          '1048': ['connection', 'allowed']
-          '1049': ['connection', 'denied']
-          '1050': ['connection', 'allowed']
-          '1051': ['connection', 'allowed']
-          '1052': ['connection', 'allowed']
-          '1053': ['connection', 'denied']
-          '1054': ['connection', 'denied']
-          '1055': ['connection', 'denied']
-          '1056': ['connection', 'allowed']
-          '1057': ['connection', 'denied']
-          '1058': ['connection', 'denied']
-          '1059': ['connection', 'denied']
-          '1060': ['connection', 'allowed']
-          '1061': ['connection', 'denied']
-          '1062': ['connection', 'allowed']
-          '1063': ['connection', 'allowed']
-          '1064': ['connection', 'denied']
-          '1065': ['connection', 'allowed']
-          '1066': ['connection', 'denied']
-          '1067': ['connection', 'allowed']
-          '1068': ['connection', 'denied']
-          '1069': ['connection', 'allowed']
-          '1281': ['connection', 'denied']
-          '1282': ['connection', 'allowed']
-          '1293': ['connection', 'allowed']
-          '1296': ['connection', 'allowed']
-          '1299': ['connection', 'allowed']
-          '1301': ['connection', 'denied']
-          '1302': ['connection', 'denied']
-          '1303': ['connection', 'denied']
-          '1304': ['connection', 'allowed']
-          '1310': ['connection', 'denied']
-          '1311': ['connection', 'denied']
-          '1313': ['connection', 'denied']
-          '1314': ['connection', 'denied']
-          '1315': ['connection', 'denied']
-          '1316': ['connection', 'allowed']
-          '1317': ['connection', 'denied']
-          '1537': ['connection', 'allowed']
-          '1538': ['connection', 'allowed']
-          '1539': ['connection', 'allowed']
-          '1553': ['connection', 'denied']
-          '1554': ['connection', 'denied']
-          '1555': ['connection', 'denied']
-          '1556': ['connection', 'allowed']
-          '1557': ['connection', 'denied']
+          "1024": ["allowed"]
+          "1025": ["denied"]
+          "1026": ["allowed"]
+          "1027": ["denied"]
+          "1028": ["allowed"]
+          "1029": ["denied"]
+          "1030": ["allowed"]
+          "1031": ["denied"]
+          "1032": ["denied"]
+          "1033": ["denied"]
+          "1034": ["allowed"]
+          "1035": ["denied"]
+          "1037": ["allowed"]
+          "1040": ["allowed"]
+          "1041": ["denied"]
+          "1042": ["allowed"]
+          "1043": ["allowed"]
+          "1044": ["allowed"]
+          "1045": ["denied"]
+          "1046": ["denied"]
+          "1047": ["denied"]
+          "1048": ["allowed"]
+          "1049": ["denied"]
+          "1050": ["allowed"]
+          "1051": ["allowed"]
+          "1052": ["allowed"]
+          "1053": ["denied"]
+          "1054": ["denied"]
+          "1055": ["denied"]
+          "1056": ["allowed"]
+          "1057": ["denied"]
+          "1058": ["denied"]
+          "1059": ["denied"]
+          "1060": ["allowed"]
+          "1061": ["denied"]
+          "1062": ["allowed"]
+          "1063": ["allowed"]
+          "1064": ["denied"]
+          "1065": ["allowed"]
+          "1066": ["denied"]
+          "1067": ["allowed"]
+          "1068": ["denied"]
+          "1069": ["allowed"]
+          "1281": ["denied"]
+          "1282": ["allowed"]
+          "1293": ["allowed"]
+          "1296": ["allowed"]
+          "1299": ["allowed"]
+          "1301": ["denied"]
+          "1302": ["denied"]
+          "1303": ["denied"]
+          "1304": ["allowed"]
+          "1310": ["denied"]
+          "1311": ["denied"]
+          "1313": ["denied"]
+          "1314": ["denied"]
+          "1315": ["denied"]
+          "1316": ["allowed"]
+          "1317": ["denied"]
+          "1537": ["allowed"]
+          "1538": ["allowed"]
+          "1539": ["allowed"]
+          "1553": ["denied"]
+          "1554": ["denied"]
+          "1555": ["denied"]
+          "1556": ["allowed"]
+          "1557": ["denied"]
         mapping:
           event.code: event.type
       - translate:
         dictionary:
-          '1024': 'Category permitted, not set'
-          '1025': 'Category blocked'
-          '1026': 'Category permitted'
-          '1027': 'Custom URL, category blocked'
-          '1028': 'Custom URL, category permitted'
-          '1029': 'Always blocked'
-          '1030': 'Never blocked'
-          '1031': 'Blocked by limited access filter'
-          '1032': 'Blocked by keyword'
-          '1033': 'Blocked \u2013 subscription level exceeded'
-          '1034': 'Permitted \u2013 subscription level exceeded'
-          '1035': 'Password override page'
-          '1037': 'Permitted by password override'
-          '1040': 'Permitted with Confirm option'
-          '1041': 'Blocked \u2013 authentication required'
-          '1042': 'Permitted \u2013 category not purchased'
-          '1043': 'Permitted by quota'
-          '1044': 'Permitted with keyword match'
-          '1045': 'Blocked due to network bandwidth'
-          '1046': 'Blocked due to protocol bandwidth'
-          '1047': 'File type blocked'
-          '1048': 'File type permitted'
-          '1049': 'Protocol blocked'
-          '1050': 'Protocol permitted'
-          '1051': 'Protocol permitted, not set'
-          '1052': 'Permitted by limited access filter'
-          '1053': 'Redirected by search filtering'
-          '1054': 'Blocked with Confirm option'
-          '1055': 'Blocked by quota'
-          '1056': 'Permitted \u2013 protocol not purchased'
-          '1057': 'Blocked by security override'
-          '1058': 'Blocked by Hosted Anti-Virus Scanning - Inbound'
-          '1059': 'Blocked by Hosted Anti-Virus Scanning - Outbound'
-          '1060': 'Permitted by Policy Exception'
-          '1061': 'Blocked by Policy Exception'
-          '1062': 'Permitted by Tunneled Protocol Quota'
-          '1063': 'Permitted by Tunneled Protocol Continue'
-          '1064': 'Blocked by Web DLP'
-          '1065': 'Permitted by Referer'
-          '1066': 'File Blocked: Over Max Scan Size'
-          '1067': 'Cloud app permitted'
-          '1068': 'Cloud app blocked'
-          '1069': 'Protected cloud app request forwarded'
-          '1281': 'Category blocked real time'
-          '1282': 'Category permitted real time'
-          '1293': 'Permitted by password override real time'
-          '1296': 'Permitted with confirm option real time'
-          '1299': 'Permitted by quota real time'
-          '1301': 'Blocked due to network bandwidth real time'
-          '1302': 'Blocked due to protocol bandwidth real time'
-          '1303': 'File type blocked real time'
-          '1304': 'File type permitted real time'
-          '1310': 'Blocked with confirm option real time'
-          '1311': 'Blocked by quota real time'
-          '1313': 'Blocked by security override real time'
-          '1314': 'Blocked Inbound: Cloud Antivirus'
-          '1315': 'Blocked Outbound: Cloud Antivirus'
-          '1316': 'Permitted by Exception: Real Time'
-          '1317': 'Blocked by Exception: Real Time'
-          '1537': 'Permitted by scanning link analysis'
-          '1538': 'Web 2.0 request permitted'
-          '1539': 'Permitted after Web 2.0 scanning and link analysis'
-          '1553': 'Blocked by scanning link analysis'
-          '1554': 'Web 2.0 request blocked'
-          '1555': 'Blocked after Web 2.0 scanning and link analysis'
-          '1556': 'Zipbomb permitted Real Time'
-          '1557': 'Zipbomb blocked Real Time'
+          "1024": "Category permitted, not set"
+          "1025": "Category blocked"
+          "1026": "Category permitted"
+          "1027": "Custom URL, category blocked"
+          "1028": "Custom URL, category permitted"
+          "1029": "Always blocked"
+          "1030": "Never blocked"
+          "1031": "Blocked by limited access filter"
+          "1032": "Blocked by keyword"
+          "1033": 'Blocked \u2013 subscription level exceeded'
+          "1034": 'Permitted \u2013 subscription level exceeded'
+          "1035": "Password override page"
+          "1037": "Permitted by password override"
+          "1040": "Permitted with Confirm option"
+          "1041": 'Blocked \u2013 authentication required'
+          "1042": 'Permitted \u2013 category not purchased'
+          "1043": "Permitted by quota"
+          "1044": "Permitted with keyword match"
+          "1045": "Blocked due to network bandwidth"
+          "1046": "Blocked due to protocol bandwidth"
+          "1047": "File type blocked"
+          "1048": "File type permitted"
+          "1049": "Protocol blocked"
+          "1050": "Protocol permitted"
+          "1051": "Protocol permitted, not set"
+          "1052": "Permitted by limited access filter"
+          "1053": "Redirected by search filtering"
+          "1054": "Blocked with Confirm option"
+          "1055": "Blocked by quota"
+          "1056": 'Permitted \u2013 protocol not purchased'
+          "1057": "Blocked by security override"
+          "1058": "Blocked by Hosted Anti-Virus Scanning - Inbound"
+          "1059": "Blocked by Hosted Anti-Virus Scanning - Outbound"
+          "1060": "Permitted by Policy Exception"
+          "1061": "Blocked by Policy Exception"
+          "1062": "Permitted by Tunneled Protocol Quota"
+          "1063": "Permitted by Tunneled Protocol Continue"
+          "1064": "Blocked by Web DLP"
+          "1065": "Permitted by Referer"
+          "1066": "File Blocked: Over Max Scan Size"
+          "1067": "Cloud app permitted"
+          "1068": "Cloud app blocked"
+          "1069": "Protected cloud app request forwarded"
+          "1281": "Category blocked real time"
+          "1282": "Category permitted real time"
+          "1293": "Permitted by password override real time"
+          "1296": "Permitted with confirm option real time"
+          "1299": "Permitted by quota real time"
+          "1301": "Blocked due to network bandwidth real time"
+          "1302": "Blocked due to protocol bandwidth real time"
+          "1303": "File type blocked real time"
+          "1304": "File type permitted real time"
+          "1310": "Blocked with confirm option real time"
+          "1311": "Blocked by quota real time"
+          "1313": "Blocked by security override real time"
+          "1314": "Blocked Inbound: Cloud Antivirus"
+          "1315": "Blocked Outbound: Cloud Antivirus"
+          "1316": "Permitted by Exception: Real Time"
+          "1317": "Blocked by Exception: Real Time"
+          "1537": "Permitted by scanning link analysis"
+          "1538": "Web 2.0 request permitted"
+          "1539": "Permitted after Web 2.0 scanning and link analysis"
+          "1553": "Blocked by scanning link analysis"
+          "1554": "Web 2.0 request blocked"
+          "1555": "Blocked after Web 2.0 scanning and link analysis"
+          "1556": "Zipbomb permitted Real Time"
+          "1557": "Zipbomb blocked Real Time"
         mapping:
           event.code: event.reason
       - translate:
@@ -519,6 +529,6 @@ stages:
     actions:
       - set:
           forcepoint.webgateway.policies: '{{parsed_event.message.Policy.split(",")}}'
-          forcepoint.webgateway.category: '{{parsed_event.message.DynCat}}'
-          forcepoint.webgateway.log.source: '{{parsed_event.message.logRecordSource}}'
-          forcepoint.cef.version: '{{parsed_event.message.CEFVersion}}'
+          forcepoint.webgateway.category: "{{parsed_event.message.DynCat}}"
+          forcepoint.webgateway.log.source: "{{parsed_event.message.logRecordSource}}"
+          forcepoint.cef.version: "{{parsed_event.message.CEFVersion}}"

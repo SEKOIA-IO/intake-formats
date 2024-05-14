@@ -1,0 +1,67 @@
+name: Cloudflare Access Requests
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: set_ecs_fields
+  - name: set_cloudflare_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.CreatedAt}}"
+
+      - set:
+          client.ip: "{{json_event.message.IPAddress}}"
+        filter: "{{json_event.message.IPAddress | is_ipaddress}}"
+
+      - set:
+          event.category: ["network", "authentication"]
+          event.dataset: "access_requests"
+          event.type: ["info"]
+          observer.type: "proxy"
+          observer.vendor: "Cloudflare"
+      - set:
+          event.type: ["connection", "start"]
+        filter: '{{json_event.message.Action == "login" and json_event.message.Allowed == true}}'
+      - set:
+          event.type: ["connection", "end"]
+        filter: '{{json_event.message.Action == "logout"}}'
+      - set:
+          event.type: ["connection", "denied"]
+        filter: "{{json_event.message.Allowed == false}}"
+      - set:
+          url.domain: "{{json_event.message.AppDomain}}"
+          user.email: "{{json_event.message.Email}}"
+          user.id: "{{json_event.message.UserUID}}"
+          source.geo.country_iso_code: "{{json_event.message.Country}}"
+
+      - set:
+          source.ip: "{{json_event.message.IPAddress}}"
+        filter: "{{json_event.message.IPAddress | is_ipaddress}}"
+
+  set_cloudflare_fields:
+    actions:
+      - set:
+          cloudflare.AppUUID: "{{json_event.message.AppUUID}}"
+        filter: '{{json_event.message.AppUUID is not in [""]}}'
+      - set:
+          cloudflare.Connection: "{{json_event.message.Connection}}"
+        filter: '{{json_event.message.Connection is not in [""]}}'
+      - set:
+          cloudflare.PurposeJustificationPrompt: "{{json_event.message.PurposeJustificationPrompt}}"
+        filter: '{{json_event.message.PurposeJustificationPrompt is not in [""]}}'
+      - set:
+          cloudflare.PurposeJustificationResponse: "{{json_event.message.PurposeJustificationResponse}}"
+        filter: '{{json_event.message.PurposeJustificationResponse is not in [""]}}'
+      - set:
+          cloudflare.RayID: "{{json_event.message.RayID}}"
+        filter: '{{json_event.message.RayID is not in [""]}}'
+      - set:
+          cloudflare.TemporaryAccessApprovers: "{{json_event.message.TemporaryAccessApprovers}}"
+        filter: "{{json_event.message.TemporaryAccessApprovers != []}}"
+      - set:
+          cloudflare.TemporaryAccessDuration: "{{json_event.message.TemporaryAccessDuration}}"

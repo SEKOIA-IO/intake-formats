@@ -1,0 +1,105 @@
+name: Rubycat PROVE IT
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message[7:]}}"
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.timestamp}}"
+        output_field: datetime
+  - name: general_extraction
+  - name: human_source_extraction
+    filter: '{{json_event.message.source.type == "HB"}}'
+  - name: system_source_extraction
+    filter: '{{json_event.message.source.type == "SYSTEM"}}'
+  - name: service_extraction
+  - name: context_extraction
+  - name: user_connection_success
+    filter: '{{json_event.message.type == "USER_CONNECTION_SUCCESS"}}'
+  - name: user_connection_failure
+    filter: '{{json_event.message.type == "USER_CONNECTION_FAILURE"}}'
+  - name: user_disconnection
+    filter: '{{json_event.message.type in ["USER_DISCONNECTION", "USER_DISCONNECTION_FORCED_BY_PRIVILEGED_PROFILE", "USER_DISCONNECTION_ON_INACTIVITY"]}}'
+
+stages:
+  general_extraction:
+    actions:
+      - set:
+          "@timestamp": "{{parse_date.datetime}}"
+          event.action: "{{json_event.message.type | lower}}"
+          event.reason: "{{json_event.message.reason}}"
+          event.start: "{{json_event.message.beginDate | to_rfc3339}}"
+          event.end: "{{json_event.message.endDate | to_rfc3339}}"
+          observer.vendor: "RubyCat"
+          observer.product: "prove-it"
+          observer.type: "bastion"
+
+      - translate:
+        dictionary:
+          "EMERGENCY": "70"
+          "ALERT": "60"
+          "CRITICAL": "50"
+          "ERROR": "40"
+          "WARNING": "30"
+          "NOTICE": "20"
+          "INFO": "10"
+          "DEBUG": "0"
+        mapping:
+          json_event.message.severity: event.severity
+
+  human_source_extraction:
+    actions:
+      - set:
+          rubycat.proveit.source.type: "{{json_event.message.source.type}}"
+          source.user.name: "{{json_event.message.source.userName}}"
+          source.user.domain: "{{json_event.message.source.realmName}}"
+          network.protocol: "{{json_event.message.source.protocol | lower}}"
+          rubycat.proveit.source.roles: "{{json_event.message.source.roles}}"
+          rubycat.proveit.source.profiles: "{{json_event.message.source.profiles}}"
+
+      - set:
+          source.ip: "{{json_event.message.source.ip}}"
+        filter: "{{json_event.message.source.ip| is_ipaddress}}"
+
+  system_source_extraction:
+    actions:
+      - set:
+          rubycat.proveit.source.type: "{{json_event.message.source.type}}"
+          rubycat.proveit.source.componentId: "{{json_event.message.source.componentId}}"
+
+  service_extraction:
+    actions:
+      - set:
+          service.name: "{{json_event.message.service.name}}"
+          service.address: "{{json_event.message.service.host}}"
+
+  context_extraction:
+    actions:
+      - set:
+          user.name: "{{json_event.message.context.authUserName}}"
+          rubycat.proveit.context.auth_mode: "{{json_event.message.context.authMode}}"
+
+  user_connection_success:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+
+  user_connection_failure:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+
+  user_disconnection:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+          event.outcome: "success"

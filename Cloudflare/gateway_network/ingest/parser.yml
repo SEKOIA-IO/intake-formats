@@ -1,0 +1,64 @@
+name: cloudflare-gateway-network
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: set_ecs_fields
+  - name: set_cloudflare_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.Datetime}}"
+          cloud.account.id: "{{json_event.message.AccountID}}"
+      - set:
+          destination.domain: "{{json_event.message.SNI}}"
+        filter: '{{json_event.message.SNI is not in [""]}}'
+      - set:
+          destination.ip: "{{json_event.message.DestinationIP}}"
+          destination.address: "{{json_event.message.DestinationIP}}"
+        filter: "{{json_event.message.DestinationIP | is_ipaddress}}"
+
+      - set:
+          destination.port: "{{json_event.message.DestinationPort}}"
+          device.id: "{{json_event.message.DeviceID}}"
+          event.action: "{{json_event.message.Action}}"
+          event.category: ["network"]
+          event.dataset: "gateway_network"
+          host.hostname: "{{json_event.message.DeviceName}}"
+          observer.type: "proxy"
+          observer.vendor: "Cloudflare"
+          event.type: '{% if json_event.message.get("Action") == "allowedOnNoRuleMatch"%}["allowed"]{% else %}["info"]{% endif %}'
+          network.transport: "{{json_event.message.Transport}}"
+          user.email: "{{json_event.message.Email}}"
+          user.id: "{{json_event.message.UserID}}"
+
+      - set:
+          source.ip: "{{json_event.message.SourceIP}}"
+        filter: "{{json_event.message.SourceIP  | is_ipaddress}}"
+
+      - set:
+          source.port: "{{json_event.message.SourcePort}}"
+          tls.client.server_name: "{{json_event.message.SNI}}"
+  set_cloudflare_fields:
+    actions:
+      - set:
+          cloudflare.InternalSourceIP: "{{json_event.message.InternalSourceIP}}"
+        filter: '{{json_event.message.InternalSourceIP is not in [""]}}'
+      - set:
+          cloudflare.OverrideIP: "{{json_event.message.OverrideIP}}"
+        filter: '{{json_event.message.OverrideIP is not in [""]}}'
+      - set:
+          cloudflare.OverridePort: "{{json_event.message.OverridePort}}"
+      - set:
+          cloudflare.PolicyID: "{{json_event.message.PolicyID}}"
+        filter: '{{json_event.message.PolicyID is not in [""]}}'
+      - set:
+          cloudflare.PolicyName: "{{json_event.message.PolicyName}}"
+        filter: '{{json_event.message.PolicyName is not in [""]}}'
+      - set:
+          cloudflare.SessionID: "{{json_event.message.SessionID}}"
+        filter: '{{json_event.message.SessionID is not in [""]}}'

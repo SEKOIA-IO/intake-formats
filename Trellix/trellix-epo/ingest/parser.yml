@@ -1,0 +1,72 @@
+name: trellix-epo
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: output
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.timestamp}}"
+        output_field: datetime
+
+  - name: set_common_fields
+  - name: set_additional_trellix_fields
+
+stages:
+  set_additional_trellix_fields:
+    actions:
+      - set:
+          trellix.event.id: "{{json_event.output.autoguid}}"
+          trellix.event.detect_date: "{{json_event.output.detectedutc}}"
+          trellix.event.receive_date: "{{json_event.output.receivedutc}}"
+          trellix.analyzer.name: "{{json_event.output.analyzername}}"
+          trellix.analyzer.version: "{{json_event.output.analyzerversion}}"
+          trellix.analyzer.host: "{{json_event.output.analyzerhostname}}"
+          trellix.analyzer.detection_method: "{{json_event.output.analyzerdetectionmethod}}"
+          trellix.analyzer.engine_version: "{{json_event.output.analyzerengineversion}}"
+          trellix.threat.name: "{{json_event.output.threatname}}"
+          trellix.threat.category: "{{json_event.output.threatcategory}}"
+          trellix.threat.event_id: "{{json_event.output.threateventid}}"
+          trellix.threat.severity: "{{json_event.output.threatseverity}}"
+          trellix.threat.type: "{{json_event.output.threattype}}"
+          trellix.threat.action_taken: "{{json_event.output.threatactiontaken}}"
+          trellix.threat.is_handled: "{{json_event.output.threathandled}}"
+
+  set_common_fields:
+    actions:
+      # Default fields with predefined values
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          observer.vendor: "Trellix"
+          observer.product: "ePO"
+          event.category: ["process"]
+
+          agent.id: "{{json_event.output.agentguid}}"
+
+          # Relates to source of the event
+          source.user.name: "{{json_event.output.sourceusername}}"
+          user.name: "{{json_event.output.sourceusername}}"
+          source.ip: "{{json_event.output.sourceipv4}}"
+          process.name: "{{json_event.output.sourceprocessname}}"
+
+          # Relates to target of the event
+          destination.user.name: "{{json_event.output.targetusername}}"
+          user.target.name: "{{json_event.output.targetusername}}"
+          destination.ip: "{{json_event.output.targetipv4}}"
+          destination.port: "{{json_event.output.targetport}}"
+
+          host.name: "{{json_event.output.analyzerhostname}}"
+      - set:
+          event.category: ["intrusion_detection"]
+        filter: "{{'IDS' in json_event.output.threattype}}"
+      - translate:
+        dictionary:
+          "IDS_ACTION_WOULD_BLOCK": ["denied"]
+        mapping:
+          json_event.output.threatactiontaken: event.type
+        fallback: ["info"]

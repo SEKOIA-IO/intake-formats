@@ -4,8 +4,8 @@
 #
 # Obvious, isn’t it?
 #
-# For SEKOIA.IO, we are recommanding to add two optional fields, the
-# referrer and the user agent. Which is will finally be the following:
+# For Sekoia.io, we are recommending to add two optional fields, the
+# referrer and the user agent. Which will finally be the following:
 #
 #     %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt "%{Referer}>h" "%{User-Agent}>h"
 #
@@ -27,6 +27,7 @@
 # - `%mt`: MIME content type
 
 name: squid
+ignored_values: ["-"]
 pipeline:
   - name: parsed_event
     external:
@@ -49,7 +50,7 @@ pipeline:
       properties:
         input_field: parsed_event.message.url
         output_field: message
-        pattern: '(%{IP:ip}|%{NOTSPACE:domain}):%{NUMBER:port}'
+        pattern: "(%{IP:ip}|%{NOTSPACE:domain}):%{NUMBER:port}"
     filter: '{{parsed_event.message.method == "CONNECT"}}'
   - name: set_base_fields
 
@@ -57,43 +58,32 @@ stages:
   set_base_fields:
     actions:
       - set:
-          http.request.method: '{{parsed_event.message.method}}'
-          http.response.bytes: '{{parsed_event.message.http_response_bytes}}'
-          http.response.status_code: '{{parsed_event.message.status}}'
+          "@timestamp": "{{parsed_timestamp.start_date}}"
+          http.request.method: "{{parsed_event.message.method}}"
+          http.response.bytes: "{{parsed_event.message.http_response_bytes}}"
+          http.response.status_code: "{{parsed_event.message.status}}"
           network.direction: egress
-          event.kind: event
           event.category:
             - web
             - network
-          event.start: '{{parsed_timestamp.start_date}}'
-          event.duration: '{{parsed_event.message.elapsed}}'
-          squid.hierarchy_code: '{{parsed_event.message.hierarchy_code}}'
+          event.duration: "{{parsed_event.message.elapsed}}"
+          squid.hierarchy_code: "{{parsed_event.message.hierarchy_code}}"
           observer.type: proxy
           observer.vendor: Squid
           observer.product: Squid
 
       - set:
-          user_agent.original: '{{parsed_event.message.user_agent}}'
-        filter: '{{parsed_event.message.user_agent != "-"}}'
+          user_agent.original: "{{parsed_event.message.user_agent}}"
+          http.request.referrer: "{{parsed_event.message.referrer}}"
+          http.response.mime_type: "{{parsed_event.message.mime_type}}"
+          user.name: "{{parsed_event.message.username}}"
 
       - set:
-           http.request.referrer: '{{parsed_event.message.referrer}}'
-        filter: '{{parsed_event.message.referrer != "-"}}'
+          source.ip: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip | is_ipaddress}}"
 
       - set:
-          http.response.mime_type: '{{parsed_event.message.mime_type}}'
-        filter: '{{parsed_event.message.mime_type != "-"}}'
-
-      - set:
-          source.ip: '{{parsed_event.message.source_ip}}'
-        filter: '{{parsed_event.message.source_ip != "-"}}'
-
-      - set:
-          user.name: '{{parsed_event.message.username}}'
-        filter: '{{parsed_event.message.username != "-"}}'
-
-      - set:
-          url.original: '{{parsed_event.message.url}}'
+          url.original: "{{parsed_event.message.url}}"
         filter: '{{parsed_event.message.method != "CONNECT"}}'
 
       #
@@ -136,19 +126,21 @@ stages:
       # When method is `CONNECT`, real URL isn’t available, we are facing a tunnel.
       #
       - set:
-          destination.domain: '{{parsed_event.message.peerhost}}'
-        filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.peerhost != "-"}}'
+          destination.domain: "{{parsed_event.message.peerhost}}"
+        filter: '{{parsed_event.message.method != "CONNECT"}}'
 
       - set:
-          destination.ip: '{{parsed_event.message.peerhostip}}'
-        filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.peerhostip != "-"}}'
+          destination.ip: "{{parsed_event.message.peerhostip}}"
+        filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.peerhostip | is_ipaddress}}'
 
       - set:
-          url.full: '{{parsed_event.message.url}}'
+          url.full: "{{parsed_event.message.url}}"
         filter: '{{parsed_event.message.method != "CONNECT" and parsed_event.message.url.startswith("http")}}'
+      - set:
+          destination.ip: "{{url.message.ip}}"
+        filter: "{{url.message.ip| is_ipaddress}}"
 
       - set:
-          destination.ip: '{{url.message.ip}}'
-          destination.domain: '{{url.message.domain}}'
-          destination.port: '{{url.message.port}}'
+          destination.domain: "{{url.message.domain}}"
+          destination.port: "{{url.message.port}}"
         filter: '{{parsed_event.message.method == "CONNECT"}}'

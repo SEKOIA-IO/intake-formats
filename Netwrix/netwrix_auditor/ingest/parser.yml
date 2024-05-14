@@ -1,0 +1,101 @@
+name: netwrix_auditor_parser
+pipeline:
+  - name: cef_parser
+    description: ""
+    filter: ""
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: date_parser
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{ cef_parser.message.start | replace("janv", "jan") | replace ("févr", "feb") | replace("mars","mar") | replace ("avr", "apr") | replace ("mai", "may") | replace("juin", "june") | replace("juill", "jul") | replace("août", "aug") | replace("déc", "dec") }}'
+        output_field: date
+        format: "%b. %d %Y %H:%M:%S %Z"
+        timezone: UTC
+  - name: general-setter
+    description: ""
+    filter: ""
+    external: null
+  - name: user-email-setter
+    description: ""
+    filter: '{{ "@" in cef_parser.message.suser }}'
+    external: null
+  - name: user-name-domain-setter
+    description: ""
+    filter: '{{ "\\" in cef_parser.message.suser }}'
+    external: null
+  - name: user-only-setter
+    description: ""
+    filter: '{{ "\\" not in cef_parser.message.suser and "@" not in cef_parser.message.suser }}'
+  - name: document-event-setter
+    description: ""
+    filter: '{{ cef_parser.message.cat == "Document" }}'
+    external: null
+  - name: logon-event-setter
+    description: ""
+    filter: '{{ cef_parser.message.DeviceProduct == "Logon Activity" }}'
+    external: null
+  - name: exchange-event-setter
+    description: ""
+    filter: '{{ cef_parser.message.DeviceProduct == "Exchange Online" }}'
+    external: null
+stages:
+  general-setter:
+    actions:
+      - set:
+          event.code: "{{ cef_parser.message.DeviceEventClassID |lower }}"
+          event.severity: "{{ cef_parser.message.Severity }}"
+          event.start: "{{ date_parser.date }}"
+          observer.vendor: "{{ cef_parser.message.DeviceVendor}}"
+          observer.product: "{{ cef_parser.message.DeviceProduct}}"
+          observer.version: "{{ cef_parser.message.DeviceVersion}}"
+        filter: ""
+        name: set
+  document-event-setter:
+    actions:
+      - set:
+          file.path: '{{ cef_parser.message.filePath.split("/")[3:] |join("/") }}'
+          file.directory: '{{ cef_parser.message.filePath.split("/")[3:] |join("/") | dirname }}'
+          file.name: "{{ cef_parser.message.filePath | basename }}"
+          event.action: "{{ cef_parser.message.Name | lower }}"
+        filter: ""
+        name: set
+  logon-event-setter:
+    actions:
+      - set:
+          event.reason: "{{ cef_parser.message.msg }}"
+          source.domain: "{{ cef_parser.message.shost }}"
+        filter: ""
+        name: set
+  exchange-event-setter:
+    actions:
+      - set:
+          event.reason: "{{ cef_parser.message.msg }}"
+        filter: ""
+        name: set
+  # The following stage exist because some logs have the suser field in a DOMAIN\\user,
+  # some have it as an email, and some have it as a single username
+  user-email-setter:
+    actions:
+      - set:
+          user.email: "{{ cef_parser.message.suser }}"
+        filter: ""
+  user-name-domain-setter:
+    actions:
+      - set:
+          user.name: '{{ cef_parser.message.suser.split("\\")[1] }}'
+          user.domain: '{{ cef_parser.message.suser.split("\\")[0] }}'
+        filter: ""
+        name: set
+  user-only-setter:
+    actions:
+      - set:
+          user.name: "{{ cef_parser.message.suser }}"
+        filter: ""
+        name: set

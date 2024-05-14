@@ -1,10 +1,34 @@
 name: harfanglab
+ignored_values: [null, "", "-"]
 pipeline:
   - name: json_event
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
+
+  - name: parse_last_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.last_seen}}"
+        output_field: datetime
+
+  - name: parse_first_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.first_seen}}"
+        output_field: datetime
+
+  - name: parse_task_info
+    filter: "{{json_event.message.event_data.TaskContent != null and '<?xml' in json_event.message.event_data.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        input_field: "{{json_event.message.event_data.TaskContent}}"
+        output_field: message
+
   - name: agent_info
 
   - name: network_info
@@ -14,13 +38,19 @@ pipeline:
     filter: "{{json_event.message.log_type == 'process'}}"
 
   - name: registry_info
-    filter: '{{json_event.message.details_registry != null}}'
+    filter: "{{json_event.message.details_registry != null}}"
+
+  - name: details_file
+    filter: "{{json_event.message.details_file != null}}"
 
   - name: powershell_info
-    filter: '{{json_event.message.details_powershell != null}}'
+    filter: "{{json_event.message.details_powershell != null}}"
 
   - name: alert_info
     filter: "{{json_event.message.log_type == 'alert'}}"
+
+  - name: threat_info
+    filter: "{{json_event.message.log_type == 'threat'}}"
 
   - name: alert_process_info
     filter: "{{json_event.message.alert_subtype == 'process'}}"
@@ -31,12 +61,48 @@ pipeline:
   - name: eventlog_info
     filter: "{{json_event.message.log_type == 'eventlog'}}"
 
+  - name: authentication_info
+    filter: "{{json_event.message.log_type == 'authentication'}}"
+
+  - name: dns_info
+    filter: "{{json_event.message.log_type == 'dns_resolution'}}"
+
+  - name: auditlog_info
+    filter: "{{json_event.message.log_type == 'auditlog'}}"
+
+  - name: agentlog_info
+    filter: "{{json_event.message.log_type == 'agentlog'}}"
+
+  - name: connectionlog_info
+    filter: "{{json_event.message.log_type == 'connectionlog'}}"
+
+  - name: driverload_info
+    filter: "{{json_event.message.log_type == 'driverload'}}"
+
+  - name: injectedthread_info
+    filter: "{{json_event.message.log_type == 'injectedthread'}}"
+
 stages:
+  threat_info:
+    actions:
+      - set:
+          harfanglab.threat_id: "{{json_event.message.id}}"
+          harfanglab.status: "{{json_event.message.status}}"
+          harfanglab.level: "{{json_event.message.level}}"
+          harfanglab.count.users_impacted: "{{json_event.message.impacted_user_count | int}}"
+          harfanglab.count.rules: "{{json_event.message.rule_count | int}}"
+
+          event.start: "{{parse_first_seen.datetime}}"
+          event.end: "{{parse_last_seen.datetime}}"
+
+      - set:
+          harfanglab.rule_level: "{{json_event.message.rules[0].rule_level}}"
+        filter: "{{json_event.message.rules | length > 0}}"
 
   agent_info:
     actions:
       - set:
-          '@timestamp': "{{json_event.message.get('@event_create_date')}}"
+          "@timestamp": "{{json_event.message.get('@event_create_date')}}"
           agent.id: "{{json_event.message.agent.agentid}}"
           agent.name: "harfanglab"
           log.hostname: "{{json_event.message.agent.hostname}}"
@@ -44,13 +110,31 @@ stages:
           host.domain: "{{json_event.message.agent.domainname}}"
           host.os.version: "{{json_event.message.agent.osversion}}"
           host.os.full: "{{json_event.message.agent.osproducttype}}"
+          harfanglab.groups: "{{json_event.message.groups}}"
+          event.dataset: "{{json_event.message.log_type}}"
+          user.roles: "{{ json_event.message.groups | map(attribute='name') | join(',') | replace('\n', '') | replace(' ', '') }}"
 
   network_info:
     actions:
       - set:
           destination.ip: "{{json_event.message.daddr}}"
+        filter: "{{json_event.message.daddr | is_ipaddress}}"
+
+      - set:
           destination.port: "{{json_event.message.dport}}"
+
+      - translate:
+        dictionary:
+          "in": "inbound"
+          "out": "outbound"
+        mapping:
+          json_event.message.direction: network.direction
+
+      - set:
           source.ip: "{{json_event.message.saddr}}"
+        filter: "{{json_event.message.saddr | is_ipaddress}}"
+
+      - set:
           source.port: "{{json_event.message.sport}}"
 
           process.pid: "{{json_event.message.pid}}"
@@ -59,13 +143,10 @@ stages:
 
           event.category: ["network"]
           event.type: ["connection"]
-      - set:
-          event.kind: "event"
-        filter: "{{ json_event.message.log_type == 'network'}}"
+
       - set:
           event.kind: "alert"
         filter: "{{ json_event.message.log_type == 'alert'}}"
-
 
   process_info:
     actions:
@@ -78,37 +159,43 @@ stages:
           process.pe.file_version: "{{json_event.message.pe_info.file_version}}"
           process.pe.company: "{{json_event.message.pe_info.company_name}}"
           process.pe.product: "{{json_event.message.pe_info.product_name}}"
-          
           process.executable: "{{json_event.message.image_name}}"
           user.name: "{{json_event.message.username}}"
-
           process.parent.executable: "{{json_event.message.parent_image}}"
           process.parent.command_line: "{{json_event.message.parent_commandline}}"
           process.parent.name: '{{json_event.message.parent_image.split("\\") | last}}'
           process.working_directory: "{{json_event.message.current_directory}}"
           process.pe.imphash: "{{json_event.message.pe_imphash}}"
+          harfanglab.grandparent.process.executable: "{{json_event.message.grandparent_image}}"
+          harfanglab.grandparent.process.command_line: "{{json_event.message.parent_commandline}}"
+          harfanglab.grandparent.process.ancestors: "{{json_event.message.ancestors.split('|')}}"
 
           event.category: ["process"]
           event.type: ["start"]
-          event.kind: "event"
       - set:
           file.hash.md5: "{{json_event.message.hashes.md5}}"
           file.hash.sha256: "{{json_event.message.hashes.sha256}}"
           file.hash.sha1: "{{json_event.message.hashes.sha1}}"
-        filter: '{{json_event.message.hashes != null}}'
+        filter: "{{json_event.message.hashes != null}}"
+
+  details_file:
+    actions:
+      - set:
+          file.name: "{{json_event.message.details_file.target_filename}}"
 
   registry_info:
     actions:
       - set:
           registry.key: '{{json_event.message.details_registry.target_object.split("\\")[1:-1] | join("\\")}}'
           registry.hive: '{{json_event.message.details_registry.target_object.split("\\") | first}}'
-          registry.path: '{{{{json_event.message.details_registry.target_object}}'
-          registry.value: '{{json_event.message.details_registry.target_object.split("\\") | last }}'
+          registry.path: "{{json_event.message.details_registry.target_object}}"
+          registry.value: "{{json_event.message.details_registry.details}}"
 
   powershell_info:
     actions:
       - set:
-          harfanglab.process.powershell.command: '{{json_event.message.details_powershell.PowershellCommand}}'
+          harfanglab.process.powershell.command: "{{json_event.message.details_powershell.PowershellCommand}}"
+          harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
 
   alert_info:
     actions:
@@ -123,7 +210,7 @@ stages:
           harfanglab.alert_subtype: "{{json_event.message.alert_subtype}}"
           harfanglab.execution: "{{json_event.message.execution}}"
           harfanglab.status: "{{json_event.message.status}}"
-          harfanglab.aggregation_key: '{{json_event.message.aggregation_key}}'
+          harfanglab.aggregation_key: "{{json_event.message.aggregation_key}}"
 
   alert_process_info:
     actions:
@@ -136,7 +223,7 @@ stages:
           process.pe.file_version: "{{json_event.message.process.pe_info.file_version}}"
           process.pe.company: "{{json_event.message.process.pe_info.company_name}}"
           process.pe.product: "{{json_event.message.process.pe_info.product_name}}"
-          
+
           process.executable: "{{json_event.message.process.image_name}}"
           user.name: "{{json_event.message.process.username}}"
 
@@ -152,14 +239,13 @@ stages:
           file.hash.md5: "{{json_event.message.process.hashes.md5}}"
           file.hash.sha256: "{{json_event.message.process.hashes.sha256}}"
           file.hash.sha1: "{{json_event.message.process.hashes.sha1}}"
-        filter: '{{json_event.message.process.hashes != null}}'
+        filter: "{{json_event.message.process.hashes != null}}"
 
   investigation_info:
     actions:
       - set:
-          event.kind: "event"
           event.type: ["info"]
-          
+
           file.path: "{{json_event.message.binaryinfo.fullpath}}"
           file.name: "{{json_event.message.binaryinfo.filename}}"
           file.hash.md5: "{{json_event.message.binaryinfo.binaryinfo.md5}}"
@@ -175,9 +261,114 @@ stages:
   eventlog_info:
     actions:
       - set:
-          event.kind: "event"
           event.type: ["info"]
           event.provider: "{{json_event.message.source_name}}"
           event.code: "{{json_event.message.event_id|string}}"
-          action.properties: '{ {% for name, value in json_event.message.event_data.items() %}{% if value != None %}"{{name.replace(" ","")}}": "{{value | replace("\n", "") | replace("\\", "\\\\")}}",{% endif %}{% endfor %} }'
+          action.properties: "{{json_event.message.event_data}}"
           action.id: "{{json_event.message.event_id}}"
+          user.name: "{{json_event.message.event_data.SubjectUserName}}"
+          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
+          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
+          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
+          action.properties.TaskContentNew_Command: "{{parse_task_info.message.Task.Actions.Exec.Command}}"
+          action.properties.TaskContentNew_Args: "{{parse_task_info.message.Task.Actions.Exec.Arguments}}"
+
+  authentication_info:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: >
+            {% set type_value = ["info"] %}
+            {% if json_event.message.event_type == "login_failure" or json_event.message.event_type == "logout" %}
+                {% set type_value = ["end"] %}
+            {% elif json_event.message.event_type == "login" %}
+                {% set type_value = ["start"] %}
+            {% endif %}
+            {{- type_value }}
+          source.ip: "{{json_event.message.source_address}}"
+          process.name: "{{json_event.message.process_name}}"
+          agent.version: "{{json_event.message.agent.version}}"
+          action.id: "{{json_event.message.windows.event_id}}"
+          event.reason: "{{json_event.message.windows.event_title}}"
+          event.code: "{{json_event.message.windows.event_id}}"
+          event.action: "{{json_event.message.object_type}}"
+          user.id: "{{json_event.message.windows.source_sid}}"
+          user.name: "{{json_event.message.source_username}}"
+          user.target.id: "{{json_event.message.windows.target_sid}}"
+          user.target.name: "{{json_event.message.target_username}}"
+          organization.id: "{{json_event.message.tenant}}"
+
+  dns_info:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          process.pid: "{{json_event.message.pid}}"
+          process.executable: "{{json_event.message.process_image_path}}"
+          user.name: "{{json_event.message.username}}"
+          dns.question.type: "{{json_event.message.query_type}}"
+          dns.question.name: "{{json_event.message.requested_name}}"
+          organization.id: "{{json_event.message.tenant}}"
+
+  auditlog_info:
+    actions:
+      - set:
+          event.category: ["web"]
+          event.type: ["access"]
+          http.request.method: "{{json_event.message.request_method}}"
+          http.response.status_code: "{{json_event.message.response_status_code}}"
+          url.path: "{{json_event.message.request_path}}"
+          user_agent.original: "{{json_event.message.user_agent}}"
+          user.name: "{{json_event.message.username}}"
+          source.ip: "{{json_event.message.ip_address}}"
+          event.reason: "{{json_event.message.log_description}}"
+          event.action: "{{json_event.message.log_slug}}"
+          organization.id: "{{json_event.message.tenant}}"
+
+  agentlog_info:
+    actions:
+      - set:
+          event.type: ["info"]
+          event.reason: "{{json_event.message.message}}"
+          agent.id: "{{json_event.message.agent_id}}"
+          host.name: "{{json_event.message.hostname}}"
+          organization.id: "{{json_event.message.tenant}}"
+
+  connectionlog_info:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          agent.id: "{{json_event.message.agent_id}}"
+          organization.id: "{{json_event.message.tenant}}"
+
+  driverload_info:
+    actions:
+      - set:
+          event.category: ["driver"]
+          event.type: ["info"]
+
+          agent.id: "{{json_event.message.agent_id}}"
+          agent.version: "{{json_event.message.agent.version}}"
+          organization.id: "{{json_event.message.tenant}}"
+          file.hash: "{{json_event.message.hashes}}"
+          file.pe.file_version: "{{json_event.message.pe_info.file_version}}"
+          file.pe.description: "{{json_event.message.pe_info.file_description}}"
+          file.pe.company: "{{json_event.message.pe_info.company_name}}"
+          file.pe.original_file_name: "{{json_event.message.pe_info.original_filename}}"
+          file.pe.imphash: "{{json_event.message.pe_imphash}}"
+          file.pe.product: "{{json_event.message.pe_info.product_name}}"
+          file.path: "{{json_event.message.imagepath}}"
+          file.name: "{{json_event.message.imagename}}"
+          file.size: "{{json_event.message.imagesize}}"
+
+  injectedthread_info:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+
+          process.executable: "{{json_event.message.process_image}}"
+          process.pid: "{{json_event.message.process_id}}"
+          process.thread.id: "{{json_event.message.thread_id}}"
+          organization.id: "{{json_event.message.tenant}}"

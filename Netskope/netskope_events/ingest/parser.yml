@@ -1,0 +1,191 @@
+name: netskope_events
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.timestamp | string}}"
+        output_field: datetime
+        format: timestamp
+  - name: extract_user_name
+    description: "Extract the username"
+    filter: "{{parsed_event.message.user != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.user}}"
+        output_field: result
+        pattern: "%{USER_WITH_DOMAIN}|%{GREEDYDATA:user_name}"
+        custom_patterns:
+          USER_WITH_DOMAIN: "%{GREEDYDATA:user_name}@%{GREEDYDATA:user_domain}"
+  - name: set_ecs_fields
+  - name: set_netskope_fields
+  - name: categorize_events_for_admin_audit_logs
+    filter: '{{parsed_event.message.type == "admin_audit_logs"}}'
+  - name: categorize_events_for_others_logs
+    filter: '{{parsed_event.message.type != "admin_audit_logs"}}'
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_date.datetime}}"
+          observer.vendor: "Netskope"
+          event.dataset: "{{parsed_event.message.type}}"
+          event.action: "{{parsed_event.message.activity}}"
+          event.reason: "{{parsed_event.message.audit_log_event or parsed_event.message.bypass_reason}}"
+          event.duration: "{{parsed_event.message.conn_duration}}"
+          user_agent.original: "{{parsed_event.message.user_agent}}"
+          user_agent.name: "{{parsed_event.message.browser}}"
+          user_agent.version: "{{parsed_event.message.browser_version}}"
+          user.email: "{{parsed_event.message.user}}"
+          user.name: "{{parsed_event.message.user_name}}"
+          organization.name: "{{parsed_event.message.org}}"
+          network.bytes: "{{parsed_event.message.numbytes}}"
+          host.name: "{{parsed_event.message.hostname}}"
+          host.os.name: "{{parsed_event.message.os}}"
+          host.os.version: "{{parsed_event.message.os_version}}"
+      - set:
+          source.ip: "{{parsed_event.message.srcip}}"
+        filter: "{{parsed_event.message.srcip | is_ipaddress}}"
+
+      - set:
+          source.bytes: "{{parsed_event.message.client_bytes}}"
+          source.geo.timezone: "{{parsed_event.message.src_timezone}}"
+          source.geo.city_name: "{{parsed_event.message.src_location}}"
+          source.geo.region_name: "{{parsed_event.message.src_region}}"
+          source.geo.postal_code: "{{parsed_event.message.src_zipcode}}"
+          source.geo.country_iso_code: "{{parsed_event.message.src_country}}"
+          source.geo.location.lat: "{{parsed_event.message.src_latitude}}"
+          source.geo.location.lon: "{{parsed_event.message.src_longitude}}"
+      - set:
+          destination.ip: "{{parsed_event.message.dstip}}"
+        filter: "{{parsed_event.message.dstip | is_ipaddress}}"
+
+      - set:
+          destination.bytes: "{{parsed_event.message.server_bytes}}"
+          destination.geo.timezone: "{{parsed_event.message.dst_timezone}}"
+          destination.geo.city_name: "{{parsed_event.message.dst_location}}"
+          destination.geo.region_name: "{{parsed_event.message.dst_region}}"
+          destination.geo.postal_code: "{{parsed_event.message.dst_zipcode}}"
+          destination.geo.country_iso_code: "{{parsed_event.message.dst_country}}"
+          destination.geo.location.lat: "{{parsed_event.message.dst_latitude}}"
+          destination.geo.location.lon: "{{parsed_event.message.dst_longitude}}"
+          rule.id: "{{parsed_event.message.policy_id}}"
+          rule.name: "{{parsed_event.message.policy}}"
+          url.original: "{{parsed_event.message.url}}"
+          http.request.referrer: "{{parsed_event.message.referer}}"
+          cloud.instance.id: "{{parsed_event.message.instance_id}}"
+          cloud.instance.name: "{{parsed_event.message.instance_name}}"
+          observer.name: "{{parsed_event.message.instance_name}}"
+          observer.type: "{{parsed_event.message.instance_type}}"
+          file.hash.md5: "{{parsed_event.message.md5}}"
+          file.hash.sha256: "{{parsed_event.message.sha256}}"
+          file.name: "{{parsed_event.message.filename}}"
+      - set:
+          file.mime_type: "{{parsed_event.message.file_type or parsed_event.message.mime_type or parsed_event.message.data_type}}"
+        filter: '{{parsed_event.message.file_type not in [None, "", "File Type Not Detected"] or parsed_event.message.data_type not in [None, ""]}}'
+      - set:
+          file.path: "{{parsed_event.message.file_path}}"
+        filter: '{{parsed_event.message.file_path not in [None, "", "NA"]}}'
+      - translate:
+        dictionary:
+          "yes": "alert"
+          "no": "event"
+        mapping:
+          parsed_event.message.alert: event.kind
+        fallback: "event"
+      - set:
+          host.os.type: "macos"
+          host.os.platform: "darwin"
+        filter: '{{parsed_event.message.device in ["Mac Device", "iOS Device", "iPad", "iPhone"]}}'
+      - set:
+          host.os.type: "linux"
+          host.os.platform: "linux"
+        filter: '{{parsed_event.message.device in ["Linux Device", "Android Device"]}}'
+      - set:
+          host.os.type: "windows"
+          host.os.platform: "windows"
+        filter: '{{parsed_event.message.device == "Windows Device"}}'
+      - set:
+          event.start: "{{parsed_event.message.conn_starttime | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.conn_starttime > 0}}"
+      - set:
+          event.end: "{{parsed_event.message.conn_endtime | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.conn_endtime > 0}}"
+      - set:
+          user.roles: '["{{parsed_event.message.user_role}}"]'
+        filter: "{{parsed_event.message.user_role != null}}"
+      - set:
+          user.name: "{{extract_user_name.result.user_name}}"
+          user.domain: "{{extract_user_name.result.user_domain}}"
+        filter: "{{parsed_event.message.user != null and parsed_event.message.user_name == null}}"
+      - set:
+          file.name: "{{parsed_event.message.object}}"
+        filter: '{{parsed_event.message.filename == null and parsed_event.message.object_type in ["File", "Document", "Folder"]}}'
+  set_netskope_fields:
+    actions:
+      - set:
+          netskope.alerts.name: "{{parsed_event.message.alert_name}}"
+          netskope.alerts.type: "{{parsed_event.message.alert_type}}"
+          netskope.events.action.type: "{{parsed_event.message.supporting_data.data_type}}"
+          netskope.events.action.values: "{{parsed_event.message.supporting_data.data_values}}"
+          netskope.events.application.name: "{{parsed_event.message.app}}"
+          netskope.events.application.suite: "{{parsed_event.message.appsuite}}"
+          netskope.events.application.category: "{{parsed_event.message.appcategory}}"
+          netskope.events.application.activity: "{{parsed_event.message.app_activity}}"
+          netskope.events.access_method: "{{parsed_event.message.access_method}}"
+          netskope.events.ccl: "{{parsed_event.message.ccl}}"
+          netskope.events.severity.id: "{{parsed_event.message.severity_id}}"
+          netskope.events.severity.level: "{{parsed_event.message.severity_level}}"
+      - set:
+          netskope.dlp.incident.id: "{{parsed_event.message.dlp_incident_id}}"
+        filter: "{{parsed_event.message.dlp_incident_id not in [None, 0]}}"
+      - set:
+          netskope.dlp.incident.parent_id: "{{parsed_event.message.dlp_parent_id}}"
+        filter: "{{parsed_event.message.dlp_incident_id not in [None, 0] and parsed_event.message.dlp_parent_id != parsed_event.message.dlp_incident_id}}"
+  categorize_events_for_admin_audit_logs:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+      - set:
+          event.category: ["authentication"]
+        filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+      - translate:
+        dictionary:
+          "Login Successful": ["start"]
+          "Login Failed": ["info"]
+          "Logout Successful": ["end"]
+
+        mapping:
+          parsed_event.message.audit_log_event: event.type
+        fallback: ["info"]
+        filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
+        filter: '{{"Password" in parsed_event.message.audit_log_event}}'
+  categorize_events_for_others_logs:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.type in ["connection", "nspolicy", "malsite"]}}'
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.alert_type in ["Malware", "quarantine"]}}'
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.alert_type in ["anomaly", "Compromised Credential", "Security Assessment"] or parsed_event.message.type in ["breach", "anomaly"]}}'
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+          event.kind: "alert"
+          event.dataset: "dlp_incident"
+        filter: '{{parsed_event.message.get("dlp_incident_id") not in [None, 0]}}'

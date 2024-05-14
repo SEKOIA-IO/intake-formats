@@ -1,0 +1,213 @@
+name: aws-guardduty
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.updatedAt}}"
+        output_field: datetime
+  - name: parsed_finding
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.type
+        output_field: finding
+        pattern: "%{DATA:threat_purpose}:%{DATA:affected_resource_type}/%{WORD:threat_family_name}(.%{DATA:detection_mecanism})?(!%{DATA:artifact})?"
+  - name: set_fields
+  - name: set_finding_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.action: "{{parsed_finding.finding.threat_purpose}}"
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+          event.severity: "{{json_event.message.severity}}"
+          cloud.account.id: "{{json_event.message.accountId}}"
+          cloud.region: "{{json_event.message.region}}"
+          cloud.provider: "{{json_event.message.partition}}"
+          agent.version: "{{json_event.message.schemaVersion}}"
+          cloud.service.name: "{{json_event.message.service.service.name}}"
+          user.name: "{{json_event.message.resource.accessKeyDetails.userName or json_event.message.resource.rdsDbUserDetails.user or json_event.message.resource.kubernetesDetails.kubernetesUserDetails.username}}"
+      - set:
+          user.group.name: "{{json_event.message.resource.kubernetesDetails.kubernetesUserDetails.groups}}"
+          aws.guardduty.finding.namespace: "{{json_event.message.resource.kubernetesDetails.kubernetesWorkloadDetails.namespace}}"
+        filter: '{{json_event.message.resource.get("kubernetesDetails") != None}}'
+      - set:
+          destination.ip: "{{json_event.message.service.action.networkConnectionAction.localIpDetails.ipAddressV4}}"
+        filter: "{{json_event.message.service.action.networkConnectionAction.localIpDetails.ipAddressV4 | is_ipaddress}}"
+      - set:
+          threat.indicator.description: "{{json_event.message.description}}"
+          threat.group.name: "{{parsed_finding.finding.threat_family_name}}"
+          threat.enrichments: >
+            [ {%- if json_event.message.service.featureName != "EbsVolumeScan" -%}
+              {
+              "indicator": {
+                "first_seen": '{{json_event.message.service.eventFirstSeen}}',
+                "last_seen": '{{json_event.message.service.eventLastSeen}}',
+                "sightings": '{{json_event.message.service.count}}',
+              },
+              },
+              {%- else -%}
+              {%- for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames -%}
+              {% for file in threat.filePaths %}
+              {
+              "indicator": {
+                "first_seen": '{{json_event.message.service.eventFirstSeen}}',
+                "last_seen": '{{json_event.message.service.eventLastSeen}}',
+                "sightings": '{{json_event.message.service.count}}',
+                "type": "file",
+                'file': {
+                  "name": '{{file.fileName}}',
+                  "path": '{{file.filePath}}',
+                  "hash": {
+                    "sha256": '{{file.hash}}',
+                  },
+                },
+              },
+              },
+              {% endfor %}
+              {%- endfor -%}
+              {%- endif -%}
+            ]
+      - set:
+          aws.guardduty.threats.evidence: "{{json_event.message.service.evidence.threatIntelligenceDetails}}"
+        filter: '{{json_event.message.service.get("evidence") != None or "null"}}'
+
+  set_finding_fields:
+    actions:
+      - set:
+          aws.guardduty.finding.id: "{{json_event.message.id}}"
+          aws.guardduty.finding.type: "{{json_event.message.type}}"
+          aws.guardduty.finding.region: "{{json_event.message.region}}"
+          aws.guardduty.finding.resource.type: "{{json_event.message.resource.resourceType}}"
+          aws.guardduty.finding.resource.role: "{{json_event.message.service.resourceRole | lower }}"
+      - set:
+          aws.guardduty.finding.principal.id: "{{json_event.message.resource.accessKeyDetails.principalId}}"
+        filter: '{{json_event.message.resource.get("accessKeyDetails") != None}}'
+      - set:
+          cloud.instance.id: "{{json_event.message.resource.instanceDetails.instanceId}}"
+          cloud.machine.type: "{{json_event.message.resource.instanceDetails.instanceType}}"
+        filter: '{{json_event.message.resource.get("instanceDetails") != None}}'
+      - set:
+          aws.guardduty.finding.accesskey: "{{json_event.message.resource.accessKeyDetails}}"
+        filter: '{{json_event.message.resource.get("accessKeyDetails") != None}}'
+      - set:
+          container.id: "{{json_event.message.resource.containerDetails.id}}"
+          container.name: "{{json_event.message.resource.containerDetails.name}}"
+          container.image.name: "{{json_event.message.resource.containerDetails.image}}"
+        filter: '{{json_event.message.resource.get("containerDetails") != None}}'
+      - set:
+          aws.guardduty.finding.rdsdb.instance: "{{json_event.message.resource.rdsDbInstanceDetails}}"
+        filter: '{{json_event.message.resource.get("rdsDbInstanceDetails") != None}}'
+      - set:
+          aws.guardduty.finding.rdsdb.user: "{{json_event.message.resource.rdsDbUserDetails}}"
+        filter: '{{json_event.message.resource.get("rdsDbUserDetails") != None}}'
+      - set:
+          aws.guardduty.finding.eks.details: "{{json_event.message.resource.eksClusterDetails}}"
+        filter: '{{json_event.message.resource.get("eksClusterDetails") != None}}'
+      - set:
+          aws.guardduty.finding.eks.user_uid: "{{json_event.message.resource.kubernetesDetails.kubernetesUserDetails.uid}}"
+        filter: '{{json_event.message.resource.get("kubernetesDetails") != None}}'
+      - set:
+          aws.guardduty.finding.ecs: "{{json_event.message.resource.ecsClusterDetails}}"
+        filter: '{{json_event.message.resource.get("ecsClusterDetails") != None}}'
+      - set:
+          aws.guardduty.finding.s3bucket: "{{json_event.message.resource.s3BucketDetails[0]}}"
+        filter: '{{json_event.message.resource.get("s3BucketDetails") != None}}'
+      - set:
+          aws.guardduty.finding.volume.details: "{{json_event.message.resource.ebsVolumeDetails.scannedVolumeDetails}}"
+        filter: '{{json_event.message.resource.get("ebsVolumeDetails") != None}}'
+      - set:
+          aws.guardduty.finding.service.action.type: "{{json_event.message.service.action.actionType}}"
+          aws.guardduty.finding.service.resource.role: "{{json_event.message.service.resourceRole}}"
+      - set:
+          user_agent.original: "{{json_event.message.service.additionalInfo.userAgent.fullUserAgent}}"
+          user_agent.device.name: "{{json_event.message.service.additionalInfo.userAgent.userAgentCategory}}"
+          aws.guardduty.finding.service.additional_info: "{{json_event.message.service.additionalInfo.anomalies}}"
+        filter: '{{parsed_finding.finding.threat_family_name == "AnomalousBehavior"}}'
+      - set:
+          network.direction: "{{json_event.message.service.action.networkConnectionAction.connectionDirection|lower }}"
+          source.geo.country_name: "{{json_event.message.service.action.networkConnectionAction.remoteIpDetails.country.countryName}}"
+          source.geo.location: "{{json_event.message.service.action.networkConnectionAction.remoteIpDetails.geoLocation}}"
+          source.geo.city_name: "{{json_event.message.service.action.networkConnectionAction.remoteIpDetails.city.cityName}}"
+          network.transport: "{{json_event.message.service.action.networkConnectionAction.protocol|lower }}"
+          source.port: "{{json_event.message.service.action.networkConnectionAction.remotePortDetails.port}}"
+          destination.port: "{{json_event.message.service.action.networkConnectionAction.localPortDetails.port}}"
+          aws.guardduty.finding.service.action.target.blocked: "{{json_event.message.service.action.networkConnectionAction.blocked}}"
+        filter: '{{json_event.message.service.action.actionType == "NETWORK_CONNECTION"}}'
+      - set:
+          source.ip: "{{json_event.message.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4}}"
+        filter: "{{json_event.message.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4 | is_ipaddress}}"
+      - set:
+          source.geo.country_name: "{{json_event.message.service.action.awsApiCallAction.remoteIpDetails.country.countryName}}"
+          source.geo.location: "{{json_event.message.service.action.awsApiCallAction.remoteIpDetails.geoLocation}}"
+          source.geo.city_name: "{{json_event.message.service.action.awsApiCallAction.remoteIpDetails.city.cityName}}"
+          error.code: "{{json_event.message.service.action.awsApiCallAction.errorCode}}"
+          service.name: "{{json_event.message.service.action.awsApiCallAction.serviceName}}"
+        filter: '{{json_event.message.service.action.actionType == "AWS_API_CALL"}}'
+
+      - set:
+          source.ip: "{{json_event.message.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4}}"
+        filter: "{{json_event.message.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4 | is_ipaddress}}"
+
+      - set:
+          source.geo.country_name: "{{json_event.message.service.action.kubernetesApiCallAction.remoteIpDetails.country.countryName}}"
+          source.geo.location: "{{json_event.message.service.action.kubernetesApiCallAction.remoteIpDetails.geoLocation}}"
+          source.geo.city_name: "{{json_event.message.service.action.kubernetesApiCallAction.remoteIpDetails.city.cityName}}"
+        filter: '{{json_event.message.service.action.actionType == "KUBERNETES_API_CALL"}}'
+
+      - set:
+          source.ip: "{{json_event.message.service.action.kubernetesApiCallAction.remoteIpDetails.ipAddressV4}}"
+        filter: "{{json_event.message.service.action.kubernetesApiCallAction.remoteIpDetails.ipAddressV4 | is_ipaddress}}"
+
+      - set:
+          aws.guardduty.finding.service.action.port_probe_details: "{{json_event.message.service.action.portProbeAction.portProbeDetails}}"
+          aws.guardduty.finding.service.action.target.blocked: "{{json_event.message.service.action.portProbeAction.blocked}}"
+        filter: '{{json_event.message.service.action.actionType == "PORT_PROBE"}}'
+      - set:
+          network.protocol: "dns"
+          destination.domain: "{{json_event.message.service.action.dnsRequestAction.domain}}"
+          network.transport: "{{json_event.message.service.action.dnsRequestAction.protocol|lower }}"
+          aws.guardduty.finding.service.action.target.blocked: "{{json_event.message.service.action.dnsRequestAction.blocked}}"
+        filter: '{{json_event.message.service.action.actionType == "DNS_REQUEST"}}'
+      - set:
+          source.geo.country_name: "{{json_event.message.service.action.rdsLoginAttemptActionremoteIpDetails.country.countryName}}"
+          source.geo.location: "{{json_event.message.service.action.rdsLoginAttemptActionremoteIpDetails.geoLocation}}"
+          source.geo.city_name: "{{json_event.message.service.action.rdsLoginAttemptActionremoteIpDetails.city.cityName}}"
+        filter: '{{json_event.message.service.action.actionType == "RDS_LOGIN_ATTEMPT"}}'
+
+      - set:
+          source.ip: "{{json_event.message.service.action.rdsLoginAttemptAction.remoteIpDetails.ipAddressV4}}"
+        filter: "{{json_event.message.service.action.rdsLoginAttemptAction.remoteIpDetails.ipAddressV4 | is_ipaddress}}"
+      - set:
+          aws.guardduty.threats: >
+            {% for threat in json_event.message.service.ebsVolumeScanDetails.scanDetections.threatDetectedByName.threatNames %}{
+              {% set d1 = {'name':threat.name, 'severity':threat.severity, 'itemCount':threat.itemCount} %}
+              "threat": {{ d1 }},
+            }{% endfor %}
+        filter: '{{json_event.message.service.featureName == "EbsVolumeScan"}}'
+      - delete:
+          - aws.guardduty.finding.service.resource
+        filter: '{{json_event.message.service.get("action") != None}}'
+      - delete:
+          - aws.guardduty.finding.eks.details.tags
+        filter: '{{json_event.message.resource.get("eksClusterDetails") != None and json_event.message.resource.eksClusterDetails.get("tags") != None}}'
+      - delete:
+          - aws.guardduty.finding.ecs.tags
+        filter: '{{json_event.message.resource.get("ecsClusterDetails") != None and json_event.message.resource.ecsClusterDetails.get("tags") != None}}'
+      - delete:
+          - aws.guardduty.finding.s3bucket.tags
+        filter: '{{json_event.message.resource.get("s3BucketDetails") != None and json_event.message.resource.s3BucketDetails.0.get("tags") != None}}'
+      - delete:
+          - aws.guardduty.finding.s3bucket.publicAccess
+        filter: '{{json_event.message.resource.get("s3BucketDetails") != None and json_event.message.resource.s3BucketDetails.0.get("publicAccess") != None}}'
+      - delete:
+          - aws.guardduty.finding.accesskey.userName
+        filter: '{{json_event.message.resource.get("accessKeyDetails") != None and json_event.message.resource.accessKeyDetails.get("userName") != None}}'

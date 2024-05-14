@@ -1,166 +1,360 @@
-name: 'crowdstrike falcon edr'
+name: "crowdstrike falcon edr"
 pipeline:
   - name: parsed_event
     external:
       name: json.parse-json
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: message
+
   - name: read_event_date
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.metadata.eventCreationTime | string}}'
+        input_field: "{{parsed_event.message.metadata.eventCreationTime | string}}"
         output_field: datetime
         timezone: UTC
     filter: '{{parsed_event.message.metadata.eventType != "Vertex"}}'
+
   - name: read_event_date
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.event.timestamp}}'
+        input_field: "{{parsed_event.message.event.timestamp}}"
         output_field: datetime
     filter: '{{parsed_event.message.metadata.eventType == "Vertex"}}'
+
+  - name: parse_event_start_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.event.StartTime}}"
+        output_field: datetime
+
+  - name: parse_event_end_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.event.EndTime}}"
+        output_field: datetime
+
+  - name: account_creation_time_stamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.event.AccountCreationTimeStamp}}"
+        output_field: datetime
+
   - name: set_common_fields
-  - name: detectionsummaryevent
+
+  - name: detection_summary_event
     filter: '{{parsed_event.message.metadata.eventType == "DetectionSummaryEvent"}}'
-  - name: useractivityauditevent
+
+  - name: user_activity_audit_event
     filter: '{{parsed_event.message.metadata.eventType == "UserActivityAuditEvent"}}'
-  - name: authactivityauditevent
+
+  - name: auth_activity_audit_event
     filter: '{{parsed_event.message.metadata.eventType == "AuthActivityAuditEvent"}}'
-  - name: incidentsummaryevent
+
+  - name: incident_summary_event
     filter: '{{parsed_event.message.metadata.eventType == "IncidentSummaryEvent"}}'
+
+  - name: idp_detection_summary_event
+    filter: '{{parsed_event.message.metadata.eventType == "IdpDetectionSummaryEvent"}}'
+
+  - name: identity_protection_event
+    filter: '{{parsed_event.message.metadata.eventType == "IdentityProtectionEvent"}}'
+
+  - name: mobile_detection_summary_event
+    filter: '{{parsed_event.message.metadata.eventType == "MobileDetectionSummaryEvent"}}'
+
   - name: vertex
     filter: '{{parsed_event.message.metadata.eventType == "Vertex"}}'
+
 stages:
   set_common_fields:
     actions:
       - set:
-          '@timestamp': '{{read_event_date.datetime}}'
-          crowdstrike.event_type: '{{parsed_event.message.metadata.eventType}}'
-  detectionsummaryevent:
+          "@timestamp": "{{read_event_date.datetime}}"
+          crowdstrike.event_type: "{{parsed_event.message.metadata.eventType}}"
+
+  detection_summary_event:
     actions:
       - set:
-          host.ip: '{{parsed_event.message.event.LocalIP}}'
-          agent.id: '{{parsed_event.message.event.AgentIdString}}'
-          host.mac: '{{parsed_event.message.event.MACAddress}}'
-          host.name: '{{parsed_event.message.event.ComputerName}}'
-          log.hostname: '{{parsed_event.message.event.ComputerName}}'
-          user.name: '{{stage.message.event.UserName}}'
+          host.ip: "{{parsed_event.message.event.LocalIP}}"
+        filter: "{{parsed_event.message.event.LocalIP  | is_ipaddress}}"
+
+      - set:
+          agent.id: "{{parsed_event.message.event.AgentIdString}}"
+          host.mac: "{{parsed_event.message.event.MACAddress}}"
+          host.name: "{{parsed_event.message.event.ComputerName}}"
+          log.hostname: "{{parsed_event.message.event.ComputerName}}"
+          user.name: "{{parsed_event.message.event.UserName}}"
           event.kind: alert
-          event.type: ['info']
-          process.end: '{{stage.message.event.ProcessEndTime}}'
-          process.pid: '{{parsed_event.message.event.ProcessId}}'
-          file.hash.md5: '{{parsed_event.message.event.MD5String}}'
-          file.hash.sha256: '{{parsed_event.message.event.SHA256String}}'
-          process.start: '{{stage.message.event.ProcessStartTime}}'
-          event.category: ['intrusion_detection']
-          process.parent.pid: '{{parsed_event.message.event.ParentProcessId}}'
-          threat.tactic.name: '{{parsed_event.message.event.Tactic}}'
-          process.command_line: '{{parsed_event.message.event.CommandLine}}'
-          process.name: '{{parsed_event.message.event.FileName}}'
-          process.working_directory: '{{parsed_event.message.event.FilePath}}'
-          crowdstrike.detect_id: '{{parsed_event.message.event.DetectId}}'
-          threat.technique.name: '{{parsed_event.message.event.Technique}}'
-          crowdstrike.customer_id: '{{parsed_event.message.event.CustomerIDString}}'
-          process.parent.executable: '{{parsed_event.message.event.ParentImageFileName}}'
-          process.parent.name: '{{parsed_event.message.event.ParentImageFileName | basename}}'
-          process.parent.working_directory: '{{parsed_event.message.event.ParentImageFileName | dirname}}'
-          process.parent.command_line: '{{parsed_event.message.event.ParentCommandLine}}'
-          crowdstrike.detect_description: '{{parsed_event.message.event.DetectDescription}}'
-        name: set
-  useractivityauditevent:
+          event.type: ["info"]
+          process.pid: "{{parsed_event.message.event.ProcessId}}"
+          file.hash.md5: "{{parsed_event.message.event.MD5String}}"
+          file.hash.sha256: "{{parsed_event.message.event.SHA256String}}"
+          event.category: ["intrusion_detection"]
+          process.parent.pid: "{{parsed_event.message.event.ParentProcessId}}"
+          threat.tactic.name: "{{parsed_event.message.event.Tactic}}"
+          threat.indicator.description: "{{parsed_event.message.event.PatternDispositionDescription}}"
+          process.command_line: "{{parsed_event.message.event.CommandLine}}"
+          process.name: "{{parsed_event.message.event.FileName}}"
+          process.working_directory: "{{parsed_event.message.event.FilePath}}"
+          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
+          threat.technique.name: "{{parsed_event.message.event.Technique}}"
+          crowdstrike.customer_id: "{{parsed_event.message.event.CustomerIDString}}"
+          process.parent.executable: "{{parsed_event.message.event.ParentImageFileName}}"
+          process.parent.name: "{{parsed_event.message.event.ParentImageFileName | basename}}"
+          process.parent.working_directory: "{{parsed_event.message.event.ParentImageFileName | dirname}}"
+          process.parent.command_line: "{{parsed_event.message.event.ParentCommandLine}}"
+          crowdstrike.detect_description: "{{parsed_event.message.event.DetectDescription}}"
+          event.severity: "{{parsed_event.message.event.Severity}}"
+          crowdstrike.severity_name: "{{parsed_event.message.event.SeverityName}}"
+          crowdstrike.host_groups: '{{parsed_event.message.event.HostGroups.split(",")}}'
+
+      - set:
+          process.end: "{{parsed_event.message.event.ProcessEndTime | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.event.ProcessEndTime > 0}}"
+
+      - set:
+          process.start: "{{parsed_event.message.event.ProcessStartTime | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.event.ProcessStartTime > 0}}"
+
+      - set:
+          threat.indicator.file.hash.sha256: "{{parsed_event.message.event.IOCValue}}"
+          threat.indicator.type: "file"
+        filter: "{{parsed_event.message.event.IOCType == 'hash_sha256'}}"
+
+  user_activity_audit_event:
     actions:
       - set:
-          source.ip: '{{parsed_event.message.event.UserIp}}'
-          event.kind: event
-          event.type: ['change']
-          service.name: '{{parsed_event.message.event.ServiceName}}'
-          event.category: ['configuration']
-          user.id: '{{parsed_event.message.event.UserId}}'
-          crowdstrike.operation_name: '{{parsed_event.message.event.OperationName}}'
-        name: set
-  authactivityauditevent:
+          source.ip: "{{parsed_event.message.event.UserIp}}"
+        filter: "{{parsed_event.message.event.UserIp | is_ipaddress}}"
+
+      - set:
+          event.type: ["change"]
+          service.name: "{{parsed_event.message.event.ServiceName}}"
+          event.category: ["configuration"]
+          user.id: "{{parsed_event.message.event.UserId}}"
+          crowdstrike.detect_id: "{% for item in parsed_event.message.event.AuditKeyValues if item.Key == 'detection_id' %}{{item.ValueString}}{% endfor %}"
+          crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
+
+  auth_activity_audit_event:
     actions:
       - set:
-          source.ip: '{{parsed_event.message.event.UserIp}}'
-          event.kind: event
-          service.name: '{{parsed_event.message.event.ServiceName}}'
-          user.id: '{{parsed_event.message.event.UserId}}'
-          crowdstrike.operation_name: '{{parsed_event.message.event.OperationName}}'
-        name: set
+          source.ip: "{{parsed_event.message.event.UserIp}}"
+        filter: "{{parsed_event.message.event.UserIp | is_ipaddress}}"
+
+      - set:
+          service.name: "{{parsed_event.message.event.ServiceName}}"
+          user.id: "{{parsed_event.message.event.UserId}}"
+          crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
       - translate:
         dictionary:
-          'streamStarted': ['session']
-          'streamStopped': ['session']
+          "streamStarted": ["session"]
+          "streamStopped": ["session"]
         mapping:
           crowdstrike.operation_name: event.category
-        fallback: ['configuration']
+        fallback: ["configuration"]
       - translate:
         dictionary:
-          'streamStarted': ['start']
-          'streamStopped': ['stop']
+          "streamStarted": ["start"]
+          "streamStopped": ["stop"]
         mapping:
           crowdstrike.operation_name: event.type
-        fallback: ['change']
-  incidentsummaryevent:
+        fallback: ["change"]
+
+  incident_summary_event:
     actions:
       - set:
           event.kind: alert
-          event.type: ['info']
-          event.category: ['intrusion_detection']
-          crowdstrike.state: '{{parsed_event.message.event.State}}'
-          crowdstrike.host_id: '{{parsed_event.message.event.HostID}}'
-          crowdstrike.incident_id: '{{parsed_event.message.event.IncidentID}}'
-          crowdstrike.incident_end: '{{parsed_event.message.event.IncidentEndTime}}'
-          crowdstrike.incident_start: '{{parsed_event.message.event.IncidentStartTime}}'
-        name: set
+          event.type: ["info"]
+          event.category: ["intrusion_detection"]
+          crowdstrike.state: "{{parsed_event.message.event.State}}"
+          crowdstrike.host_id: "{{parsed_event.message.event.HostID}}"
+          crowdstrike.incident_id: "{{parsed_event.message.event.IncidentID}}"
+          crowdstrike.incident_end: "{{parsed_event.message.event.IncidentEndTime}}"
+          crowdstrike.incident_start: "{{parsed_event.message.event.IncidentStartTime}}"
+
+  idp_detection_summary_event:
+    actions:
+      - translate:
+        dictionary:
+          "1": "BloodHound (Sharphound)"
+          "2": "Impacket (GetUserSPNs)/CrackMapExec  (Kerberoasting)"
+          "3": "BloodHound (Powershell)"
+          "4": "Kerberoasting (SetSPN)"
+          "5": "Empire (Invoke-Kerberoast)"
+          "6": "PowerSploit (Get-DomainUser)"
+          "7": "Rubeus (Kerberoasting)"
+          "8": "Rubeus (Asreproas)"
+          "9": "Impacket (FindDelegation)"
+          "10": "CrackMapExec (ASREPRoast)"
+          "11": "CrackMapExec (Trusted-for-delegation)"
+          "12": "Impacket (AdminCount)"
+        mapping:
+          parsed_event.message.event.LdapSearchQueryAttack: crowdstrike.ldap_search_query_attack
+
+      - translate:
+        dictionary:
+          "0x00000001": "Protocol anomaly"
+          "0x00000002": "Mimikatz"
+          "0x00000004": "Metasploit"
+          "0x00000008": "CrackMapExec/Impacket"
+          "0x00000010": "Null hostname protocol field"
+          "0x00000020": "Removed NetBIOS computer name protocol field"
+          "0x00000040": "Duplicated EPA protocol fields"
+          "0x00000080": "Duplicated AV Flags protocol field"
+          "0x00000100": "Metasploit (new signature)"
+        mapping:
+          parsed_event.message.event.ProtocolAnomalyClassification: crowdstrike.protocol_anomaly_classification
+
+      - translate:
+        dictionary:
+          "1": "Domain replication"
+          "2": "SPN modification"
+          "3": "Replication server registration"
+          "4": "Scheduled task creation"
+          "5": "Remote service configuration"
+          "6": "Net session enumeration"
+          "7": "User management (SAMR)"
+          "8": "Remote SCM activation (DCOM)"
+          "9": "Remote task management"
+          "10": "Print system asynchronous remote protocol"
+          "11": "Netlogon server authenticate"
+        mapping:
+          parsed_event.message.event.RpcOpClassification: crowdstrike.rpc_op_classification
+
+      - translate:
+        dictionary:
+          "0": "SPN removal"
+          "1": "Machine sAMAccountName changed"
+        mapping:
+          parsed_event.message.event.SuspiciousMachineAccountAlterationType: crowdstrike.suspicious_machine_account_alteration_type
+
+      - set:
+          agent.id: "{{ parsed_event.message.event.SourceEndpointSensorId }}"
+          crowdstrike.account_creation_time_stamp: "{{ account_creation_time_stamp.datetime }}"
+          crowdstrike.activity_id: "{{ parsed_event.message.event.ActivityId }}"
+          crowdstrike.added_privilege: "{{ parsed_event.message.event.AddedPrivilege }}"
+          crowdstrike.attempt_outcome: "{{ parsed_event.message.event.AttemptOutcome }}"
+          crowdstrike.detect_description: "{{ parsed_event.message.event.DetectDescription }}"
+          crowdstrike.detect_name: "{{ parsed_event.message.event.DetectName }}"
+          crowdstrike.idp_policy_rule_trigger: "{{ parsed_event.message.event.IdpPolicyRuleTrigger }}"
+          crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
+          crowdstrike.previous_privileges: "{{ parsed_event.message.event.PreviousPrivileges }}"
+          destination.domain: "{{ parsed_event.message.event.TargetEndpointHostName }}"
+          event.end: "{{ parse_event_end_date.datetime }}"
+          event.reason: "{{ parsed_event.message.event.Objective }}"
+          event.reference: "{{ parsed_event.message.event.FalconHostLink }}"
+          event.severity: "{{ parsed_event.message.event.Severity }}"
+          event.start: "{{ parse_event_start_date.datetime }}"
+          event.url: "{{ parsed_event.message.event.FalconHostLink }}"
+          host.id: "{{ parsed_event.message.event.SourceEndpointAccountObjectGuid }}"
+          host.name: "{{ parsed_event.message.event.SourceEndpointHostName }}"
+          event.action: "{{ parsed_event.message.event.IdpPolicyRuleAction }}"
+          rule.name: "{{ parsed_event.message.event.IdpPolicyRuleName }}"
+          source.geo.country_iso_code: "{{ parsed_event.message.event.LocationCountryCode }}"
+          source.ip: "{{ parsed_event.message.event.SourceEndpointIpAddress }}"
+          threat.tactic.name: "{{ parsed_event.message.event.Tactic }}"
+          threat.technique.name: "{{ parsed_event.message.event.Technique }}"
+          user.domain: "{{ parsed_event.message.event.SourceAccountDomain }}"
+          user.email: "{{ parsed_event.message.event.SourceAccountUpn }}"
+          user.id: "{{ parsed_event.message.event.SourceAccountObjectSid }}"
+          user.name: "{{ parsed_event.message.event.SourceAccountName }}"
+          user.target.domain: "{{ parsed_event.message.event.TargetAccountDomain }}"
+          user.target.email: "{{ parsed_event.message.event.TargetAccountUpn }}"
+          user.target.id: "{{ parsed_event.message.event.TargetAccountObjectSid }}"
+          user.target.name: "{{ parsed_event.message.event.TargetAccountName }}"
+
+  identity_protection_event:
+    actions:
+      - set:
+          crowdstrike.incident_description: "{{ parsed_event.message.event.IncidentDescription }}"
+          crowdstrike.incident_type: "{{ parsed_event.message.event.IncidentType }}"
+          crowdstrike.severity_name: "{{ parsed_event.message.event.SeverityName }}"
+          event.end: "{{ parse_event_end_date.datetime }}"
+          event.reference: "{{ parsed_event.message.event.FalconHostLink }}"
+          event.severity: "{{ parsed_event.message.event.Severity }}"
+          event.start: "{{ parse_event_start_date.datetime }}"
+          event.url: "{{ parsed_event.message.event.FalconHostLink }}"
+          host.name: "{{ parsed_event.message.event.EndpointName }}"
+          source.ip: "{{ parsed_event.message.event.EndpointIp }}"
+
+      - set:
+          user.domain: '{{ parsed_event.message.event.UserName.split("\\")[0] }}'
+          user.name: '{{ parsed_event.message.event.UserName.split("\\")[1] }}'
+        filter: '{{ "\\" in parsed_event.message.event.UserName }}'
+
+      - set:
+          user.name: "{{ parsed_event.message.event.UserName }}"
+        filter: '{{ "\\" not in parsed_event.message.event.UserName }}'
+
   vertex:
     actions:
       - set:
-          event.kind: event
-          event.reason: '{{parsed_event.message.event.properties.EventName}}'
-          crowdstrike.detect_id: '{{parsed_event.message.metadata.detectionIdString}}'
-          crowdstrike.customer_id: '{{parsed_event.message.event.customer_id}}'
-          crowdstrike.host_id: '{{parsed_event.message.event.device_id}}'
-          crowdstrike.vertex_type: '{{parsed_event.message.event.vertex_type}}'
-          crowdstrike.scope: '{{parsed_event.message.event.scope}}'
-          crowdstrike.object_id: '{{parsed_event.message.event.object_id}}'
-          crowdstrike.edge.subject_id: '{{parsed_event.message.metadata.edge.sourceVertexId}}'
-          crowdstrike.edge.type: '{{parsed_event.message.metadata.edge.type}}'
-          user.domain: '{{parsed_event.message.event.properties.LogonDomain}}'
-          user.name: '{{parsed_event.message.event.properties.UserName}}'
-          user.id: '{{parsed_event.message.event.properties.UserSid or parsed_event.message.event.properties.LogonId}}'
-          process.command_line: '{{parsed_event.message.event.properties.CommandLine}}'
-          process.executable: '{{parsed_event.message.event.properties.ImageFileName}}'
-          process.name: '{{parsed_event.message.event.properties.ImageFileName | basename}}'
-          process.title: '{{parsed_event.message.event.properties.WindowTitle}}'
-          process.working_directory: '{{parsed_event.message.event.properties.ImageFileName | dirname}}'
-          process.pid: '{{parsed_event.message.event.properties.RawProcessId or parsed_event.message.event.properties.TargetProcessId}}'
-          process.parent.pid: '{{parsed_event.message.event.properties.ParentProcessId}}'
-          process.start: '{{parsed_event.message.event.properties.ProcessEndTime | to_rfc3339}}'
-          process.end: '{{parsed_event.message.event.properties.ProcessStartTime | to_rfc3339}}'
-          process.exit_code: '{{parsed_event.message.event.properties.ExitCode}}'
-          file.name: '{{parsed_event.message.event.properties.TargetFileName}}'
-          file.hash.sha256: '{{parsed_event.message.event.properties.SHA256HashData}}'
-          file.hash.sha1: '{{parsed_event.message.event.properties.SHA1HashData}}'
-          file.hash.md5: '{{parsed_event.message.event.properties.MD5HashData}}'
-          source.ip: '{{parsed_event.message.event.properties.LocalAddressIP4}}'
-          source.port: '{{parsed_event.message.event.properties.LocalPort}}'
-          source.nat.ip: '{{parsed_event.message.event.properties.externalIpAddress}}'
-          destination.ip: '{{parsed_event.message.event.properties.RemoteAddressIP4}}'
-          destination.port: '{{parsed_event.message.event.properties.RemotePort}}'
-          host.name: '{{parsed_event.message.event.properties.ComputerName}}'
-          host.ip: '{{parsed_event.message.event.edges.assigned_ipv4_address | map(attribute="object_id") | list | string}}'
-          host.mac: '{{parsed_event.message.event.edges.assigned_ipv4_address | map(attribute="properties") | map(attribute="PhysicalAddress") | list | string}}'
-          cloud.instance.id: '{{parsed_event.message.event.properties.instanceId}}'
-          cloud.account.id: '{{parsed_event.message.event.properties.accountId}}'
-          cloud.region: '{{parsed_event.message.event.properties.zone_group}}'
-          action.properties.LogonType: '{{parsed_event.message.event.properties.LogonType}}'
-          action.properties.LogonId: '{{parsed_event.message.event.properties.LogonId}}'
+          event.reason: "{{parsed_event.message.event.properties.EventName}}"
+          crowdstrike.detect_id: "{{parsed_event.message.metadata.detectionIdString}}"
+          crowdstrike.customer_id: "{{parsed_event.message.event.customer_id}}"
+          crowdstrike.host_id: "{{parsed_event.message.event.device_id}}"
+          crowdstrike.vertex_type: "{{parsed_event.message.event.vertex_type}}"
+          crowdstrike.scope: "{{parsed_event.message.event.scope}}"
+          crowdstrike.object_id: "{{parsed_event.message.event.object_id}}"
+          crowdstrike.edge.subject_id: "{{parsed_event.message.metadata.edge.sourceVertexId}}"
+          crowdstrike.edge.type: "{{parsed_event.message.metadata.edge.type}}"
+          user.domain: "{{parsed_event.message.event.properties.LogonDomain}}"
+          user.name: "{{parsed_event.message.event.properties.UserName}}"
+          user.id: "{{parsed_event.message.event.properties.UserSid or parsed_event.message.event.properties.LogonId}}"
+          process.command_line: "{{parsed_event.message.event.properties.CommandLine}}"
+          process.executable: "{{parsed_event.message.event.properties.ImageFileName}}"
+          process.name: "{{parsed_event.message.event.properties.ImageFileName | basename}}"
+          process.title: "{{parsed_event.message.event.properties.WindowTitle}}"
+          process.working_directory: "{{parsed_event.message.event.properties.ImageFileName | dirname}}"
+          process.pid: "{{parsed_event.message.event.properties.RawProcessId or parsed_event.message.event.properties.TargetProcessId}}"
+          process.parent.pid: "{{parsed_event.message.event.properties.ParentProcessId}}"
+          process.start: "{{parsed_event.message.event.properties.ProcessEndTime | to_rfc3339}}"
+          process.end: "{{parsed_event.message.event.properties.ProcessStartTime | to_rfc3339}}"
+          process.exit_code: "{{parsed_event.message.event.properties.ExitCode}}"
+          file.name: "{{parsed_event.message.event.properties.TargetFileName}}"
+          file.hash.sha256: "{{parsed_event.message.event.properties.SHA256HashData}}"
+          file.hash.sha1: "{{parsed_event.message.event.properties.SHA1HashData}}"
+          file.hash.md5: "{{parsed_event.message.event.properties.MD5HashData}}"
+          source.port: "{{parsed_event.message.event.properties.LocalPort}}"
+
       - set:
-          user.roles: ['admin']
-        filter: '{{parsed_event.message.event.properties.UserIsAdmin}}'
+          source.ip: "{{parsed_event.message.event.properties.LocalAddressIP4}}"
+        filter: "{{parsed_event.message.event.properties.LocalAddressIP4 | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.event.properties.externalIpAddress}}"
+        filter: "{{parsed_event.message.event.properties.externalIpAddress | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.event.properties.RemoteAddressIP4}}"
+        filter: "{{parsed_event.message.event.properties.RemoteAddressIP4 | is_ipaddress}}"
+
+      - set:
+          destination.port: "{{parsed_event.message.event.properties.RemotePort}}"
+          host.name: "{{parsed_event.message.event.properties.ComputerName}}"
+          cloud.instance.id: "{{parsed_event.message.event.properties.instanceId}}"
+          cloud.account.id: "{{parsed_event.message.event.properties.accountId}}"
+          cloud.region: "{{parsed_event.message.event.properties.zone_group}}"
+          action.properties.LogonType: "{{parsed_event.message.event.properties.LogonType}}"
+          action.properties.LogonId: "{{parsed_event.message.event.properties.LogonId}}"
+          event.severity: "{{parsed_event.message.metadata.severity.code}}"
+          crowdstrike.severity_name: "{{parsed_event.message.metadata.severity.name}}"
+
+      - set:
+          host.ip: '{{parsed_event.message.event.edges.assigned_ipv4_address | map(attribute="object_id") | list | string}}'
+
+      - set:
+          host.mac: '{{parsed_event.message.event.edges.assigned_ipv4_address | map(attribute="properties") | map(attribute="PhysicalAddress") | list | string}}'
+
+      - set:
+          user.roles: ["admin"]
+        filter: "{{parsed_event.message.event.properties.UserIsAdmin}}"
       - translate:
         dictionary:
           "0": "hopopt"
@@ -311,3 +505,38 @@ stages:
           "255": "reserved"
         mapping:
           parsed_event.message.event.properties.Protocol: network.transport
+
+  mobile_detection_summary_event:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: "info"
+          event.severity: "{{parsed_event.message.event.Severity}}"
+          event.url: "{{parsed_event.message.event.FalconHostLink}}"
+          event.action: "{{parsed_event.message.event.NetworkDetectionType}}"
+          event.dataset: ["MobileDetection"]
+          observer.vendor: "CrowdStrike"
+          observer.product: "Falcon for Mobile"
+
+          user.name: "{{parsed_event.message.event.UserName}}"
+          host.name: "{{parsed_event.message.event.ComputerName}}"
+
+          threat.tactic.name: "{{parsed_event.message.event.Tactic}}"
+          threat.tactic.id: "{{parsed_event.message.event.TacticId}}"
+          threat.technique.name: "{{parsed_event.message.event.Technique}}"
+          threat.technique.id: "{{parsed_event.message.event.TechniqueId}}"
+
+          crowdstrike.customer_id: "{{parsed_event.message.metadata.customerIDString}}"
+          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
+          crowdstrike.detect_name: "{{parsed_event.message.event.DetectName}}"
+          crowdstrike.detect_description: "{{parsed_event.message.event.DetectDescription}}"
+          crowdstrike.event_objective: "{{parsed_event.message.event.Objective}}"
+
+          agent.id: "{{parsed_event.message.event.SensorId}}"
+
+          network.application: "{{parsed_event.message.event.ApplicationName}}"
+
+          process.pid: "{{parsed_event.message.event.ProcessId}}"
+
+          file.name: "{{parsed_event.message.event.TargetFilename}}"

@@ -1,0 +1,39 @@
+name: Kubernetes Audit Log
+pipeline:
+  - name: input
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: event
+  - name: fields
+stages:
+  fields:
+    actions:
+      - name: set
+        set:
+          user.id: "{{input.event.user.uid}}"
+          url.path: "{{input.event.requestURI}}"
+
+      - set:
+          source.ip: "{{input.event.sourceIPs[0]}}"
+        filter: "{{input.event.sourceIPs[0] | is_ipaddress}}"
+
+      - set:
+          user.name: "{{input.event.user.username}}"
+          event.code: "{{input.event.auditID}}"
+          user.roles: "{{input.event.user.groups}}"
+          event.start: "{{input.event.requestReceivedTimestamp}}"
+          event.action: "{{input.event.verb}}"
+          action.outcome: '{{input.event.annotations["authorization.k8s.io/decision"]}}'
+          user_agent.original: "{{input.event.userAgent}}"
+          http.response.status_code: "{{input.event.responseStatus.code}}"
+          kubernetes.object.name: "{{input.event.objectRef.name}}"
+          kubernetes.resource: "{{input.event.objectRef.resource}}"
+          kubernetes.namespace: "{{input.event.objectRef.namespace}}"
+          kubernetes.subresource: "{{input.event.objectRef.subresource}}"
+          kubernetes.rbacreason: '{{input.event.annotations["authorization.k8s.io/reason"]}}'
+      - name: set
+        set:
+          kubernetes.object.name: "{{input.event.responseObject.metadata.name}}"
+        filter: "{{input.event.objectRef.name == null}}"

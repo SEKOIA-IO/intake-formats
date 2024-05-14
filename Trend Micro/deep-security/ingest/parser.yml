@@ -14,13 +14,11 @@ stages:
   set_ecs_categorization_fields:
     actions:
       - set:
-          event.kind: 'event'
-          event.category: ['intrusion_detection']
+          event.category: ["intrusion_detection"]
 
       - set:
-          event.kind: 'event'
-          event.category: ['authentication']
-          event.type: ['start']
+          event.category: ["authentication"]
+          event.type: ["start"]
         filter: "{{parsed_event.message.Name.endswith('Signed In')}}"
 
       - translate:
@@ -30,12 +28,12 @@ stages:
           "Block": ["denied"]
         mapping:
           parsed_event.message.act: event.type
-        fallback: ['info']
+        fallback: ["info"]
 
   set_cloud_one_custom_fields:
     actions:
       - set:
-          trendmicro: '{{parsed_event.message}}'
+          trendmicro: "{{parsed_event.message}}"
           trendmicro.LogInspectionDescription: '{{parsed_event.message.get("LI Description")}}'
           trendmicro.IntrusionPreventionStreamPosition: '{{parsed_event.message.get("Intrusion Prevention Stream Position")}}'
           trendmicro.IntrusionPreventionFlags: '{{parsed_event.message.get("Intrusion Prevention Flags")}}'
@@ -43,25 +41,27 @@ stages:
           trendmicro.TCPFlags: '{{parsed_event.message.get("TCP Flags").split(" ")}}'
           trendmicro.TrendMicroDsRelevantDetectionNames: '{{parsed_event.message.TrendMicroDsRelevantDetectionNames.split(";")}}'
           trendmicro.ResourceTypeId: '{{parsed_event.message.get("Resource Type")}}'
-          container.name:  '{{parsed_event.message.get("Container")}}'
+          container.name: '{{parsed_event.message.get("Container")}}'
           file.name: '{{parsed_event.message.get("Infected Resource")}}'
           host.id: '{{parsed_event.message.get("Host ID")}}'
           event.reason: '{{parsed_event.message.get("actionReason")}}'
-          file.hash.sha256: '{{ parsed_event.message.TrendMicroDsFileSHA256 }}'
+          file.hash.sha256: "{{ parsed_event.message.TrendMicroDsFileSHA256 }}"
           file.hash.sha1: '{{ parsed_event.message.get("sha1") or parsed_event.message.TrendMicroDsFileSHA1 }}'
           file.hash.md5: '{{ parsed_event.message.get("md5") or parsed_event.message.TrendMicroDsFileMD5 }}'
           file.size: '{{parsed_event.message.get("Quarantine File Size")}}'
-          process.name: '{{parsed_event.message.get("TrendMicroDsProcess") ot parsed_event.message.sproc}}'
-          process.command_line: '{{parsed_event.message.TrendMicroDsCommandLine}}'
-          file.path: '{{parsed_event.message.filePath}}'
-          host.name: '{{parsed_event.message.dvchost}}'
+          process.name: '{{parsed_event.message.get("TrendMicroDsProcess") or parsed_event.message.sproc}}'
+          process.command_line: "{{parsed_event.message.TrendMicroDsCommandLine}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+
+      - set:
+          host.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc | is_ipaddress }}"
 
       - set:
           # We use a filter here so that |int does not create a 0 if `Risk Level` is empty
           event.risk_score_norm: '{{parsed_event.message.get("Risk Level") | int}}'
         filter: '{{parsed_event.message.get("Risk Level") != None}}'
-
-
 
       # Resource Type - This field is only for spyware detection events.
       - translate:
@@ -83,8 +83,7 @@ stages:
           "26": "Services"
         mapping:
           trendmicro.ResourceTypeId: trendmicro.ResourceType
-        fallback: 'Other'
-
+        fallback: "Other"
 
       # Risk Level - This field is only for spyware detection events.
       - translate:
@@ -96,8 +95,6 @@ stages:
           100: "Very High"
         mapping:
           event.risk_score_norm: trendmicro.RiskLevel
-
-
 
       # This field is only for spyware detection events.
       - translate:
@@ -146,40 +143,44 @@ stages:
     # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
     actions:
       - set:
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
-          observer.type: '{{parsed_event.message.DeviceProduct}}'
-          observer.version: '{{parsed_event.message.DeviceVersion}}'
-          rule.id: '{{parsed_event.message.DeviceEventClassID}}'
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.type: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          rule.id: "{{parsed_event.message.DeviceEventClassID}}"
 
       - set:
           # Match only for agentSeverity of type int
-          event.severity: '{{parsed_event.message.Severity}}'
+          event.severity: "{{parsed_event.message.Severity}}"
         filter: "{{parsed_event.message.Severity | re_match('[1-9]|10')}}"
-
 
   set_cef_extension_fields:
     actions:
       - set:
-          event.action: '{{parsed_event.message.act}}'
-          network.protocol: '{{parsed_event.message.app}}'
-          event.reason: '{{parsed_event.message.msg or parsed_event.message.Name}}'
-          file.name: '{{parsed_event.message.fname}}'
-          file.size: '{{parsed_event.message.fsize}}'
-          source.ip: '{{parsed_event.message.src}}'
-          source.user.name: '{{parsed_event.message.suser}}'
+          event.action: "{{parsed_event.message.act}}"
+          network.protocol: "{{parsed_event.message.app}}"
+          event.reason: "{{parsed_event.message.msg or parsed_event.message.Name}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.size: "{{parsed_event.message.fsize}}"
+          source.user.name: "{{parsed_event.message.suser}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress }}"
 
       - translate:
         dictionary:
-          0: 'inbound'
-          1: 'outbound'
+          0: "inbound"
+          1: "outbound"
         mapping:
           parsed_event.message.deviceDirection: network.direction
 
       - set:
-          destination.port: "{{parsed_event.message.dpt}}"
           destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress }}"
+
+      - set:
+          destination.port: "{{parsed_event.message.dpt}}"
           destination.user.name: "{{parsed_event.message.duser}}"
-          host.ip: "{{parsed_event.message.dvc}}"
           destination.mac: "{{parsed_event.message.dmac}}"
           host.network.ingress.bytes: "{{parsed_event.message.in}}"
           host.network.egress.bytes: "{{parsed_event.message.out}}"
@@ -192,4 +193,4 @@ stages:
   set_cef_extension_fields_cef:
     actions:
       - set:
-          cef: '{{parsed_event.message}}'
+          cef: "{{parsed_event.message}}"

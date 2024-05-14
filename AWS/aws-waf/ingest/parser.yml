@@ -7,53 +7,52 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.timestamp | int}}'
+        input_field: "{{json_event.message.timestamp | int}}"
         output_field: datetime
         format: timestamp
 
   - name: set_ecs_fields
   - name: set_terminating_Rule_Match_Details
 
-
 stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parse_date.datetime}}' 
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['access']
-          event.dataset: 'aws-waf'
-          action.target: 'network-traffic'
-          cloud.provider: 'aws'
-          cloud.service.name: 'waf'
-          observer.type: 'waf'
+          "@timestamp": "{{parse_date.datetime}}"
+          event.category: ["network"]
+          event.type: ["access"]
+          event.module: "aws.waf"
+          action.target: "network-traffic"
+          cloud.provider: "aws"
+          cloud.service.name: "waf"
+          observer.type: "waf"
 
-          aws.waf.rule.arn: '{{json_event.message.webaclId }}'
+          aws.waf.rule.arn: "{{json_event.message.webaclId }}"
 
           destination.domain: '{% for item in json_event.message.httpRequest.headers %}{% if item.name in ["Host", "host"] %}{% if item.get("value") != None and item.value != "<Null>"%}{{item.value}}{% endif %}{% endif %}{% endfor %}'
-          event.action: '{{json_event.message.action }}'
+          event.action: "{{json_event.message.action }}"
           http.request.body.bytes: '{% for item in json_event.message.httpRequest.headers %}{% if item.name in ["Content-Length", "content-length"] %}{% if item.get("value") != None and item.value != "<Null>"%}{{item.value}}{% endif %}{% endif %}{% endfor %}'
-          http.request.id: '{{json_event.message.httpRequest.requestId }}'
-          http.request.method: '{{json_event.message.httpRequest.httpMethod }}'
-          http.response.status_code: '{{json_event.message.responseCodeSent }}'
+          http.request.id: "{{json_event.message.httpRequest.requestId }}"
+          http.request.method: "{{json_event.message.httpRequest.httpMethod }}"
+          http.response.status_code: "{{json_event.message.responseCodeSent }}"
           http.request.mime_type: '{% for item in json_event.message.httpRequest.headers %}{% if item.name in ["Content-Type", "content-type"] %}{% if item.get("value") != None and item.value != "<Null>"%}{{item.value}}{% endif %}{% endif %}{% endfor %}'
           http.request.referrer: '{{json_event.message.httpRequest.headers | selectattr("name", "equalto", "x-client-origin") | map(attribute="value") | first}}'
-          http.version: '{{json_event.message.httpRequest.httpVersion }}'
-          rule.category: '{{json_event.message.terminatingRuleType}}'
-          rule.description: '{{json_event.message.ruleGroupList.0.ruleGroupId}}'
-          rule.name: '{{json_event.message.terminatingRuleId}}'
-          source.geo.country_iso_code: '{{json_event.message.httpRequest.country }}'
-          source.ip: '{{json_event.message.httpRequest.clientIp}}'
-          url.original: '{{json_event.message.httpRequest.uri}}'
+          http.version: "{{json_event.message.httpRequest.httpVersion }}"
+          rule.category: "{{json_event.message.terminatingRuleType}}"
+          rule.description: "{{json_event.message.ruleGroupList.0.ruleGroupId}}"
+          rule.name: "{{json_event.message.terminatingRuleId}}"
+          source.geo.country_iso_code: "{{json_event.message.httpRequest.country }}"
+          url.original: "{{json_event.message.httpRequest.uri}}"
+          url.query: "{{json_event.message.httpRequest.args}}"
           user_agent.original: '{% for item in json_event.message.httpRequest.headers %}{% if item.name in ["User-Agent", "user-agent"] %}{% if item.get("value") != None and item.value != "<Null>"%}{{item.value}}{% endif %}{% endif %}{% endfor %}'
           cloud.region: '{{json_event.message.webaclId.split(":")[3] }}'
 
-          
+      - set:
+          source.ip: "{{json_event.message.httpRequest.clientIp}}"
+        filter: "{{json_event.message.httpRequest.clientIp | is_ipaddress}}"
+
   set_terminating_Rule_Match_Details:
     actions:
       - set:
           event.reason: '{{json_event.message.terminatingRuleMatchDetails | map(attribute="conditionType") | list | string }}'
-        filter: '{{json_event.message.terminatingRuleMatchDetails != [] }}'
-
-
+        filter: "{{json_event.message.terminatingRuleMatchDetails != [] }}"

@@ -4,29 +4,29 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: message
   - name: read_event_date
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.time}}'
+        input_field: "{{json_event.message.time}}"
         output_field: datetime
   - name: read_process_start_date
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.pCreateDateTime}}'
+        input_field: "{{json_event.message.pCreateDateTime}}"
         output_field: datetime
-    filter: '{{json_event.message.pCreateDateTime != null}}'
+    filter: "{{json_event.message.pCreateDateTime != null}}"
   - name: extract_info
     external:
       name: grok.match
       properties:
-        input_field: '{{json_event.message.description}}'
-        pattern: '(%{APPLICATION_POLICY}|%{URL_DETECTED}|%{MALICIOUS_MACRO})'
+        input_field: "{{json_event.message.description}}"
+        pattern: "(%{APPLICATION_POLICY}|%{URL_DETECTED}|%{MALICIOUS_MACRO})"
         custom_patterns:
-          TID: 'T%{BASE10NUM}'
+          TID: "T%{BASE10NUM}"
           APPLICATION_POLICY: 'Application policy: %{DATA:rulename} \(\[I\] %{TID:technique_id} %{DATA:technique_name}\)'
           URL_DETECTED: 'URLs detected in a document file\n\nRemediation: %{DATA:remediation_status}\n\nSuspicious URLs:\n- %{URI:url}%{GREEDYDATA}'
           MALICIOUS_MACRO: 'Potential malicious VBA code detected in a document file\n- %{DATA:detection_status}\n\nRemediation: %{DATA:remediation_status}\n\nBehaviors:\n- %{DATA:behavior_status}\n\nSuspicious macros sha1:\n- %{BASE16NUM:macro_sha1}%{GREEDYDATA}'
@@ -37,78 +37,86 @@ stages:
   set_common_fields:
     actions:
       - set:
-          '@timestamp': '{{read_event_date.datetime}}'
-          event.kind: 'event'
-          event.reason: '{{json_event.message.description}}'
-          event.module: '{{json_event.message.module}}'
-          event.severity: '{{json_event.message.lvl}}'
-          event.type: ['info']
-          event.code: '{{json_event.message.egKBId}}'
-          agent.id: '{{json_event.message.uuid__}}'
-          observer.type: 'sensor'
-          observer.vendor: 'Tehtris'
-          observer.product: 'Tehtris EDR'
-          source.ip: '{{json_event.message.ipSrc}}'
-          destination.ip: '{{json_event.message.ipDst}}'
-          host.domain: '{{json_event.message.domain__}}'
-          host.hostname: '{{json_event.message.hostname__}}'
-          host.os.platform: '{{json_event.message.os__}}'
-          host.os.version: '{{json_event.message.os_version__}}'
-          user.name: '{{json_event.message.username}}'
-          user.id: '{{json_event.message.uid}}'
-          file.mtime: '{{json.event.message.mtime}}'
-          file.ctime: '{{json.event.message.ctime}}'
-          file.created: '{{json.event.message.atime}}'
-          file.hash.sha256: '{{json_event.message.sha256}}'
-          rule.name: '{{extract_info.message.rulename}}'
-          url.original: '{{extract_info.message.url}}'
+          "@timestamp": "{{read_event_date.datetime}}"
+          event.reason: "{{json_event.message.description}}"
+          event.module: "{{json_event.message.module}}"
+          event.severity: "{{json_event.message.lvl}}"
+          event.type: ["info"]
+          event.code: "{{json_event.message.egKBId}}"
+          agent.id: "{{json_event.message.uuid__}}"
+          observer.type: "sensor"
+          observer.vendor: "Tehtris"
+          observer.product: "Tehtris EDR"
+
       - set:
-          process.start: '{{read_process_start_date.datetime}}'
-        filter: '{{json_event.message.pCreateDateTime != null}}'
+          source.ip: "{{json_event.message.ipSrc}}"
+        filter: "{{json_event.message.ipSrc| is_ipaddress}}"
+
       - set:
-          file.path: '{{json_event.message.path}}'
-          file.name: '{{json_event.message.path | basename}}'
-          file.directory: '{{json_event.message.path | dirname}}'
-        filter: '{{json_event.message.cmdline == null}}'
+          destination.ip: "{{json_event.message.ipDst}}"
+        filter: "{{json_event.message.ipDst| is_ipaddress}}"
+
       - set:
-          process.pid: '{{json_event.message.pid}}'
-          process.command_line: '{{json_event.message.cmdline}}'
-          process.parent.pid: '{{json_event.message.ppid}}'
-          process.executable: '{{json_event.message.path}}'
-          process.name: '{{json_event.message.path | basename}}'
-        filter: '{{json_event.message.cmdline != null}}'
+          host.domain: "{{json_event.message.domain__}}"
+          host.hostname: "{{json_event.message.hostname__}}"
+          host.os.platform: "{{json_event.message.os__}}"
+          host.os.version: "{{json_event.message.os_version__}}"
+          user.name: "{{json_event.message.username}}"
+          file.mtime: "{{json.event.message.mtime}}"
+          file.ctime: "{{json.event.message.ctime}}"
+          file.created: "{{json.event.message.atime}}"
+          file.hash.sha256: "{{json_event.message.sha256}}"
+          rule.name: "{{extract_info.message.rulename}}"
+          url.original: "{{extract_info.message.url}}"
+      - set:
+          process.start: "{{read_process_start_date.datetime}}"
+        filter: "{{json_event.message.pCreateDateTime != null}}"
+      - set:
+          file.path: "{{json_event.message.path}}"
+          file.name: "{{json_event.message.path | basename}}"
+          file.directory: "{{json_event.message.path | dirname}}"
+        filter: "{{json_event.message.cmdline == null}}"
+      - set:
+          process.pid: "{{json_event.message.pid}}"
+          process.command_line: "{{json_event.message.cmdline}}"
+          process.parent.pid: "{{json_event.message.ppid}}"
+          process.executable: "{{json_event.message.path}}"
+          process.name: "{{json_event.message.path | basename}}"
+        filter: "{{json_event.message.cmdline != null}}"
       - set:
           user.name: '{{json_event.message.username.split("\\") | last}}'
           user.domain: '{{json_event.message.username.split("\\")[0:-1] | join("\\")}}'
         filter: '{{json_event.message.username != null and "\\" in json_event.message.username}}'
       - set:
-          event.kind: 'alert'
+          event.kind: "alert"
         filter: '{{json_event.message.eventName != null and json_event.message.eventName.endswith("Alert")}}'
       - translate:
         dictionary:
-          'antivirusAlert': ['malware']
+          "antivirusAlert": ["malware"]
         mapping:
           json_event.message.eventName: event.category
-        fallback: ['process']
+        fallback: ["process"]
       - set:
-          threat.technique.id: '{{extract_info.message.technique_id}}'
-          threat.technique.name: '{{extract_info.message.technique_name}}'
-          threat.framework: 'MITRE ATT&CK'
+          threat.technique.id: "{{extract_info.message.technique_id}}"
+          threat.technique.name: "{{extract_info.message.technique_name}}"
+          threat.framework: "MITRE ATT&CK"
         filter: '{{extract_info.message.get("technique_id") != None}}'
   set_tehtris_fields:
     actions:
       - set:
-          tehtris.edr.event.id: '{{json_event.message.id}}'
-          tehtris.edr.event.appliance.id: '{{json_event.message.rflId}}'
-          tehtris.edr.event.egKBId: '{{json_event.message.egKBId}}'
-          tehtris.edr.event.tag: '{{json_event.message.tag}}'
-          tehtris.edr.event.type: '{{json_event.message.eventName}}'
-          tehtris.edr.event.location: '{{json_event.message.location}}'
-          tehtris.edr.event.remediation_status: '{{extract_info.message.remediation_status}}'
-          tehtris.edr.host.os.release: '{{json_event.message.os_release__}}'
-          tehtris.edr.host.os.architecture: '{{json_event.message.os_architecture__}}'
-          tehtris.edr.host.is_server: '{{json_event.message.os_server__}}'
-          tehtris.edr.file.macro.is_malicious: '{{json_event.message.maliciousMacro}}'
-          tehtris.edr.file.macro.sha1: '{{extract_info.message.macro_sha1}}'
-          tehtris.edr.file.macro.behavior_status: '{{extract_info.message.behavior_status}}'
-          tehtris.edr.file.macro.detection_status: '{{extract_info.message.detection_status}}'
+          tehtris.edr.event.id: "{{json_event.message.id}}"
+          tehtris.edr.event.appliance.id: "{{json_event.message.rflId}}"
+          tehtris.edr.event.egKBId: "{{json_event.message.egKBId}}"
+          tehtris.edr.event.tag: "{{json_event.message.tag}}"
+          tehtris.edr.event.type: "{{json_event.message.eventName}}"
+          tehtris.edr.event.location: "{{json_event.message.location}}"
+          tehtris.edr.event.remediation_status: "{{extract_info.message.remediation_status}}"
+          tehtris.edr.host.os.release: "{{json_event.message.os_release__}}"
+          tehtris.edr.host.os.architecture: "{{json_event.message.os_architecture__}}"
+          tehtris.edr.host.is_server: "{{json_event.message.os_server__}}"
+          tehtris.edr.file.macro.is_malicious: "{{json_event.message.maliciousMacro}}"
+          tehtris.edr.file.macro.sha1: "{{extract_info.message.macro_sha1}}"
+          tehtris.edr.file.macro.behavior_status: "{{extract_info.message.behavior_status}}"
+          tehtris.edr.file.macro.detection_status: "{{extract_info.message.detection_status}}"
+          tehtris.edr.antivirus.total: "{{json_event.message.total}}"
+          tehtris.edr.antivirus.positives: "{{json_event.message.positives}}"

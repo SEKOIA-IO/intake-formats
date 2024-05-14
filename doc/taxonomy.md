@@ -14,7 +14,7 @@ The taxonomy of [structured events](structured_events.md) is based on the [ECS](
 - The reason of the event must be hosted in `event.reason`
 - Error code and error message must land in `error.code` and `error.message`
 - `email.to.address`, `email.from.address` and `email.cc.address` are arrays
-- As documented in the ECS specification, [`host.hostname`](https://www.elastic.co/guide/en/ecs/current/ecs-host.html#field-host-hostname) must contain the hostname as return by the command __hostname__ on the host. [`host.name`](https://www.elastic.co/guide/en/ecs/current/ecs-host.html#field-host-name) is more permissive.
+- As documented in the ECS specification, [`host.hostname`](https://www.elastic.co/guide/en/ecs/current/ecs-host.html#field-host-hostname) must contain the hostname as return by the command **hostname** on the host. [`host.name`](https://www.elastic.co/guide/en/ecs/current/ecs-host.html#field-host-name) is more permissive.
 
 ## Custom Taxomony
 
@@ -27,23 +27,24 @@ The custom taxonomy is defined in the directory `_meta/fields.yml` in the format
 :warning: Please ensure that no field from the ECS taxonomy is suitable before creating a new field.
 
 A custom field consists of three elements:
+
 - name: The name of the field. it corresponds to the path (dot-notation) of the field in the [structured event](structured_event.md).
-  
+
   We recommend prefixing the field with the vendor and the name of the product (e.g for AWS cloud trail, custom taxonomy is prefixing with `aws.cloudtrail`)
 
 - type: The type of the field.
 
   Available types are:
-    - keyword for textual values
-    - boolean for boolean values
-    - long for integer and long values
-    - float for float values
-    - array for list
-    - dict for dictionaries
+
+  - keyword for textual values
+  - boolean for boolean values
+  - long for integer and long values
+  - float for float values
+  - array for list
+  - dict for dictionaries
 
 - description: a short description to understand the value of the field
 
-  
 ### Example
 
 see [AWS CloudTrail](../AWS/aws-cloudtrail/_meta/fields.yml)

@@ -4,9 +4,9 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
-        input_field: '{{ original.message }}'
+        input_field: "{{ original.message }}"
         output_field: result
-        value_sep: '='
+        value_sep: "="
         item_sep: \s
 
   - name: parsed_time
@@ -39,45 +39,207 @@ stages:
   set_fields:
     actions:
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          '@timestamp': '{{ parsed_time.date }}'
-          observer.serial_number: '{{ kv.result.fw }}'
-          event.timezone: '{{ kv.result.tz }}'
-          event.risk_score: '{{ kv.result.pri }}'
-          stormshield: '{{ kv.result }}'
-          stormshield.filter.action: '{{ kv.result.action }}'
-          observer.ingress.interface.name: '{{ kv.result.srcif }}'
-          observer.ingress.interface.alias: '{{ kv.result.srcifname }}'
-          network.transport: '{{ kv.result.ipproto }}'
-          source.ip: '{{ kv.result.src }}'
-          source.port: '{{ kv.result.srcport }}'
-          source.mac: '{{ kv.result.srcmac }}'
-          source.geo.continent_name: '{{ kv.result.srccontinent }}'
-          source.geo.country_iso_code: '{{ kv.result.srccountry }}'
-          destination.ip: '{{ kv.result.dst }}'
-          destination.port: '{{ kv.result.dstport }}'
-          destination.geo.continent_name: '{{ kv.result.dstcontinent }}'
-          destination.geo.country_iso_code: '{{ kv.result.dstcountry }}'
-          observer.egress.interface.name: '{{ kv.result.dstif }}'
-          observer.egress.interface.alias: '{{ kv.result.dstifname }}'
-          host.network.ingress.bytes: '{{ kv.result.rcvd }}'
-          host.network.egress.bytes: '{{ kv.result.sent }}'
-          network.bytes: '{{ kv.result.sent|int + kv.result.rcvd|int }}'
-          # Duration of the connection in seconds converted in nanoseconds.
-          event.duration: '{{ kv.result.duration | float * 1000000000 }}'
-          network.protocol: '{{ kv.result.proto }}'
-          network.type: '{{ kv.result.ipv }}'
-          rule.id: '{{ kv.result.ruleid }}'
-          rule.category: '{{ kv.result.slotlevel }}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.dataset: "{{ kv.result.logtype }}"
+          "@timestamp": "{{ parsed_time.date }}"
+          observer.serial_number: "{{ kv.result.fw }}"
+          event.timezone: "{{ kv.result.tz }}"
+          event.risk_score: "{{ kv.result.pri }}"
+          stormshield.filter.action: "{{ kv.result.action }}"
+          observer.ingress.interface.name: "{{ kv.result.srcif }}"
+          observer.ingress.interface.alias: "{{ kv.result.srcifname }}"
+          network.transport: "{{ kv.result.ipproto }}"
+          destination.port: "{{ kv.result.dstport }}"
+          destination.geo.continent_name: "{{ kv.result.dstcontinent }}"
+          destination.geo.country_iso_code: "{{ kv.result.dstcountry }}"
+          event.duration: "{{ kv.result.duration | float * 1000000000 }}" # Duration of the connection in seconds converted in nanoseconds.
+          observer.hostname: "{{ kv.result.fw }}"
+          observer.vendor: "Stormshield"
+          observer.product: "Stormshield Network Security"
+          observer.type: "{{ kv.result.id }}"
+          observer.egress.interface.name: "{{ kv.result.dstif }}"
+          observer.egress.interface.alias: "{{ kv.result.dstifname }}"
+          host.network.ingress.bytes: "{{ kv.result.rcvd }}"
+          host.network.egress.bytes: "{{ kv.result.sent }}"
+          log.priority: "{{ kv.result.pri }}"
+          action.outcome_reason: "{{ kv.result.msg }}"
+          network.bytes: "{{ kv.result.sent|int + kv.result.rcvd|int }}"
+          network.protocol: "{{ kv.result.proto }}"
+          network.type: "{{ kv.result.ipv }}"
+          rule.id: "{{ kv.result.ruleid }}"
+          rule.category: "{{ kv.result.slotlevel }}"
+          rule.name: "{{ kv.result.rulename }}"
+          user.name: "{{ kv.result.user }}"
+          user.domain: "{{ kv.result.domain }}"
+          user.effective.group.name: "{{ kv.result.usergroup }}"
+          stormshield.destination.name: "{{ kv.result.dstname }}"
+          stormshield.destination.port_name: "{{ kv.result.dstportname }}"
+          stormshield.source.name: "{{ kv.result.srcname }}"
+          stormshield.source.port_name: "{{ kv.result.srcportname }}"
+          source.port: "{{ kv.result.srcport }}"
+          source.mac: "{{ kv.result.srcmac }}"
+          source.geo.continent_name: "{{ kv.result.srccontinent }}"
+          source.geo.country_iso_code: "{{ kv.result.srccountry }}"
+          destination.ip: "{{ kv.result.dst }}"
+
+      - set:
+          source.ip: "{{ kv.result.src }}"
+        filter: "{{ kv.result.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{ kv.result.dst }}"
+        filter: "{{ kv.result.dst | is_ipaddress}}"
+
+      - set:
+          client.ip: '{{ kv.result.remotenet.split("/")[0] }}'
+          event.type: '["{% if kv.result.user %}info{% else %}connection{% endif %}"]'
+          network.type: ipsec
+          event.category: '["{% if kv.result.user %}authentication{% else %}network{% endif %}"]'
+          stormshield.ike.role: "{{ kv.result.side }}"
+          stormshield.ike.type: "{{ kv.result.ruletype }}"
+          stormshield.ike.phase: "{{ kv.result.phase }}"
+          stormshield.ike.spi.in: "{{ kv.result.spi_in }}"
+          stormshield.ike.spi.out: "{{ kv.result.spi_out }}"
+          stormshield.ike.version: "{{ kv.result.ikev }}"
+          stormshield.ike.local.net: "{{ kv.result.localnet }}"
+          stormshield.ike.peer.name: "{{ kv.result.peername }}"
+          stormshield.ike.remote.id: "{{ kv.result.remoteid }}"
+          stormshield.ike.remote.net: "{{ kv.result.remotenet }}"
+          stormshield.ike.peer.cookie: "{{ kv.result.cookie_r }}"
+          stormshield.ike.initiator.cookie: "{{ kv.result.cookie_i }}"
+        filter: '{{ kv.result.logtype == "vpn" }}'
+
+      - set:
+          event.type: ["info"]
+          process.name: "{{ kv.result.service }}"
+          event.category: ["process"]
+          stormshield.alarm.id: "{{ kv.result.alarmid }}"
+        filter: '{{ kv.result.logtype == "system" }}'
+
+      - set:
+          event.type: ["info"]
+          event.category: ["configuration"]
+          error.code: "{{ kv.result.error }}"
+          stormshield.session.id: "{{ kv.result.sessionid }}"
+          process.command_line: "{{ kv.result.msg }}"
+          action.outcome: '{% if kv.result.error == "0" %}success{% else %}failure{% endif %}'
+        filter: '{{ kv.result.logtype == "server" }}'
+
+      - set:
+          source.ip: "{{ kv.result.address }}"
+          client.ip: "{{ kv.result.address }}"
+        filter: '{{ kv.result.logtype == "server" and kv.result.address | is_ipaddress }}'
+
+      - set:
+          source.nat.ip: "{% if kv.result.modsrc | is_ipaddress %}{{ kv.result.modsrc }}{% endif %}"
+          source.nat.port: "{{ kv.result.modsrcport }}"
+          source.geo.continent_name: "{{ kv.result.srccontinent }}"
+          source.geo.country_iso_code: "{{ kv.result.srccountry }}"
+          stormshield.ip.src.rep.score: "{{ kv.result.srchostrep }}"
+          stormshield.ip.src.rep.type: "{{ kv.result.srciprep }}"
+          destination.nat.ip: >-
+            {% if kv.result.origdst and kv.result.origdst | is_ipaddress %}{{ kv.result.origdst }}{% elif kv.result.src | is_ipaddress %}{{
+            kv.result.src }}{% endif %}
+          destination.nat.port: >-
+            {% if kv.result.origdstport %}{{ kv.result.origdstport }}{% else
+            %}{{ kv.result.srcport }}{% endif %}
+          destination.geo.continent_name: "{{ kv.result.dstcontinent }}"
+          destination.geo.country_iso_code: "{{ kv.result.dstcountry }}"
+          stormshield.ip.dst.rep.score: "{{ kv.result.dsthostrep }}"
+          stormshield.ip.dst.rep.type: "{{ kv.result.dstiprep }}"
+          network.protocol: "{{ kv.result.etherproto }}"
+          action.outcome: '{% if kv.result.action == "pass" %}success{% else %}failure{% endif %}'
+        filter: >-
+          {{ kv.result.logtype == "filter" or kv.result.logtype == "connection"
+          or kv.result.logtype == "plugin" or kv.result.logtype == "alarm"   }}
+
+      - set:
+          stormshield.icmp.code: "{{ kv.result.icmpcode }}"
+          stormshield.icmp.type: "{{ kv.result.icmptype }}"
+          stormshield.target: "{{ kv.result.target }}"
+        filter: '{{ kv.result.logtype == "filter" or kv.result.logtype == "alarm" }}'
+
+      - set:
+          event.kind: alert
+          event.type: ["info"]
+          event.category: '{% if kv.result.class != "system" %}["intrusion_detection"]{% else %}["process"]{% endif %}'
+          stormshield.ids.classification: "{{ kv.result.classification }}"
+          stormshield.ids.type: "{{ kv.result.class }}"
+          stormshield.ids.pkt.len: "{{ kv.result.pktlen }}"
+          stormshield.ids.pktcapture.len: "{{ kv.result.pktdumplen }}"
+          stormshield.ids.pktcapture.id: "{{ kv.result.pktdump }}"
+          stormshield.ids.alarmid: "{{ kv.result.alarmid }}"
+          stormshield.ids.occurs: "{{ kv.result.repeat }}"
+          stormshield.ids.risklevel: "{{ kv.result.repeat }}"
+        filter: '{{ kv.result.logtype == "alarm" }}'
+
+      - set:
+          event.type: ["info"]
+          event.category: ["authentication"]
+          event.action: authentication
+          error.message: "{{ kv.result.error }}"
+          stormshield.auth.ruleid: "{{ kv.result.ruleid }}"
+          stormshield.auth.agentid: "{{ kv.result.agentid }}"
+          stormshield.auth.configid: "{{ kv.result.confid }}"
+          stormshield.auth.totpused: "{{ kv.result.totp }}"
+          stormshield.auth.method: "{{ kv.result.method }}"
+          action.outcome: '{% if kv.result.error == "0" %}success{% else %}failure{% endif %}'
+          network.protocol: "{% if 'SSH' in kv.result.msg %}ssh{% else %}https{% endif %}"
+        filter: '{{ kv.result.logtype == "auth" }}'
+
+      - set:
+          event.type: ["info"]
+          event.category: ["authentication"]
+          event.action: authentication
+          error.message: "{{ kv.result.error }}"
+          network.protocol: https
+          stormshield.auth.method: "web-ui"
+          action.outcome: "{% if 'logged' in kv.result.msg %}success{% else %}unknown{% endif %}"
+        filter: '{{ kv.result.logtype == "server" and kv.result.msg == "logged in" }}'
+
+      - set:
+          event.type: ["info"]
+          event.category: ["authentication"]
+          event.action: authentication
+          network.protocol: ipsec
+          action.outcome: "{% if 'failed' in kv.result.msg %}failure{% elif 'User authenticated' in kv.result.msg %}success{% else %}unknown{% endif %}"
+          stormshield.auth.method: "ipsec"
+        filter: '{{ kv.result.logtype == "vpn" and kv.result.ruletype == "mobile" }}'
+
+      - set:
+          event.type: ["info"]
+          stormshield.plugin.operation: "{{ kv.result.op }}"
+          stormshield.plugin.result: "{{ kv.result.result }}"
+          stormshield.plugin.arg: "{{ kv.result.arg }}"
+          stormshield.plugin.unit_id: "{{ kv.result.unit_id }}"
+          stormshield.plugin.clientappid: "{{ kv.result.clientappid }}"
+          stormshield.plugin.serverappid: "{{ kv.result.serverappid }}"
+          stormshield.plugin.cipservicecode: "{{ kv.result.cipservicecode }}"
+          stormshield.plugin.cipclassid: "{{ kv.result.cipclassid }}"
+          stormshield.plugin.ntp_version: "{{ kv.result.version }}"
+          stormshield.plugin.ntp_req_mode: "{{ kv.result.requestmode }}"
+          stormshield.plugin.ntp_resp_mode: "{{ kv.result.responsemode }}"
+          stormshield.plugin.softbus_ui: "{{ kv.result.UI }}"
+          stormshield.plugin.error_class: "{{ kv.result.error_class }}"
+          stormshield.plugin.error_code: "{{ kv.result.error_code }}"
+          stormshield.plugin.format: "{{ kv.result.format }}"
+          stormshield.plugin.groupid: "{{ kv.result.groupid }}"
+        filter: '{{ kv.result.logtype == "plugin" }}'
+
+      - set:
+          event.category: ["web"]
+          http.request.method: "{{ kv.result.op }}"
+          http.response.status_code: "{{ kv.result.result }}"
+          url.domain: "{{ kv.result.dstname }}"
+          url.path: "{{ kv.result.arg }}"
+        filter: '{{ kv.result.logtype == "plugin" and kv.result.proto == "http" }}'
 
   set_startime:
     actions:
       - set:
-          event.start: '{{parsed_startime.date}}'
+          event.start: "{{parsed_startime.date}}"
     filter: '{{kv.result.startime != "" }}'
-
 
   # from Stormshield documentation:
   # action Behavior associated with the filter rule.
@@ -85,5 +247,5 @@ stages:
   action_field_is_empty:
     actions:
       - set:
-          stormshield.filter.action: 'log'
-    filter: '{{kv.result.action == None }}'
+          stormshield.filter.action: "log"
+    filter: "{{kv.result.action == None }}"

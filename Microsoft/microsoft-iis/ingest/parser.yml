@@ -1,0 +1,56 @@
+name: microsoft-iis
+ignored_values: ["-"]
+pipeline:
+  - name: parse_message
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: '{{original.message.replace(", ", ",")}}'
+        output_field: message
+        columnnames:
+          - client_ip
+          - user_name
+          - date
+          - time
+          - service_and_instance
+          - server_name
+          - server_ip
+          - event_duration
+          - client_bytes
+          - server_bytes
+          - http_response_code
+          - windows_status_code
+          - http_request_method
+          - url_path
+          - parameters
+        delimiter: ","
+
+  - name: parse_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parse_message.message.date + " " + parse_message.message.time}}'
+        output_field: datetime
+        format: "%m/%d/%Y %H:%M:%S"
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          event.category: ["web"]
+          event.type: ["access"]
+
+      - set:
+          "@timestamp": "{{parse_datetime.datetime}}"
+          client.ip: "{{parse_message.message.client_ip}}"
+          user.name: "{{parse_message.message.user_name}}"
+          observer.name: "{{parse_message.message.server_name}}"
+          server.ip: "{{parse_message.message.server_ip}}"
+          event.duration: "{{parse_message.message.event_duration | int * 1000}}"
+          client.bytes: "{{parse_message.message.client_bytes}}"
+          server.bytes: "{{parse_message.message.server_bytes}}"
+          http.response.status_code: "{{parse_message.message.http_response_code}}"
+          http.request.method: "{{parse_message.message.http_request_method}}"
+          url.path: "{{parse_message.message.url_path}}"

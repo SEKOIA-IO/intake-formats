@@ -1,0 +1,57 @@
+name: freeradius
+pipeline:
+  - name: parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{USUAL}|%{IGNREQ}"
+        custom_patterns:
+          USUAL: '\s?\(%{INT}\)\s%{DATA:event_outcome}(\s\((eap_peap\:\s)?%{GREEDYDATA:event_reason}\))?\)?:\s\[%{USER}\]\s\(from\sclient\s%{DATA:origin}\sport\s%{INT:client_port}(\scli\s(%{MAC:client_mac}|%{IP:client_ip}|(?P<client_mac_unsplitted>[0-9A-Fa-f]{12})))?(\svia\s%{PROTOCOL})?\)'
+          IGNREQ: '\s?%{DATA:event_outcome} (%{IP:destination_ip}|\*) port %{INT:destination_port} bound to server default from unknown client %{IP:client_ip} port %{INT:client_port} proto %{DATA:network_transport}'
+          USER: "%{USER_EMAIL:user_email}|%{HOST}|%{DOM}|%{DATA:user_name}"
+          HOST: "host/%{HOSTNAME:client_domain}"
+          DOM: '%{DATA:user_domain}\\%{HOSTNAME:user_name}'
+          USER_EMAIL: "%{DATA:user_name}@%{DATA:user_domain}"
+          PROTOCOL_TUNNEL: "%{DATA:network_protocol} tunnel"
+          PROTOCOL: "%{PROTOCOL_TUNNEL}|%{DATA:network_protocol}"
+
+  - name: set_ecs_fields
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+          event.dataset: "freeradius.authentication"
+          event.reason: "{{ parsing.message.event_reason }}"
+          user.email: "{{ parsing.message.user_email }}"
+          user.name: "{{ parsing.message.user_name }}"
+          user.domain: "{{ parsing.message.user_domain }}"
+          user.id: "{{ parsing.message.user_id }}"
+          source.port: "{{ parsing.message.client_port }}"
+          source.mac: >
+            {%- if parsing.message.client_mac -%}
+              {{parsing.message.client_mac}}
+            {%- elif parsing.message.client_mac_unsplitted -%}
+              {{'{}{}-{}{}-{}{}-{}{}-{}{}-{}{}'.format(*parsing.message.client_mac_unsplitted)}}
+            {%- endif -%}
+          source.domain: "{{ parsing.message.client_domain }}"
+          destination.port: "{{ parsing.message.destination_port }}"
+          destination.ip: "{{ parsing.message.destination_ip }}"
+          network.protocol: "{{ parsing.message.network_protocol }}"
+          network.transport: "{{ parsing.message.network_transport }}"
+          freeradius.outcome: "{{ parsing.message.event_outcome }}"
+
+      - set:
+          source.ip: "{{ parsing.message.client_ip }}"
+        filter: "{{ parsing.message.client_ip | is_ipaddress }}"
+
+      - set:
+          network.name: "{{ parsing.message.origin }}"
+        filter: "{{ parsing.message.origin != null and parsing.message.origin.lower() in ['ccsma', 'wlan', 'lan'] }}"
+
+      - set:
+          host.name: "{{ parsing.message.origin }}"
+        filter: "{{ parsing.message.origin != null and parsing.message.origin.lower() not in ['ccsma', 'wlan', 'lan'] }}"

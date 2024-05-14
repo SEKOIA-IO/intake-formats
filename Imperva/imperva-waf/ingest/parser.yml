@@ -2,12 +2,10 @@ name: imperva-waf
 pipeline:
   - name: parse_kv
     external:
-      name: kv.parse-kv
+      name: cef.parse-cef
       properties:
-        input_field: '{{ original.message.split("| ")[1] }}'
+        input_field: "{{ original.message }}"
         output_field: message
-        value_sep: '='
-        item_sep: \s
   - name: parser_start
     external:
       name: date.parse
@@ -26,59 +24,75 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          user_agent.original: '{{ parse_kv.message.requestClientApplication }}'
-          user_agent.name: '{{ parse_kv.message.cs6 }}'
-          client.geo.country_iso_code: '{{ parse_kv.message.ccode }}'
-          client.geo.city_name: '{{ parse_kv.message.cicode }}'
-          client.geo.location: '{"lat": {{ parse_kv.message.cs7 }}, "lon": {{ parse_kv.message.cs8 }}}'
-          url.full: '{{ parse_kv.message.request }}'
-          url.original: '{{ parse_kv.message.request }}'
-          url.query: '{{ parse_kv.message.qstr }}'
-          http.request.referrer: '{{ parse_kv.message.ref }}'
-          http.request.method: '{{ parse_kv.message.requestMethod or parse_kv.message.requestmethod }}'
-          http.response.status_code: '{{ parse_kv.message.cn1 }}'
-          http.request.bytes: '{{ parse_kv.message.in }}'
-          http.request.id: '{{ parse_kv.message.deviceExternalId or parse_kv.message.deviceExternalID }}'
-          network.protocol: '{{ parse_kv.message.app | lower }}'
-          source.port: '{{ parse_kv.message.cpt }}'
-          source.ip: '{{ parse_kv.message.src }}'
-          event.action: '{{ parse_kv.message.act }}'
-          event.start: '{{ parser_start.date }}'
-          event.end: '{{ parse_end.date }}'
-          event.duration: '{{ (parse_kv.message.end | int - parse_kv.message.start | int) | float }}'
-          rule.name: '{{ parse_kv.message.cs9 }}'
-          event.kind: 'event'
-          event.category: ['network']
+          user_agent.original: "{{ parse_kv.message.requestClientApplication }}"
+          user_agent.name: "{{ parse_kv.message.cs6 }}"
+          client.geo.country_iso_code: "{{ parse_kv.message.ccode }}"
+          client.geo.city_name: "{{ parse_kv.message.cicode }}"
+          url.full: "{{ parse_kv.message.request }}"
+          url.original: "{{ parse_kv.message.request }}"
+          url.query: "{{ parse_kv.message.qstr }}"
+          http.request.referrer: "{{ parse_kv.message.ref }}"
+          http.request.method: "{{ parse_kv.message.requestMethod or parse_kv.message.requestmethod }}"
+          http.response.status_code: "{{ parse_kv.message.cn1 }}"
+          http.request.bytes: "{{ parse_kv.message.in }}"
+          http.request.id: "{{ parse_kv.message.deviceExternalId or parse_kv.message.deviceExternalID }}"
+          network.protocol: "{{ parse_kv.message.app | lower }}"
+          network.forwarded_ip: "{{ parse_kv.message.xff }}"
+          source.port: "{{ parse_kv.message.cpt }}"
+          destination.domain: "{{ parse_kv.message.sourceServiceName }}"
+          event.action: "{{ parse_kv.message.act }}"
+          event.start: "{{ parser_start.date }}"
+          event.end: "{{ parse_end.date }}"
+          event.duration: "{{ (parse_kv.message.end | int - parse_kv.message.start | int) | float }}"
+          rule.name: "{{ parse_kv.message.cs9 }}"
+          event.category: ["network"]
           event.type: '["connection", "access"]'
-          '@timestamp': '{{ parser_start.date }}'
+          "@timestamp": "{{ parser_start.date }}"
+          observer.vendor: "Imperva"
+          observer.type: "firewall"
+          observer.product: "Web Application Firewall"
+          event.dataset: "imperva-waf"
+          event.module: "imperva.waf"
+          event.severity: "{{ parse_kv.message.Severity }}"
+          organization.name: "{{ parse_kv.message.Customer }}"
+
+      - set:
+          client.geo.location: '{"lat": {{ parse_kv.message.cs7 }}, "lon": {{ parse_kv.message.cs8 }}}'
+        filter: "{{ parse_kv.message.cs7 != null and parse_kv.message.cs8 != null }}"
+
+      - set:
+          source.ip: "{{ parse_kv.message.src }}"
+        filter: "{{ parse_kv.message.src | is_ipaddress}}"
+
       - set:
           tls.version: '{{ parse_kv.message.ver.split("v")[1].split(" ")[0] }}'
           tls.version_protocol: '{{ parse_kv.message.ver.split("v")[0] | lower }}'
           tls.cipher: '{{ parse_kv.message.ver.split(" ")[1] }}'
-        filter: '{{parse_kv.message.ver != null}}'
+        filter: "{{parse_kv.message.ver != null}}"
       - translate:
         dictionary:
-          'REQ_SSL_NOT_SUPPORTED': '["connection", "denied"]'
-          'REQ_NO_IP_FOUND': '["connection", "denied"]'
-          'REQ_ILLEGAL_PORT': '["connection", "denied"]'
-          'REQ_ALL_IPS_DOWN ': '["connection", "error"]'
-          'REQ_POST_TIMEOUT': '["connection", "error"]'
-          'REQ_IPV6_NOT_SUPPORTED': '["connection", "error"]'
-          'REQ_LOCKED_IP_VIOLATION': '["connection", "denied"]'
-          'REQ_DOMAIN_BLACKLISTED': '["connection", "denied"]'
-          'REQ_ILLEGAL_IP_VIOLATION': '["connection", "denied"]'
-          'REQ_SSL_CERT_HOST_MISMATCH': '["connection", "denied"]'
-          'REQ_NON_SNI_FORBIDDEN': '["connection", "denied"]'
-          'REQ_CLIENT_CERT_REQUIRED': '["connection", "denied"]'
-          'REQ_TOO_MANY_CONNECTIONS_TO_ORIGIN': '["connection", "denied"]'
+          "REQ_SSL_NOT_SUPPORTED": '["connection", "denied"]'
+          "REQ_NO_IP_FOUND": '["connection", "denied"]'
+          "REQ_ILLEGAL_PORT": '["connection", "denied"]'
+          "REQ_ALL_IPS_DOWN ": '["connection", "error"]'
+          "REQ_POST_TIMEOUT": '["connection", "error"]'
+          "REQ_IPV6_NOT_SUPPORTED": '["connection", "error"]'
+          "REQ_LOCKED_IP_VIOLATION": '["connection", "denied"]'
+          "REQ_DOMAIN_BLACKLISTED": '["connection", "denied"]'
+          "REQ_ILLEGAL_IP_VIOLATION": '["connection", "denied"]'
+          "REQ_SSL_CERT_HOST_MISMATCH": '["connection", "denied"]'
+          "REQ_NON_SNI_FORBIDDEN": '["connection", "denied"]'
+          "REQ_CLIENT_CERT_REQUIRED": '["connection", "denied"]'
+          "REQ_TOO_MANY_CONNECTIONS_TO_ORIGIN": '["connection", "denied"]'
         mapping:
           event.action: event.type
-        filter: '{{ parse_kv.message.act != null }}'
+        filter: "{{ parse_kv.message.act != null }}"
       - set:
           event.type: '["connection", "allowed"]'
         filter: '{{ parse_kv.message.act != null and (parse_kv.message.act == "REQ_PASSED" or parse_kv.message.act.startswith("REQ_CACHED"))}}'
       - set:
           event.type: '["connection", "denied"]'
+          event.action: "block"
           event.reason: "The connection was blocked"
         filter: '{{ parse_kv.message.act != null and parse_kv.message.act.startswith("REQ_BLOCKED")}}'
       - set:
@@ -90,53 +104,55 @@ stages:
         filter: '{{ parse_kv.message.act != null and (parse_kv.message.act.startswith("REQ_BAD") or parse_kv.message.act.startswith("REQ_UNRESOLVED"))}}'
       - translate:
         dictionary:
-          'REQ_BAD_PARSE_ERROR': 'The HTTP request was malformated'
-          'REQ_BAD_TIMEOUT': 'The HTTP request reached the idle timeout'
-          'REQ_BAD_RESP_PARSE_ERROR': 'The HTTP response was malformated'
-          'REQ_BAD_CONNECTION_TO_SERVER': 'The destination server reset the connection'
-          'REQ_BAD_CLIENT_CLOSED_CONNECTION': 'The client closed the connection before receiving the full response'
-          'REQ_BLOCKED_SESSION': 'The request was blocked based on WAF settings'
-          'REQ_BLOCKED_SECURITY': 'The request was blocked based on Security settings'
-          'REQ_BLOCKED_ACL': 'The request was blocked based on Security settings'
-          'REQ_BLOCKED_VISITOR': 'The request was blocked based on WAF settings'
-          'REQ_BLOCKED_DDOS': 'The request was blocked due to a DDoS attack'
-          'REQ_BAD_TIMEOUT_CONNECTION_TO_SERVER': 'The proxy failed to connect the destination'
-          'REQ_UNRESOLVED_SITE_UNKNOWN': 'The proxy failed to resolve the destination'
-          'REQ_UNRESOLVED_SITE_DUPLICATE': 'The proxy failed to resolve the destination'
-          'REQ_UNRESOLVED_SITE_INVALID_CNAME': 'The proxy failed to resolve the destination'
-          'REQ_BAD_CONNECTION_TO_SERVER_SSL_FAILURE': 'The proxy failed to connect the destination'
-          'REQ_SSL_NOT_SUPPORTED': 'SSL connections are disabled'
-          'REQ_NO_IP_FOUND': 'The proxy failed to resolve the destination'
-          'REQ_ILLEGAL_PORT': 'Unsupported destination port'
-          'REQ_ALL_IPS_DOWN': 'The destination is unavailable'
-          'REQ_POST_TIMEOUT': 'The HTTP request reached the timeout'
-          'REQ_BAD_SERVER_CERTIFICATE': 'The certifcate of the destination is invalid'
-          'REQ_IPV6_NOT_SUPPORTED': "The destination doesn't support IPv6 addresses"
-          'REQ_LOCKED_IP_VIOLATION': 'The request was blocked based on Security settings'
-          'REQ_DOMAIN_BLACKLISTED': 'The destination was blacklisted'
-          'REQ_ILLEGAL_IP_VIOLATION': 'The proxy failed to resolve the destination'
-          'REQ_SSL_CERT_HOST_MISMATCH': 'The certifcate of the destination is invalid'
-          'REQ_NON_SNI_FORBIDDEN': "The certificate of the destination doesn't support SNI"
-          'REQ_CLIENT_CERT_REQUIRED': 'The request was blocked as a client certificat is required'
-          'REQ_TOO_MANY_CONNECTIONS_TO_ORIGIN': 'Too many connections on the destination'
+          "REQ_BAD_PARSE_ERROR": "The HTTP request was malformated"
+          "REQ_BAD_TIMEOUT": "The HTTP request reached the idle timeout"
+          "REQ_BAD_RESP_PARSE_ERROR": "The HTTP response was malformated"
+          "REQ_BAD_CONNECTION_TO_SERVER": "The destination server reset the connection"
+          "REQ_BAD_CLIENT_CLOSED_CONNECTION": "The client closed the connection before receiving the full response"
+          "REQ_BLOCKED_SESSION": "The request was blocked based on WAF settings"
+          "REQ_BLOCKED_SECURITY": "The request was blocked based on Security settings"
+          "REQ_BLOCKED_ACL": "The request was blocked based on Security settings"
+          "REQ_BLOCKED_VISITOR": "The request was blocked based on WAF settings"
+          "REQ_BLOCKED_DDOS": "The request was blocked due to a DDoS attack"
+          "REQ_BAD_TIMEOUT_CONNECTION_TO_SERVER": "The proxy failed to connect the destination"
+          "REQ_UNRESOLVED_SITE_UNKNOWN": "The proxy failed to resolve the destination"
+          "REQ_UNRESOLVED_SITE_DUPLICATE": "The proxy failed to resolve the destination"
+          "REQ_UNRESOLVED_SITE_INVALID_CNAME": "The proxy failed to resolve the destination"
+          "REQ_BAD_CONNECTION_TO_SERVER_SSL_FAILURE": "The proxy failed to connect the destination"
+          "REQ_SSL_NOT_SUPPORTED": "SSL connections are disabled"
+          "REQ_NO_IP_FOUND": "The proxy failed to resolve the destination"
+          "REQ_ILLEGAL_PORT": "Unsupported destination port"
+          "REQ_ALL_IPS_DOWN": "The destination is unavailable"
+          "REQ_POST_TIMEOUT": "The HTTP request reached the timeout"
+          "REQ_BAD_SERVER_CERTIFICATE": "The certifcate of the destination is invalid"
+          "REQ_IPV6_NOT_SUPPORTED": "The destination doesn't support IPv6 addresses"
+          "REQ_LOCKED_IP_VIOLATION": "The request was blocked based on Security settings"
+          "REQ_DOMAIN_BLACKLISTED": "The destination was blacklisted"
+          "REQ_ILLEGAL_IP_VIOLATION": "The proxy failed to resolve the destination"
+          "REQ_SSL_CERT_HOST_MISMATCH": "The certifcate of the destination is invalid"
+          "REQ_NON_SNI_FORBIDDEN": "The certificate of the destination doesn't support SNI"
+          "REQ_CLIENT_CERT_REQUIRED": "The request was blocked as a client certificat is required"
+          "REQ_TOO_MANY_CONNECTIONS_TO_ORIGIN": "Too many connections on the destination"
         mapping:
           event.action: event.reason
   set_imperva_fields:
     actions:
       - set:
-          imperva.pop: '{{ parse_kv.message.deviceFacility }}'
-          imperva.request.headers: '{{ parse_kv.message.additionalReqHeaders }}'
-          imperva.request.x_forwarded_for: '{{ parse_kv.message.xff }}'
-          imperva.response.headers: '{{ parse_kv.message.additionalResHeaders }}'
-          imperva.session.id: '{{ parse_kv.message.fileId or parse_kv.message.fileid }}'
-          imperva.client.js_support: '{{ parse_kv.message.cs2 }}'
-          imperva.client.cookie_support: '{{ parse_kv.message.cs3 }}'
-          imperva.client.captcha_support: '{{ parse_kv.message.cs1 }}'
-          imperva.visitor.id: '{{ parse_kv.message.cs4 }}'
-          imperva.user_agent.type: '{{ parse_kv.message.dproc }}'
-          imperva.attack.type: '{{ parse_kv.message.filetype }}'
-          imperva.attack.id: '{{ parse_kv.message.filepermission }}'
-          imperva.rule.additional_info: '{{ parse_kv.message.cs11 }}'
+          imperva.pop: "{{ parse_kv.message.deviceFacility }}"
+          imperva.request.headers: "{{ parse_kv.message.additionalReqHeaders }}"
+          imperva.request.x_forwarded_for: "{{ parse_kv.message.xff }}"
+          imperva.response.headers: "{{ parse_kv.message.additionalResHeaders }}"
+          imperva.session.id: "{{ parse_kv.message.fileId or parse_kv.message.fileid }}"
+          imperva.client.js_support: "{{ parse_kv.message.cs2 }}"
+          imperva.client.cookie_support: "{{ parse_kv.message.cs3 }}"
+          imperva.client.captcha_support: "{{ parse_kv.message.cs1 }}"
+          imperva.visitor.id: "{{ parse_kv.message.cs4 }}"
+          imperva.user_agent.type: "{{ parse_kv.message.dproc }}"
+          imperva.attack.type: "{{ parse_kv.message.filetype }}"
+          imperva.attack.id: "{{ parse_kv.message.filepermission }}"
+          imperva.rule.additional_info: "{{ parse_kv.message.cs11 }}"
+          imperva.event.class_id: "{{ parse_kv.message.Name }}"
+
       - set:
           imperva.rule.names: '{{ parse_kv.message.cs9.split(",") | select | list }}'
-        filter: '{{ parse_kv.message.cs9 != null }}'
+        filter: "{{ parse_kv.message.cs9 != null }}"

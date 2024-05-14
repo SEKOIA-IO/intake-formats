@@ -1,0 +1,206 @@
+name: citrix-adc
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+    filter: '{{original.message.startswith("CEF")}}'
+
+  - name: set_cef_header_fields
+    filter: '{{original.message.startswith("CEF")}}'
+
+  - name: parse_audit_header
+    external:
+      name: grok.match
+      properties:
+        output_field: message
+        pattern: '\"?\s*%{HEADER:header}\s+:\s+%{WORD:mode}\s+%{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :\s+%{GREEDYDATA:payload}\"?'
+        custom_patterns:
+          HEADER: '%{DATE_TIME:timestamp} %{TIMEZONE}? %{USERNAME:observer}\s%{USERNAME:s2}'
+          DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}"
+          DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
+          DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
+          TIMEZONE: "GMT"
+    filter: "{{ not original.message.startswith('CEF') }}"
+
+  - name: parse_audit_timestamp
+    filter: "{{ parse_audit_header.message.DATE_TIME_YMD != None }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_header.message.timestamp}}"
+        format: "%Y/%m/%d:%H:%M:%S"
+        output_field: date
+
+  - name: parse_audit_timestamp
+    filter: "{{ parse_audit_header.message.DATE_TIME_MDY != None }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_header.message.timestamp}}"
+        format: "%m/%d/%Y:%H:%M:%S"
+        output_field: date
+
+  - name: parse_audit_connection_logs
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: "%{SOURCE}%{SEP}(%{VSERVER}%{SEP})?(%{NAT}%{SEP})?%{DEST}.*%{BYTES_SEND}.*%{BYTES_RECV}.*"
+        custom_patterns:
+          SEP: '\s+-\s+'
+          SOURCE: "Source %{IP:src_ip}:%{POSINT:src_port}"
+          VSERVER: "Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}"
+          NAT: "NatIP %{IP:nat_ip}:%{POSINT:nat_port}"
+          DEST: "Destination %{IP:dest_ip}:%{POSINT:dest_port}"
+          BYTES_SEND: "Total_bytes_send %{NONNEGINT:bytes_send}"
+          BYTES_RECV: "Total_bytes_recv %{NONNEGINT:bytes_recv}"
+
+  - name: parse_audit_sslvpn_logs
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: "%{OPTION_1}|%{OPTION_2}|%{OPTION_3}"
+        custom_patterns:
+          OPTION_1: ".*User <?%{USERNAME:user_name}?>.*Srcip: %{IP:src_ip}.*Dstip: %{IP:dest_ip}.*denied_by_policy: %{POLICY_NAME:policy}.*"
+          OPTION_2: ".*User %{USERNAME:user_name}.*Nat_ip %{IP:nat_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Source %{IP:src_ip}:%{POSINT:src_port}.*Destination %{IP:dest_ip}:%{POSINT:dest_port}.*Denied_by_policy %{POLICY_NAME:policy}.*"
+          OPTION_3: ".*user %{USERNAME:user_name}@%{HOSTNAME:user_domain}.*clientip %{IP:client_ip}.*"
+          POLICY_NAME: '"?"?\w+"?"?'
+
+  - name: parse_audit_snmp_logs
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: ".*"
+        custom_patterns:
+          DATE_TIME: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
+
+  - name: parse_audit_ssl_logs
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: ".*ClientIP %{IP:src_ip}.*ClientPort %{POSINT:src_port}.*VserverServiceIP %{IP:vserver_ip}.*VserverServicePort %{POSINT:vserver_port}.*ClientVersion %{WORD:tls_version}.*CipherSuite %{CIPHER_SUITE:tls_suite}.*"
+        custom_patterns:
+          CIPHER_SUITE: '"?"?[\w\-\.]+"?"?'
+
+  - name: set_audit_log_fields
+    filter: '{{not original.message.startswith("CEF")}}'
+
+  - name: set_connection_log_fields
+    filter: "{{ parse_audit_header.message.type == 'TCP' }}"
+
+  - name: set_sslvpn_log_fields
+    filter: "{{ parse_audit_header.message.type == 'SSLVPN' and parse_audit_header.message.message_type != 'Message' }}"
+
+  - name: set_sslvpn_freeform_log_fields
+    filter: "{{ parse_audit_header.message.type == 'SSLVPN' and parse_audit_header.message.message_type == 'Message' }}"
+
+  - name: set_ssl_log_fields
+    filter: "{{ parse_audit_header.message.type == 'SSLLOG' }}"
+
+  - name: set_other_log_fields
+    filter: "{{ parse_audit_header.message.type not in ['SSLVPN', 'SSLLOG', 'TCP'] }}"
+
+stages:
+  set_cef_header_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.dataset: "alert"
+      - set:
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+          source.port: "{{parsed_event.message.spt}}"
+      - set:
+          event.reason: "{{parsed_event.message.msg}}"
+          event.action: "{{parsed_event.message.act}}"
+          event.category: ["network"]
+      - set:
+          url.original: "{{parsed_event.message.request}}"
+      - set:
+          rule.name: "{{parsed_event.message.cs1}}"
+          citrix.adc.alert.severity: "{{parsed_event.message.cs4}}"
+      - set:
+          http.request.method: "{{parsed_event.message.method}}"
+      - translate:
+        dictionary:
+          "not blocked": ["allowed"]
+          "blocked": ["denied"]
+        mapping:
+          event.action: event.type
+
+  set_audit_log_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.code: "{{ parse_audit_header.message.message_type }}"
+          observer.name: "{{ parse_audit_header.message.observer }}"
+
+          "@timestamp": "{{ parse_audit_timestamp.date }}"
+
+  set_connection_log_fields:
+    actions:
+      - set:
+          event.dataset: "audit_connection"
+          event.code: "{{ parse_audit_header.message.message_type }}"
+          source.ip: "{{ parse_audit_connection_logs.message.src_ip }}"
+          source.nat.ip: "{{ parse_audit_connection_logs.message.nat_ip }}"
+          destination.ip: "{{ parse_audit_connection_logs.message.dest_ip }}"
+          citrix.adc.bytes.received: "{{ parse_audit_connection_logs.message.bytes_recv }}"
+          citrix.adc.bytes.sent: "{{ parse_audit_connection_logs.message.bytes_send }}"
+          citrix.adc.virtual_server.ip: "{{ parse_audit_connection_logs.message.vserver_ip }}"
+          citrix.adc.virtual_server.port: "{{ parse_audit_connection_logs.message.vserver_port }}"
+
+  set_sslvpn_freeform_log_fields:
+    actions:
+      - set:
+          event.dataset: "audit_sslvpn"
+
+          citrix.adc.message: '{{ parse_audit_header.message.payload.strip(''"'') }}'
+          destination.ip: "{{ parse_audit_sslvpn_logs.message.dest_ip }}"
+          rule.name: '{{ parse_audit_sslvpn_logs.message.policy.strip(''"'') }}'
+          source.ip: "{{ parse_audit_sslvpn_logs.message.src_ip }}"
+          client.ip: "{{ parse_audit_sslvpn_logs.message.client_ip }}"
+          user.name: "{{ parse_audit_sslvpn_logs.message.user_name }}"
+          user.domain: "{{ parse_audit_sslvpn_logs.message.user_domain }}"
+
+  set_sslvpn_log_fields:
+    actions:
+      - set:
+          event.dataset: "audit_sslvpn"
+          source.ip: "{{ parse_audit_sslvpn_logs.message.src_ip }}"
+          destination.ip: "{{ parse_audit_sslvpn_logs.message.dest_ip }}"
+          user.name: "{{ parse_audit_sslvpn_logs.message.user_name }}"
+          rule.name: '{{ parse_audit_sslvpn_logs.message.policy.strip(''"'') }}'
+          source.nat.ip: "{{ parse_audit_sslvpn_logs.message.nat_ip }}"
+          citrix.adc.virtual_server.ip: "{{ parse_audit_sslvpn_logs.message.vserver_ip }}"
+          citrix.adc.virtual_server.port: "{{ parse_audit_sslvpn_logs.message.vserver_port }}"
+
+  set_ssl_log_fields:
+    actions:
+      - set:
+          event.dataset: "audit_ssl"
+          source.ip: "{{ parse_audit_ssl_logs.message.src_ip }}"
+          source.port: "{{ parse_audit_ssl_logs.message.src_port }}"
+
+          citrix.adc.virtual_server.ip: "{{ parse_audit_ssl_logs.message.vserver_ip }}"
+          citrix.adc.virtual_server.port: "{{ parse_audit_ssl_logs.message.vserver_port }}"
+
+          tls.version: "{{ parse_audit_ssl_logs.message.tls_version }}"
+          tls.cipher: '{{ parse_audit_ssl_logs.message.tls_suite.strip(''"'') }}'
+
+  set_other_log_fields:
+    actions:
+      - set:
+          event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
+          event.reason: "{{parse_audit_header.message.payload}}"

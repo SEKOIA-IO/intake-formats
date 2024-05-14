@@ -1,0 +1,669 @@
+name: cloudfunnel2.0
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+
+  # Time conversions
+  - name: convert_timestamp
+    filter: "{{json_event.message.timestamp != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.timestamp}}"
+        output_field: timestamp
+
+  - name: convert_ossrc_process_start
+    filter: '{{json_event.message.get("osSrc.process.startTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("osSrc.process.startTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  - name: convert_ossrc_parent_process_start
+    filter: '{{json_event.message.get("osSrc.process.parent.startTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("osSrc.process.parent.startTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  - name: convert_process_start
+    filter: '{{json_event.message.get("src.process.startTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("src.process.startTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  - name: convert_parent_process_start
+    filter: '{{json_event.message.get("src.process.parent.startTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("src.process.parent.startTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  - name: convert_target_process_start
+    filter: '{{json_event.message.get("tgt.process.startTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("tgt.process.startTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  - name: convert_file_creation_time
+    filter: '{{json_event.message.get("tgt.file.creationTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("tgt.file.creationTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  - name: convert_file_modification_time
+    filter: '{{json_event.message.get("tgt.file.modificationTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("tgt.file.modificationTime")}}'
+        output_field: start_date
+        format: timestamp
+
+  # File extractions
+  - name: find_dll_name
+    filter: '{{json_event.message.get("event.category") == "module"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json_event.message.get("module.path")}}'
+        output_field: file
+        pattern: '%{GREEDYDATA}[\\\/]+%{GREEDYDATA:name}$'
+
+  - name: set_meta_fields
+
+  - name: set_ecs_categorization_fields
+
+  - name: set_common_fields
+
+  - name: set_process_fields
+    filter: '{{json_event.message.get("src.process.pid") != None}}'
+
+  - name: set_parent_fields
+    filter: '{{json_event.message.get("src.process.parent.pid") != None}}'
+
+  - name: set_target_process_fields
+    filter: '{{json_event.message.get("tgt.process.pid") != None}}'
+
+  - name: set_osSrc_fields
+    filter: '{{json_event.message.get("osSrc.process.pid") != None}}'
+
+  - name: set_osSrc_parent_fields
+    filter: '{{json_event.message.get("osSrc.process.parent.pid") != None}}'
+
+  - name: set_login_fields
+    filter: '{{json_event.message.get("event.category") == "logins"}}'
+
+  - name: set_ip_fields
+    filter: '{{json_event.message.get("src.ip.address") != None or json_event.message.get("dst.ip.address") != None}}'
+
+  - name: set_dns_fields
+    filter: '{{json_event.message.get("event.category") == "dns"}}'
+
+  - name: set_module_load_fields
+    filter: '{{json_event.message.get("event.category") == "module"}}'
+
+  - name: set_driver_load_fields
+    filter: '{{json_event.message.get("event.category") == "driver"}}'
+
+  - name: set_file_fields
+    filter: '{{json_event.message.get("tgt.file.path") != None}}'
+
+  - name: set_reg_value_fields
+    filter: '{{json_event.message.get("registry.value") != None}}'
+
+  - name: set_reg_key_fields
+    filter: '{{json_event.message.get("registry.keyPath") != None}}'
+
+  - name: set_script_fields
+    filter: '{{json_event.message.get("event.category") == "command_script"}}'
+
+  - name: set_http_fields
+    filter: '{{json_event.message.get("event.category") == "url"}}'
+
+  - name: set_indicator_fields
+    filter: '{{json_event.message.get("event.category") == "indicators"}}'
+
+  - name: set_process_creation
+    filter: '{{json_event.message.get("event.type") == "Process Creation"}}'
+
+stages:
+  set_meta_fields:
+    actions:
+      - set:
+          agent.version: '{{json_event.message.get("agent.version")}}'
+          deepvisibility.agent.managment_url: '{{json_event.message.get("mgmt.url")}}'
+          deepvisibility.agent.trace_id: '{{json_event.message.get("trace.id")}}'
+          deepvisibility.agent.uuid: '{{json_event.message.get("agent.uuid")}}'
+          deepvisibility.event.type: '{{json_event.message.get("event.type")}}'
+          deepvisibility.event.category: '{{json_event.message.get("event.category")}}'
+          event.action: '{{json_event.message.get("event.type")}}'
+          deepvisibility.host.os.revision: '{{json_event.message.get("mgmt.osRevision")}}'
+          host.name: '{{json_event.message.get("endpoint.name")}}'
+          host.os.family: '{{json_event.message.get("endpoint.os")}}'
+          host.os.name: '{{json_event.message.get("os.name")}}'
+          host.type: '{{json_event.message.get("endpoint.type")}}'
+          event.dataset: "cloud-funnel-2.0"
+          observer.vendor: "SentinelOne"
+      - set:
+          "@timestamp": "{{convert_timestamp.timestamp}}"
+
+  set_ecs_categorization_fields:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") in ("process", "cross_process", "command_script") }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") not in ("File Creation", "File Modification", "File Rename", "File Deletion") }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") == "File Creation" }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") in ("File Modification", "File Rename") }}'
+      - set:
+          event.category: ["file"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.get("event.category") == "file" and json_event.message.get("event.type") == "File Deletion" }}'
+      - set:
+          event.category: ["authentication"]
+        filter: '{{ json_event.message.get("event.category") == "logins" }}'
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") == "dns" or json_event.message.get("event.category") == "ip" }}'
+      - set:
+          event.category: ["registry"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.get("event.category") == "registry" and json_event.message.get("event.type") in ("Registry Value Create", "Registry Key Create") }}'
+      - set:
+          event.category: ["registry"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.get("event.category") == "registry" and json_event.message.get("event.type") in ("Registry Value Modified", "Registry Key Modified", "Registry Key Security Changed") }}'
+      - set:
+          event.category: ["registry"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.get("event.category") == "registry" and json_event.message.get("event.type") in ("Registry Value Delete", "Registry Key Delete") }}'
+      - set:
+          event.category: ["web", "network"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") == "url" }}'
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: '{{ json_event.message.get("event.category") == "threat_intelligence_indicators" }}'
+      - set:
+          event.category: ["driver"]
+          event.type: ["info"]
+        filter: '{{ json_event.message.get("event.category") in ("driver", "module") }}'
+
+  set_common_fields:
+    actions:
+      - set:
+          deepvisibility.scheduled_task.name: '{{ json_event.message.get("task.name") }}'
+
+  set_process_fields:
+    actions:
+      - set:
+          deepvisibility.process.command_line: '{{json_event.message.get("src.process.cmdline")}}'
+          deepvisibility.process.executable.name: '{{json_event.message.get("src.process.image.path")}}'
+          deepvisibility.process.hash.sha256: '{{json_event.message.get("src.process.image.sha256")}}'
+          deepvisibility.process.name: '{{json_event.message.get("src.process.name")}}'
+        filter: '{{json_event.message.get("osSrc.process.pid") != None}}'
+
+      - set:
+          process.command_line: '{{json_event.message.get("src.process.cmdline")}}'
+          process.executable: '{{json_event.message.get("src.process.image.path")}}'
+          process.hash.md5: '{{json_event.message.get("src.process.image.md5")}}'
+          process.hash.sha1: '{{json_event.message.get("src.process.image.sha1")}}'
+          process.hash.sha256: '{{json_event.message.get("src.process.image.sha256")}}'
+          process.name: '{{json_event.message.get("src.process.name")}}'
+          process.pid: '{{json_event.message.get("src.process.pid")}}'
+          process.title: '{{json_event.message.get("src.process.displayName")}}'
+          process.user.name: '{{json_event.message.get("src.process.user")}}'
+          process.working_directory: '{{json_event.message.get("src.process.image.path") | dirname }}'
+        filter: '{{json_event.message.get("osSrc.process.pid") == None}}'
+
+      - set:
+          user.name: '{{json_event.message.get("src.process.user").split("\\")[1]}}'
+          user.domain: '{{json_event.message.get("src.process.user").split("\\")[0]}}'
+        filter: '{{json_event.message.get("osSrc.process.pid") == None and json_event.message.get("src.process.user") != None and "\\" in json_event.message.get("src.process.user")}}'
+
+      - set:
+          user.name: '{{json_event.message.get("src.process.user")}}'
+        filter: '{{json_event.message.get("osSrc.process.pid") == None and json_event.message.get("src.process.user") != None and "\\" not in json_event.message.get("src.process.user")}}'
+
+      - set:
+          user.name: '{{json_event.message.get("src.process.eUserName")}}'
+          process.user.name: '{{json_event.message.get("src.process.eUserName")}}'
+          process.user.id: '{{json_event.message.get("src.process.eUserUid")}}'
+          process.real_user.name: '{{json_event.message.get("src.process.rUserName")}}'
+          process.real_user.id: '{{json_event.message.get("src.process.rUserUid")}}'
+        filter: '{{json_event.message.get("src.process.eUserUid") != None}}'
+
+      - set:
+          process.start: "{{convert_process_start.start_date}}"
+        filter: '{{ convert_process_start != null and json_event.message.get("osSrc.process.pid") == None}}'
+
+      - set:
+          deepvisibility.process.activecontent.path: '{{json_event.message.get("src.process.activeContent.path")}}'
+          deepvisibility.process.activecontent.hash.sha1: '{{json_event.message.get("src.process.activeContent.hash")}}'
+        filter: '{{json_event.message.get("src.process.activeContentType") != None}}'
+
+      - set:
+          process.code_signature.exists: "true"
+          process.code_signature.subject_name: '{{json_event.message.get("src.process.publisher")}}'
+        filter: '{{ json_event.message.get("src.process.signedStatus") != None and json_event.message.get("src.process.signedStatus") == "signed" and json_event.message.get("osSrc.process.pid") == None}}'
+      - set:
+          process.code_signature.exists: "false"
+        filter: '{{ ((json_event.message.get("src.process.signedStatus") != None and json_event.message.get("src.process.signedStatus") == "unsigned") or (json_event.message.get("src.process.signedStatus") == None)) and json_event.message.get("osSrc.process.pid") == None }}'
+      - set:
+          process.code_signature.valid: "false"
+          process.code_signature.status: '{{json_event.message.get("src.process.reasonSignatureInvalid")}}'
+        filter: '{{ json_event.message.get("src.process.verifiedStatus") != None and json_event.message.get("src.process.verifiedStatus") == "unverified" and json_event.message.get("osSrc.process.pid") == None}}'
+
+  set_parent_fields:
+    actions:
+      - set:
+          deepvisibility.process.parent.command_line: '{{json_event.message.get("src.process.parent.cmdline")}}'
+          deepvisibility.process.parent.executable.name: '{{json_event.message.get("src.process.parent.image.path")}}'
+        filter: '{{json_event.message.get("osSrc.process.parent.pid") != None}}'
+
+      - set:
+          process.parent.command_line: '{{json_event.message.get("src.process.parent.cmdline")}}'
+          process.parent.executable: '{{json_event.message.get("src.process.parent.image.path")}}'
+          process.parent.hash.md5: '{{json_event.message.get("src.process.parent.image.md5")}}'
+          process.parent.hash.sha1: '{{json_event.message.get("src.process.parent.image.sha1")}}'
+          process.parent.hash.sha256: '{{json_event.message.get("src.process.parent.image.sha256")}}'
+          process.parent.name: '{{json_event.message.get("src.process.parent.name")}}'
+          process.parent.pid: '{{json_event.message.get("src.process.parent.pid")}}'
+          process.parent.title: '{{json_event.message.get("src.process.parent.displayName")}}'
+          process.parent.user.name: '{{json_event.message.get("src.process.parent.user")}}'
+          process.parent.working_directory: '{{json_event.message.get("src.process.parent.image.path") | dirname }}'
+        filter: '{{json_event.message.get("osSrc.process.parent.pid") == None}}'
+
+      - set:
+          process.parent.user.name: '{{json_event.message.get("src.process.parent.eUserName")}}'
+          process.parent.user.id: '{{json_event.message.get("src.process.parent.eUserUid")}}'
+          process.parent.real_user.name: '{{json_event.message.get("src.process.parent.rUserName")}}'
+          process.parent.real_user.id: '{{json_event.message.get("src.process.parent.rUserUid")}}'
+        filter: '{{json_event.message.get("src.process.parent.eUserUid") != None}}'
+
+      - set:
+          process.parent.start: "{{convert_parent_process_start.start_date}}"
+        filter: '{{ convert_parent_process_start != null and json_event.message.get("osSrc.process.parent.pid") == None }}'
+
+      - set:
+          deepvisibility.process.parent.activecontent.path: '{{json_event.message.get("src.process.parent.activeContent.path")}}'
+        filter: '{{json_event.message.get("src.process.parent.activeContentType") != None}}'
+
+      - set:
+          process.parent.code_signature.exists: "true"
+          process.parent.code_signature.subject_name: '{{json_event.message.get("src.process.parent.publisher")}}'
+        filter: '{{ json_event.message.get("src.process.parent.signedStatus") != None and json_event.message.get("src.process.parent.signedStatus") == "signed" and json_event.message.get("osSrc.process.parent.pid") == None }}'
+      - set:
+          process.parent.code_signature.exists: "false"
+        filter: '{{ ((json_event.message.get("src.process.parent.signedStatus") != None and json_event.message.get("src.process.parent.signedStatus") == "unsigned") or (json_event.message.get("src.process.parent.signedStatus") == None)) and json_event.message.get("osSrc.process.parent.pid") == None }}'
+      - set:
+          process.parent.code_signature.valid: "false"
+          process.parent.code_signature.status: '{{json_event.message.get("src.process.parent.reasonSignatureInvalid")}}'
+        filter: '{{ json_event.message.get("src.process.parent.verifiedStatus") != None and json_event.message.get("src.process.parent.verifiedStatus") == "unverified" and json_event.message.get("osSrc.process.parent.pid") == None }}'
+
+  set_target_process_fields:
+    actions:
+      - set:
+          deepvisibility.process.target.command_line: '{{json_event.message.get("tgt.process.cmdline")}}'
+          deepvisibility.process.target.executable: '{{json_event.message.get("tgt.process.image.path")}}'
+          deepvisibility.process.target.name: '{{json_event.message.get("tgt.process.name")}}'
+          deepvisibility.process.target.title: '{{json_event.message.get("tgt.process.displayName")}}'
+          deepvisibility.process.target.working_directory: '{{json_event.message.get("tgt.process.image.path") | dirname }}'
+          deepvisibility.process.target.hash.md5: '{{json_event.message.get("tgt.process.image.md5")}}'
+          deepvisibility.process.target.hash.sha1: '{{json_event.message.get("tgt.process.image.sha1")}}'
+          deepvisibility.process.target.hash.sha256: '{{json_event.message.get("tgt.process.image.sha256")}}'
+
+  set_osSrc_fields:
+    actions:
+      - set:
+          process.command_line: '{{json_event.message.get("osSrc.process.cmdline")}}'
+          process.executable: '{{json_event.message.get("osSrc.process.image.path")}}'
+          process.name: '{{json_event.message.get("osSrc.process.name")}}'
+          process.pid: '{{json_event.message.get("osSrc.process.pid")}}'
+          process.title: '{{json_event.message.get("osSrc.process.displayName")}}'
+          process.user.name: '{{json_event.message.get("osSrc.process.user")}}'
+          process.working_directory: '{{json_event.message.get("osSrc.process.image.path") | dirname }}'
+          process.hash.md5: '{{json_event.message.get("osSrc.process.image.md5")}}'
+          process.hash.sha1: '{{json_event.message.get("osSrc.process.image.sha1")}}'
+          process.hash.sha256: '{{json_event.message.get("osSrc.process.image.sha256")}}'
+
+      - set:
+          user.name: '{{json_event.message.get("osSrc.process.user").split("\\")[1]}}'
+          user.domain: '{{json_event.message.get("osSrc.process.user").split("\\")[0]}}'
+        filter: '{{json_event.message.get("osSrc.process.user") != None and "\\" in json_event.message.get("osSrc.process.user")}}'
+
+      - set:
+          user.name: '{{json_event.message.get("osSrc.process.user")}}'
+        filter: '{{json_event.message.get("osSrc.process.user") != None and "\\" not in json_event.message.get("osSrc.process.user")}}'
+
+      - set:
+          process.start: "{{convert_ossrc_process_start.start_date}}"
+        filter: "{{ convert_ossrc_process_start != null }}"
+
+      - set:
+          process.code_signature.exists: "true"
+          process.code_signature.subject_name: '{{json_event.message.get("osSrc.process.publisher")}}'
+        filter: '{{ json_event.message.get("osSrc.process.signedStatus") != None and json_event.message.get("osSrc.process.signedStatus") == "signed" }}'
+      - set:
+          process.code_signature.exists: "false"
+        filter: '{{ (json_event.message.get("osSrc.process.signedStatus") != None and json_event.message.get("osSrc.process.signedStatus") == "unsigned") or (json_event.message.get("osSrc.process.signedStatus") == None) }}'
+      - set:
+          process.code_signature.valid: "false"
+          process.code_signature.status: '{{json_event.message.get("osSrc.process.reasonSignatureInvalid")}}'
+        filter: '{{ json_event.message.get("osSrc.process.verifiedStatus") != None and json_event.message.get("osSrc.process.verifiedStatus") == "unverified" }}'
+
+  set_osSrc_parent_fields:
+    actions:
+      - set:
+          process.parent.command_line: '{{json_event.message.get("osSrc.process.parent.cmdline")}}'
+          process.parent.executable: '{{json_event.message.get("osSrc.process.parent.image.path")}}'
+          process.parent.name: '{{json_event.message.get("osSrc.process.parent.name")}}'
+          process.parent.process.pid: '{{json_event.message.get("osSrc.process.parent.pid")}}'
+          process.parent.title: '{{json_event.message.get("osSrc.process.parent.displayName")}}'
+          process.parent.user.name: '{{json_event.message.get("osSrc.process.parent.user")}}'
+          process.parent.working_directory: '{{json_event.message.get("osSrc.process.parent.image.path") | dirname }}'
+          process.parent.hash.md5: '{{json_event.message.get("osSrc.process.parent.image.md5")}}'
+          process.parent.hash.sha1: '{{json_event.message.get("osSrc.process.parent.image.sha1")}}'
+          process.parent.hash.sha256: '{{json_event.message.get("osSrc.process.parent.image.sha256")}}'
+
+      - set:
+          process.parent.start: "{{convert_ossrc_parent_process_start.start_date}}"
+        filter: "{{ convert_ossrc_parent_process_start != null }}"
+
+      - set:
+          process.parent.code_signature.exists: "true"
+          process.parent.code_signature.subject_name: '{{json_event.message.get("osSrc.process.parent.publisher")}}'
+        filter: '{{ json_event.message.get("osSrc.process.parent.signedStatus") != None and json_event.message.get("osSrc.process.parent.signedStatus") == "signed" }}'
+      - set:
+          process.parent.code_signature.exists: "false"
+        filter: '{{ (json_event.message.get("osSrc.process.parent.signedStatus") != None and json_event.message.get("osSrc.process.parent.signedStatus") == "unsigned") or (json_event.message.get("osSrc.process.parent.signedStatus") == None) }}'
+      - set:
+          process.parent.code_signature.valid: "false"
+          process.parent.code_signature.status: '{{json_event.message.get("osSrc.process.parent.reasonSignatureInvalid")}}'
+        filter: '{{ json_event.message.get("osSrc.process.parent.verifiedStatus") != None and json_event.message.get("osSrc.process.parent.verifiedStatus") == "unverified" }}'
+
+  set_login_fields:
+    actions:
+      - set:
+          user.name: '{{json_event.message.get("event.login.userName")}}'
+          user.domain: '{{json_event.message.get("event.login.accountDomain")}}'
+          user.id: '{{json_event.message.get("event.login.accountSid")}}'
+      - set:
+          source.ip: '{{json_event.message.get("src.endpoint.ip.address")}}'
+        filter: '{{json_event.message.get("src.endpoint.ip.address")| is_ipaddress}}'
+
+      - set:
+          action.properties.LogonType_tmp: '{{json_event.message.get("event.login.type")}}'
+          action.properties.TargetUserName: '{{json_event.message.get("event.login.userName")}}'
+          action.properties.TargetDomainName: '{{json_event.message.get("event.login.accountDomain")}}'
+          action.properties.TargetUserSid: '{{json_event.message.get("event.login.accountSid")}}'
+          action.properties.IpAddress: '{{json_event.message.get("src.endpoint.ip.address")}}'
+          user.target.name: '{{json_event.message.get("event.login.userName")}}'
+          user.target.domain: '{{json_event.message.get("event.login.accountDomain")}}'
+      - set:
+          action.outcome: "success"
+          event.type: ["start"]
+        filter: '{{json_event.message.get("event.login.loginIsSuccessful") == True}}'
+      - set:
+          action.outcome: "failure"
+          action.outcome_reason: '{{json_event.message.get("event.login.failureReason")}}'
+          event.type: ["error"]
+        filter: '{{json_event.message.get("event.login.loginIsSuccessful") == False}}'
+      - set:
+          action.outcome: "success"
+          event.type: ["end"]
+        filter: '{{json_event.message.get("event.type") == "Logout"}}'
+      - set:
+          user.roles: ["admin"]
+        filter: '{{json_event.message.get("event.login.isAdministratorEquivalent") == True}}'
+      - translate:
+        dictionary:
+          "SYSTEM": "0"
+          "INTERACTIVE": "2"
+          "NETWORK": "3"
+          "BATCH": "4"
+          "SERVICE": "5"
+          "UNLOCK": "7"
+          "NETWORK_CLEAR_TEXT": "8"
+          "NETWORK_CREDENTIALS": "9"
+          "REMOTE_INTERACTIVE": "10"
+          "CACHED_INTERACTIVE": "11"
+          "CACHED_REMOTE_INTERACTIVE": "12"
+          "CACHED_UNLOCK": "13"
+        mapping:
+          action.properties.LogonType_tmp: action.properties.LogonType
+      - delete:
+          - action.properties.LogonType_tmp
+
+  set_ip_fields:
+    actions:
+      - set:
+          source.ip: '{{json_event.message.get("src.ip.address")}}'
+        filter: '{{json_event.message.get("src.ip.address")| is_ipaddress}}'
+      - set:
+          source.address: '{{json_event.message.get("src.ip.address")}}'
+          source.port: '{{json_event.message.get("src.port.number")}}'
+        filter: '{{json_event.message.get("src.ip.address") != None }}'
+
+      - set:
+          destination.address: '{{json_event.message.get("dst.ip.address")}}'
+          destination.port: '{{json_event.message.get("dst.port.number")}}'
+
+      - set:
+          destination.ip: '{{json_event.message.get("dst.ip.address")}}'
+        filter: '{{json_event.message.get("dst.ip.address")| is_ipaddress}}'
+
+      - set:
+          network.direction: "inbound"
+        filter: '{{ json_event.message.get("event.network.direction") == "INCOMING" }}'
+      - set:
+          network.direction: "outbound"
+        filter: '{{ json_event.message.get("event.network.direction") == "OUTGOING" }}'
+
+      - set:
+          network.protocol: '{{ json_event.message.get("event.network.protocolName")}}'
+
+  set_dns_fields:
+    actions:
+      - set:
+          dns.question.name: '{{json_event.message.get("event.dns.request")}}'
+          dns.type: "query"
+        filter: '{{json_event.message.get("event.dns.request") != None}}'
+
+      - set:
+          dns.answers: >
+            {%
+              set mapping= {
+                "1": "A",
+                "2": "NS",
+                "5": "CNAME",
+                "6": "SOA",
+                "12": "PTR",
+                "15": "MX",
+                "16": "TXT",
+                "17": "RP",
+                "18": "AFSDB",
+                "24": "SIG",
+                "25": "KEY",
+                "28": "AAAA",
+                "29": "LOC",
+                "33": "SRV",
+                "35": "NAPTR",
+                "36": "KX",
+                "37": "CERT",
+                "39": "DNAME",
+                "42": "APL",
+                "43": "DS",
+                "44": "SSHFP",
+                "45": "IPSECKEY",
+                "46": "RRSIG",
+                "47": "NSEC",
+                "48": "DNSKEY",
+                "49": "DHCID",
+                "50": "NSEC3",
+                "51": "NSEC3PARAM",
+                "52": "TLSA",
+                "53": "SMIMEA",
+                "55": "HIP",
+                "59": "CDS",
+                "60": "CDNSKEY",
+                "61": "OPENPGPKEY",
+                "62": "CSYNC",
+                "249": "TKEY",
+                "250": "TSIG",
+                "256": "URI",
+                "257": "CAA",
+                "32768": "TA",
+                "32769": "DLV",
+              }
+            %}[
+              {% for record in json_event.message.get("event.dns.response").split(";") %}
+              {% if record.startswith("type:") %}
+                {% set part = record.split(" ") %}{"name": "{{part[-1]}}", "type": "{{mapping.get(part[-2])}}"},
+              {% else %}
+                {% if record != "" %}{"name": "{{record}}"},{% endif %}
+              {% endif %}
+            {% endfor %}
+            ]
+          dns.type: "answer"
+        filter: '{{json_event.message.get("event.dns.response") != None}}'
+
+  set_module_load_fields:
+    actions:
+      - set:
+          dll.path: '{{json_event.message.get("module.path")}}'
+          dll.name: "{{find_dll_name.file.name}}"
+
+  set_driver_load_fields:
+    actions:
+      - set:
+          deepvisibility.driver.hash.sha1: '{{json_event.message.get("driver.peSha1")}}'
+          deepvisibility.driver.hash.sha256: '{{json_event.message.get("driver.peSha256")}}'
+
+  set_file_fields:
+    actions:
+      - set:
+          file.path: '{{ json_event.message.get("tgt.file.path") }}'
+          file.hash.md5: '{{  json_event.message.get("tgt.file.md5")  }}'
+          file.hash.sha1: '{{  json_event.message.get("tgt.file.sha1")  }}'
+          file.hash.sha256: '{{  json_event.message.get("tgt.file.sha256")  }}'
+          file.size: '{{  json_event.message.get("tgt.file.size")  }}'
+      - set:
+          file.created: "{{convert_file_creation_time.start_date}}"
+        filter: "{{ convert_file_creation_time != null }}"
+      - set:
+          file.mtime: "{{convert_file_modification_time.start_date}}"
+        filter: "{{convert_file_modification_time != null }}"
+      - set:
+          file.code_signature.subject_name: '{{json_event.message.get("tgt.file.publisher")}}'
+          file.code_signature.exists: "true"
+        filter: '{{ json_event.message.get("tgt.file.signedStatus") != None and json_event.message.get("tgt.file.signedStatus") == "signed" }}'
+      - set:
+          file.code_signature.exists: "false"
+        filter: '{{ (json_event.message.get("tgt.file.signedStatus") != None and json_event.message.get("tgt.file.signedStatus") == "unsigned") or (json_event.message.get("tgt.file.signedStatus") == None) }}'
+      - set:
+          file.code_signature.valid: "false"
+          file.code_signature.status: '{{json_event.message.get("tgt.file.reasonSignatureInvalid")}}'
+        filter: '{{ json_event.message.get("tgt.file.verifiedStatus") != None and json_event.message.get("tgt.file.verifiedStatus") == "unverified" }}'
+
+  set_reg_value_fields:
+    actions:
+      - set:
+          registry.path: '{{ json_event.message.get("registry.keyPath") }}'
+          registry.value: '{{ json_event.message.get("registry.keyPath").split("\\") | last }}'
+          registry.hive: '{{ json_event.message.get("registry.keyPath").split("\\") | first }}'
+          registry.key: '{{ json_event.message.get("registry.keyPath").split("\\")[1:-1] | join("\\") }}'
+          registry.data.type: 'REG_{{json_event.message.get("registry.valueType")}}'
+      - set:
+          registry.data.bytes: '{{ json_event.message.get("registry.value") }}'
+        filter: '{{ json_event.message.get("registry.value") != None and json_event.message.get("registry.valueType") in [None, "BINARY"]  }}'
+      - set:
+          registry.data.strings:
+            ['{{ json_event.message.get("registry.value") | string() }}']
+        filter: '{{ json_event.message.get("registry.value") != None and json_event.message.get("registry.valueType") not in [None, "BINARY"]  }}'
+
+  set_reg_key_fields:
+    actions:
+      - set:
+          registry.path: '{{ json_event.message.get("registry.keyPath") }}'
+          registry.value: '{{ json_event.message.get("registry.keyPath").split("\\") | last }}'
+          registry.hive: '{{ json_event.message.get("registry.keyPath").split("\\") | first }}'
+          registry.key: '{{ json_event.message.get("registry.keyPath").split("\\")[1:-1] | join("\\") }}'
+
+  set_script_fields:
+    actions:
+      - set:
+          file.size: '{{ json_event.message.get("cmdScript.originalSize") }}'
+          deepvisibility.script.app_name: '{{ json_event.message.get("cmdScript.applicationName") }}'
+          deepvisibility.script.content: '{{ json_event.message.get("cmdScript.content") }}'
+          file.hash.sha256: '{{ json_event.message.get("cmdScript.sha256") }}'
+
+  set_http_fields:
+    actions:
+      - set:
+          http.request.method: '{{ json_event.message.get("event.url.action") }}'
+          url.original: '{{ json_event.message.get("url.address")}}'
+
+  set_indicator_fields:
+    actions:
+      - set:
+          deepvisibility.indicator.name: '{{ json_event.message.get("indicator.name") }}'
+          deepvisibility.indicator.description: '{{ json_event.message.get("indicator.description") }}'
+          deepvisibility.indicator.category: '{{ json_event.message.get("indicator.category") }}'
+          deepvisibility.indicator.metadata: '{{ json_event.message.get("indicator.metadata") }}'
+
+  set_process_creation:
+    actions:
+      - set:
+          process.parent.command_line: '{{json_event.message.get("src.process.cmdline")}}'
+          process.parent.executable: '{{json_event.message.get("src.process.image.path")}}'
+          process.parent.hash.md5: '{{json_event.message.get("src.process.image.md5")}}'
+          process.parent.hash.sha1: '{{json_event.message.get("src.process.image.sha1")}}'
+          process.parent.hash.sha256: '{{json_event.message.get("src.process.image.sha256")}}'
+          process.parent.name: '{{json_event.message.get("src.process.name")}}'
+          process.parent.pid: '{{json_event.message.get("src.process.pid")}}'
+          process.parent.title: '{{json_event.message.get("src.process.displayName")}}'
+          process.parent.user.name: '{{json_event.message.get("src.process.user")}}'
+          process.parent.working_directory: '{{json_event.message.get("src.process.image.path") | dirname }}'
+          process.command_line: '{{json_event.message.get("tgt.process.cmdline")}}'
+          process.executable: '{{json_event.message.get("tgt.process.image.path")}}'
+          process.name: '{{json_event.message.get("tgt.process.name")}}'
+          process.pid: '{{json_event.message.get("tgt.process.pid")}}'
+          process.title: '{{json_event.message.get("tgt.process.displayName")}}'
+          process.user.name: '{{json_event.message.get("tgt.process.user")}}'
+          process.working_directory: '{{json_event.message.get("tgt.process.image.path") | dirname }}'
+          process.hash.md5: '{{json_event.message.get("tgt.process.image.md5")}}'
+          process.hash.sha1: '{{json_event.message.get("tgt.process.image.sha1")}}'
+          process.hash.sha256: '{{json_event.message.get("tgt.process.image.sha256")}}'
+          process.start: "{{convert_target_process_start.start_date}}"

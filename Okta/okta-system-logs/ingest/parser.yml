@@ -10,130 +10,149 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_event.message.published}}'
-          event.kind: 'event'
-          event.dataset: 'system-log'
-          event.action: '{{parsed_event.message.eventType}}'
-          event.reason: '{{parsed_event.message.displayMessage}}'
-          event.category: ['iam']
-          observer.vendor: 'Okta'
-          source.ip: '{{parsed_event.message.client.ipAddress}}'
-          source.user.id: '{{parsed_event.message.client.id}}'
-          source.domain: '{{parsed_event.message.securityContext.domain}}'
-          source.as.number: '{{parsed_event.message.securityContext.asNumber}}'
-          source.as.organization.name: '{{parsed_event.message.securityContext.asOrg}}'
-          source.geo.city_name: '{{parsed_event.message.client.geographicalContext.city}}'
-          source.geo.region_name: '{{parsed_event.message.client.geographicalContext.state}}'
-          source.geo.country_name: '{{parsed_event.message.client.geographicalContext.country}}'
-          source.geo.postal_code: '{{parsed_event.message.client.geographicalContext.postalCode}}'
-          source.geo.location: '{{parsed_event.message.client.geographicalContext.geolocation}}'
+          "@timestamp": "{{parsed_event.message.published}}"
+          event.dataset: "system-log"
+          event.action: "{{parsed_event.message.eventType}}"
+          event.reason: "{{parsed_event.message.displayMessage}}"
+          event.category: ["iam"]
+          observer.vendor: "Okta"
+      - set:
+          source.ip: "{{parsed_event.message.client.ipAddress}}"
+        filter: "{{parsed_event.message.client.ipAddress | is_ipaddress}}"
+
+      - set:
+          source.user.id: "{{parsed_event.message.client.id}}"
+          source.domain: "{{parsed_event.message.securityContext.domain}}"
+          source.as.number: "{{parsed_event.message.securityContext.asNumber}}"
+          source.as.organization.name: "{{parsed_event.message.securityContext.asOrg}}"
+          source.geo.city_name: "{{parsed_event.message.client.geographicalContext.city}}"
+          source.geo.region_name: "{{parsed_event.message.client.geographicalContext.state}}"
+          source.geo.country_name: "{{parsed_event.message.client.geographicalContext.country}}"
+          source.geo.postal_code: "{{parsed_event.message.client.geographicalContext.postalCode}}"
+          source.geo.location: "{{parsed_event.message.client.geographicalContext.geolocation}}"
+      - set:
+          user.id: "{{parsed_event.message.actor.id}}"
+          user.name: "{{parsed_event.message.actor.alternateId}}"
+          user.email: "{{parsed_event.message.actor.alternateId}}"
+          user.full_name: "{{parsed_event.message.actor.displayName}}"
+        filter: '{{parsed_event.message.get("actor") != None}}'
       - set:
           user: >
-            {% for target in parsed_event.message.target if target.get("type") in ["AppUser", "User"] %}{
+            {% for target in parsed_event.message.target if target.get("type") in ["AppUser", "User"] %}
+              {%- if loop.first %}{
               "id": "{{target.id}}",
               "name": "{{target.alternateId}}",
               "email": "{{target.alternateId}}",
               "full_name": "{{target.displayName}}"
-            }{% endfor %}
+              }{% endif -%}
+            {% endfor %}
         filter: '{{parsed_event.message.get("target") != None}}'
       - set:
-          user.id: '{{parsed_event.message.actor.id}}'
-          user.name: '{{parsed_event.message.actor.alternateId}}'
-          user.email: '{{parsed_event.message.actor.alternateId}}'
-          user.full_name: '{{parsed_event.message.actor.displayName}}'
-        filter: '{{parsed_event.message.get("target") == None}}'
-      - set:
-          user_agent.original: '{{parsed_event.message.client.userAgent.rawUserAgent}}'
+          user_agent.original: "{{parsed_event.message.client.userAgent.rawUserAgent}}"
         filter: '{{parsed_event.message.client.userAgent.get("rawUserAgent") and "unknown" not in parsed_event.message.client.userAgent.rawUserAgent.lower()}}'
       - set:
-          user_agent.name: '{{parsed_event.message.client.userAgent.browser.capitalize()}}'
+          user_agent.name: "{{parsed_event.message.client.userAgent.browser.capitalize()}}"
         filter: '{{parsed_event.message.client.userAgent.get("browser") and parsed_event.message.client.userAgent.browser.lower() != "unknown"}}'
       - translate:
         dictionary:
-          'app.oauth2.as.authorize': ['session']
-          'app.oauth2.as.token.grant': ['session']
-          'app.oauth2.authorize.code': ['session']
-          'app.oauth2.signon': ['session']
-          'app.oauth2.token.grant.access_token': ['session']
-          'user.session.impersonation.grant': ['iam']
-          'user.session.impersonation.revoke': ['iam']
-          'app.inbound_del_auth.login_success': ['session']
+          "app.oauth2.as.authorize": ["session"]
+          "app.oauth2.as.token.grant": ["session"]
+          "app.oauth2.authorize.code": ["session"]
+          "app.oauth2.signon": ["session"]
+          "app.oauth2.token.grant.access_token": ["session"]
+          "user.session.impersonation.grant": ["iam"]
+          "user.session.impersonation.revoke": ["iam"]
+          "app.inbound_del_auth.login_success": ["session"]
         mapping:
           parsed_event.message.eventType: event.category
-        fallback: ['iam']
+        fallback: ["iam"]
       - translate:
         dictionary:
-          'app.access_request.approver.approve': ['admin', 'change']
-          'app.access_request.approver.deny': ['admin', 'change']
-          'app.access_request.approver.delete': ['admin', 'deletion']
-          'app.access_request.request': ['creation']
-          'app.access_request.grant': ['change']
-          'app.access_request.deny': ['change']
-          'app.access_request.expire': ['change']
-          'app.keys.clone': ['creation']
-          'app.keys.generate': ['creation']
-          'app.keys.rotate': ['change']
-          'app.ldap.password.change.failed': ['change', 'user']
-          'app.oauth2.admin.consent.grant': ['admin', 'change']
-          'app.oauth2.admin.consent.revoke': ['admin', 'change']
-          'app.oauth2.api_resource.create': ['creation']
-          'app.oauth2.api_resource.delete': ['deletion']
-          'app.oauth2.api_resource.update': ['change']
-          'app.oauth2.as.authorize': ['start']
-          'app.oauth2.as.consent.grant': ['user', 'change']
-          'app.oauth2.as.consent.revoke': ['user', 'change']
-          'app.oauth2.as.consent.revoke.user': ['user', 'change']
-          'app.oauth2.authorize.code': ['start']
-          'app.oauth2.signon': ['start']
-          'app.oauth2.token.grant.access_token': ['start']
-          'app.oauth2.token.grant.revoke': ['end']
-          'credential.register': ['user', 'creation']
-          'credential.revoke': ['user', 'deletion']
-          'app.inbound_del_auth.login_success': ['start']
-          'user.session.start': ['start']
-          'user.session.end': ['end']
-          'user.session.clear': ['end']
-          'user.session.expire': ['end']
-          'user.session.impersonation.grant': ['creation']
-          'user.session.impersonation.initiate': ['start']
-          'user.session.impersonation.end': ['end']
-          'user.session.impersonation.revoke': ['deletion']
+          "app.access_request.approver.approve": ["admin", "change"]
+          "app.access_request.approver.deny": ["admin", "change"]
+          "app.access_request.approver.delete": ["admin", "deletion"]
+          "app.access_request.request": ["creation"]
+          "app.access_request.grant": ["change"]
+          "app.access_request.deny": ["change"]
+          "app.access_request.expire": ["change"]
+          "app.keys.clone": ["creation"]
+          "app.keys.generate": ["creation"]
+          "app.keys.rotate": ["change"]
+          "app.ldap.password.change.failed": ["change", "user"]
+          "app.oauth2.admin.consent.grant": ["admin", "change"]
+          "app.oauth2.admin.consent.revoke": ["admin", "change"]
+          "app.oauth2.api_resource.create": ["creation"]
+          "app.oauth2.api_resource.delete": ["deletion"]
+          "app.oauth2.api_resource.update": ["change"]
+          "app.oauth2.as.authorize": ["start"]
+          "app.oauth2.as.consent.grant": ["user", "change"]
+          "app.oauth2.as.consent.revoke": ["user", "change"]
+          "app.oauth2.as.consent.revoke.user": ["user", "change"]
+          "app.oauth2.authorize.code": ["start"]
+          "app.oauth2.signon": ["start"]
+          "app.oauth2.token.grant.access_token": ["start"]
+          "app.oauth2.token.grant.revoke": ["end"]
+          "credential.register": ["user", "creation"]
+          "credential.revoke": ["user", "deletion"]
+          "app.inbound_del_auth.login_success": ["start"]
+          "user.session.start": ["start"]
+          "user.session.end": ["end"]
+          "user.session.clear": ["end"]
+          "user.session.expire": ["end"]
+          "user.session.impersonation.grant": ["creation"]
+          "user.session.impersonation.initiate": ["start"]
+          "user.session.impersonation.end": ["end"]
+          "user.session.impersonation.revoke": ["deletion"]
         mapping:
           parsed_event.message.eventType: event.type
-        fallback: ['info']
+        fallback: ["info"]
       - set:
-          event.category: ['authentication']
-          event.type: ['start']
+          event.category: ["authentication"]
+          event.type: ["start"]
         filter: '{{parsed_event.message.eventType.startswith("user.authentication")}}'
       - set:
-          event.category: ['iam']
-          event.type: ['change']
+          event.category: ["iam"]
+          event.type: ["change"]
         filter: '{{parsed_event.message.eventType.startswith("user.account")}}'
       - set:
-          event.category: ['authentication']
-          event.type: ['start']
+          event.category: ["authentication"]
+          event.type: ["start"]
         filter: '{{parsed_event.message.eventType.startswith("system.push") or parsed_event.message.eventType.startswith("system.sms") or parsed_event.message.eventType.startswith("system.email")}}'
       - set:
-          event.category: ['session']
+          event.category: ["session"]
         filter: '{{parsed_event.message.eventType.startswith("user.session")}}'
   set_okta_fields:
     actions:
       - set:
-          okta.system.severity: '{{parsed_event.message.severity}}'
-          okta.system.actor.id: '{{parsed_event.message.actor.id}}'
-          okta.system.actor.type: '{{parsed_event.message.actor.type}}'
-          okta.system.actor.alternate_id: '{{parsed_event.message.actor.alternateId}}'
-          okta.system.actor.display_name: '{{parsed_event.message.actor.displayName}}'
-          okta.system.transaction.id: '{{parsed_event.message.transaction.id}}'
-          okta.system.transaction.type: '{{parsed_event.message.transaction.type}}'
-          okta.system.security_context.isp: '{{parsed_event.message.security_context.isp}}'
-          okta.system.security_context.is_proxy: '{{parsed_event.message.security_context.is_proxy}}'
-          okta.system.authentication_context.interface: '{{parsed_event.message.authenticationContext.interface}}'
-          okta.system.authentication_context.authentication.provider: '{{parsed_event.message.authenticationContext.authenticationProvider}}'
-          okta.system.authentication_context.credential.provider: '{{parsed_event.message.authenticationContext.credentialProvider}}'
-          okta.system.authentication_context.credential.type: '{{parsed_event.message.authenticationContext.credentialType}}'
-          okta.system.authentication_context.issuer.id: '{{parsed_event.message.authenticationContext.issuer.id}}'
-          okta.system.authentication_context.issuer.type: '{{parsed_event.message.authenticationContext.issuer.type}}'
+          okta.system.severity: "{{parsed_event.message.severity}}"
+          okta.system.actor.id: "{{parsed_event.message.actor.id}}"
+          okta.system.actor.type: "{{parsed_event.message.actor.type}}"
+          okta.system.actor.alternate_id: "{{parsed_event.message.actor.alternateId}}"
+          okta.system.actor.display_name: "{{parsed_event.message.actor.displayName}}"
+          okta.system.transaction.id: "{{parsed_event.message.transaction.id}}"
+          okta.system.transaction.type: "{{parsed_event.message.transaction.type}}"
+          okta.system.security_context.isp: "{{parsed_event.message.security_context.isp}}"
+          okta.system.security_context.is_proxy: "{{parsed_event.message.security_context.is_proxy}}"
+          okta.system.authentication_context.interface: "{{parsed_event.message.authenticationContext.interface}}"
+          okta.system.authentication_context.authentication.provider: "{{parsed_event.message.authenticationContext.authenticationProvider}}"
+          okta.system.authentication_context.credential.provider: "{{parsed_event.message.authenticationContext.credentialProvider}}"
+          okta.system.authentication_context.credential.type: "{{parsed_event.message.authenticationContext.credentialType}}"
+          okta.system.authentication_context.issuer.id: "{{parsed_event.message.authenticationContext.issuer.id}}"
+          okta.system.authentication_context.issuer.type: "{{parsed_event.message.authenticationContext.issuer.type}}"
+          okta.system.outcome.reason: "{{parsed_event.message.outcome.reason}}"
+          okta.system.outcome.result: "{{parsed_event.message.outcome.result}}"
+          okta.system.debug.dtHash: "{{parsed_event.message.debugContext.debugData.dtHash}}"
       - set:
-          okta.system.authentication_context.external_session_id: '{{parsed_event.message.authenticationContext.externalSessionId}}'
+          okta.system.authentication_context.external_session_id: "{{parsed_event.message.authenticationContext.externalSessionId}}"
         filter: '{{parsed_event.message.authenticationContext.get("externalSessionId") != None and parsed_event.message.authenticationContext.externalSessionId != "unknown"}}'
+      - set:
+          okta.system.target: >
+            {% for target in parsed_event.message.target if target.get("type") in ["AppInstance"] %}
+              {%- if loop.first %}{
+              "type" : "{{target.type}}",
+              "id": "{{target.id}}",
+              "alternateId": "{{target.alternateId}}",
+              "displayName": "{{target.displayName}}"
+              }{% endif -%}
+            {% endfor %}
+        filter: '{{parsed_event.message.get("target") != None}}'

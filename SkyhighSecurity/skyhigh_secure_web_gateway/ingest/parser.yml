@@ -2,37 +2,37 @@ name: skyhigh-secure-web-gateway
 pipeline:
   - name: parse_kv
     external:
-          name: kv.parse-kv
-          properties:
-            input_field: '{{original.message}}'
-            output_field: message
-            value_sep: '='
-            item_sep: \s
+      name: kv.parse-kv
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
   - name: parse_date
-    filter: '{{parse_kv.message.request_timestamp_epoch != null}}'
+    filter: "{{parse_kv.message.request_timestamp_epoch != null}}"
     external:
       name: date.parse
       properties:
-        input_field: '{{parse_kv.message.request_timestamp_epoch}}'
+        input_field: "{{parse_kv.message.request_timestamp_epoch}}"
         output_field: datetime
         format: timestamp
   - name: parse_date_mcafee
-    filter: '{{parse_kv.message.date != null}}'
+    filter: "{{parse_kv.message.date != null}}"
     external:
       name: date.parse
       properties:
-        input_field: '{{parse_kv.message.date}}'
+        input_field: "{{parse_kv.message.date}}"
         output_field: datetime
   - name: parse_first_line
-    filter: '{{parse_kv.message.http_request_first_line != null}}'
+    filter: "{{parse_kv.message.http_request_first_line != null}}"
     external:
       name: grok.match
       properties:
-        input_field: '{{parse_kv.message.http_request_first_line}}'
+        input_field: "{{parse_kv.message.http_request_first_line}}"
         output_field: message
-        pattern: '%{WORD:http_method} %{URL:url} HTTP/%{NUMBER:http_version}'
+        pattern: "%{WORD:http_method} %{URL:url} HTTP/%{NUMBER:http_version}"
         custom_patterns:
-          URL: '(?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})'
+          URL: "(?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})"
   - name: set_ecs_fields
     external: null
   - name: set_mcafee_fields
@@ -41,103 +41,152 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parse_date.datetime}}'
-          event.start: '{{parse_date_mcafee.datetime}}'
-          event.category: ['network']
-          event.code: '{{parse_kv.message.block_id}}'
-          event.kind: 'event'
-          event.action: '{{parse_kv.message.result}}'
-          event.reason: '{{parse_kv.message.block_reason}}'
-          source.bytes: '{{parse_kv.message.client_to_server_bytes}}'
-          destination.ip: '{{parse_kv.message.destination_ip}}'
-          destination.domain: '{{parse_kv.message.destination_host or parse_kv.message.requested_host }}'
-          destination.bytes: '{{parse_kv.message.server_to_client_bytes}}'
-          destination.port: '{{parse_kv.message.destination_port}}'
-          http.request.method: '{{parse_first_line.message.http_method or parse_kv.message.http_action}}'
-          http.request.bytes: '{{parse_kv.message.source_bytes}}'
-          http.response.bytes: '{{parse_kv.message.destination_bytes}}'
-          http.response.status_code: '{{parse_kv.message.http_status_code}}'
-          http.request.mime_type: '{{parse_kv.message.media_type}}'
-          url.scheme: '{{parse_kv.message.uri_scheme}}'
-          url.path: '{{parse_kv.message.requested_path}}'
-          observer.hostname: '{{parse_kv.message.hostname}}'
-          host.name: '{{parse_kv.message.client_system_name}}'
-          process.name: '{{parse_kv.message.process_name}}'
+          "@timestamp": "{{parse_date.datetime}}"
+          event.start: "{{parse_date_mcafee.datetime}}"
+          event.category: ["network"]
+          event.code: "{{parse_kv.message.block_id}}"
+          event.action: "{{parse_kv.message.result}}"
+          event.reason: "{{parse_kv.message.block_reason}}"
+          source.bytes: "{{parse_kv.message.client_to_server_bytes}}"
+          destination.domain: "{{parse_kv.message.destination_host or parse_kv.message.requested_host }}"
+          destination.bytes: "{{parse_kv.message.server_to_client_bytes}}"
+          destination.port: "{{parse_kv.message.destination_port}}"
+          http.request.bytes: "{{parse_kv.message.source_bytes}}"
+          http.response.bytes: "{{parse_kv.message.destination_bytes}}"
+          http.response.status_code: "{{parse_kv.message.http_status_code}}"
+          http.request.mime_type: "{{parse_kv.message.media_type}}"
+          url.scheme: "{{parse_kv.message.uri_scheme}}"
+          url.path: "{{parse_kv.message.requested_path}}"
+          observer.hostname: "{{parse_kv.message.hostname}}"
+          host.name: "{{parse_kv.message.client_system_name}}"
+          process.name: "{{parse_kv.message.process_name}}"
           observer.type: proxy
-          file.name: '{{parse_kv.message.filename}}'
+          file.name: "{{parse_kv.message.filename}}"
           observer.vendor: McAfee Corp.
           observer.product: McAfee Web Gateway
-          rule.ruleset: '{{parse_kv.message.ruleset_name}}'
-          rule.name: '{{parse_kv.message.rule_name or parse_kv.message.last_rule}}'
-          rule.category: '{{parse_kv.message.category}}'
-          network.direction: 'egress'
+          rule.ruleset: "{{parse_kv.message.ruleset_name}}"
+          rule.name: "{{parse_kv.message.rule_name or parse_kv.message.last_rule}}"
+          rule.category: "{{parse_kv.message.category}}"
+          network.direction: "egress"
 
       - set:
-          source.nat.ip: '{{parse_kv.message.source_ip}}'
-          source.ip: '{{parse_kv.message.client_ip}}'
-        filter: '{{parse_kv.message.client_ip != null}}'
+          http.request.method: "{{parse_kv.message.http_action}}"
+        filter: "{{(not parse_first_line or not parse_first_line.message.http_method) and parse_kv.message.http_action != None}}"
 
       - set:
-          source.ip: '{{parse_kv.message.source_ip}}'
-        filter: '{{parse_kv.message.client_ip == null}}'
+          http.request.method: "{{parse_first_line.message.http_method}}"
+        filter: "{{parse_first_line != None and parse_first_line.message.http_method != None}}"
 
       - set:
-          user_agent.original: '{{parse_kv.message.user_agent or parse_kv.message.user_agent_product}}'
+          destination.ip: "{{parse_kv.message.destination_ip}}"
+        filter: "{{parse_kv.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parse_kv.message.source_ip}}"
+        filter: "{{parse_kv.message.client_ip != null and parse_kv.message.source_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parse_kv.message.client_ip}}"
+        filter: "{{parse_kv.message.client_ip != null and parse_kv.message.client_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parse_kv.message.source_ip}}"
+        filter: "{{parse_kv.message.client_ip == null}}"
+
+      - set:
+          url.original: "{{parse_kv.message.requested_path}}"
+          url.full: "{{parse_kv.message.uri_scheme}}://{{parse_kv.message.requested_host}}{{parse_kv.message.requested_path}}"
+        filter: "{{parse_kv.message.requested_path != null and parse_kv.message.uri_scheme != null and parse_kv.message.requested_host!= null and parse_kv.message.requested_path != null}}"
+
+      - set:
+          user_agent.original: "{{parse_kv.message.user_agent or parse_kv.message.user_agent_product}}"
         filter: '{{parse_kv.message.user_agent != null and parse_kv.message.user_agent != "-" and parse_kv.message.user_agent != ""}}'
       - set:
-          url.original: '{{parse_first_line.message.url}}'
+          url.original: "{{parse_first_line.message.url}}"
         filter: '{{parse_first_line.message.http_method != "CONNECT" and parse_first_line.message.url.startswith("http")}}'
       - set:
-          url.domain: '{{parse_first_line.message.HOSTNAME}}'
-          url.port: '{{parse_first_line.message.POSINT}}'
-          destination.port: '{{parse_first_line.message.POSINT}}'
+          url.domain: "{{parse_first_line.message.HOSTNAME}}"
+          url.port: "{{parse_first_line.message.POSINT}}"
+          destination.port: "{{parse_first_line.message.POSINT}}"
         filter: '{{parse_first_line.message.http_method == "CONNECT"}}'
       - set:
-          user.name: '{{parse_kv.message.username}}'
+          user.name: "{{parse_kv.message.username}}"
         filter: '{{parse_kv.message.username != null and parse_kv.message.username != "-" and parse_kv.message.username != ""}}'
       - set:
-          http.request.referrer: '{{parse_kv.message.http_referrer}}'
+          http.request.referrer: "{{parse_kv.message.http_referrer}}"
         filter: '{{parse_kv.message.http_referrer != null and parse_kv.message.http_referrer != "-" and parse_kv.message.http_referrer != ""}}'
       - set:
-          http.response.mime_type: '{{parse_kv.message.media_type}}'
+          http.response.mime_type: "{{parse_kv.message.media_type}}"
         filter: '{{parse_kv.message.media_type != null and parse_kv.message.media_type != "-" and parse_kv.message.media_type != ""}}'
       - translate:
         dictionary:
-          '0': 'allowed'
-          '1': 'error'
-          '2': 'denied'
-          '3': 'error'
+          "0": "allowed"
+          "1": "error"
+          "2": "denied"
+          "3": "error"
+          "10": "denied"
+          "81": "denied"
         mapping:
           event.code: event.action
 
       - translate:
         dictionary:
-          'OBSERVED': 'allowed'
-          'DENIED': 'denied'
+          "OBSERVED": "allowed"
+          "DENIED": "denied"
         mapping:
           parse_kv.message.result: event.action
 
       - set:
-          event.type: [ 'connection', 'access', 'allowed' ]
+          event.type: ["connection", "access", "allowed"]
         filter: '{{ parse_kv.message.block_id == "0" or set_ecs_fields.event.type == ["allowed"] or parse_kv.message.result == "OBSERVED"}}'
 
       - set:
-          event.type: [ 'connection', 'access', 'denied' ]
+          event.type: ["connection", "access", "denied"]
         filter: '{{set_ecs_fields.event.type == ["denied"] or parse_kv.message.result == "DENIED"}}'
 
   set_mcafee_fields:
     actions:
       - set:
-          skyhighsecurity: '{{parse_kv.message}}'
-          skyhighsecurity.application.reputation: '{{parse_kv.message.application_reputation}}'
-          skyhighsecurity.url.reputation: '{{parse_kv.message.url_reputation_string}}'
-          skyhighsecurity.url.reputation_code: '{{parse_kv.message.url_reputation_code}}'
+          skyhighsecurity: "{{parse_kv.message}}"
+          skyhighsecurity.application.reputation: "{{parse_kv.message.application_reputation}}"
+          skyhighsecurity.url.reputation: "{{parse_kv.message.url_reputation_string}}"
+          skyhighsecurity.url.reputation_code: "{{parse_kv.message.url_reputation_code}}"
           skyhighsecurity.url.categories: '{{parse_kv.message.url_categories.split(", ")}}'
-          skyhighsecurity.http.body.infected: '{{parse_kv.message.body_infected}}'
-          skyhighsecurity.http.body.modified: '{{parse_kv.message.body_modified}}'
+          skyhighsecurity.http.body.infected: "{{parse_kv.message.body_infected}}"
+          skyhighsecurity.http.body.modified: "{{parse_kv.message.body_modified}}"
       - set:
-          skyhighsecurity.application.name: '{{parse_kv.message.application_name}}'
+          skyhighsecurity.application.name: "{{parse_kv.message.application_name}}"
         filter: '{{parse_kv.message.application_name != null and parse_kv.message.application_name != "-" and parse_kv.message.application_name != ""}}'
       - set:
           skyhighsecurity.viruses: '{{parse_kv.message.virus_names.split(", ")}}'
         filter: '{{parse_kv.message.virus_names != null and parse_kv.message.virus_names != "-" and parse_kv.message.virus_names != ""}}'
+      - translate:
+        dictionary:
+          "t": "true"
+          "f": "false"
+        mapping:
+          parse_kv.message.dlp: skyhighsecurity.dlp
+      - translate:
+        dictionary:
+          "t": "true"
+          "f": "false"
+        mapping:
+          parse_kv.message.rbi: skyhighsecurity.rbi
+      - translate:
+        dictionary:
+          "t": "true"
+          "f": "false"
+        mapping:
+          parse_kv.message.av_scanned_up: skyhighsecurity.av_scanned_up
+      - translate:
+        dictionary:
+          "t": "true"
+          "f": "false"
+        mapping:
+          parse_kv.message.av_scanned_down: skyhighsecurity.av_scanned_down
+      - translate:
+        dictionary:
+          "t": "true"
+          "f": "false"
+        mapping:
+          parse_kv.message.ssl_scanned: skyhighsecurity.ssl_scanned

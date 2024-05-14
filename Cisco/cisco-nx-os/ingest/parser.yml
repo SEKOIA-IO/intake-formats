@@ -1,0 +1,135 @@
+name: cisco-nx-os
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        pattern: "%{CISCO_HEADER}: %{DATA:description}"
+        custom_patterns:
+          CISCO_HEADER: "%{CISCO_DATESTAMP}: %{MSG_CODE}"
+          CISCO_TIMESTAMP: "%{YEAR} %{MONTH} %{MONTHDAY} %{TIME}"
+          CISCO_DATESTAMP: "%{CISCO_TIMESTAMP:date} %{WORD:timezone}"
+          MSG_CODE: '\%%{WORD:facility}\-%{NONNEGINT:severity}\-%{WORD:mnemonic}'
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.description
+        pattern: "%{ETHPORT_IF_DOWN}|%{ETHPORT_IF_UP}|%{ETHPORT_IF}|%{ETHPORT_CONTROL}|%{ETHPORT_LAN}|%{ETHPORT_TRANSCEIVER}|%{ETHPORT_CHANNEL}"
+        custom_patterns:
+          ETHPORT_IF_DOWN: 'Interface %{NOTSPACE:ifname} %{GREEDYDATA}is down\s*\(%{DATA:reason}\)'
+          ETHPORT_IF_UP: "Interface %{NOTSPACE:ifname} %{GREEDYDATA}is (?:admin)*up %{DATA}"
+          ETHPORT_IF: "Interface %{NOTSPACE:ifname}, %{DATA:reason}"
+          ETHPORT_CHANNEL: "%{NOTSPACE:ifname}: %{DATA:reason}"
+          ETHPORT_CONTROL: "Traffic in port %{NOTSPACE:ifname} %{DATA:reason}"
+          ETHPORT_LAN: "Shutting lan on %{NOTSPACE:ifname} %{DATA}"
+          ETHPORT_TRANSCEIVER: "Transceiver on interface %{NOTSPACE:ifname} %{DATA}"
+          ETHPORT_VLAN: "VLANs %{DATA:vlan} on interface %{NOTSPACE:ifname} are %{DATA:reason}"
+    filter: '{{parsed_event.message.facility in ["ETHPORT", "ETH_PORT_CHANNEL"]}}'
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.description
+        pattern: "%{PAM_MESSAGE}|%{FILE_OPEN_FAILURE}"
+        custom_patterns:
+          PAM_MESSAGE: "%{PAM_AUTH_FAILURE1}|%{PAM_AUTH_FAILURE2}"
+          PAM_AUTH_FAILURE1: '%{DATA:module}_aaa:Authentication %{WORD:outcome} from %{IP:source_ip} - %{WORD:process_name}\[%{INT:process_id}\]'
+          PAM_AUTH_FAILURE2: 'error: %{WORD:module}: Authentication %{WORD:outcome} for %{WORD} user %{USERNAME:username} from %{IP:source_ip} - %{WORD:process_name}\[%{INT:process_id}\]'
+          FILE_OPEN_FAILURE: "%{WORD:outcome} to open file: %{DATA:reason} - %{DATA:filepath}"
+    filter: '{{parsed_event.message.mnemonic == "SYSTEM_MSG"}}'
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.description
+        pattern: "%{VSHD_CONFIG}|%{VSHD_CMD_EXEC}"
+        custom_patterns:
+          TERMINAL: "(%{IP:destination_ip}|%{HOSTNAME:destination_host})(?:@%{DATA:terminal})|%{DATA:terminal}"
+          VSHD_CONFIG: "Configured from vty by %{USERNAME:username} on %{TERMINAL}"
+          VSHD_CMD_EXEC: "User:%{USERNAME:username} executed the command:%{DATA:process_cmd}"
+    filter: '{{parsed_event.message.facility == "VSHD"}}'
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_event.message.description
+        pattern: "%{ARP_DUP}"
+        custom_patterns:
+          ARP_DUP: 'arp \[%{INT}\] Source address of packet received from %{MAC:mac_addr} on %{NOTSPACE:vlan}\(%{NOTSPACE:ifname}\) is duplicate of local, %{IP:source_ip} \(%{DATA}\)'
+    filter: '{{parsed_event.message.facility == "ARP"}}'
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.date}}"
+        output_field: date
+        timezone: "{{parsed_event.message.timezone}}"
+  - name: set_ecs_fields
+  - name: set_cisco_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.date}}"
+          observer.vendor: "Cisco"
+          observer.product: "NX-OS"
+          event.category: ["host"]
+          event.type: ["info"]
+          event.severity: "{{parsed_event.message.severity}}"
+          event.code: "{{parsed_event.message.mnemonic}}"
+          event.reason: "{{parsed_event.message.description}}"
+
+      - set:
+          source.ip: "{{parsed_description.message.source_ip}}"
+        filter: "{{parsed_description.message.source_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_description.message.destination_ip}}"
+        filter: "{{parsed_description.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parsed_description.message.destination_host}}"
+          user.name: "{{parsed_description.message.username}}"
+          process.pid: "{{parsed_description.message.process_id}}"
+          process.name: "{{parsed_description.message.process_name}}"
+          host.mac: "{{parsed_description.message.mac_addr | to_mac_address}}"
+      - set:
+          event.module: "{{parsed_description.message.module  | lower }}"
+        filter: '{{parsed_description.message.get("module") != None }}'
+      - set:
+          process.command_line: "{{parsed_description.message.process_cmd}}"
+          process.args: '{{parsed_description.message.process_cmd.split(" ")}}'
+          process.executable: '{{parsed_description.message.process_cmd.split(" ")[0]}}'
+          process.name: '{{parsed_description.message.process_cmd.split(" ")[0] | basename}}'
+        filter: '{{parsed_description.message.get("process_cmd") != None}}'
+      - set:
+          file.name: "{{parsed_description.message.filepath | basename}}"
+          file.path: "{{parsed_description.message.filepath | dirname}}"
+        filter: '{{parsed_description.message.get("filepath") != None}}'
+      - set:
+          event.reason: "{{parsed_description.message.reason}}"
+        filter: '{{parsed_description.message.get("reason") != None}}'
+      - set:
+          event.action: "down"
+        filter: '{{parsed_event.message.mnemonic.startswith("IF_DOWN")}}'
+      - set:
+          event.action: "up"
+        filter: '{{parsed_event.message.mnemonic in ["IF_UP", "IF_ADMIN_UP"]}}'
+
+  set_cisco_fields:
+    actions:
+      - set:
+          cisco.nxos.event.facility: "{{parsed_event.message.facility}}"
+          cisco.nxos.observer.interface.name: "{{parsed_description.message.ifname}}"
+          cisco.nxos.observer.terminal: "{{parsed_description.message.terminal}}"
+          cisco.nxos.observer.vlan: "{{parsed_description.message.vlan}}"
+      - translate:
+        dictionary:
+          "failed": "failure"
+          "Failed": "failure"
+          "failure": "failure"
+        mapping:
+          parsed_description.message.outcome: cisco.nxos.event.outcome
+        filter: '{{parsed_description.message.get("outcome") != None}}'

@@ -3,22 +3,25 @@ pipeline:
   - name: parsed_event
     external:
       name: cef.parse-cef
+
   - name: parsed_timestamp
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.rt | float / 1000}}'
+        input_field: "{{parsed_event.message.rt | float / 1000}}"
         output_field: datetime
         format: timestamp
-    filter: '{{parsed_event.message.rt != null}}'
+    filter: "{{parsed_event.message.rt != null}}"
+
   - name: parsed_modified_at
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.ModifiedTime | float / 1000}}'
+        input_field: "{{parsed_event.message.ModifiedTime | float / 1000}}"
         output_field: datetime
         format: timestamp
-    filter: '{{parsed_event.message.ModifiedTime != null}}'
+    filter: "{{parsed_event.message.ModifiedTime != null}}"
+
   - name: set_ecs_fields
   - name: set_cybereason_fields
 
@@ -26,25 +29,25 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_timestamp.datetime}}'
-        filter: '{{parsed_event.message.rt != null}}' 
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+        filter: "{{parsed_event.message.rt != null}}"
       - set:
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
-          observer.product: '{{parsed_event.message.DeviceProduct}}'
-          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
       - set:
-          event.action: '{{parsed_event.message.Name}}'
-          event.severity: '{{parsed_event.message.Severity}}'
-          event.code: '{{parsed_event.message.DeviceEventClassID}}'
-          event.type: ['info']
-          event.reason: '{{parsed_event.message.requestContext}}'
-          event.url: '{{parsed_event.message.IncidentLink}}'
+          event.action: "{{parsed_event.message.Name}}"
+          event.severity: "{{parsed_event.message.Severity}}"
+          event.code: "{{parsed_event.message.DeviceEventClassID}}"
+          event.type: ["info"]
+          event.reason: "{{parsed_event.message.requestContext}}"
+          event.url: "{{parsed_event.message.IncidentLink}}"
       - set:
-          user.name: '{{parsed_event.message.duser}}'
-          user.domain: '{{parsed_event.message.CybereasonCEFgeneratorOrganizationName1}}'
+          user.name: "{{parsed_event.message.duser}}"
+          user.domain: "{{parsed_event.message.CybereasonCEFgeneratorOrganizationName1}}"
       - set:
-          host.hostname: '{{parsed_event.message.dhost}}'
-          host.id: '{{parsed_event.message.CybereasonCEFgeneratorMachineGuid1}}'
+          host.hostname: "{{parsed_event.message.dhost}}"
+          host.id: "{{parsed_event.message.CybereasonCEFgeneratorMachineGuid1}}"
           host.os.full: '{{parsed_event.message.CybereasonCEFgeneratorOSandVersion1 | replace("_", " ")}}'
       - set:
           host.ip: >
@@ -52,54 +55,73 @@ stages:
               {% if parsed_event.message.dst != null %}"{{parsed_event.message.dst}}",{% endif %}
               {% if parsed_event.message.destinationTranslatedAddress != null %}"{{parsed_event.message.destinationTranslatedAddress}}",{% endif %}
             ]
-        filter: '{{parsed_event.message.DeviceEventClassID == "3"}}' 
+        filter: '{{parsed_event.message.DeviceEventClassID == "3"}}'
       - set:
-          file.hash.sha1: '{{parsed_event.message.processSha1 or parsed_event.message.MalopHashList}}'
+          file.hash.sha1: "{{parsed_event.message.processSha1 or parsed_event.message.MalopHashList}}"
       - set:
           process.command_line: '{{parsed_event.message.request | replace("\"", "") | replace("\\\\", "\\")}}'
-          process.name: '{{parsed_event.message.fname}}'
-          process.parent.name: '{{parsed_event.message.deviceProcessName}}'
+          process.name: "{{parsed_event.message.fname}}"
+          process.parent.name: "{{parsed_event.message.deviceProcessName}}"
       - set:
-          process.start: '{{parsed_timestamp.datetime}}'
-        filter: '{{parsed_event.message.rt != null and parsed_event.message.DeviceEventClassID == "2"}}' 
+          process.start: "{{parsed_timestamp.datetime}}"
+        filter: '{{parsed_event.message.rt != null and parsed_event.message.DeviceEventClassID == "2"}}'
+
       - set:
-          destination.ip: '{{parsed_event.message.dst}}'
-          destination.port: '{{parsed_event.message.dpt}}'
-          destination.geo.country_name: '{{parsed_event.message.CybereasonCEFgeneratorcountry1Name}}'
-          destination.nat.ip: '{{parsed_event.message.destinationTranslatedAddress}}'
+          destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+
+      - set:
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.geo.country_name: "{{parsed_event.message.CybereasonCEFgeneratorcountry1Name}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.destinationTranslatedAddress}}"
+        filter: "{{parsed_event.message.destinationTranslatedAddress | is_ipaddress}}"
+
       - translate:
         dictionary:
-          '1': ['malware']
-          '2': ['intrusion_detection']
-          '3': ['intrusion_detection']
-          '5': ['session']
-          '6': ['intrusion_detection']
+          "1": ["malware"]
+          "2": ["intrusion_detection"]
+          "3": ["intrusion_detection"]
+          "5": ["session"]
+          "6": ["intrusion_detection"]
         mapping:
           event.code: event.category
-        fallback: ['intrusion_detection']
+        fallback: ["intrusion_detection"]
       - translate:
         dictionary:
-          '1': 'alert'
+          "1": "alert"
         mapping:
           event.code: event.kind
-        fallback: 'event'
+        fallback: "event"
 
   set_cybereason_fields:
     actions:
       - set:
-          cybereason.event.id: '{{parsed_event.message.CybereasonCEFgeneratorBatchId1}}'
-          cybereason.cef.version: '{{parsed_event.message.CEFVersion}}'
-          cybereason.malop.id: '{{parsed_event.message.MalopId}}'
-          cybereason.malop.host.is_online: '{{parsed_event.message.isOnline}}'
-          cybereason.malop.host.is_original_machine: '{{parsed_event.message.isOriginalMachine}}'
-          cybereason.malop.host.is_malicious: '{{parsed_event.message.isMalicious}}'
-          cybereason.malop.file.is_signed: '{{parsed_event.message.isSigned}}'
-          cybereason.malop.status: '{{parsed_event.message.deviceFacility}}'
-          cybereason.malop.detection.type: '{{parsed_event.message.MalopDetectionType}}'
-          cybereason.malop.activity.type: '{{parsed_event.message.MalopActivityType}}'
-          cybereason.malop.decision: '{{parsed_event.message.DecisionFeatures}}'
-          cybereason.malop.counters.affected_machines: '{{parsed_event.message.AffectedMachinesCount}}'
-          cybereason.malop.counters.affected_users: '{{parsed_event.message.AffectedUsersCount}}'
+          cybereason.event.id: "{{parsed_event.message.CybereasonCEFgeneratorBatchId1}}"
+          cybereason.cef.version: "{{parsed_event.message.CEFVersion}}"
+          cybereason.malop.id: "{{parsed_event.message.MalopId}}"
+          cybereason.malop.host.is_online: "{{parsed_event.message.isOnline}}"
+          cybereason.malop.host.is_original_machine: "{{parsed_event.message.isOriginalMachine}}"
+          cybereason.malop.host.is_malicious: "{{parsed_event.message.isMalicious}}"
+          cybereason.malop.file.is_signed: "{{parsed_event.message.isSigned}}"
+          cybereason.malop.status: "{{parsed_event.message.deviceFacility}}"
+          cybereason.malop.detection.type: "{{parsed_event.message.MalopDetectionType}}"
+          cybereason.malop.activity.type: "{{parsed_event.message.MalopActivityType}}"
+          cybereason.malop.decision: "{{parsed_event.message.DecisionFeatures}}"
+          cybereason.malop.counters.affected_machines: "{{parsed_event.message.AffectedMachinesCount}}"
+          cybereason.malop.counters.affected_users: "{{parsed_event.message.AffectedUsersCount}}"
+          cybereason.malop.malware.guid: "{{parsed_event.message.MalwareGUID}}"
+          cybereason.malop.malware.status: "{{parsed_event.message.MalwareStatus}}"
+          cybereason.malop.malware.type: "{{parsed_event.message.MalwareType}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          host.name: "{{parsed_event.message.MachineName}}"
+          threat.software.name: "{{parsed_event.message.MalwareName}}"
+
       - set:
-          cybereason.malop.modified_at: '{{parsed_modified_at.datetime}}'
-        filter: '{{parsed_event.message.ModifiedTime != null}}'
+          cybereason.malop.modified_at: "{{parsed_modified_at.datetime}}"
+        filter: "{{parsed_event.message.ModifiedTime != null}}"
+
+      - set:
+          threat.software.type: "Malware"
+        filter: "{{parsed_event.message.get('MalwareGUID') != None}}"

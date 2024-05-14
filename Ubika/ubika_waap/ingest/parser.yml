@@ -1,0 +1,117 @@
+name: ubika-waap
+pipeline:
+  - name: parse_header
+    external:
+      name: grok.match
+      properties:
+        # For security events: <date> <observer_name> <tunnel_uuid> - - - <payload>
+        # For access logs: <date> <observer_name> <tunnel_uuid>: - - - <payload>
+        pattern: "(%{TIMESTAMP_ISO8601:timestamp} %{USERNAME:observer} %{USERNAME:tunnel_uuid}(:?) - - - )?%{GREEDYDATA:payload}"
+
+  # Security Events
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "parse_header.message.payload"
+        output_field: "json"
+    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.json.timestamp}}"
+        output_field: date
+    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  # Access Logs
+  - name: parse_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_header.message.payload"
+        output_field: "plain"
+        # <host> <ident> <authuser> [<date>] <request> <status> <bytes> <referer> <user-agent>
+        pattern: "%{IPORHOST:host} %{USERNAME:ident} %{USERNAME:authuser} \\[%{DATA:date}\\] \"%{WORD:http_method} %{URIPATHPARAM:http_request} %{DATA:http_version}\" %{INT:http_status} %{INT:http_bytes} %{QS:http_referrer} %{QS:http_user_agent}.*"
+
+    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$") == False}}'
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.plain.date}}"
+        output_field: date
+        format: "%d/%b/%Y:%H:%M:%S %z"
+    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$") == False }}'
+
+  - name: set_base_fields
+
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          observer.vendor: "Ubika"
+          observer.name: "{{ parse_header.message.observer }}"
+          observer.product: "Ubika WAAP"
+          event.dataset: "ubika-waf"
+          event.module: "ubika.waf"
+
+      - set:
+          "@timestamp": "{{ parse_timestamp.date }}"
+
+      # access log
+      - set:
+          event.category: ["web"]
+          event.type: ["access"]
+
+          source.ip: "{{ parse_event.plain.host }}"
+          user_agent.original: '{{ parse_event.plain.http_user_agent.strip(''"'') }}'
+          http.request.method: "{{ parse_event.plain.http_method }}"
+          http.request.referrer: '{{ parse_event.plain.http_referrer.strip(''"'') }}'
+          http.response.body.bytes: "{{ parse_event.plain.http_bytes }}"
+          http.response.status_code: "{{ parse_event.plain.http_status }}"
+          url.original: "{{ parse_event.plain.http_request }}"
+
+          ubika.waap.tunnel.uuid: "{{ parse_header.message.tunnel_uuid }}"
+        filter: "{{ parse_event.plain != null }}"
+
+      # security event
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+          event.action: "block"
+          event.provider: "{{ parse_event.json.events[0].tokens.engineName}}"
+          event.severity: "{{ parse_event.json.events[0].tokens.severity}}"
+
+          host.name: "{{ parse_event.json.request.hostname }}"
+          source.ip: "{{ parse_event.json.request.ipSrc }}"
+          destination.ip: "{{ parse_event.json.request.ipDst }}"
+          destination.port: "{{ parse_event.json.request.portDst }}"
+          user_agent.original: "{% for item in parse_event.json.request.headers if item.key == 'User-Agent' %}{{ item.value }}{% endfor %}"
+          http.request.method: "{{ parse_event.json.request.method }}"
+          http.request.referrer: "{% for item in parse_event.json.request.headers if item.key == 'Referer' %}{{ item.value }}{% endfor %}"
+
+          url.path: "{{ parse_event.json.request.path }}"
+          url.query: "{{ parse_event.json.request.query }}"
+          url.domain: "{{ parse_event.json.request.hostname }}"
+
+          ubika.waap.tunnel.name: "{{ parse_event.json.context.tunnelName }}"
+          ubika.waap.tunnel.uuid: "{{ parse_event.json.context.tunnelUid }}"
+
+          ubika.waap.workflow.name: "{{ parse_event.json.context.workflowName }}"
+          ubika.waap.workflow.uuid: "{{ parse_event.json.context.workflowUid }}"
+
+          rule.name: "{{ parse_event.json.events[0].tokens.botMitigationRuleName or parse_event.json.events[0].tokens.icxPolicyName }}"
+          rule.id: "{{ parse_event.json.events[0].tokens.botMitigationRuleUid or parse_event.json.events[0].tokens.icxPolicyUid}}"
+          rule.description: "{{ parse_event.json.events[0].tokens.reason}}"
+
+          vulnerability.id: "{{ parse_event.json.events[0].tokens.cwe}}"
+
+          threat.indicator.type: "{{ parse_event.json.events[0].tokens.attackFamily}}"
+
+          ubika.waap.tokens.risk.level: "{{ parse_event.json.events[0].tokens.riskLevel}}"
+
+        filter: "{{ parse_event.json != null }}"

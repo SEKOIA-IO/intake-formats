@@ -1,0 +1,76 @@
+name: kaspersky-endpoint-security
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        value_sep: ":"
+        item_sep: \\r\\n
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.get('Release date')}}"
+        output_field: datetime
+    filter: "{{ parsed_event.message.get('Error') != None }}"
+
+  - name: set_kv_fields
+  - name: set_malware_fields
+    filter: "{{ parsed_event.message.get('Type')=='Virus' }}"
+  - name: set_not_processed_fields
+    filter: "{{ parsed_event.message.get('Type', '') == '' and  parsed_event.message.get('Result description') == 'Not processed'}}"
+  - name: set_error_verifying_fields
+    filter: "{{ parsed_event.message.get('Error') != None }}"
+stages:
+  set_kv_fields:
+    actions:
+      - set:
+          observer.vendor: "Kaspersky"
+          observer.product: "Kaspersky Endpoint Security"
+          observer.type: "edr"
+
+  set_malware_fields:
+    actions:
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+          event.reason: "{{ parsed_event.message.get('Reason') }}"
+          event.action: "{{ parsed_event.message.get('Result description') }}"
+          file.hash.md5: "{{ parsed_event.message.get('MD5') }}"
+          file.hash.sha256: "{{ parsed_event.message.get('SHA256') }}"
+          file.path: "{{ parsed_event.message.get('Object') }}"
+          file.name: "{{ parsed_event.message.get('Object').split(\"\\\\\")[-1] or parsed_event.message.get('Object').split(\"/\")[-1]}}"
+          user.name: "{{ parsed_event.message.get('User').split(' ')[0].split(\"\\\\\")[1] }}"
+          user.domain: "{{ parsed_event.message.get('User').split(' ')[0].split(\"\\\\\")[0] }}"
+
+          threat.software.name: "{{ parsed_event.message.get('Name') }}"
+          threat.software.type: "Malware"
+
+  set_not_processed_fields:
+    actions:
+      - set:
+          event.type: ["info"]
+          event.category: ["process"]
+          event.reason: "{{ parsed_event.message.get('Event type') +' because of '+ parsed_event.message.get('Reason')}}"
+          event.module: "{{ parsed_event.message.get('Component') }}"
+          event.action: "{{ parsed_event.message.get('Result description') }}"
+          file.directory: "{{ parsed_event.message.get('Path to object') }}"
+          file.name: "{{ parsed_event.message.get('Object name') }}"
+          process.pid: "{{ parsed_event.message.get('Process ID') }}"
+          process.executable: "{{ parsed_event.message.get('Application path') +'\"\\\\\"'+parsed_event.message.get('Name')}}"
+          user.name: "{{ parsed_event.message.get('User').split(' ')[0].split(\"\\\\\")[1][:-1] }}"
+          user.domain: "{{ parsed_event.message.get('User').split(' ')[0].split(\"\\\\\")[0] }}"
+
+  set_error_verifying_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.type: ["info"]
+          event.category: ["process"]
+          event.reason: "{{ parsed_event.message.get('Event type') }}"
+          event.action: "{{ parsed_event.message.get('Result description') }}"
+          error.message: "{{ parsed_event.message.get('Error') }}"
+          url.path: "{{ parsed_event.message.get('Object name') }}"
+          user.name: "{{ parsed_event.message.get('User').split(' ')[0].split(\"\\\\\")[1] }}"
+          user.domain: "{{ parsed_event.message.get('User').split(' ')[0].split(\"\\\\\")[0] }}"

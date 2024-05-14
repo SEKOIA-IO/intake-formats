@@ -1,0 +1,44 @@
+name: sonicwall-sma
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: result
+        value_sep: "="
+
+  - name: parse_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.vp_time }}"
+        output_field: date
+
+  - name: set_default_fields
+  - name: set_user
+
+stages:
+  set_user:
+    actions:
+      - set:
+          user.name: "{{ parsed_event.result.user }}"
+
+      - set:
+          user.name: "{{ parsed_event.result.user.split('@')[0] }}"
+          user.domain: "{{ parsed_event.result.user.split('@')[-1] }}"
+        filter: "{{ parsed_event.result.user != None and '@' in parsed_event.result.user }}"
+
+  set_default_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          observer.vendor: "SonicWall"
+          observer.product: "Secure Mobile Access"
+          observer.type: "firewall"
+          observer.ip: ["{{parsed_event.result.fw}}"]
+          "@timestamp": "{{ parse_datetime.date }}"
+          source.ip: "{{ parsed_event.result.src }}"
+          destination.address: "{{ parsed_event.result.dst }}"
+          user_agent.original: "{{ parsed_event.result.agent }}"

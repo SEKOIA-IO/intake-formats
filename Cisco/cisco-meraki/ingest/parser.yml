@@ -1,0 +1,339 @@
+name: cisco-meraki
+pipeline:
+  - name: grok_header
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: >-
+          ^%{NUMBER:timestamp}\s%{WORD:device_hostname}\s%{WORD:log_type}\s%{DATA:kv_part}(\spattern:\s(%{NUMBER:action}|%{DATA:action})?\s%{GREEDYDATA:rule_name}|\srequest:\s%{WORD:http_method}\s%{NOTSPACE:url})?$
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{grok_header.message.timestamp}}"
+        output_field: date
+        timezone: UTC
+  - name: set_date
+  - name: kv_part_message
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+  - name: grok_src_ip_urls
+    filter: '{{grok_header.message.log_type == "urls"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{kv_part_message.message.src}}"
+        output_field: message
+        pattern: "^%{IP:src_ip}:%{NUMBER:src_port}$"
+  - name: grok_dst_ip_urls
+    filter: '{{grok_header.message.log_type == "urls"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{kv_part_message.message.dst}}"
+        output_field: message
+        pattern: "^%{IP:dst_ip}:%{NUMBER:dst_port}$"
+  - name: set_common
+  - name: set_source_nat_ip_flow
+    filter: '{{kv_part_message.message.get("translated_src_ip") != None}}'
+  - name: set_destination_nat_ip_flow
+    filter: '{{kv_part_message.message.get("translated_dst_ip") != None}}'
+  - name: set_urls
+    filter: '{{grok_header.message.log_type == "urls"}}'
+  - name: grok_flows
+    filter: '{{grok_header.message.log_type in ["flows", "firewall", "vpn_firewall", "cellular_firewall", "bridge_anyconnect_client_vpn_firewall"]}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: ^%{WORD:action}\s%{GREEDYDATA}$
+  - name: set_flows
+    filter: '{{grok_header.message.log_type in ["flows", "firewall", "vpn_firewall", "cellular_firewall", "bridge_anyconnect_client_vpn_firewall"]}}'
+  - name: grok_events
+    filter: '{{grok_header.message.log_type == "events"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: ^(%{WORD:log_subtype}|type=%{WORD:log_subtype})\s%{GREEDYDATA}$
+  - name: set_logsubtype
+    filter: '{{grok_header.message.log_type == "events"}}'
+  - name: grok_dhcp
+    filter: '{{grok_events.message.log_subtype == "dhcp"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: >-
+          ^(dhcp %{WORD:dhcp_op} of ip %{IP:client_ip} from %{DATA:server_name}
+          mac %{MAC:server_mac} for client mac %{MAC:client_mac}
+          %{GREEDYDATA}|dhcp %{WORD:dhcp_op} %{WORD:dhcp_op2} for mac
+          %{MAC:client_mac}( %{GREEDYDATA})?)$
+  - name: set_dhcp
+    filter: '{{grok_events.message.log_subtype == "dhcp" }}'
+  - name: grok_anyconnect_vpn
+    filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_connection_success"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: >-
+          ^type=%{DATA:log_subtype}\smsg=\s+'Server IP=%{IP:server_ip}\sServer
+          port=%{NUMBER:server_port} Prot\[%{WORD:protocol}\] Peer
+          IP=%{IP:client_ip} Peer port=%{NUMBER:client_port}%{GREEDYDATA}'$
+  - name: set_anyconnect_vpn
+    filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_connection_success"}}'
+  - name: grok_content_filtering_block
+    filter: '{{grok_events.message.log_subtype == "content_filtering_block"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: >-
+          ^content_filtering_block url='%{NOTSPACE:url}'
+          server='%{IP:server_ip}:%{NUMBER:server_port}'
+          client_mac='%{MAC:client_mac}'$
+  - name: set_content_filtering_block
+    filter: '{{grok_events.message.log_subtype == "content_filtering_block"}}'
+  - name: grok_anyconnect_vpn_connect
+    filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_connect"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: >-
+          ^anyconnect_vpn_connect user id '%{DATA:user_name}' local ip
+          %{IP:network_forwarded_ip} (re)?connected from %{IP:client_ip}$
+  - name: set_anyconnect_vpn_connect
+    filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_connect"}}'
+  - name: grok_anyconnect_vpn_session_manager
+    filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_session_manager"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: >-
+          ^type=%{DATA:log_subtype}\smsg=\s+'Sess-ID\[%{NUMBER:session_id}\]
+          Peer IP=%{IP:client_ip} User\[%{DATA:user_name}\]:
+          %{GREEDYDATA:end_of_message}'$
+  - name: set_anyconnect_vpn_session_manager
+    filter: '{{grok_events.message.log_subtype == "anyconnect_vpn_session_manager"}}'
+  - name: grok_anyconnect_vpn_auth
+    filter: >-
+      {{grok_events.message.log_subtype == "anyconnect_vpn_auth_success" or
+      grok_events.message.log_subtype == "anyconnect_vpn_auth_failure"}}
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: >-
+          ^type=anyconnect_vpn_auth_%{DATA:outcome}\smsg=\s+'%{DATA}\[%{NUMBER}\]
+          Server IP=%{IP:server_ip} Server port=%{NUMBER:server_port} Peer
+          IP=%{IP:client_ip} Peer port=%{NUMBER:client_port}(
+          User=%{DATA:user_name})?: %{GREEDYDATA:end_of_message}'$
+  - name: set_anyconnect_vpn_auth
+    filter: >-
+      {{grok_events.message.log_subtype == "anyconnect_vpn_auth_success" or
+      grok_events.message.log_subtype == "anyconnect_vpn_auth_failure"}}
+stages:
+  set_date:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.date}}"
+  set_common:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "{{grok_header.message.log_type}}"
+          network.protocol: "{{kv_part_message.message.protocol}}"
+          observer.hostname: "{{grok_header.message.device_hostname}}"
+      - set:
+          source.ip: "{{kv_part_message.message.src}}"
+        filter: '{{grok_header.message.log_type != "urls" and (kv_part_message.message.src | is_ipaddress)}}'
+
+      - set:
+          destination.ip: "{{kv_part_message.message.dst}}"
+        filter: '{{grok_header.message.log_type != "urls" and (kv_part_message.message.dst | is_ipaddress)}}'
+
+      - set:
+          source.port: "{{kv_part_message.message.sport}}"
+          destination.port: "{{kv_part_message.message.dport}}"
+        filter: '{{grok_header.message.log_type != "urls"}}'
+      - set:
+          source.ip: "{{grok_src_ip_urls.message.src_ip}}"
+        filter: '{{grok_header.message.log_type == "urls" and (grok_src_ip_urls.message.src_ip | is_ipaddress)}}'
+
+      - set:
+          destination.ip: "{{grok_dst_ip_urls.message.dst_ip}}"
+        filter: '{{grok_header.message.log_type == "urls" and (grok_dst_ip_urls.message.dst_ip | is_ipaddress)}}'
+
+      - set:
+          source.port: "{{grok_src_ip_urls.message.src_port}}"
+          destination.port: "{{grok_dst_ip_urls.message.dst_port}}"
+        filter: '{{grok_header.message.log_type == "urls"}}'
+  set_source_nat_ip_flow:
+    actions:
+      - set:
+          source.nat.ip: "{{kv_part_message.message.translated_src_ip}}"
+        filter: "{{kv_part_message.message.translated_src_ip | is_ipaddress}}"
+
+      - set:
+          source.nat.port: "{{kv_part_message.message.translated_port}}"
+  set_destination_nat_ip_flow:
+    actions:
+      - set:
+          destination.nat.ip: "{{kv_part_message.message.translated_dst_ip}}"
+        filter: "{{kv_part_message.message.translated_dst_ip | is_ipaddress}}"
+      - set:
+          destination.nat.port: "{{kv_part_message.message.translated_port}}"
+  set_urls:
+    actions:
+      - set:
+          url.original: "{{grok_header.message.url}}"
+          http.request.method: "{{grok_header.message.http_method}}"
+          user_agent.original: "{{kv_part_message.message.agent}}"
+  set_flows:
+    actions:
+      - dictionary:
+          "0": allow
+          "1": deny
+          deny: deny
+          allow: allow
+        mapping:
+          grok_header.message.action: action.outcome
+      - dictionary:
+          "0": ["allowed"]
+          "1": ["denied"]
+          deny: ["denied"]
+          allow: ["allowed"]
+        fallback: ["info"]
+        mapping:
+          grok_header.message.action: event.type
+      - dictionary:
+          "0": allow
+          "1": deny
+          deny: deny
+          allow: allow
+        mapping:
+          grok_flows.message.action: action.outcome
+        filter: '{{grok_flows.message.get("action") != None}}'
+      - dictionary:
+          "0": ["allowed"]
+          "1": ["denied"]
+          deny: ["denied"]
+          allow: ["allowed"]
+        fallback: ["info"]
+        mapping:
+          grok_flows.message.action: event.type
+        filter: '{{grok_flows.message.get("action") != None}}'
+  set_logsubtype:
+    actions:
+      - set:
+          cisco_meraki.event_subtype: "{{grok_events.message.log_subtype}}"
+  set_dhcp:
+    actions:
+      - set:
+          source.ip: "{{grok_dhcp.message.client_ip}}"
+        filter: "{{grok_dhcp.message.client_ip | is_ipaddress}}"
+
+      - set:
+          source.mac: "{{grok_dhcp.message.client_mac}}"
+          destination.mac: "{{grok_dhcp.message.server_mac}}"
+          cisco_meraki.event_subtype: dhcp_offer
+        filter: '{{grok_dhcp.message.dhcp_op == "lease"}}'
+      - set:
+          source.mac: "{{grok_dhcp.message.client_mac}}"
+          cisco_meraki.event_subtype: dhcp_no_offer
+        filter: >-
+          {{ grok_dhcp.message.dhcp_op == "no" and grok_dhcp.message.dhcp_op2 ==
+          "offers"}}
+  set_anyconnect_vpn:
+    actions:
+      - set:
+          source.ip: "{{grok_anyconnect_vpn.message.client_ip}}"
+        filter: "{{grok_anyconnect_vpn.message.client_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{grok_anyconnect_vpn.message.server_ip}}"
+        filter: "{{grok_anyconnect_vpn.message.server_ip | is_ipaddress}}"
+
+      - set:
+          source.port: "{{grok_anyconnect_vpn.message.client_port}}"
+          destination.port: "{{grok_anyconnect_vpn.message.server_port}}"
+          server.port: "{{grok_anyconnect_vpn.message.server_port}}"
+          network.protocol: "{{grok_anyconnect_vpn.message.protocol}}"
+  set_content_filtering_block:
+    actions:
+      - set:
+          destination.ip: "{{grok_content_filtering_block.message.server_ip}}"
+        filter: "{{grok_content_filtering_block.message.server_ip | is_ipaddress}}"
+
+      - set:
+          source.mac: "{{grok_content_filtering_block.message.client_mac}}"
+          destination.port: "{{grok_content_filtering_block.message.server_port}}"
+          url.original: "{{grok_content_filtering_block.message.url}}"
+          action.outcome: block
+          event.type: ["denied"]
+  set_anyconnect_vpn_connect:
+    actions:
+      - set:
+          source.nat.ip: "{{grok_anyconnect_vpn_connect.message.network_forwarded_ip}}"
+        filter: "{{grok_anyconnect_vpn_connect.message.network_forwarded_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{grok_anyconnect_vpn_connect.message.client_ip}}"
+        filter: "{{grok_anyconnect_vpn_connect.message.client_ip | is_ipaddress}}"
+
+      - set:
+          user.name: "{{grok_anyconnect_vpn_connect.message.user_name.split('@')[0]}}"
+          user.domain: "{{grok_anyconnect_vpn_connect.message.user_name.split('@')[1]}}"
+  set_anyconnect_vpn_session_manager:
+    actions:
+      - set:
+          source.ip: "{{grok_anyconnect_vpn_session_manager.message.client_ip}}"
+        filter: "{{grok_anyconnect_vpn_session_manager.message.client_ip | is_ipaddress}}"
+
+      - set:
+          user.name: "{{grok_anyconnect_vpn_session_manager.message.user_name.split('@')[0]}}"
+          user.domain: "{{grok_anyconnect_vpn_session_manager.message.user_name.split('@')[1]}}"
+          cisco_meraki.end_of_message: "{{grok_anyconnect_vpn_session_manager.message.end_of_message}}"
+  set_anyconnect_vpn_auth:
+    actions:
+      - set:
+          action.outcome: "{{grok_anyconnect_vpn_auth.message.outcome}}"
+          action.outcome_reason: "{{grok_anyconnect_vpn_auth.message.end_of_message}}"
+
+      - set:
+          source.ip: "{{grok_anyconnect_vpn_auth.message.client_ip}}"
+        filter: "{{grok_anyconnect_vpn_auth.message.client_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{grok_anyconnect_vpn_auth.message.server_ip}}"
+        filter: "{{grok_anyconnect_vpn_auth.message.server_ip | is_ipaddress}}"
+
+      - set:
+          source.port: "{{grok_anyconnect_vpn_auth.message.client_port}}"
+          destination.port: "{{grok_anyconnect_vpn_auth.message.server_port}}"
+          user.name: "{{grok_anyconnect_vpn_auth.message.user_name.split('@')[0]}}"
+      - dictionary:
+          failure: ["denied"]
+          success: ["allowed"]
+        fallback: ["info"]
+        mapping:
+          grok_anyconnect_vpn_auth.message.outcome: event.type

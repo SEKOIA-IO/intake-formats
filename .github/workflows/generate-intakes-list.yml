@@ -1,0 +1,34 @@
+name: Generate Intakes list
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  generate-intakes-list:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check-out the repo under $GITHUB_WORKSPACE
+        uses: actions/checkout@v3
+
+      - id: list-intakes
+        name: List intakes
+        run: |
+          echo "intakes=$(find . -maxdepth 2 -type d ! -name '.*' ! -path './.git*' ! -path './utils*' ! -name '_meta' | awk -F/ 'NF == 3 && $2 {print $2 "/" $3}' | sort | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_ENV
+
+      - name: my-app-install token
+        id: my-app
+        uses: getsentry/action-github-app-token@v1
+        with:
+          app_id: ${{ secrets.PRIVATE_DISPATCH_APP_ID }}
+          private_key: ${{ secrets.PRIVATE_DISPATCH_APP_SECRET_KEY }}
+
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v1
+        with:
+          token: ${{ steps.my-app.outputs.token }}
+          event-type: refresh-intake-formats-list
+          repository: SekoiaLab/platform
+          client-payload: '{"intakes": ${{ env.intakes }}}'

@@ -1,0 +1,217 @@
+name: Clouflare DNS Gateway
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+  - name: set_ecs_fields
+  - name: set_cloudflare_fields
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          destination.ip: "{{json_event.message.DstIP}}"
+        filter: "{{json_event.message.DstIP | is_ipaddress}}"
+
+      - set:
+          "@timestamp": "{{json_event.message.Datetime}}"
+          destination.port: "{{json_event.message.DstPort}}"
+          device.id: "{{json_event.message.DeviceID}}"
+          dns.question.name: "{{json_event.message.QueryName}}"
+          dns.question.type: "{{json_event.message.QueryTypeName}}"
+          dns.resolved_ip: >
+            [
+            {% for ip in json_event.message.ResolvedIPs %}
+              {% if ip | is_ipaddress %}
+                "{{ip}}",
+              {% endif %}
+            {% endfor %}
+            ]
+          event.category: ["network"]
+          event.dataset: "gateway_dns"
+          event.type: ["info"]
+          host.hostname: "{{json_event.message.DeviceName}}"
+          network.protocol: "dns"
+          network.transport: "{{json_event.message.Protocol}}"
+          observer.type: "dns"
+          observer.vendor: "Cloudflare"
+          source.port: "{{json_event.message.SrcPort}}"
+          user.email: "{{json_event.message.Email}}"
+          user.id: "{{json_event.message.UserID}}"
+
+      - set:
+          source.ip: "{{json_event.message.SrcIP}}"
+        filter: "{{json_event.message.SrcIP | is_ipaddress}}"
+
+      - translate:
+        dictionary:
+          1: "A"
+          2: "NS"
+          3: "MD"
+          4: "MF"
+          5: "CNAME"
+          6: "SOA"
+          7: "MB"
+          8: "MG"
+          9: "MR"
+          10: "NULL"
+          11: "WKS"
+          12: "PTR"
+          13: "HINFO"
+          14: "MINFO"
+          15: "MX"
+          16: "TXT"
+          17: "RP"
+          18: "AFSDB"
+          19: "X25"
+          20: "ISDN"
+          21: "RT"
+          22: "NSAP"
+          23: "NSAP-PTR"
+          24: "SIG"
+          25: "KEY"
+          26: "PX"
+          27: "GPOS"
+          28: "AAAA"
+          29: "LOC"
+          30: "NXT"
+          31: "EID"
+          32: "NIMLOC"
+          33: "SRV"
+          34: "ATMA"
+          35: "NAPTR"
+          36: "KX"
+          37: "CERT"
+          38: "A6"
+          39: "DNAME"
+          40: "SINK"
+          41: "OPT"
+          42: "APL"
+          43: "DS"
+          44: "SSHFP"
+          45: "IPSECKEY"
+          46: "RRSIG"
+          47: "NSEC"
+          48: "DNSKEY"
+          49: "DHCID"
+          50: "NSEC3"
+          51: "NSEC3PARAM"
+          52: "TLSA"
+          53: "SMIMEA"
+          55: "HIP"
+          56: "NINFO"
+          57: "RKEY"
+          58: "TALINK"
+          59: "CDS"
+          60: "CDNSKEY"
+          61: "OPENPGPKEY"
+          62: "CSYNC"
+          63: "ZONEMD"
+          64: "SVCB"
+          65: "HTTPS"
+          99: "SPF"
+          100: "UINFO"
+          101: "UID"
+          102: "GID"
+          103: "UNSPEC"
+          104: "NID"
+          105: "L32"
+          106: "L64"
+          107: "LP"
+          108: "EUI48"
+          109: "EUI64"
+          249: "TKEY"
+          250: "TSIG"
+          251: "IXFR"
+          252: "AXFR"
+          253: "MAILB"
+          254: "MAILA"
+          255: "*"
+          256: "URI"
+          257: "CAA"
+          258: "AVC"
+          259: "DOA"
+          260: "AMTRELAY"
+          32768: "TA"
+          32769: "DLV"
+        mapping:
+          json_event.message.QueryType: dns.question.type
+        filter: '{{json_event.message.get("QueryTypeName") == None}}'
+
+      # http://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6
+      - translate:
+        dictionary:
+          0: "NoError"
+          1: "FormErr"
+          2: "ServFail"
+          3: "NXDomain"
+          4: "NotImp"
+          5: "Refused"
+          6: "YXDomain"
+          7: "YXRRSet"
+          8: "NXRRSet"
+          9: "NotAuth"
+          10: "NotZone"
+          11: "DSOTYPENI"
+          16: "BADVERS OR BADSIG"
+          17: "BADKEY"
+          18: "BADTIME"
+          19: "BADMODE"
+          20: "BADNAME"
+          21: "BADALG"
+          22: "BADTRUNC"
+          23: "BADCOOKIE"
+        mapping:
+          json_event.message.RCode: dns.response_code
+
+  set_cloudflare_fields:
+    actions:
+      - set:
+          cloudflare.ApplicationID: "{{json_event.message.ApplicationID}}"
+      - set:
+          cloudflare.ColoCode: "{{json_event.message.ColoCode}}"
+        filter: '{{json_event.message.ColoCode is not in [""]}}'
+      - set:
+          cloudflare.ColoID: "{{json_event.message.ColoID}}"
+      - set:
+          cloudflare.Location: "{{json_event.message.Location}}"
+        filter: '{{json_event.message.Location is not in [""]}}'
+      - set:
+          cloudflare.LocationID: "{{json_event.message.LocationID}}"
+        filter: '{{json_event.message.LocationID is not in [""]}}'
+      - set:
+          cloudflare.MatchedCategoryIDs: "{{json_event.message.MatchedCategoryIDs}}"
+        filter: "{{json_event.message.MatchedCategoryIDs != []}}"
+      - set:
+          cloudflare.MatchedCategoryNames: "{{json_event.message.MatchedCategoryNames}}"
+        filter: "{{json_event.message.MatchedCategoryNames != []}}"
+      - set:
+          cloudflare.Policy: "{{json_event.message.Policy}}"
+        filter: '{{json_event.message.Policy is not in [""]}}'
+      - set:
+          cloudflare.QueryCategoryIDs: "{{json_event.message.QueryCategoryIDs}}"
+        filter: "{{json_event.message.QueryCategoryIDs != []}}"
+      - set:
+          cloudflare.QueryCategoryNames: "{{json_event.message.QueryCategoryNames}}"
+        filter: "{{json_event.message.QueryCategoryNames != []}}"
+      - set:
+          cloudflare.QueryNameReversed: "{{json_event.message.QueryNameReversed}}"
+        filter: '{{json_event.message.QueryNameReversed is not in [""]}}'
+      - set:
+          cloudflare.QuerySize: "{{json_event.message.QuerySize}}"
+      - set:
+          cloudflare.QueryType: "{{json_event.message.QueryType}}"
+        filter: '{{json_event.message.QueryType is not in [""]}}'
+      - set:
+          cloudflare.RData: "{{json_event.message.RData}}"
+        filter: "{{json_event.message.RData != []}}"
+      - set:
+          cloudflare.ResolverDecision: "{{json_event.message.ResolverDecision}}"
+        filter: '{{json_event.message.ResolverDecision is not in [""]}}'
+      - set:
+          cloudflare.TimeZone: "{{json_event.message.TimeZone}}"
+        filter: '{{json_event.message.TimeZone is not in [""]}}'
+      - set:
+          cloudflare.TimeZoneInferredMethod: "{{json_event.message.TimeZoneInferredMethod}}"
+        filter: '{{json_event.message.TimeZoneInferredMethod is not in [""]}}'
