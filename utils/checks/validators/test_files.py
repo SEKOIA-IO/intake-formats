@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import re
 from pathlib import Path
 
@@ -44,9 +43,7 @@ def find_tests(tests_path: Path) -> list[Path]:
     return result
 
 
-def check_test_file(
-    test_path: Path, ignore_event_fieldset_errors: bool, result: CheckResult
-) -> None:
+def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result: CheckResult) -> None:
     try:
         with open(test_path, "rt") as file:
             test_content = json.load(file)
@@ -54,9 +51,7 @@ def check_test_file(
         test_parsed = TestFile.model_validate(test_content)
 
         test_time_stamp = test_parsed.expected.get("@timestamp")
-        re_rfc3339 = re.compile(
-            r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$"
-        )
+        re_rfc3339 = re.compile(r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$")
 
         if test_time_stamp and not re.match(re_rfc3339, test_time_stamp):
             result.errors.append(f"Incorrect @timestamp in the test {test_path}")
@@ -69,17 +64,13 @@ def check_test_file(
 
             if "type" in event:
                 if type(event["type"]) != list:
-                    result.errors.append(
-                        f"event.type is not a list in a test {test_path.relative_to(INTAKES_PATH)}"
-                    )
+                    result.errors.append(f"event.type is not a list in a test {test_path.relative_to(INTAKES_PATH)}")
                 else:
                     event_type_readable = True
 
             if "category" in event:
                 if type(event["category"]) != list:
-                    result.errors.append(
-                        f"event.category is not a list in test {test_path.relative_to(INTAKES_PATH)}"
-                    )
+                    result.errors.append(f"event.category is not a list in test {test_path.relative_to(INTAKES_PATH)}")
                 else:
                     event_category_readable = True
 
@@ -98,6 +89,4 @@ def check_test_file(
             )
 
     except Exception as any_error:
-        result.errors.append(
-            f"test {test_path} exists, but cannot be loaded (`{any_error}`)"
-        )
+        result.errors.append(f"test {test_path} exists, but cannot be loaded (`{any_error}`)")

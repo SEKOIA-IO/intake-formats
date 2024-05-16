@@ -153,9 +153,9 @@ class Module(Item):
         logo_file = module_dir / "_meta/logo.png"
         if not logo_file.exists():
             raise OSError("Missing logo in the module")
-        elif logo_file.stat().st_size > 50000:
+        elif logo_file.stat().st_size > 51200:
             raise OSError(
-                f"Oversized module logo. expected lesser than 50k. got '{logo_file.stat().st_size}'"  # noqa: B028
+                f"Oversized module logo. expected lesser than 50KiB. got '{logo_file.stat().st_size}'"  # noqa: B028
             )
 
         manifest = read_yaml(manifest_file)
@@ -174,7 +174,9 @@ class Format(Item):
     module: Module
     parser: dict
     datasources: list
-    smartdescriptions: list | None
+    smartdescriptions: list | None = None
+    automation_module_uuid: str | None = None
+    automation_connector_uuid: str | None = None
 
     @property
     def type(self) -> str:
@@ -198,9 +200,9 @@ class Format(Item):
         logo_file = format_dir / "_meta/logo.png"
         if not logo_file.exists():
             raise OSError(f"Missing logo in the format '{format_dir.name}'")  # noqa: B028
-        elif logo_file.stat().st_size > 50000:
+        elif logo_file.stat().st_size > 51200:
             raise OSError(
-                f"Oversized format logo. expected lesser than 50k. got '{logo_file.stat().st_size}'"  # noqa: B028
+                f"Oversized format logo. expected lesser than 50KiB. got '{logo_file.stat().st_size}'"  # noqa: B028
             )
 
         parser = None
@@ -239,6 +241,8 @@ class Format(Item):
             datasources=datasources,
             taxonomy=list(taxonomy.values()),
             smartdescriptions=smartdescriptions,
+            automation_connector_uuid=manifest.get("automation_connector_uuid"),
+            automation_module_uuid=manifest.get("automation_module_uuid"),
             logo=logo_file,
         )
 
@@ -251,6 +255,8 @@ class Format(Item):
             "datasources": self.datasources,
             "taxonomy": self.taxonomy,
             "module_uuid": self.module.uuid,
+            "automation_connector_uuid": self.automation_connector_uuid,
+            "automation_module_uuid": self.automation_module_uuid,
         }
 
         if self.parser:
@@ -398,6 +404,8 @@ def update_format(client: Client, intake_format: Format, differ: Differ):
                 "slug": content.get("slug"),
                 "description": content.get("description"),
                 "datasources": content.get("datasources"),
+                "automation_module_uuid": content.get("automation_module_uuid"),
+                "automation_connector_uuid": content.get("automation_connector_uuid"),
             },
             {
                 "uuid": intake_format.uuid,
@@ -405,6 +413,8 @@ def update_format(client: Client, intake_format: Format, differ: Differ):
                 "slug": intake_format.slug,
                 "description": intake_format.description,
                 "datasources": intake_format.datasources,
+                "automation_module_uuid": intake_format.automation_module_uuid,
+                "automation_connector_uuid": intake_format.automation_connector_uuid,
             },
             "format",
         ):

@@ -39,9 +39,7 @@ def check_logo_image(image_path: Path, result: CheckResult) -> None:
         return False
 
     if not image_path.is_file():
-        result.errors.append(
-            f"Logo (`{image_path.relative_to(INTAKES_PATH)}`) is missing"
-        )
+        result.errors.append(f"Logo (`{image_path.relative_to(INTAKES_PATH)}`) is missing")
         return
 
     image = Image.open(image_path)

@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 
 from . import (
@@ -16,9 +15,7 @@ from .constants import CheckResult
 
 
 class FormatValidator:
-    def __init__(
-        self, path: Path, module_result: CheckResult, args: argparse.Namespace
-    ) -> None:
+    def __init__(self, path: Path, module_result: CheckResult, args: argparse.Namespace) -> None:
         self.path = path
 
         format_name = path.name

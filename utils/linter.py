@@ -13,9 +13,7 @@ INTAKES_PATH = Path(__file__).parent.parent
 
 
 def find_changed_modules_and_formats() -> (list, list):
-    diff = subprocess.run(
-        ["git", "diff", "--name-only", "origin/main"], capture_output=True
-    )
+    diff = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
 
     changed_modules = set()
     changed_formats = set()
@@ -116,15 +114,9 @@ def get_diff_between(t1: str, t2: str) -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Linter")
     parser.add_argument("action", choices=["check", "fix"])
-    parser.add_argument(
-        "--format", action="append", default=[], help="Check/Fix specific formats"
-    )
-    parser.add_argument(
-        "--module", action="append", default=[], help="Check/Fix specific modules"
-    )
-    parser.add_argument(
-        "--changes", action="store_true", help="Check/Fix only changed files"
-    )
+    parser.add_argument("--format", action="append", default=[], help="Check/Fix specific formats")
+    parser.add_argument("--module", action="append", default=[], help="Check/Fix specific modules")
+    parser.add_argument("--changes", action="store_true", help="Check/Fix only changed files")
     args = parser.parse_args()
 
     if args.changes:
