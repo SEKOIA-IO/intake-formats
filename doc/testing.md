@@ -46,5 +46,6 @@ All parsers will be verified against the tests associated to their format.
 To execute a subset of test, you could define some options:
 
 - `poetry run pytest test_formats.py --changes`: to only run tests for updated parsers
-- `poetry run pytest test_formats.py --module='module-name'`: to only run tests for a specific module (`module-name` correspond to the name defined in the manifest of the module)
-- `poetry run pytest test_formats.py --format='format-name'`: to only run tests for a specific format (`format-name` correspond to the name defined in the manifest of the format)
+- `poetry run pytest test_formats.py --module='module-name' -vv`: to only run tests for a specific module (`module-name` correspond to the slug defined in the manifest of the module)
+- `poetry run pytest test_formats.py --format='format-name' -vv`: to only run tests for a specific format (`format-name` correspond to the slug defined in the manifest of the format)
+- `poetry run pytest test_formats.py --format='format-name' -vv --fix-expectations` # fix test expectations
