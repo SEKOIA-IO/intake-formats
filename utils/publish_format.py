@@ -533,7 +533,7 @@ def publish_format(format: Path, platform_url: str, apikey: str, ssl_verify: boo
 def main(
     format_path: Path,
     apikey: str,
-    url: str,
+    url: str = "https://app.sekoia.io",
     insecure: bool = False,
     host: str = None,
     no_diff: bool = False,
@@ -542,7 +542,7 @@ def main(
     Publish new format to ingestAPI.
     format_path: The location of the format to publish
     apikey: The APIKey to use
-    url: The URL of the ingestAPI
+    url: The base URL to the Sekoia.io platform
     If --insecure is used, it disables SSL verification (develop/test purpose)
     If --host is used, it takes a custom host
     If --no-diff is used, the changes will be not be displayed

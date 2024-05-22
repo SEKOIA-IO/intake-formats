@@ -650,7 +650,7 @@ Commands:
 Each test file `["input"]["message"]` will be sent as an event.
 
 ```console
-poetry run python send_events.py from-intake-formats "<intake-key>" "<url>" ./../module/format/
+poetry run python send_events.py from-intake-formats "<intake-key>" ./../module/format/
 ```
 
 ### From text file
@@ -658,7 +658,7 @@ poetry run python send_events.py from-intake-formats "<intake-key>" "<url>" ./..
 Each line will be sent as an event
 
 ```console
-poetry run python3 send_events.py from-text-file "<intake-key>" "<url>" ../Downloads/example.txt
+poetry run python3 send_events.py from-text-file "<intake-key>" ../Downloads/example.txt --url https://app.eur1.sekoia.io/api/v1/intake-http/batch 
 ```
 
 ### From the terminal
@@ -666,7 +666,7 @@ poetry run python3 send_events.py from-text-file "<intake-key>" "<url>" ../Downl
 Send one line from the terminal
 
 ```console
-poetry run python send_events.py from-cli "<intake-key>" "<url>" '<event>'
+poetry run python send_events.py from-cli "<intake-key>" "<event>"
 ```
 
 ## Publish intake-format to SEKOIA.IO

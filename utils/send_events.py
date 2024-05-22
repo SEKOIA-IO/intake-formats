@@ -83,13 +83,13 @@ def send_events(intake_key: str, url: str, events: list, chunk_size: int) -> Non
 
 
 @app.command()
-def from_intake_formats(intake_key: str, url: str, intake_path: Path, chunk_size: int = CHUNK_SIZE):
+def from_intake_formats(intake_key: str, intake_path: Path, url: str = "https://intake.sekoia.io/batch", chunk_size: int = CHUNK_SIZE):
     events: list = read_input_messages(intake_path)
     send_events(intake_key=intake_key, events=events, url=url, chunk_size=chunk_size)
 
 
 @app.command()
-def from_text_file(intake_key: str, url: str, file: Path, chunk_size: int = CHUNK_SIZE):
+def from_text_file(intake_key: str, file: Path, url: str = "https://intake.sekoia.io/batch", chunk_size: int = CHUNK_SIZE):
     with open(file) as input_file:
         send_events(
             events=[line[:-1] for line in input_file.readlines()],  # remove the line-feed at the end of the line
@@ -100,7 +100,7 @@ def from_text_file(intake_key: str, url: str, file: Path, chunk_size: int = CHUN
 
 
 @app.command()
-def from_cli(intake_key: str, url: str, event: str, chunk_size: int = CHUNK_SIZE):
+def from_cli(intake_key: str, event: str, url: str = "https://intake.sekoia.io/batch", chunk_size: int = CHUNK_SIZE):
     send_events(events=[event], intake_key=intake_key, url=url, chunk_size=chunk_size)
 
 
