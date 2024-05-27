@@ -1,7 +1,10 @@
 import argparse
 from abc import ABC
+from pathlib import Path
 
 from .constants import CheckResult
+
+INTAKES_PATH = Path(__file__).parent.parent.parent.parent
 
 
 class Validator(ABC):

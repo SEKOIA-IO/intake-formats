@@ -5,18 +5,18 @@ pipeline:
     external:
       name: grok.match
       properties:
-        input_field: "{{original.message.strip()}}"
+        input_field: "{{original.message}}"
         output_field: event
-        pattern: "(%{HTTPD24_ERRORLOG}|%{HTTPD20_ERRORLOG}|%{HTTPD_COMBINEDLOG}|%{HTTPD_COMMONLOG}|%{MODSECAPACHEERROR})"
+        pattern: "(%{MODSECAPACHEERROR}|%{HTTPD24_ERRORLOG}|%{HTTPD20_ERRORLOG}|%{HTTPD_COMBINEDLOG}|%{HTTPD_COMMONLOG})"
         custom_patterns:
           # HTTPD standard logs
           HTTPD20_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{LOGLEVEL:action_name}\] (?:\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?\] ){0,1}%{GREEDYDATA:action_outcome_reason}'
-          HTTPD24_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{WORD}:%{LOGLEVEL:action_name}\] \[pid %{POSINT:process_id}(:tid %{NUMBER:process_thread_id})?\]( \(%{POSINT}\)%{DATA}:)?( \[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{POSINT:source_port})?\])?( %{DATA}:)? %{GREEDYDATA:action_outcome_reason}'
+          HTTPD24_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{WORD}?:%{LOGLEVEL:action_name}\] \[pid %{POSINT:process_id}(:tid %{NUMBER:process_thread_id})?\]( \(%{POSINT}\)%{DATA}:)?( \[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{POSINT:source_port})?\])?( %{DATA}:)? %{GREEDYDATA:action_outcome_reason}'
           HTTPD_COMBINEDLOG: "%{HTTPD_COMMONLOG} %{QS:http_request_referrer} %{QS:user_agent_original}"
           HTTPD_COMMONLOG: >-
             %{IPORHOST:source_ip} (?:-|%{HTTPDUSER:apache_access_user_identity}) (?:-|%{HTTPDUSER:user_name}) \[%{HTTPDATE:timestamp}]\ "(?:%{WORD:http_request_method} %{NOTSPACE:url_original}(?: HTTP/%{NUMBER:http_version})?|%{DATA})" (?:-|%{INT:http_response_status_code:int}) (?:-|%{INT:http_response_body_bytes:int})
           # Apache ModSecurity logs
-          APACHEERRORPREFIX: '(\[%{HTTPDERROR_DATE:timestamp}\] )?(\[%{WORD}:%{LOGLEVEL:action_name}\] )?(\[pid %{POSINT:process_pid}(:tid %{NUMBER:process_thread_id})?\] )?(\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{NUMBER:source_port})?\])?.*'
+          APACHEERRORPREFIX: '(\[%{HTTPDERROR_DATE:timestamp}\] )?(\[%{WORD}?:%{LOGLEVEL:action_name}\] )?(\[pid %{POSINT:process_pid}(:tid %{NUMBER:process_thread_id})?\] )?(\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{NUMBER:source_port})?\])?.*'
           MODSECHOSTNAME: '\[hostname "?%{DATA:destination_domain}"?\]'
           MODSECMATCHOFFSET: '\[offset "?%{DATA:matchoffset}"?\]'
           MODSECPREFIX: '%{APACHEERRORPREFIX} ModSecurity: %{NOTSPACE:action_type}\. %{GREEDYDATA:modsecmessage}'
@@ -30,7 +30,7 @@ pipeline:
           MODSECRULETAGS: '(?:\[tag "?%{DATA:ruletag0}"?\] )?(?:\[tag "?%{DATA:ruletag1}"?\] )?(?:\[tag "?%{DATA:ruletag2}"?\] )?(?:\[tag "?%{DATA:ruletag3}"?\] )?(?:\[tag "?%{DATA:ruletag4}"?\] )?(?:\[tag "?%{DATA:ruletag5}"?\] )?(?:\[tag "?%{DATA:ruletag6}"?\] )?(?:\[tag "?%{DATA:ruletag7}"?\] )?(?:\[tag "?%{DATA:ruletag8}"?\] )?(?:\[tag "?%{DATA:ruletag9}"?\] )?(?:\[tag "?%{DATA}"?\] )*'
           MODSECUID: '\[unique_id "?%{DATA:uniqueid}"?\]'
           MODSECURI: '\[uri "?%{DATA:url_original}"?\]'
-          MODSECAPACHEERROR: "%{MODSECPREFIX} %{MODSECRULEFILE} %{MODSECRULELINE} (?:%{MODSECMATCHOFFSET} )?(?:%{MODSECRULEID} )?(?:%{MODSECRULEREV} )?(?:%{MODSECRULEMSG} )?(?:%{MODSECRULEDATA} )?(?:%{MODSECRULESEVERITY} )?%{MODSECRULETAGS}.*%{MODSECHOSTNAME} %{MODSECURI} %{MODSECUID}, %{GREEDYDATA}"
+          MODSECAPACHEERROR: "%{MODSECPREFIX} %{MODSECRULEFILE} %{MODSECRULELINE} (?:%{MODSECMATCHOFFSET} )?(?:%{MODSECRULEID} )?(?:%{MODSECRULEREV} )?(?:%{MODSECRULEMSG} )?(?:%{MODSECRULEDATA} )?(?:%{MODSECRULESEVERITY} )?%{MODSECRULETAGS}.*%{MODSECHOSTNAME} %{MODSECURI} %{MODSECUID}.*"
 
   - name: set_apache_fields
   - name: set_action_properties
@@ -92,6 +92,7 @@ stages:
   set_apache_fields:
     actions:
       - set:
+          event.category: ["web"]
           action.name: "{{grok.event.action_name or grok.event.http_request_method}}"
           action.outcome_reason: "{{grok.event.action_outcome_reason}}"
           action.type: "{{grok.event.action_type}}"
@@ -110,3 +111,10 @@ stages:
           url.original: "{{grok.event.url_original}}"
           user.name: "{{grok.event.user_name}}"
           user_agent.original: "{{grok.event.user_agent_original}}"
+      - translate:
+        dictionary:
+          "info": ["info"]
+          "error": ["error"]
+        mapping:
+          grok.event.action_name: event.type
+        fallback: ["access"]

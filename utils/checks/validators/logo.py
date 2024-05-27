@@ -1,7 +1,8 @@
 import argparse
 import os
+from pathlib import Path
 
-from . import Validator
+from . import INTAKES_PATH, Validator
 from .constants import CheckResult
 
 
@@ -11,13 +12,13 @@ class LogoValidator(Validator):
         if not result.options.get("meta_dir"):
             return
 
-        module_meta_dir = result.options["meta_dir"]
-        logo_path = os.path.join(module_meta_dir, "logo.png")
+        module_meta_dir: Path = result.options["meta_dir"]
+        logo_path = module_meta_dir / "logo.png"
 
         check_logo_image(image_path=logo_path, result=result)
 
 
-def check_logo_image(image_path: str, result: CheckResult) -> None:
+def check_logo_image(image_path: Path, result: CheckResult) -> None:
     from PIL import Image
 
     def has_transparency(img: Image):
@@ -37,8 +38,10 @@ def check_logo_image(image_path: str, result: CheckResult) -> None:
 
         return False
 
-    if not os.path.isfile(image_path):
-        result.errors.append(f"Logo (`{image_path}`) is missing")
+    if not image_path.is_file():
+        result.errors.append(
+            f"Logo (`{image_path.relative_to(INTAKES_PATH)}`) is missing"
+        )
         return
 
     image = Image.open(image_path)
