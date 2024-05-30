@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 
 from . import INTAKES_PATH, Validator
@@ -17,9 +16,7 @@ class MetaValidator(Validator):
 
         module_meta_dir = path / "_meta"
         if not module_meta_dir.is_dir():
-            result.errors.append(
-                f"Meta directory(`{module_meta_dir.relative_to(INTAKES_PATH)}`) is missing"
-            )
+            result.errors.append(f"Meta directory(`{module_meta_dir.relative_to(INTAKES_PATH)}`) is missing")
             return
 
         result.options["meta_dir"] = module_meta_dir

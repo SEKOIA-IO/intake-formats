@@ -35,9 +35,7 @@ def check_taxonomy_file(
 
     if not os.path.isfile(taxonomy_file_path):
         if not for_module:
-            result.errors.append(
-                "No format taxonomy found. Please create _meta/fields.yml"
-            )
+            result.errors.append("No format taxonomy found. Please create _meta/fields.yml")
 
         return None, exists_but_failed
 
@@ -49,10 +47,7 @@ def check_taxonomy_file(
         with open(taxonomy_file_path, "r") as fd:
             taxonomy = yaml.safe_load(fd)
 
-        taxonomy_content = {
-            item_key: CustomField(**item_value)
-            for item_key, item_value in taxonomy.items()
-        }
+        taxonomy_content = {item_key: CustomField(**item_value) for item_key, item_value in taxonomy.items()}
 
     except Exception as any_error:
         result.errors.append(f"Taxonomy file cannot be loaded (`{any_error}`)")

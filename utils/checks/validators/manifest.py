@@ -1,5 +1,4 @@
 import argparse
-import os
 import re
 from pathlib import Path
 
@@ -22,18 +21,12 @@ class ManifestValidator(Validator):
         module_meta_dir: Path = result.options["meta_dir"]
         module_manifest_file = module_meta_dir / "manifest.yml"
 
-        check_manifest(
-            manifest_file_path=module_manifest_file, result=result, args=args
-        )
+        check_manifest(manifest_file_path=module_manifest_file, result=result, args=args)
 
 
-def check_manifest(
-    manifest_file_path: Path, result: CheckResult, args: argparse.Namespace
-) -> None:
+def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse.Namespace) -> None:
     if not manifest_file_path.is_file():
-        result.errors.append(
-            f"manifest file (`{manifest_file_path.relative_to(INTAKES_PATH)}`) is missing"
-        )
+        result.errors.append(f"manifest file (`{manifest_file_path.relative_to(INTAKES_PATH)}`) is missing")
         return
 
     # check the format/module has a valid manifest
@@ -78,8 +71,5 @@ def check_manifest(
     if "description" not in manifest_content:
         result.errors.append("no description found in the manifest file")
 
-    elif (
-        not args.ignore_empty_descriptions
-        and len(manifest_content.get("description")) == 0
-    ):
+    elif not args.ignore_empty_descriptions and len(manifest_content.get("description")) == 0:
         result.errors.append("description is found, but empty")
