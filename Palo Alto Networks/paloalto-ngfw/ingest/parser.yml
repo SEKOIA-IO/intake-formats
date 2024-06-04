@@ -320,7 +320,7 @@ pipeline:
           - URLID
           - UserAgent
           - FileType
-          - Xff
+          - xff
           - Referer
           - Sender
           - Subject
@@ -465,6 +465,7 @@ pipeline:
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
   - name: set_extracted_fields
+  - name: set_finalize_user_name
   - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
     filter: '{{parsed_event.message.get("deviceOutboundInterface") != None}}'
@@ -507,7 +508,7 @@ stages:
           "@timestamp": "{{parsed_timestamp.datetime}}"
           event.start: "{{parsed_start.datetime}}"
           action.name: "{{parsed_event.message.Action or parsed_description.message.action}}"
-          action.type: "{{parsed_event.message.Subtype}}"
+          action.type: "{{parsed_event.message.Subtype|lower or parsed_event.message.Name|lower}}"
           container.id: "{{parsed_event.message.ContainerID}}"
           container.name: "{{parsed_event.message.ContainerName}}"
           destination.address: "{{parsed_event.message.DestinationAddress or parsed_event.message.dst or parsed_description.message.dst_addr}}"
@@ -555,13 +556,11 @@ stages:
           email.from.address: "{{parsed_event.message.Sender}}"
           email.subject: "{{parsed_event.message.Subject}}"
           email.to.address: "{{parsed_event.message.Recipient}}"
-          event.action: "{{parsed_event.message.act or parsed_event.message.Threat_Category or parsed_description.message.action}}"
+          event.action: "{{parsed_event.message.act or parsed_event.message.Action or parsed_description.message.action}}"
           event.timezone: "{{parsed_event.message.dtz}}"
           event.dataset: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
           event.reason: "{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError}}"
           event.module: "{{parsed_description.message.module}}"
-          file.path: "{{parsed_event.message.URLFilename}}"
-          file.name: "{{parsed_event.message.FileName or parsed_event.message.URLFilename or parsed_description.message.filename}}"
           host.hostname: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}"
           host.name: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost}}"
           host.id: "{{parsed_event.message.deviceExternalId}}"
@@ -591,6 +590,23 @@ stages:
           rule.name: "{{parsed_event.message.Rule}}"
           rule.uuid: "{{parsed_event.message.PanOSRuleUUID or parsed_event.message.RuleUUID}}"
           source.bytes: "{{parsed_event.message.BytesSent or parsed_event.message.in}}"
+
+      - set:
+          file.path: "{{parsed_event.message.URLFilename}}"
+          file.name: "{{parsed_event.message.FileName or parsed_event.message.URLFilename or parsed_description.message.filename}}"
+        filter: "{{final.action.type != 'url'}}"
+
+      - set:
+          url.original: "{{parsed_event.message.FileName or parsed_event.message.URLFilename}}"
+          url.domain: '{{final.url.original.split("/")[0].split(":")[0]}}'
+          url.port: '{{final.url.original.split("/")[0].split(":")[1]}}'
+          url.path: '{{final.url.original.split("?")[0].split("/")[1:] | join("/")}}'
+          url.query: '{{final.url.original.split("?")[1]}}'
+        filter: "{{final.action.type == 'url'}}"
+
+      - delete:
+          - url.original
+        filter: "{{final.action.type == 'url'}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIP}}"
@@ -639,6 +655,11 @@ stages:
       - set:
           source.nat.ip: "{{parsed_event.message.sourceTranslatedAddress}}"
         filter: "{{parsed_event.message.sourceTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          network.forwarded_ip: "{{parsed_event.message.XFFAddress or parsed_event.message.xff}}"
+        filter: "{{parsed_event.message.XFFAddress | is_ipaddress or parsed_event.message.xff | is_ipaddress}}"
+
       - set:
           source.geo.country_iso_code: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
         filter: "{{parsed_event.message.SourceLocation | length == 2 or parsed_event.message.PanOSSourceLocation | length == 2}}"
@@ -653,11 +674,11 @@ stages:
           source.nat.port: "{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}"
           source.packets: "{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}"
           source.port: "{{parsed_event.message.SourcePort or parsed_event.message.spt}}"
-          source.user.name: "{{parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_event.message.SourceUser}}"
+          source.user.name: "{{parsed_event.message.suser or parsed_event.message.PanOSSourceUserName}}"
           user_agent.name: "{{parsed_event.message.UserAgent}}"
           user_agent.os.name: "{{parsed_event.message.ClientOS}}"
           user_agent.os.version: "{{parsed_event.message.ClientOSVersion}}"
-          user.name: "{{parsed_event.message.SourceUser or parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}"
+          user.name: "{{parsed_event.message.User or parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_description.message.user}}"
           paloalto: >-
             { 
             {% set ns = namespace(first_iteration=True) %}
@@ -675,6 +696,25 @@ stages:
           paloalto.connection.method: "{{parsed_event.message.ConnectionMethod or parsed_event.message.PanOSConnectionMethod}}"
           paloalto.endpoint.serial_number: "{{parsed_event.message.EndpointSerialNumber or parsed_event.message.PanOSEndpointSerialNumber}}"
           paloalto.threat.id: "{{parsed_event.message.ThreatID or parsed_event.message.PanOSThreatID}}"
+      - set:
+          source.user.name: "{{parsed_event.message.SourceUser}}"
+          user.name: "{{parsed_event.message.SourceUser}}"
+        filter: '{{parsed_event.message.SourceUser.startswith("x-fwd-for") == False}}'
+
+  set_finalize_user_name:
+    actions:
+      - set:
+          user.domain: '{{final.user.name.split("\\") | first}}'
+          user.name: '{{final.user.name.split("\\") | last}}'
+        filter: '{{final.user.name != null and "\\" in final.user.name}}'
+      - set:
+          source.user.domain: '{{final.source.user.name.split("\\") | first}}'
+          source.user.name: '{{final.source.user.name.split("\\") | last}}'
+        filter: '{{final.source.user.name != null and "\\" in final.source.user.name}}'
+      - set:
+          destination.user.domain: '{{final.destination.user.name.split("\\") | first}}'
+          destination.user.name: '{{final.destination.user.name.split("\\") | last}}'
+        filter: '{{final.destination.user.name != null and "\\" in final.destination.user.name}}'
 
   set_category_fields:
     actions:
