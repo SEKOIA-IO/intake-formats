@@ -4,13 +4,15 @@ pipeline:
     external:
       name: grok.match
       properties:
-        pattern: "%{CONF_EVNTS}|%{LOG_IN}|%{LOG_OUT}|%{INTERFACE}|%{OTHERS}"
+        pattern: "%{CONF_EVNTS}|%{LOG_IN}|%{LOG_OUT}|%{INTERFACE}|%{TRAFFIC}|%{OTHERS}"
         custom_patterns:
-          CONF_EVNTS: "%{DATA:time} localhost : #%{WORD:log_info}# %{DATA:conf_reason} by (%{DATA:origin}%{SPACE})?(user '%{WORD:user}' from %{DATA:data})? (on|at) %{GREEDYDATA:timestamp}"
-          LOG_IN: "%{DATA:time} localhost : #%{WORD:log_info}# %{DATA:outcome} for (%{DATA:origin}%{SPACE})user '%{WORD:user}' from (Source IP Address '%{DATA:ip}' Local Port '%{WORD:port}'|%{DATA:data}) at %{GREEDYDATA:timestamp}"
-          LOG_OUT: "%{DATA:time} localhost : #%{WORD:log_info}# Logged out user:%{DATA:log_user} from (a|the) %{WORD:origin} session (with client ip: %{DATA:ip}%{SPACE})?on %{GREEDYDATA:timestamp}"
-          INTERFACE: "%{DATA:time} localhost : #%{WORD:log_info}# IF: %{DATA:intarface_name} is (%{DATA:data} |%{NOTSPACE})?%{WORD:reason}"
-          OTHERS: "%{DATA:time} localhost : #%{WORD:log_info}# (%{WORD:provider})? \\[%{WORD:name}\\] %{GREEDYDATA:msg}"
+          PREFIX: "%{DATA:time} localhost : #%{WORD:log_info}#"
+          CONF_EVNTS: "%{PREFIX} %{DATA:conf_reason} by (%{DATA:origin}%{SPACE})?(user '%{WORD:user}' from %{DATA:data})? (on|at) %{GREEDYDATA:timestamp}"
+          LOG_IN: "%{PREFIX} %{DATA:outcome} for (%{DATA:origin}%{SPACE})user '%{WORD:user}' from (Source IP Address '%{DATA:ip}' Local Port '%{WORD:port}'|%{DATA:data}) at %{GREEDYDATA:timestamp}"
+          LOG_OUT: "%{PREFIX} Logged out user:%{DATA:log_user} from (a|the) %{WORD:origin} session (with client ip: %{DATA:ip}%{SPACE})?on %{GREEDYDATA:timestamp}"
+          INTERFACE: "%{PREFIX} IF: %{DATA:interface_name} is (%{DATA:data} |%{NOTSPACE})?%{WORD:reason}"
+          TRAFFIC: "%{PREFIX} list (?P<acl>ACL-WAN-IN|ACL-WAN-OUT) (?P<event_action>permitted|denied) (%{WORD:proto}|proto %{NUMBER:iana_number}) %{IP:src_ip}:%{NUMBER:src_port}-> %{IP:dst_ip}:%{NUMBER:dst_port} %{NUMBER} matches"
+          OTHERS: "%{PREFIX} (%{WORD:provider})? \\[%{WORD:name}\\] %{GREEDYDATA:msg}"
 
   - name: parsed_date
     external:
@@ -27,7 +29,9 @@ pipeline:
   - name: set_logout_fields
     filter: "{{ parse_message.message.log_user != None}}"
   - name: set_interface_fields
-    filter: "{{ parse_message.message.intarface_name != None}}"
+    filter: "{{ parse_message.message.interface_name != None}}"
+  - name: set_traffic_fields
+    filter: "{{ parse_message.message.acl != None}}"
   - name: set_other_fields
     filter: "{{ parse_message.message.msg != None }}"
 
@@ -45,7 +49,6 @@ stages:
   set_conf_fields:
     actions:
       - set:
-          event.kind: "event"
           event.category: ["configuration"]
           event.type: ["change"]
           event.reason: "{{parse_message.message.conf_reason}}"
@@ -57,7 +60,6 @@ stages:
   set_login_fields:
     actions:
       - set:
-          event.kind: "event"
           event.category: ["authentication"]
           event.type: ["start"]
           event.outcome: "{{parse_message.message.outcome}}"
@@ -70,7 +72,6 @@ stages:
   set_logout_fields:
     actions:
       - set:
-          event.kind: "event"
           event.category: ["authentication"]
           event.type: ["end"]
 
@@ -82,17 +83,39 @@ stages:
   set_interface_fields:
     actions:
       - set:
-          event.kind: "event"
           event.category: ["host"]
           event.type: ["change"]
           event.action: "{{parse_message.message.reason}}"
 
-          observer.ingress.interface.name: "{{parse_message.message.intarface_name}}"
+          observer.ingress.interface.name: "{{parse_message.message.interface_name}}"
+
+  set_traffic_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.action: "{{parse_message.message.event_action}}"
+
+      - set:
+          source.ip: "{{parse_message.message.src_ip}}"
+          source.port: "{{parse_message.message.src_port}}"
+
+          destination.ip: "{{parse_message.message.dst_ip}}"
+          destination.port: "{{parse_message.message.dst_port}}"
+
+          network.transport: "{{parse_message.message.proto}}"
+          network.iana_number: "{{parse_message.message.iana_number}}"
+          rule.name: "{{parse_message.message.acl}}"
+
+      - translate:
+        dictionary:
+          "denied": ["denied"]
+          "permitted": ["allowed"]
+        mapping:
+          parse_message.message.event_action: event.type
 
   set_other_fields:
     actions:
       - set:
-          event.kind: "event"
           event.category: ["process"]
           event.type: ["info"]
           event.provider: "{{parse_message.message.provider}}"

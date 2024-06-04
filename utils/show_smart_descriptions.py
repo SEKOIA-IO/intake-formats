@@ -43,14 +43,9 @@ class SmartDescriptionManager(IntakeTestManager):
 
                 if condition_value is not None:
                     if isinstance(parsed[condition_field], list):
-                        condition_value_set = set(
-                            item.strip() for item in condition_value.split(",")
-                        )
+                        condition_value_set = set(item.strip() for item in condition_value.split(","))
 
-                        if (
-                            len(parsed[condition_field]) == 0
-                            or set(parsed[condition_field]) != condition_value_set
-                        ):
+                        if len(parsed[condition_field]) == 0 or set(parsed[condition_field]) != condition_value_set:
                             all_conditions_are_met = False
                             break
 
@@ -62,9 +57,7 @@ class SmartDescriptionManager(IntakeTestManager):
             if all_conditions_are_met:
                 candidates.append(possible_smart_desc)
 
-        candidates = sorted(
-            candidates, key=lambda x: len(x["conditions"]), reverse=True
-        )
+        candidates = sorted(candidates, key=lambda x: len(x["conditions"]), reverse=True)
         if len(candidates) == 0:
             return parsed_message.get("message", "")
 
@@ -105,15 +98,13 @@ class SmartDescriptionManager(IntakeTestManager):
                         raw = json.load(file)
 
                     test_result = raw["expected"]
-                    test_smart_desc = self.generate_smart_desc(
-                        smart_descriptions, test_result
-                    )
+                    test_smart_desc = self.generate_smart_desc(smart_descriptions, test_result)
 
                     test_label = test
                     if prsha:
-                        test_url = (
-                            "https://github.com/SEKOIA-IO/intake-formats/blob/%s/%s"
-                            % (prsha, urllib.parse.quote(test))
+                        test_url = "https://github.com/SEKOIA-IO/intake-formats/blob/%s/%s" % (
+                            prsha,
+                            urllib.parse.quote(test),
                         )
                         test_label = f"[{test}]({test_url})"
 
@@ -132,16 +123,10 @@ class SmartDescriptionManager(IntakeTestManager):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Check smart descriptions")
-    parser.add_argument(
-        "--module", action="append", default=[], help="name of the module to test"
-    )
-    parser.add_argument(
-        "--format", action="append", default=[], help="name of the format to test"
-    )
+    parser.add_argument("--module", action="append", default=[], help="name of the module to test")
+    parser.add_argument("--format", action="append", default=[], help="name of the format to test")
     parser.add_argument("--prsha", default=None, help="SHA-1 of PR")
-    parser.add_argument(
-        "--changes", action="store_true", help="only check formats that were modified"
-    )
+    parser.add_argument("--changes", action="store_true", help="only check formats that were modified")
 
     args = parser.parse_args()
 
@@ -153,9 +138,7 @@ if __name__ == "__main__":
         changed_modules = set()
         changed_formats = set()
 
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "origin/main"], capture_output=True
-        )
+        result = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
         for changed_file in result.stdout.splitlines():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")

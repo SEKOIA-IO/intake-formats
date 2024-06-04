@@ -6,6 +6,16 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: event
+
+  - name: parsed_task_content_xml
+    filter: "{{json.event.action.properties.TaskContent != null and '<?xml' in json.event.action.properties.TaskContent and '</Task>' in json.event.action.properties.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: "{{json.event.action.properties.TaskContent.replace('<?xml', '#BEGIN#<?xml').split('#BEGIN#')[-1].split('>')[:-1] | join('>')}}>"
+        output_field: result
+
   - name: fields
   - name: linux_authentication_related_fields
     filter: '{{ "authentication" in final.event.category and final.host.os.type == "linux"}}'
@@ -71,6 +81,11 @@ stages:
           sekoiaio.source_process: "{{json.event.sekoiaio.source_process}}"
           sekoiaio.target_process: "{{json.event.sekoiaio.target_process}}"
           sekoiaio.repeat.count: "{{json.event.sekoiaio.repeat.count}}"
+
+      - set:
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.result.Task.Actions.Exec.Command}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.result.Task.Actions.Exec.Arguments}}"
+        filter: "{{json.event.action.properties.TaskContent != null}}"
 
       - set:
           # prevent event to contain 'type': ['null'] and covert it only if it is not already a list

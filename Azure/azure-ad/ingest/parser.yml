@@ -11,6 +11,14 @@ pipeline:
         input_field: "{{parsed_event.message.time or parsed_event.message.createdDateTime}}"
         output_field: date
 
+  - name: parsed_additional_info
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parsed_event.message.properties.additionalInfo}}"
+        output_field: "message"
+    filter: "{{ parsed_event.message.properties != null and parsed_event.message.properties.additionalInfo != null}}"
+
   - name: azuread
   - name: log_type_authentication
     filter: "{{parsed_event.message.authenticationDetails != null}}"
@@ -155,6 +163,17 @@ stages:
       - set:
           azuread.callerIpAddress: "{{parsed_event.message.callerIpAddress}}"
         filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
+
+      - set:
+          user_agent.original: >
+            {%- for item in parsed_additional_info.message -%}
+              {%- if item.Key == 'userAgent' -%}{{ item.Value }}{%- endif -%}
+            {%- endfor -%}
+
+          azuread.properties.riskReasons: >
+            {%- for item in parsed_additional_info.message -%}
+              {%- if item.Key == 'riskReasons' -%}{{ item.Value }}{%- endif -%}
+            {%- endfor -%}
 
   log_type_auditlogs_has_message_properties:
     actions:
