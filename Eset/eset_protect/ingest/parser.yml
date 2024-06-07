@@ -1,0 +1,185 @@
+name: eset_protect
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_occured
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.occured}}"
+        output_field: datetime
+
+  - name: parsed_firstseen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.firstseen}}"
+        output_field: datetime
+
+  - name: set_common_fields
+  - name: set_process_fields
+
+  - name: set_audit_category_type
+    filter: "{{json_event.message.get('event_type') == 'Audit_Event'}}"
+
+  - name: set_alert_category_type
+    filter: "{{json_event.message.get('event_type') == 'ESET Inspect Alert'}}"
+
+  - name: set_threat_category_type
+    filter: "{{json_event.message.get('event_type') == 'Threat_Event'}}"
+
+  - name: set_firewall_category_type
+    filter: "{{json_event.message.get('event_type') == 'FirewallAggregated_Event'}}"
+
+  - name: set_hips_category_type
+    filter: "{{json_event.message.get('event_type') == 'HipsAggregated_Event'}}"
+
+stages:
+  set_audit_category_type:
+    actions:
+      - translate:
+        dictionary:
+          "Update modules": ["package"]
+          "Native user": ["authentication"]
+          "ESET INSPECT": ["host"]
+          "Single-sign-on token": ["authentication"]
+        mapping:
+          json_event.message.domain: event.category
+
+      - translate:
+        dictionary:
+          "Update": ["change"]
+        default: ["info"]
+        mapping:
+          json_event.message.action: event.type
+        filter: "{{json_event.message.get('domain') == 'Update modules'}}"
+
+      - translate:
+        dictionary:
+          "Logout": ["end"]
+        default: ["info"]
+        mapping:
+          json_event.message.action: event.type
+        filter: "{{json_event.message.get('domain') == 'Native user'}}"
+
+      - set:
+          event.type: ["info"]
+        filter: "{{json_event.message.get('domain') == 'ESET INSPECT'}}"
+
+      - set:
+          event.type: ["info"]
+        filter: "{{json_event.message.get('domain') == 'Single-sign-on token'}}"
+
+  set_alert_category_type:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+  set_threat_category_type:
+    actions:
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+
+  set_firewall_category_type:
+    actions:
+      - set:
+          event.category: ["network"]
+
+      - translate:
+        dictionary:
+          "Blocked": ["denied"]
+          "Allowed": ["allowed"]
+        default: ["info"]
+        mapping:
+          json_event.message.action: event.type
+
+  set_hips_category_type:
+    actions:
+      - set:
+          event.category: ["intrusion_detection"]
+
+      - translate:
+        dictionary:
+          "blocked": ["denied"]
+          "allowed": ["allowed"]
+        default: ["info"]
+        mapping:
+          json_event.message.action: event.type
+
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "ESET"
+          observer.product: "ESET Protect"
+          observer.type: "sensor"
+          "@timestamp": "{{parsed_occured.datetime}}"
+
+          event.dataset: "{{json_event.message.event_type}}"
+          event.action: "{{json_event.message.action or json_event.message.action_taken}}"
+          event.reason: "{{json_event.message.operation or json_event.message.detail or json_event.message.event or json_event.message.cause}}"
+
+          event.reference: "{{json_event.message.eiconsolelink}}"
+
+          host.ip: ["{{json_event.message.ipv4}}"]
+          host.name: "{{json_event.message.hostname}}"
+          host.id: "{{json_event.message.source_uuid}}"
+          host.os.full: "{{json_event.message.os_name}}"
+          host.domain: "{{json_event.message.group_name}}"
+
+          rule.name: "{{json_event.message.rulename or json_event.message.rule_name}}"
+          rule.id: "{{json_event.message.rule_id}}"
+
+          source.ip: "{{json_event.message.source_address}}"
+          source.port: "{{json_event.message.source_port}}"
+
+          destination.ip: "{{json_event.message.destination_address}}"
+          destination.port: "{{json_event.message.destination_port}}"
+
+          network.protocol: "{{json_event.message.protocol}}"
+
+          user.name: "{{json_event.message.user}}"
+
+          eset.protect.domain: "{{json_event.message.domain}}"
+          eset.protect.eialarmid: "{{json_event.message.eialarmid}}"
+          eset.protect.scanner_id: "{{json_event.message.scanner_id}}"
+          eset.protect.scan_id: "{{json_event.message.scan_id}}"
+          eset.protect.threat_type: "{{json_event.message.threat_type}}"
+          eset.protect.threat_name: "{{json_event.message.threat_name}}"
+          eset.protect.threat_flags: "{{json_event.message.threat_flags}}"
+
+      - translate:
+        dictionary:
+          Success: "success"
+          Failure: "failure"
+        mapping:
+          json_event.message.result: event.outcome
+
+      - set:
+          user.name: "{{json_event.message.user.split('@')[0]}}"
+          user.domain: "{{json_event.message.user.split('@')[1]}}"
+        filter: "{{'@' in json_event.message.get('user')}}"
+
+      - set:
+          file.path: "{{json_event.message.object_uri}}"
+        filter: "{{json_event.message.get('object_type') == 'File'}}"
+
+  set_process_fields:
+    actions:
+      - set:
+          process.parent.executable: "{{json_event.message.application}}"
+          process.parent.name: "{{json_event.message.application | basename}}"
+
+      - set:
+          process.executable: "{{json_event.message.processname or json_event.message.process_name}}"
+          process.name: "{{json_event.message.processname | basename or json_event.message.process_name | basename}}"
+        filter: "{{json_event.message.get('event_type') != 'HipsAggregated_Event'}}"
+
+      - set:
+          process.executable: "{{json_event.message.target}}"
+          process.name: "{{json_event.message.target | basename}}"
+        filter: "{{json_event.message.get('event_type') == 'HipsAggregated_Event'}}"
