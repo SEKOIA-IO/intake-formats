@@ -124,8 +124,8 @@ pipeline:
           POSTFIX_SMTP_DELIVERY: '%{POSTFIX_KEYVALUE} status=%{STATUS_WORD}( \(%{GREEDYDATA:postfix_smtp_response}\))?'
           POSTFIX_SMTP_LOSTCONN: "%{POSTFIX_QUEUEID}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data} with %{POSTFIX_RELAY_INFO}( while %{POSTFIX_LOSTCONN_REASONS:postfix_smtp_lostconn_reason})?"
           POSTFIX_SMTP_RELAY: "%{POSTFIX_QUEUEID}: (host|to=<%{EMAILADDRESS:postfix_to}>), (relay=%{POSTFIX_RELAY_INFO}), (delay=%{NUMBER}(, |; ))(delays=%{GREEDYDATA_NO_COMMA}, )(dsn=%{GREEDYDATA_NO_COMMA:action_outcome_reason_code}, )(status=%{STATUS_WORD:action_name} ).*"
-          POSTFIX_SMTP_RELAYER2: '%{POSTFIX_QUEUEID}: host %{POSTFIX_RELAY_INFO} said: %{POSTFIX_STATUS_CODE} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} %{GREEDYDATA:postfix_smtp_response} (\[Hostname=%{HOSTNAME:source_domain}\])? \(in reply to %{POSTFIX_SMTP_STAGE:action_type} command\)'
-          POSTFIX_SMTP_RELAYER3: "%{POSTFIX_QUEUEID}: host %{POSTFIX_RELAY_INFO} said: %{POSTFIX_STATUS_CODE} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} %{GREEDYDATA:event_reason}"
+          POSTFIX_SMTP_RELAYER2: '%{POSTFIX_QUEUEID}: host %{POSTFIX_RELAY_INFO} said: %{POSTFIX_STATUS_CODE:action_status_code} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} %{GREEDYDATA:postfix_smtp_response} (\[Hostname=%{HOSTNAME:source_domain}\])? \(in reply to %{POSTFIX_SMTP_STAGE:action_type} command\)'
+          POSTFIX_SMTP_RELAYER3: "%{POSTFIX_QUEUEID}: host %{POSTFIX_RELAY_INFO} said: %{POSTFIX_STATUS_CODE:action_status_code} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} %{GREEDYDATA:event_reason}"
           POSTFIX_SMTP_RELAYERR: '%{POSTFIX_QUEUEID}: (host|to=<%{EMAILADDRESS:postfix_to}>) (relay=%{POSTFIX_RELAY_INFO}) said: %{GREEDYDATA:postfix_smtp_response} \(in reply to %{POSTFIX_SMTP_STAGE:action_type} command\)'
           POSTFIX_SMTP_SSLCONNERR: "SSL_connect error to %{POSTFIX_RELAY_INFO}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data}"
           POSTFIX_SMTP_STAGE: '(CONNECT|HELO|EHLO|STARTTLS|AUTH|BDAT|MAIL( FROM)?|RCPT( TO)?|(end of )?DATA|RSET|UNKNOWN|END-OF-MESSAGE|VRFY|\.)'
@@ -157,6 +157,18 @@ pipeline:
           SPAMD_PROCESSING_MESSAGE: "spamd: processing message %{DATA:spamd_message_id} for %{GREEDYDATA}"
           SPAMD: "%{SPAMD_RESULT}|%{SPAMD_CONNECTION}|%{SPAMD_DNS_UTF8}|%{SPAMD_PROCESSING_MESSAGE}"
           STATUS_WORD: '[\w-]*'
+
+  - name: parse_relay
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{event.message.postfix_keyvalue_data}}"
+        output_field: result
+        pattern: '%{PARSE_RELAY_1}|%{PARSE_RELAY_2}'
+        custom_patterns:
+          PARSE_RELAY_1: '.*?relay=%{HOSTNAME:destination_domain}\[%{IP:destination_address}\](:%{INT:destination_port}).*'
+          PARSE_RELAY_2: '.*?relay=%{HOSTNAME:destination_address}(:%{INT:destination_port}).*'
+    filter: "{{event.message.postfix_keyvalue_data != None}}"
 
   - name: parse_spamd_kvs
     filter: '{{event.message.get("spamd_kvs") != None}}'
@@ -249,6 +261,11 @@ stages:
       - set:
           postfix.orig_to: "{{parsed_message_kv.message.orig_to.replace('<','').replace('>','').replace(',','') }}"
         filter: "{{parsed_message_kv.message != None and parsed_message_kv.message.get('orig_to') != None}}"
+
+      - set:
+          destination.ip: "{{parse_relay.result.destination_address}}"
+          destination.port: "{{parse_relay.result.destination_port}}"
+        filter: "{{parse_relay.result != None}}"
 
       - set:
           email.message_id: "{{event.message.get('spamd_message_id').replace('<','').replace('>','')}}"
@@ -417,6 +434,27 @@ stages:
         mapping:
           event.message.action_outcome_reason_code: action.outcome_reason
         filter: "{{event.message.action_outcome_reason_code != None}}"
+
+      - set:
+          event.reason: "{{original.message.split('said:')[1] | trim}}"
+        filter: "{{event.message.action_outcome_reason_code == '4.3.2' and 'said:' in original.message}}"
+
+      - set:
+          postfix.headers.from: >
+            [
+            {% set headers = original.message.split('header')[1] %}
+            {% for from_value in headers.split('From:') %}
+            {% set value = from_value | trim %}
+            {% if value != '' %}
+              {% if value[-1] == ':' %}
+                '{{value[:-1]}}',
+              {% else %}
+                '{{value}}',
+              {% endif %}
+            {% endif %}
+            {% endfor %}
+            ]
+        filter: "{{'replace: header' in original.message}}"
 
       - set:
           user.name: "{{parse_spamd_kvs.message.user}}"
