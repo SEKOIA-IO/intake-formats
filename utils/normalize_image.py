@@ -204,16 +204,6 @@ def cli_normalize_image(source: Path, destination: Path, fuzz: int = 0, ligthen_
     image.save(destination)
 
 
-@app.command("roadmap")
-def cli_roadmap(template: Path, logo: Path, destination: Path):
-    """
-    Generate roadmap illustration
-    """
-    # old_box = (399, 231, 180, 180)
-    box = (236, 254, 164, 164)
-    merge(Image.open(template), Image.open(logo), box).save(destination)
-
-
 @app.command("normalize_logo")
 def cli_normalize_logo(module: str | None = None, format: str | None = None):
     if not module and not format:
