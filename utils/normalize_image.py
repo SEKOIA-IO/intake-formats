@@ -121,37 +121,6 @@ def lighten_image(original: Image, size: int, max_iteration: int = 100) -> Image
     raise Exception("Unable to resize the image in the maximum iteration")
 
 
-def merge(template: Image, embedded: Image, box: tuple[int, int, int, int]) -> Image:
-    """
-    Put an image in a template
-
-    Args:
-        template: Image
-        embedded: Image
-        box: tuple[int, int, int, int]
-
-    Returns:
-        Image:
-    """
-    # adapt the embedded image to fit into the destination box
-    width_ratio = min(1, (box[2] / embedded.width))
-    height_ratio = min(1, (box[3] / embedded.height))
-    new_width = math.floor(embedded.width * width_ratio)
-    new_height = math.floor(embedded.height * height_ratio)
-    resized = embedded.resize((new_width, new_height))
-
-    # Center the image
-    x1 = int(math.floor(box[0] + (box[2] - resized.width) / 2))
-    y1 = int(math.floor(box[1] + (box[3] - resized.height) / 2))
-
-    # Create new image and paste the original into
-    new_image = Image.new("RGBA", template.size, (255, 255, 255, 255))
-    new_image.paste(template, (0, 0, template.width, template.height))
-    new_image.paste(resized, (x1, y1), resized)
-
-    return new_image
-
-
 app = typer.Typer()
 
 
