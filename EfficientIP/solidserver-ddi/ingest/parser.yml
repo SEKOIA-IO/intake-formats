@@ -5,12 +5,12 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}"
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}"
         custom_patterns:
-          EFFICIENTIP_DNS_QUERY: '^%{EFFICIENTIP_TIMESTAMP:timestamp} %{HOSTNAME:hostname} named\[%{INT:process_id}\]: client( @0x[0-9A-Fa-f]+)? %{IP:client_ip}#%{POSINT:client_port:int}( \(%{GREEDYDATA:log_query_name}\))?: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
-          EFFICIENTIP_DNS_ANSWER: '^%{EFFICIENTIP_TIMESTAMP:timestamp} %{HOSTNAME:hostname} named\[%{INT:process_id}\]: client( @0x[0-9A-Fa-f]+)? %{IP:client_ip}#%{POSINT:client_port:int}( \(%{GREEDYDATA:log_query_name}\))?: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
-          EFFICIENTIP_DNS_GUARDIAN: '^%{EFFICIENTIP_TIMESTAMP:timestamp} %{HOSTNAME:hostname} named\[%{INT:process_id}\]: %{GUARDIAN_ACTION:guardian_action} trigger on %{IP:client_ip}(.%{GREEDYDATA})? \(action:%{WORD:action}\) \(%{GREEDYDATA:trigger_name}\)$'
-          EFFICIENTIP_TIMESTAMP: "%{MONTH} %{MONTHDAY} %{TIME}"
+          EFFICIENTIP_DNS_QUERY: '%{DNS_HEADER}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
+          EFFICIENTIP_DNS_ANSWER: '%{DNS_HEADER}: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
+          EFFICIENTIP_DNS_GUARDIAN: '%{GUARDIAN_ACTION:guardian_action} trigger on %{IP:client_ip}(.%{GREEDYDATA})? \(action:%{WORD:action}\) \(%{GREEDYDATA:trigger_name}\)$'
+          EFFICIENTIP_DNS_GUARDIAN_LISTLOG: 'List Matched %{IP:client_ip}#%{POSINT:client_port:int}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type} \(%{IP:server_ip}\) \{%{GREEDYDATA:list_names}\}( \[%{GREEDYDATA:tag_names}\])?'
           QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
           QUERY_FLAGS_SIGNED: "S?"
@@ -21,6 +21,7 @@ pipeline:
           QUERY_FLAGS_DNS_SERVER_COOKIE: "V"
           QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER: "K"
           QUERY_CLASS: "IN"
+          DNS_HEADER: 'client( @0x[0-9A-Fa-f]+)? %{IP:client_ip}#%{POSINT:client_port:int}( \(%{GREEDYDATA:log_query_name}\))?'
           QUESTION_TYPE: "A|AAAA|CAA|CDNSKEY|CDS|CERT|CNAME|CSYNC|DLV|DNAME|DNSKEY|DS|HINFO|LOC|MX|NAPTR|NS|NSEC|NSEC3|OPENPGPKEY|PTR|RRSIG|RP|SIG|SMIMEA|SOA|SRV|TSIG|TXT|URI|TYPE65|HTTPS"
           GUARDIAN_ACTION: "(DIS)?ARMING"
 
@@ -41,9 +42,7 @@ stages:
           event.dataset: "solidserver-ddi"
           event.category: ["network"]
           event.type: ["info"]
-          host.name: "{{parse_event.message.hostname}}"
           observer.vendor: "EfficientIp"
-          "@timestamp": "{{parse_date.timestamp}}"
 
       - set:
           client.ip: "{{parse_event.message.client_ip}}"
@@ -102,3 +101,11 @@ stages:
           event.action: "{{parse_event.message.action | lower}}"
           efficientip.guardian_trigger_name: "{{parse_event.message.trigger_name}}"
         filter: '{{parse_event.message.get("guardian_action") != None}}'
+
+      - set:
+          efficientip.list_names: "{{parse_event.message.list_names.split(',')}}"
+        filter: '{{parse_event.message.get("list_names") != None}}'
+
+      - set:
+          efficientip.tag_names: "{{parse_event.message.tag_names.split(',')}}"
+        filter: '{{parse_event.message.get("tag_names") != None}}'
