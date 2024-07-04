@@ -1,5 +1,5 @@
-# Jizô NDR
+# SesameIT
 
 ## Description
 
-Jizô NDR is a network observability platform that enables decision-makers to anticipate, identify and block cyber-attacks.
+Sesame IT is a european leader in cyberdefense. Its mission consists in reducing the economic and human costs of cybercrime.
