@@ -1,0 +1,58 @@
+name: jizo
+pipeline:
+  - name: json_log
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_log.message.timestamp}}"
+        output_field: datetime
+        format: null
+        timezone: UTC
+
+  - name: set_base_fields
+
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          source.ip: "{{json_log.message.src_ip}}"
+          "@timestamp": "{{parsed_date.datetime}}"
+          destination.ip: "{{json_log.message.dest_ip}}"
+          destination.port: "{{json_log.message.dest_port}}"
+          source.port: "{{json_log.message.src_port}}"
+          network.protocol: "{{json_log.message.app_proto}}"
+          network.transport: "{{json_log.message.proto}}"
+          event.action: "{{json_log.message.alert.action}}"
+          action.properties.signature: "{{json_log.message.alert.signature}}"
+          action.properties.category: "{{json_log.message.alert.category}}"
+          action.properties.signature_id: "{{json_log.message.alert.signature_id}}"
+          action.properties.severity: "{{json_log.message.alert.metadata.signature_severity[0]}}"
+          event.severity: "{{json_log.message.alert.severity}}"
+          host.ip: "{{json_log.message.src_ip}}"
+          source.bytes: "{{json_log.message.flow.bytes_toserver}}"
+          source.packets: "{{json_log.message.flow.pkts_toserver}}"
+          destination.bytes: "{{json_log.message.flow.bytes_toclient}}"
+          destination.packets: "{{json_log.message.flow.pkts_toclient}}"
+          event.start: "{{json_log.message.flow.start}}"
+          observer.ingress.interface.name: "{{json_log.message.in_iface}}"
+          jizo.flow.id: "{{json_log.message.flow_id}}"
+          url.original: "{{json_log.message.http.url}}"
+          http.response.status_code: "{{json_log.message.http.status}}"
+          http.response.bytes: "{{json_log.message.http.response_length}}"
+          event.category: ["network"]
+          event.type: ["connection"]
+
+      - set:
+          event.kind: "alert"
+        filter: "{{json_log.message.event_type == 'alert'}}"
