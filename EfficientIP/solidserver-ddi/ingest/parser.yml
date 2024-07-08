@@ -5,7 +5,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}"
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_DNS_ERROR}"
         custom_patterns:
           EFFICIENTIP_DNS_QUERY: '%{DNS_HEADER}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
           EFFICIENTIP_DNS_ANSWER: '%{DNS_HEADER}: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
@@ -13,6 +13,7 @@ pipeline:
           EFFICIENTIP_DNS_GUARDIAN_LISTLOG: 'List Matched %{IP:client_ip}#%{POSINT:client_port:int}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type} \(%{IP:server_ip}\) \{%{GREEDYDATA:list_names}\}( \[%{GREEDYDATA:tag_names}\])?'
           EFFICIENTIP_RPZ_TRANSFER: "transfer of '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}' from %{IP:server_ip}#%{INT:server_port}: %{GREEDYDATA:reason}"
           EFFICIENTIP_RPZ_ZONE: 'zone %{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}: %{DATA:action} from %{RPZ_SOURCE}: %{GREEDYDATA:reason}'
+          EFFICIENTIP_DNS_ERROR: "%{ERROR_REASON:error} resolving '%{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type}/%{QUERY_CLASS:dns_question_class}': %{IP:server_ip}#%{INT:server_port}"
           QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
           QUERY_FLAGS_SIGNED: "S?"
@@ -27,6 +28,7 @@ pipeline:
           QUESTION_TYPE: "A|AAAA|CAA|CDNSKEY|CDS|CERT|CNAME|CSYNC|DLV|DNAME|DNSKEY|DS|HINFO|LOC|MX|NAPTR|NS|NSEC|NSEC3|OPENPGPKEY|PTR|RRSIG|RP|SIG|SMIMEA|SOA|SRV|TSIG|TXT|URI|TYPE65|HTTPS"
           GUARDIAN_ACTION: "(DIS)?ARMING"
           RPZ_SOURCE: "(%{IP:source_ip}#%{INT:source_port}|%{DATA:source_name})"
+          ERROR_REASON: "FORMERR|REFUSED %{DATA:reason}"
 
   - name: parse_date
     filter: "{{parse_event.message.timestamp != null}}"
@@ -107,6 +109,10 @@ stages:
                 {% endfor %}
             ]
         filter: '{{parse_event.message.get("dns_records") != None}}'
+
+      - set:
+          event.outcome: "failure"
+        filter: '{{parse_event.message.get("error") != None}}'
 
   set_efficient_fields:
     actions:
