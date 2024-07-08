@@ -5,12 +5,14 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}"
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}"
         custom_patterns:
           EFFICIENTIP_DNS_QUERY: '%{DNS_HEADER}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
           EFFICIENTIP_DNS_ANSWER: '%{DNS_HEADER}: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
           EFFICIENTIP_DNS_GUARDIAN: '%{GUARDIAN_ACTION:guardian_action} trigger on %{IP:client_ip}(.%{GREEDYDATA})? \(action:%{WORD:action}\) \(%{GREEDYDATA:trigger_name}\)$'
           EFFICIENTIP_DNS_GUARDIAN_LISTLOG: 'List Matched %{IP:client_ip}#%{POSINT:client_port:int}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type} \(%{IP:server_ip}\) \{%{GREEDYDATA:list_names}\}( \[%{GREEDYDATA:tag_names}\])?'
+          EFFICIENTIP_RPZ_TRANSFER: "transfer of '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}' from %{IP:server_ip}#%{INT:server_port}: %{GREEDYDATA:reason}"
+          EFFICIENTIP_RPZ_ZONE: 'zone %{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}: %{DATA:action} from %{RPZ_SOURCE}: %{GREEDYDATA:reason}'
           QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
           QUERY_FLAGS_SIGNED: "S?"
@@ -24,6 +26,7 @@ pipeline:
           DNS_HEADER: 'client( @0x[0-9A-Fa-f]+)? %{IP:client_ip}#%{POSINT:client_port:int}( \(%{GREEDYDATA:log_query_name}\))?'
           QUESTION_TYPE: "A|AAAA|CAA|CDNSKEY|CDS|CERT|CNAME|CSYNC|DLV|DNAME|DNSKEY|DS|HINFO|LOC|MX|NAPTR|NS|NSEC|NSEC3|OPENPGPKEY|PTR|RRSIG|RP|SIG|SMIMEA|SOA|SRV|TSIG|TXT|URI|TYPE65|HTTPS"
           GUARDIAN_ACTION: "(DIS)?ARMING"
+          RPZ_SOURCE: "(%{IP:source_ip}#%{INT:source_port}|%{DATA:source_name})"
 
   - name: parse_date
     filter: "{{parse_event.message.timestamp != null}}"
@@ -44,6 +47,11 @@ stages:
           event.category: ["network"]
           event.type: ["info"]
           observer.vendor: "EfficientIp"
+          client.port: "{{parse_event.message.client_port}}"
+          source.port: "{{parse_event.message.source_port}}"
+          server.port: "{{parse_event.message.server_port}}"
+          event.action: "{{parse_event.message.action}}"
+          event.reason: "{{parse_event.message.reason}}"
 
       - set:
           client.ip: "{{parse_event.message.client_ip}}"
@@ -52,6 +60,10 @@ stages:
       - set:
           server.ip: "{{parse_event.message.server_ip}}"
         filter: "{{parse_event.message.server_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parse_event.message.source_ip}}"
+        filter: "{{parse_event.message.source_ip | is_ipaddress}}"
 
       - set:
           dns.type: "query"
@@ -63,7 +75,6 @@ stages:
         filter: '{{parse_event.message.get("response_code") != None}}'
 
       - set:
-          client.port: "{{parse_event.message.client_port}}"
           dns.question.class: "{{parse_event.message.dns_question_class}}"
           dns.question.type: "{{parse_event.message.dns_question_type}}"
           dns.question.name: "{{parse_event.message.dns_question_name}}"
@@ -112,3 +123,9 @@ stages:
       - set:
           efficientip.tag_names: "{{parse_event.message.tag_names.split(',')}}"
         filter: '{{parse_event.message.get("tag_names") != None}}'
+
+      - set:
+          efficientip.rpz.domain: "{{parse_event.message.rpz_domain}}"
+          efficientip.rpz.query.class: "{{parse_event.message.rpz_query_class}}"
+          efficientip.rpz.view: "{{parse_event.message.rpz_view}}"
+          efficientip.rpz.source.name: "{{parse_event.message.source_name}}"
