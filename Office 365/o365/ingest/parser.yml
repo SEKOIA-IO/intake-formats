@@ -25,6 +25,14 @@ pipeline:
         output_field: result
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+  - name: parse_client_ip_address
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.ClientIPAddress}}"
+        output_field: result
+        pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
+    filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
 
   - name: set_common_fields
   - name: set_office365_fields
@@ -80,11 +88,14 @@ stages:
           action.name: "{{json_event.message.Operation}}"
       - set:
           source.ip: "{{parse_client_ip.result.ip}}"
+          source.port: "{{parse_client_ip.result.port}}"
         filter: "{{parse_client_ip.result.ip | is_ipaddress}}"
 
       - set:
-          source.port: "{{parse_client_ip.result.port}}"
-        filter: '{{json_event.message.get("ClientIP") != None and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+          source.ip: "{{parse_client_ip_address.result.ip}}"
+          source.port: "{{parse_client_ip_address.result.port}}"
+        filter: "{{(parse_client_ip_address.result.ip | is_ipaddress) and json_event.message.ClientIP == null}}"
+
       - set:
           action.target: "user"
         filter: '{{json_event.message.get("UserId") != None}}'
@@ -333,6 +344,7 @@ stages:
           office365.teams.team.id: "{{json_event.message.TeamGuid}}"
           office365.teams.team.name: "{{json_event.message.TeamName}}"
           office365.teams.invitee: "{{json_event.message.Invitee}}"
+          office365.teams.has_foreign_tenant_users: "{{json_event.message.ParticipantInfo.HasForeignTenantUsers}}"
       - set:
           office365.teams.team.members: >
             {%
@@ -569,6 +581,12 @@ stages:
       - set:
           source.user.email: "{{parse_data.ParsedData.f3u}}"
         filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.f3u}}"
+          user.name: "{{parse_data.ParsedData.f3u.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.f3u.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.f3u != None and '@' in parse_data.ParsedData.f3u}}"
 
       - set:
           office365.alert.entity_type: "{{parse_data.ParsedData.etype}}"
