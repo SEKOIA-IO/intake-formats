@@ -5,7 +5,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_DNS_ERROR}"
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_DNS_ERROR}|%{EFFICIENTIP_DNS_FORMAT_ERROR}"
         custom_patterns:
           EFFICIENTIP_DNS_QUERY: '%{DNS_HEADER}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
           EFFICIENTIP_DNS_ANSWER: '%{DNS_HEADER}: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
@@ -14,6 +14,7 @@ pipeline:
           EFFICIENTIP_RPZ_TRANSFER: "transfer of '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}' from %{IP:server_ip}#%{INT:server_port}: %{GREEDYDATA:reason}"
           EFFICIENTIP_RPZ_ZONE: 'zone %{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}: %{DATA:action} from %{RPZ_SOURCE}: %{GREEDYDATA:reason}'
           EFFICIENTIP_DNS_ERROR: "%{ERROR_REASON:error} resolving '%{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type}/%{QUERY_CLASS:dns_question_class}': %{IP:server_ip}#%{INT:server_port}"
+          EFFICIENTIP_DNS_FORMAT_ERROR: 'DNS format error from %{IP:server_ip}#%{INT:server_port} resolving %{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type} for %{IP:client_ip}#%{INT:client_port}: %{GREEDYDATA:reason}'
           QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
           QUERY_FLAGS_SIGNED: "S?"
@@ -112,7 +113,7 @@ stages:
 
       - set:
           event.outcome: "failure"
-        filter: '{{parse_event.message.get("error") != None}}'
+        filter: '{{parse_event.message.get("error") != None or original.message.endswith("invalid response")}}'
 
   set_efficient_fields:
     actions:
