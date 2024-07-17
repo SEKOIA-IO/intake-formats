@@ -6,10 +6,17 @@ pipeline:
       properties:
         input_field: original.message
         output_field: message
-        pattern: '%{PREFIX}%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}\s+%{NOTSPACE:acl_decision}\s+<%{VERDICT:scanning_verdict_information}>\s+%{DATA:user_agent}.*'
+        pattern: '%{PREFIX}%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}\s+(%{NOTSPACE}:%{NUMBER}\s+)*%{NOTSPACE:acl_decision}\s+<%{VERDICT:scanning_verdict_information}>\s+%{NOTSPACE:user_agent}.*'
         custom_patterns:
           PREFIX: '(?:Info:\s+)*'
           VERDICT: "(?:[^>]+)"
+  - name: parsed_files
+    external:
+      name: grok.match
+      properties:
+        input_field: original.message
+        output_field: message
+        pattern: 'Info: %{DATA:event_reason} (\(#counter_group: %{DATA:counter_group} #interval %{DATA:interval} #Serial number: %{GREEDYDATA:serial_number} #Time since data generated: %{NUMBER:last_gen})?(\(#files: %{DATA:file_name} %{DATA:interval} #files: %{INT:sightings} #rows: %{INT} #total rows %{INT}\) #duration\(s\): %{NUMBER:duration} #rate: %{DATA:rate})?'
   - name: parsed_timestamp
     external:
       name: date.parse
@@ -76,9 +83,11 @@ pipeline:
           - archivescan_detail
         delimiter: ","
   - name: set_ecs_fields
-    filter: "{{parsed_event.message != None }}"
+    filter: "{{parsed_event.message != None}}"
   - name: set_cisco_fields
     filter: "{{parsed_event.message != None }}"
+  - name: set_file_fields
+    filter: "{{parsed_files.message != None}}"
 stages:
   set_ecs_fields:
     actions:
@@ -151,6 +160,19 @@ stages:
       - set:
           file.hash.sha256: "{{parsed_scanning_verdict.results.file_sha256}}"
         filter: '{{parsed_scanning_verdict.results.file_sha256 != "-"}}'
+
+  set_file_fields:
+    actions:
+      - set:
+          event.category:
+            - web
+            - network
+          event.reason: "{{parsed_files.message.event_reason}}"
+          file.name: "{{parsed_files.message.file_name}}"
+          observer.product: "Cisco Web Security Appliances"
+          observer.type: proxy
+          observer.vendor: Cisco
+          network.direction: egress
 
   set_cisco_fields:
     actions:
