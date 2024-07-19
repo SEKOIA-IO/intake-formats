@@ -1,0 +1,53 @@
+name: azure-application-gateway
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        # Maybe also it should be just `time` field in original message
+        input_field: "{{json_event.message.timeStamp}}"
+        output_field: date
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.date}}"
+
+          cloud.provider: "Azure"
+          cloud.service.name: "Azure Application Gateway"
+          cloud.instance.id: "{{json_event.message.properties.instanceId}}"
+
+          event.category: ["network"]
+          event.type: ["access", "connection"]
+          event.dataset: "{{json_event.message.operationName}}"
+          event.reason: "{{json_event.message.properties.message}}"
+          event.action: "{{json_event.message.properties.action}}"
+
+          source.ip: "{{json_event.message.properties.clientIP or json_event.message.properties.clientIp}}"
+          source.port: "{{json_event.message.properties.clientPort}}"
+          source.bytes: "{{json_event.message.properties.receivedBytes}}"
+          destination.bytes: "{{json_event.message.properties.sentBytes}}"
+          network.bytes: "{{json_event.message.properties.get('receivedBytes', 0) + json_event.message.properties.get('sentBytes', 0)}}"
+          user_agent.original: "{{json_event.message.properties.userAgent}}"
+          http.request.method: "{{json_event.message.properties.httpMethod}}"
+          http.response.status_code: "{{json_event.message.properties.httpStatus}}"
+          url.original: "{{json_event.message.properties.originalRequestUriWithArgs}}"
+
+          azure.application_gateway.transactionId: "{{json_event.message.properties.transactionId}}"
+          azure.application_gateway.error_info: "{{json_event.message.properties.error_info}}"
+          azure.application_gateway.serverStatus: "{{json_event.message.properties.serverStatus}}"
+          azure.application_gateway.sslClientVerify: "{{json_event.message.properties.sslClientVerify}}"
+          azure.application_gateway.message: "{{json_event.message.properties.message}}"
+          azure.application_gateway.details.message: "{{json_event.message.properties.details.message}}"
+
+      - set:
+          destination.ip: "{{json_event.message.properties.hostname.split(':')[0]}}"
+          destination.port: "{{json_event.message.properties.hostname.split(':')[1]}}"
+        filter: "{{':' in json_event.message.properties.hostname}}"
