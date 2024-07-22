@@ -569,7 +569,7 @@ stages:
           host.os.version: "{{parsed_event.message.PanOSSourceDeviceOSVersion or parsed_event.message.ClientOSVersion}}"
           host.os.type: "{{parsed_event.message.PanOSEndpointOSType}}"
           host.type: "{{parsed_event.message.PanOSSourceDeviceCategory}}"
-          http.request.method: "{{parsed_event.message.HttpMethod}}"
+          http.request.method: "{{parsed_event.message.HttpMethod or parsed_event.message.HTTPMethod}}"
           http.request.referrer: "{{parsed_event.message.Referer}}"
           log.hostname: "{{parsed_event.message.DeviceName or parsed_event.message.dvchost}}"
           log.level: "{{parsed_event.message.VendorSeverity}}"
@@ -595,6 +595,9 @@ stages:
           file.path: "{{parsed_event.message.URLFilename}}"
           file.name: "{{parsed_event.message.FileName or parsed_event.message.URLFilename or parsed_description.message.filename}}"
         filter: "{{final.action.type != 'url'}}"
+
+      - set:
+          url.original: "{{parsed_event.message.URL}}"
 
       - set:
           url.original: "{{parsed_event.message.FileName or parsed_event.message.URLFilename}}"
@@ -649,12 +652,24 @@ stages:
         filter: "{{parsed_description.message.src | is_ipaddress}}"
 
       - set:
+          source.nat.ip: "{{parsed_event.message.NATSource}}"
+        filter: "{{parsed_event.message.NATSource | is_ipaddress}}"
+
+      - set:
           source.nat.ip: "{{parsed_event.message.NATSourceIP}}"
         filter: "{{parsed_event.message.NATSourceIP | is_ipaddress}}"
 
       - set:
           source.nat.ip: "{{parsed_event.message.sourceTranslatedAddress}}"
         filter: "{{parsed_event.message.sourceTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.NATDestination}}"
+        filter: "{{parsed_event.message.NATDestination | is_ipaddress}}"
+
+      - set:
+          network.forwarded_ip: "{{parsed_event.message.get('X-Forwarded-For')}}"
+        filter: "{{ parsed_event.message.get('X-Forwarded-For') | is_ipaddress }}"
 
       - set:
           network.forwarded_ip: "{{parsed_event.message.XFFAddress or parsed_event.message.xff}}"
@@ -701,12 +716,20 @@ stages:
           user.name: "{{parsed_event.message.SourceUser}}"
         filter: '{{parsed_event.message.SourceUser.startswith("x-fwd-for") == False}}'
 
+      - set:
+          user.email: "{{parsed_event.message.SourceUser}}"
+        filter: "{{parsed_event.message.SourceUser != None and '@' in parsed_event.message.SourceUser}}"
+
   set_finalize_user_name:
     actions:
       - set:
           user.domain: '{{final.user.name.split("\\") | first}}'
           user.name: '{{final.user.name.split("\\") | last}}'
         filter: '{{final.user.name != null and "\\" in final.user.name}}'
+      - set:
+          user.domain: '{{final.user.email.split("@") | first}}'
+          user.name: '{{final.user.email.split("@") | last}}'
+        filter: '{{final.user.email != null and "@" in final.user.email}}'
       - set:
           source.user.domain: '{{final.source.user.name.split("\\") | first}}'
           source.user.name: '{{final.source.user.name.split("\\") | last}}'
