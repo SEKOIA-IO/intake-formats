@@ -1,88 +1,184 @@
-name: pradeo.mtd-mtd
+name: pradeo-mtd
 pipeline:
-  - name: json_parse
+  - name: json_event
     external:
       name: json.parse-json
-      properties:
-        input_field: '{{original.message}}'
-        output_field: message
-  - name: base_parser
-  - name: custom_parser
+  - name: metadata
+  - name: initiator
+  - name: permission
+  - name: detection
+  - name: correlation
+  - name: compliance
 stages:
-  base_parser:
+  metadata:
     actions:
       - set:
-          pradeo.mtd.type: '{{json_parse.message.type}}'
-          pradeo.mtd.source: '{{json_parse.message.source}}'
-          pradeo.mtd.content: '{{json_parse.message.content}}'
-          pradeo.mtd.category: '{{json_parse.message.category}}'
-          event.code: '{{json_parse.message.id}}' #done
-          user.name: '{{json_parse.message.content.last_name}}' #done
-          user.email: '{{json_parse.message.content.email}}' #done
-          pradeo.mtd.company.details: '{{json_parse.message.company}}'
-          hash.sha1: '{{json_parse.message.content.application.sha1}}' #done
-          pradeo.mtd.device.detection: '{{json_parse.message.content.metric}}'
-          pradeo.mtd.event.creationDate: '{{json_parse.message.creationDate}}' #done
-          pradeo.mtd.application.allowed: '{{json_parse.message.content.allowed}}'
-          package.name: '{{json_parse.message.content.application.package}}' #done
-          package.version: '{{json_parse.message.content.application.version}}' #done
-          pradeo.mtd.device.detection.status: '{{json_parse.message.content.event.value}}'
-  custom_parser:
+          metadata.id: '{{json_event.message.id}}'
+          metadata.creationDate: '{{json_event.message.creationDate}}'
+          metadata.source: '{{json_event.message.source}}'
+          metadata.category: '{{json_event.message.category}}'
+          metadata.type: '{{json_event.message.type}}'
+  initiator:
     actions:
-      - set:
-          device.id: '{{json_parse.message.content.id}}' #done
-          pradeo.mtd.detection.status: '{{json_parse.message.content.status}}'
-        filter: '{{base_parser.pradeo.mtd.type=="DeviceDetection"}}'
-        name: set
-      - set:
-          device.id: '{{json_parse.message.content.device.id}}' #done
-          pradeo.mtd.device.info: '{{json_parse.message.content.device}}'
-        filter: ''
-        name: set
-      - set:
-          device.id: '{{json_parse.message.content.deviceId}}' #done
-        filter: ''
-        name: set
-      - set:
-          pradeo.mtd.device.detection: '{{json_parse.message.content.event.kind}}'
-        filter: ''
-        name: set
-      - set:
-          package.name: '{{json_parse.message.content.application.package.package}}'
-        filter: '{{json_parse.message.type=="ApplicationAssociatedToCompany"}}'
-        name: set
-      - set:
-          pradeo.mtd.detection.status: '{{json_parse.message.content.event.value}}'
-        filter: '{{json_parse.message.type=="DeviceStatusHistoryUpdated"}}'
-        name: set
-      - set:
-          device.id: '{{json_parse.message.content.deviceNetworkStatusRecord.device.id}}' #done
-          user.name: '{{json_parse.message.content.deviceNetworkStatusRecord.device.name}}' #done
-          user.email: >- #done
-            {{json_parse.message.content.deviceNetworkStatusRecord.device.email}}
-          pradeo.mtd.device.configuration: >-
-            {{json_parse.message.content.deviceNetworkStatusRecord.device.configuration}}
-        filter: '{{base_parser.pradeo.mtd.type=="DeviceNetworkStatusRecordUpdated"}}'
-        name: set
-      - set:
-          pradeo.mtd.device.configuration: '{{json_parse.message.content.device.deviceConfiguration}}'
-        filter: '{{base_parser.pradeo.mtd.type=="DevicePermissionStatusUpdated"}}'
-        name: set
-      - set:
-          device.id: '{{json_parse.message.content.deviceSystemStatusRecord.device.id}}' #done
-          user.name: '{{json_parse.message.content.deviceSystemStatusRecord.device.name}}' #done
-          user.email: '{{json_parse.message.content.deviceSystemStatusRecord.device.email}}' #done
-          pradeo.mtd.device.configuration: >-
-            {{json_parse.message.content.deviceSystemStatusRecord.device.configuration}}
-        filter: '{{base_parser.pradeo.mtd.type=="DeviceSystemStatusRecordUpdated"}}'
-        name: set
-      - set:
-          device.id: '{{json_parse.message.content.deviceCompliance.device.id}}' #done
-          user.email: '{{json_parse.message.content.deviceCompliance.device.email}}' #done
-          pradeo.mtd.compliance.status: '{{json_parse.message.content.deviceCompliance.status}}'
-        filter: '{{base_parser.pradeo.mtd.type=="DeviceComplianceUpdated"}}'
-        name: set
-      - set:
-          package.name: '{{json_parse.message.content.application.package.package}}' #done
-        filter: '{{base_parser.pradeo.mtd.type=="ApplicationCreated"}}'
-        name: set
+      - filter: '{{json_event.message.source == "device" and json_event.message.device != null}}'
+        set:
+          initiator.id: '{{json_event.message.device.id}}'
+          initiator.serialNumber: '{{json_event.message.device.serialNumber}}'
+          initiator.name: '{{json_event.message.device.name}}'
+          initiator.email: '{{json_event.message.device.email}}'
+          initiator.imei: '{{json_event.message.device.imei}}'
+          initiator.byod: '{{json_event.message.device.byod}}'
+          initiator.declaredOperatingSystem: '{{json_event.message.device.declaredOperatingSystem}}'
+          initiator.declaredOperatingSystemVersion: '{{json_event.message.device.declaredOperatingSystemVersion}}'
+          initiator.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.device.declaredOperatingSystemSecurityPatchDate}}'
+          initiator.declaredModel: '{{json_event.message.device.declaredModel}}'
+          initiator.lastConnection: '{{json_event.message.device.enrollmentStatus.lastConnection}}'
+          initiator.coupled: '{{json_event.message.device.enrollmentStatus.coupled}}'
+          initiator.mdmId: '{{json_event.message.device.emmDeviceInfo.externalId}}'
+          initiator.emm: '{{json_event.message.device.emmDeviceInfo.emm}}'
+      - filter: '{{json_event.message.source == "admin" and json_event.message.user != null}}'
+        set:
+          initiator.id: '{{json_event.message.user.id}}'
+          initiator.email: '{{json_event.message.user.email}}'
+          initiator.firstName: '{{json_event.message.user.firstName}}'
+          initiator.lastName: '{{json_event.message.user.lastName}}'
+  permission:
+    actions:
+      - filter: '{{json_event.message.type == "DevicePermissionStatusUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.device.id}}'
+          device.serialNumber: '{{json_event.message.content.device.serialNumber}}'
+          device.name: '{{json_event.message.content.device.name}}'
+          device.email: '{{json_event.message.content.device.email}}'
+          device.imei: '{{json_event.message.content.device.imei}}'
+          device.byod: '{{json_event.message.content.device.byod}}'
+          device.declaredOperatingSystem: '{{json_event.message.content.device.declaredOperatingSystem}}'
+          device.declaredOperatingSystemVersion: '{{json_event.message.content.device.declaredOperatingSystemVersion}}'
+          device.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.content.device.declaredOperatingSystemSecurityPatchDate}}'
+          device.declaredModel: '{{json_event.message.content.device.declaredModel}}'
+          device.lastConnection: '{{json_event.message.content.device.enrollmentStatus.lastConnection}}'
+          device.coupled: '{{json_event.message.content.device.enrollmentStatus.coupled}}'
+          device.mdmId: '{{json_event.message.content.device.emmDeviceInfo.externalId}}'
+          device.emm: '{{json_event.message.content.device.emmDeviceInfo.emm}}'
+          permission.name: '{{json_event.message.content.permission}}'
+          permission.value: '{{json_event.message.content.value}}'
+  detection:
+    actions:
+      - filter: '{{json_event.message.type == "DeviceDetection"}}'
+        set:
+          device.id: '{{json_event.message.content.id}}'
+          detection.status: '{{json_event.message.content.metric}}'
+          detection.value: '{{json_event.message.content.status}}'
+      - filter: '{{json_event.message.type == "DeviceSystemStatusRecordUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.deviceSystemStatusRecord.device.id}}'
+          device.serialNumber: '{{json_event.message.content.deviceSystemStatusRecord.device.serialNumber}}'
+          device.name: '{{json_event.message.content.deviceSystemStatusRecord.device.name}}'
+          device.email: '{{json_event.message.content.deviceSystemStatusRecord.device.email}}'
+          device.imei: '{{json_event.message.content.deviceSystemStatusRecord.device.imei}}'
+          device.byod: '{{json_event.message.content.deviceSystemStatusRecord.device.byod}}'
+          device.declaredOperatingSystem: '{{json_event.message.content.deviceSystemStatusRecord.device.declaredOperatingSystem}}'
+          device.declaredOperatingSystemVersion: '{{json_event.message.content.deviceSystemStatusRecord.device.declaredOperatingSystemVersion}}'
+          device.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.content.deviceSystemStatusRecord.device.declaredOperatingSystemSecurityPatchDate}}'
+          device.declaredModel: '{{json_event.message.content.deviceSystemStatusRecord.device.declaredModel}}'
+          device.lastConnection: '{{json_event.message.content.deviceSystemStatusRecord.device.enrollmentStatus.lastConnection}}'
+          device.coupled: '{{json_event.message.content.deviceSystemStatusRecord.device.enrollmentStatus.coupled}}'
+          device.mdmId: '{{json_event.message.content.deviceSystemStatusRecord.device.emmDeviceInfo.externalId}}'
+          device.emm: '{{json_event.message.content.deviceSystemStatusRecord.device.emmDeviceInfo.emm}}'
+          detection.status: '{{json_event.message.content.deviceSystemStatusRecord.deviceSystemStatus.name}}'
+          detection.value: '{{json_event.message.content.deviceSystemStatusRecord.value}}'
+      - filter: '{{json_event.message.type == "DeviceNetworkStatusRecordUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.deviceNetworkStatusRecord.device.id}}'
+          device.serialNumber: '{{json_event.message.content.deviceNetworkStatusRecord.device.serialNumber}}'
+          device.name: '{{json_event.message.content.deviceNetworkStatusRecord.device.name}}'
+          device.email: '{{json_event.message.content.deviceNetworkStatusRecord.device.email}}'
+          device.imei: '{{json_event.message.content.deviceNetworkStatusRecord.device.imei}}'
+          device.byod: '{{json_event.message.content.deviceNetworkStatusRecord.device.byod}}'
+          device.declaredOperatingSystem: '{{json_event.message.content.deviceNetworkStatusRecord.device.declaredOperatingSystem}}'
+          device.declaredOperatingSystemVersion: '{{json_event.message.content.deviceNetworkStatusRecord.device.declaredOperatingSystemVersion}}'
+          device.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.content.deviceNetworkStatusRecord.device.declaredOperatingSystemSecurityPatchDate}}'
+          device.declaredModel: '{{json_event.message.content.deviceNetworkStatusRecord.device.declaredModel}}'
+          device.lastConnection: '{{json_event.message.content.deviceNetworkStatusRecord.device.enrollmentStatus.lastConnection}}'
+          device.coupled: '{{json_event.message.content.deviceNetworkStatusRecord.device.enrollmentStatus.coupled}}'
+          device.mdmId: '{{json_event.message.content.deviceNetworkStatusRecord.device.emmDeviceInfo.externalId}}'
+          device.emm: '{{json_event.message.content.deviceNetworkStatusRecord.device.emmDeviceInfo.emm}}'
+          detection.status: '{{json_event.message.content.deviceNetworkStatusRecord.deviceNetworkStatus.name}}'
+          detection.value: '{{json_event.message.content.deviceNetworkStatusRecord.value}}'
+      - filter: '{{json_event.message.type == "DeviceStatusHistoryUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.deviceId}}'
+          detection.status: '{{json_event.message.content.event.kind}}'
+          detection.value: '{{json_event.message.content.event.value}}'
+  correlation:
+    actions:
+      - filter: '{{json_event.message.type == "DeviceCorrelationUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.deviceCorrelation.device.id}}'
+          device.serialNumber: '{{json_event.message.content.deviceCorrelation.device.serialNumber}}'
+          device.name: '{{json_event.message.content.deviceCorrelation.device.name}}'
+          device.email: '{{json_event.message.content.deviceCorrelation.device.email}}'
+          device.imei: '{{json_event.message.content.deviceCorrelation.device.imei}}'
+          device.byod: '{{json_event.message.content.deviceCorrelation.device.byod}}'
+          device.declaredOperatingSystem: '{{json_event.message.content.deviceCorrelation.device.declaredOperatingSystem}}'
+          device.declaredOperatingSystemVersion: '{{json_event.message.content.deviceCorrelation.device.declaredOperatingSystemVersion}}'
+          device.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.content.deviceCorrelation.device.declaredOperatingSystemSecurityPatchDate}}'
+          device.declaredModel: '{{json_event.message.content.deviceCorrelation.device.declaredModel}}'
+          device.lastConnection: '{{json_event.message.content.deviceCorrelation.device.enrollmentStatus.lastConnection}}'
+          device.coupled: '{{json_event.message.content.deviceCorrelation.device.enrollmentStatus.coupled}}'
+          device.mdmId: '{{json_event.message.content.deviceCorrelation.device.emmDeviceInfo.externalId}}'
+          device.emm: '{{json_event.message.content.deviceCorrelation.device.emmDeviceInfo.emm}}'
+          policy.id: '{{json_event.message.content.deviceCorrelation.detectionPolicy.id}}'
+          policy.name: '{{json_event.message.content.deviceCorrelation.detectionPolicy.name}}'
+          correlation.applicationThreatLevel: '{{json_event.message.content.deviceCorrelation.applicationThreatLevel}}'
+          correlation.networkThreatLevel: '{{json_event.message.content.deviceCorrelation.networkThreatLevel}}'
+          correlation.systemThreatLevel: '{{json_event.message.content.deviceCorrelation.systemThreatLevel}}'
+          correlation.matchedSystemStatusLevels: '{{json_event.message.content.deviceCorrelation.matchedSystemStatusLevels}}'
+          correlation.matchedNetworkStatusLevels: '{{json_event.message.content.deviceCorrelation.matchedNetworkStatusLevels}}'
+  compliance:
+    actions:
+      - filter: '{{json_event.message.type == "DeviceApplicationComplianceUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.id}}'
+          device.serialNumber: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.serialNumber}}'
+          device.name: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.name}}'
+          device.email: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.email}}'
+          device.imei: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.imei}}'
+          device.byod: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.byod}}'
+          device.declaredOperatingSystem: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystem}}'
+          device.declaredOperatingSystemVersion: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystemVersion}}'
+          device.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystemSecurityPatchDate}}'
+          device.declaredModel: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.declaredModel}}'
+          device.lastConnection: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.enrollmentStatus.lastConnection}}'
+          device.coupled: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.enrollmentStatus.coupled}}'
+          device.mdmId: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.emmDeviceInfo.externalId}}'
+          device.emm: '{{json_event.message.content.deviceApplicationCompliance.deviceApplication.device.emmDeviceInfo.emm}}'
+          compliance.matchedResponseRules: '{{json_event.message.content.deviceApplicationCompliance.matchedResponseRules}}'
+          application.id: '{{json_event.message.content.deviceApplicationCompliance.application.id}}'
+          application.package: '{{json_event.message.content.deviceApplicationCompliance.application.package.package}}'
+          application.system: '{{json_event.message.content.deviceApplicationCompliance.application.package.system}}'
+          application.version: '{{json_event.message.content.deviceApplicationCompliance.application.version}}'
+          application.versionCode: '{{json_event.message.content.deviceApplicationCompliance.application.versionCode}}'
+          application.name: '{{json_event.message.content.deviceApplicationCompliance.application.name}}'
+          application.md5: '{{json_event.message.content.deviceApplicationCompliance.application.md5}}'
+          application.sha1: '{{json_event.message.content.deviceApplicationCompliance.application.sha1}}'
+          application.sha256: '{{json_event.message.content.deviceApplicationCompliance.application.sha256}}'
+          detection.status: '{{json_event.message.content.deviceApplicationCompliance.status}}'
+      - filter: '{{json_event.message.type == "DeviceComplianceUpdated"}}'
+        set:
+          device.id: '{{json_event.message.content.deviceCompliance.device.id}}'
+          device.serialNumber: '{{json_event.message.content.deviceCompliance.device.serialNumber}}'
+          device.name: '{{json_event.message.content.deviceCompliance.device.name}}'
+          device.email: '{{json_event.message.content.deviceCompliance.device.email}}'
+          device.imei: '{{json_event.message.content.deviceCompliance.device.imei}}'
+          device.byod: '{{json_event.message.content.deviceCompliance.device.byod}}'
+          device.declaredOperatingSystem: '{{json_event.message.content.deviceCompliance.device.declaredOperatingSystem}}'
+          device.declaredOperatingSystemVersion: '{{json_event.message.content.deviceCompliance.device.declaredOperatingSystemVersion}}'
+          device.declaredOperatingSystemSecurityPatchDate: '{{json_event.message.content.deviceCompliance.device.declaredOperatingSystemSecurityPatchDate}}'
+          device.declaredModel: '{{json_event.message.content.deviceCompliance.device.declaredModel}}'
+          device.lastConnection: '{{json_event.message.content.deviceCompliance.device.enrollmentStatus.lastConnection}}'
+          device.coupled: '{{json_event.message.content.deviceCompliance.device.enrollmentStatus.coupled}}'
+          device.mdmId: '{{json_event.message.content.deviceCompliance.device.emmDeviceInfo.externalId}}'
+          device.emm: '{{json_event.message.content.deviceCompliance.device.emmDeviceInfo.emm}}'
+          compliance.matchedResponseRules: '{{json_event.message.content.deviceCompliance.matchedResponseRules}}'
+          detection.status: '{{json_event.message.content.deviceCompliance.status}}'
