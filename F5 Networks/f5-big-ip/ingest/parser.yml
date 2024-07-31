@@ -8,7 +8,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{ARROW})'
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{AUDIT_LOG}|%{ARROW})'
         custom_patterns:
           TLS: "TLSv"
           HEADER: '%{WORD:action_type}\[\d*\]'
@@ -35,6 +35,9 @@ pipeline:
           RULE_HTTP_REQUEST: '<HTTP_REQUEST>: LOGS: %{RULE_LOG_MESSAGE:rule_message}'
           RULE_HTTP_RESPONSE: '<HTTP_RESPONSE_RELEASE>: %{IPORHOST:destination_ip}:%{POSINT:destination_port}: HTTP: %{POSINT:http_response_status_code} response to( %{IPORHOST:destination_ip}:%{POSINT:destination_port})? from( %{IPORHOST:source_ip}:%{POSINT:source_port} )?URL: %{NOTSPACE:url_original} %{DATA} %{TLS:tls_version_protocol}%{NUMBER:tls_version}'
           RULE_LOG: '%{HEADER}: Rule %{NOTSPACE:rule_name} (%{RULE_HTTP_REQUEST}|%{RULE_HTTP_RESPONSE})'
+
+          # audit message
+          AUDIT_LOG: '%{HEADER}:\s(\d*:\d*: )AUDIT - %{GREEDYDATA:audit_message}'
 
           # traffic messages
           ACTION: "(SSL Handshake)|Connection|Rule"
@@ -78,6 +81,16 @@ pipeline:
         value_sep: "="
         item_sep: " "
     filter: "{{parse_kv_header.message != None and parse_kv_header.message.kvs != None}}"
+
+  - name: parse_audit_message
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parse_grok_event.message.audit_message }}"
+        output_field: message
+        value_sep: "="
+        item_sep: " "
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.audit_message != None}}"
 
   - name: parse_timestamp
     external:
@@ -144,6 +157,11 @@ stages:
         filter: "{{parse_grok_event.message.SSH_LOG != None}}"
 
       - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: "{{parse_grok_event.message.audit_message != None}}"
+
+      - set:
           event.type: "alert"
         filter: "{{parse_grok_event.message.ARROW != None and 'alert' in parse_grok_event.message.ARROW}}"
 
@@ -157,9 +175,11 @@ stages:
           rule.name: "{{parse_grok_event.message.rule_name}}"
 
           event.reason: "{{parse_grok_event.message.msg or parse_grok_event.message.rule_message or parse_grok_event.message.ssh_reason}}"
-          user.name: "{{parse_grok_event.message.user_name}}"
+          user.name: "{{parse_grok_event.message.user_name or parse_audit_message.message.user}}"
           action.name: "{{parse_grok_event.message.action_name}}"
-          process.command_line: "{{parse_grok_event.message.process_command_line}}"
+          process.command_line: "{{parse_grok_event.message.process_command_line or parse_audit_message.message.cmd_data}}"
+          process.pid: "{{parse_audit_message.message.pid}}"
+          process.working_directory: "{{parse_audit_message.message.folder}}"
 
           action.type: "{{parse_grok_event.message.action_type}}"
           action.outcome: "{{parse_grok_event.message.action_outcome}}"
