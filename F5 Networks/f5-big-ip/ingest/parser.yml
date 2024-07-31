@@ -8,7 +8,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{RULE_LOG}|%{ARROW})'
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{ARROW})'
         custom_patterns:
           TLS: "TLSv"
           HEADER: '%{WORD:action_type}\[\d*\]'
@@ -16,6 +16,13 @@ pipeline:
           # Crond messages
           CROND: "CROND"
           CRON_LOG: '%{CROND:action_type}\[\d*\]:\s*\(%{NOTSPACE:user_name}\) %{NOTSPACE:action_name} \(%{DATA:process_command_line}\)'
+
+          # SSH messages
+          SSHD: "sshd"
+          SSH_MESSAGE_CONNECTION_CLOSED: 'Connection closed'
+          SSH_CLIENT_ADDRESS: "%{IP:source_ip}|%{HOSTNAME:source_domain}"
+          SSH_CONNECTION_CLOSED: '%{SSH_MESSAGE_CONNECTION_CLOSED:ssh_reason} by( %{NOTSPACE:user_name})? %{SSH_CLIENT_ADDRESS:source_ip}( port %{NUMBER:source_port}( \[preauth\])?)?'
+          SSH_LOG: '%{SSHD:action_type}\[\d*\]:\s(%{SSH_CONNECTION_CLOSED}|%{GREEDYDATA})'
           
           # Logger messages
           LOGGER: "logger"
@@ -125,6 +132,18 @@ stages:
         filter: "{{parse_grok_event.message.CRON_LOG != None}}"
 
       - set:
+          event.category: ["session"]
+        filter: "{{parse_grok_event.message.SSH_LOG != None}}"
+
+      - translate:
+        dictionary:
+          'Connection closed': ['end']
+        mapping:
+          parse_grok_event.message.ssh_reason: event.type
+        fallback: ['info']
+        filter: "{{parse_grok_event.message.SSH_LOG != None}}"
+
+      - set:
           event.type: "alert"
         filter: "{{parse_grok_event.message.ARROW != None and 'alert' in parse_grok_event.message.ARROW}}"
 
@@ -137,7 +156,7 @@ stages:
       - set:
           rule.name: "{{parse_grok_event.message.rule_name}}"
 
-          event.reason: "{{parse_grok_event.message.msg or parse_grok_event.message.rule_message}}"
+          event.reason: "{{parse_grok_event.message.msg or parse_grok_event.message.rule_message or parse_grok_event.message.ssh_reason}}"
           user.name: "{{parse_grok_event.message.user_name}}"
           action.name: "{{parse_grok_event.message.action_name}}"
           process.command_line: "{{parse_grok_event.message.process_command_line}}"
