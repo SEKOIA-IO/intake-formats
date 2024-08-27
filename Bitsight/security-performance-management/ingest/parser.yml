@@ -1,0 +1,58 @@
+name: security-performance-management
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_last_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.last_seen}}"
+        output_field: datetime
+
+  - name: parsed_first_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.first_seen}}"
+        output_field: datetime
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          event.category: "vulnerability"
+          event.type: "info"
+          observer.vendor: "BitSight"
+          observer.product: "Security Performance Management"
+          "@timestamp": "{{parsed_last_seen.datetime}}"
+          event.end: "{{parsed_last_seen.datetime}}"
+          event.start: "{{parsed_first_seen.datetime}}"
+
+          organization.id: "{{json_event.message.company_uuid}}"
+
+          vulnerability.id: "{{json_event.message.vulnerability.name}}"
+          vulnerability.description: "{{json_event.message.vulnerability.description}}"
+          vulnerability.severity: "{{json_event.message.vulnerability.severity}}"
+          vulnerability.score.base: "{{json_event.message.vulnerability.cvss.base}}"
+
+          bitsight.spm.vulnerability_confidence: "{{json_event.message.vulnerability.confidence}}"
+          bitsight.spm.risk_category: "{{json_event.message.risk_category}}"
+          bitsight.spm.risk_vector: "{{json_event.message.risk_vector}}"
+          bitsight.spm.risk_vector_label: "{{json_event.message.risk_vector_label}}"
+          bitsight.spm.impacts_risk_vector_details: "{{json_event.message.impacts_risk_vector_details}}"
+          bitsight.spm.severity: "{{json_event.message.severity}}"
+          bitsight.spm.severity_category: "{{json_event.message.severity_category}}"
+          bitsight.spm.remediated: "{{json_event.message.remediated}}"
+          bitsight.spm.temporary_id: "{{json_event.message.temporary_id}}"
+
+      - set:
+          host.ip: ["{{json_event.message.asset.asset}}"]
+        filter: "{{json_event.message.asset.get('asset_type', '').lower() == 'ip'}}"
+
+      - set:
+          url.domain: "{{json_event.message.asset.asset}}"
+        filter: "{{json_event.message.asset.get('asset_type', '').lower() == 'domain'}}"

@@ -2,13 +2,12 @@ name: Postfix
 ignored_values: ["-"]
 pipeline:
   - name: event
-    filter: "{{original.log.syslog.get('appname') != None}}"
     external:
       name: grok.case_match
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern_key: "{{original.log.syslog.appname}}"
+        pattern_key: "{{original.get('log', {}).get('syslog', {}).get('appname', 'default')}}"
         patterns:
           "postfix/smtp": "%{POSTFIX_SMTP}"
           "postfix/smtpd": "%{POSTFIX_SMTPD}"
@@ -20,7 +19,7 @@ pipeline:
           "postfix-nospam/cleanup": "%{POSTFIX_CLEANUP}"
           "postfix-nospam/smtp": "%{POSTFIX_SMTP}"
           "postfix-nospam/qmgr": "%{POSTFIX_QMGR}"
-          "postfix/pipe": "%{POSTFIX_DISCARD}"
+          "postfix/pipe": "%{POSTFIX_LOCAL}"
           "spamd": "%{SPAMD}"
           "postgrey": "%{POSTFIX_POSTGREY}"
           "postfix/local": "%{POSTFIX_LOCAL}"
@@ -28,6 +27,7 @@ pipeline:
           "postfix/anvil": "%{POSTFIX_ANVIL}"
           "postfix/pickup": "%{POSTFIX_PICKUP}"
           "postfix": "%{POSTFIX}"
+          "default": "%{POSTFIX_POSTGREY}|%{POSTFIX}|%{SPAMD}|%{POSTFIX_POLCY_SPF}|%{POSTFIX_CLEANUP}|%{POSTFIX_QMGR}|%{POSTFIX_SMTPD}"
 
         custom_patterns:
           EMAILLOCALPART: "[a-zA-Z0-9_.+-=:]+"
@@ -37,7 +37,7 @@ pipeline:
           GREEDYDATA_NO_TREMMA: '[^\"]*'
           NOQUEUE_FALLBACK: 'NOQUEUE: %{DATA:action_name}: %{DATA:action_type} from %{HOSTNAME:source_domain}?\[%{IP:source_address}\]:%{GREEDYDATA}from=<%{EMAILADDRESS:postfix_from}> to=<%{EMAILADDRESS:postfix_to}>%{GREEDYDATA}'
           POSTFIX_POSTGREY: "%{POSTFIX_PASS}|%{POSTFIX_WHITELISTED}"
-          POSTFIX: "%{POSTFIX_PROXY}|%{POSTFIX_NOQUEUE}|%{POSTFIX_TLS}|%{POSTFIX_PIPE}|%{POSTFIX_POSTSCREEN}|%{POSTFIX_DNSBLOG}|%{POSTFIX_ANVIL}|%{POSTFIX_SMTP}|%{POSTFIX_DISCARD}|%{POSTFIX_LMTP}|%{POSTFIX_PICKUP}|%{POSTFIX_TLSPROXY}|%{POSTFIX_MASTER}|%{POSTFIX_BOUNCE}|%{POSTFIX_SENDMAIL}|%{POSTFIX_POSTDROP}|%{POSTFIX_SCACHE}|%{POSTFIX_TRIVIAL_REWRITE}|%{POSTFIX_TLSMGR}|%{POSTFIX_LOCAL}|%{POSTFIX_VIRTUAL}|%{POSTFIX_ERROR}|%{POSTFIX_POSTSUPER}|%{POSTFIX_PASS}|%{POSTFIX_WARNING_FILENAME}|%{POSTFIX_START}"
+          POSTFIX: "%{POSTFIX_PROXY}|%{POSTFIX_NOQUEUE}|%{POSTFIX_TLS}|%{POSTFIX_SMTP}|%{POSTFIX_PIPE}|%{POSTFIX_POSTSCREEN}|%{POSTFIX_DNSBLOG}|%{POSTFIX_ANVIL}|%{POSTFIX_DISCARD}|%{POSTFIX_LMTP}|%{POSTFIX_PICKUP}|%{POSTFIX_TLSPROXY}|%{POSTFIX_MASTER}|%{POSTFIX_BOUNCE}|%{POSTFIX_SENDMAIL}|%{POSTFIX_POSTDROP}|%{POSTFIX_SCACHE}|%{POSTFIX_TRIVIAL_REWRITE}|%{POSTFIX_TLSMGR}|%{POSTFIX_LOCAL}|%{POSTFIX_VIRTUAL}|%{POSTFIX_ERROR}|%{POSTFIX_POSTSUPER}|%{POSTFIX_PASS}|%{POSTFIX_WARNING_FILENAME}|%{POSTFIX_START}"
           POSTFIX_TLS: "%{POSTFIX_QUEUEID}: %{POSTFIX_TLSUSED}"
           POSTFIX_NOQUEUE: "NOQUEUE: client=%{POSTFIX_DESTINATION_INFO}"
           POSTFIX_PROXY: "proxy-%{POSTFIX_ACTION:action_name}: (%{POSTFIX_SMTP_STAGE:action_type}): %{POSTFIX_PROXY_MESSAGE:postfix_proxy_message};( from=<(%{EMAILADDRESS:postfix_from})?>)?( to=<(%{EMAILADDRESS:postfix_to})?>)?(%{DATA} helo=<%{DATA:source_domain}>)?%{GREEDYDATA}"
@@ -65,7 +65,7 @@ pipeline:
           POSTFIX_KEYVALUE: "%{POSTFIX_QUEUEID}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}"
           POSTFIX_KEYVALUE_DATA: '([\w-]+=[^;]*)'
           POSTFIX_LMTP: "%{POSTFIX_SMTP}" ###
-          POSTFIX_LOCAL: "%{POSTFIX_KEYVALUE}|%{POSTFIX_WARNING}"
+          POSTFIX_LOCAL: "%{POSTFIX_SMTP_RELAY}|%{POSTFIX_KEYVALUE}|%{POSTFIX_WARNING}"
           POSTFIX_LOSTCONN: "(Connection timed out|No route to host|Connection refused|Network is unreachable|lost connection|timeout|SSL_accept error|-1)"
           POSTFIX_LOSTCONN_REASONS: "(receiving the initial server greeting|sending message body|sending end of data -- message may be sent more than once)"
           POSTFIX_MASTER: "%{POSTFIX_MASTER_START}|%{POSTFIX_MASTER_EXIT}|%{POSTFIX_WARNING}"
@@ -353,7 +353,11 @@ stages:
 
       - set:
           network.protocol: "smtp"
-        filter: "{{event.message.POSTFIX_SMTPD_CONNECT != None and event.message.tmp_ESMTP != None}}"
+        filter: "{{event.message.POSTFIX_SMTPD_CONNECT != null and event.message.tmp_ESMTP != null}}"
+
+      - set:
+          network.protocol: "smtp"
+        filter: "{{original.log.syslog.appname == 'postfix'}}"
 
       - set:
           action.type: "{{event.message.action_type}}"
