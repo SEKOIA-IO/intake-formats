@@ -1,0 +1,50 @@
+name: juniper-switches
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        output_field: message
+        pattern: "%{NETWORK_1}|%{NETWORK_2}|%{NETWORK_3}"
+        custom_patterns:
+          # FW: <interface-name> <filter-action> <?> <source_mac> -> <destination_mac> <protocol> <source_ip> <destination_ip> <source_port> <destination_port> (<nb_packets> packets)
+          NETWORK_1: "FW:\\s+%{DATA:interface_name}\\s+%{DATA:filter_action}\\s+%{DATA}\\s+%{MAC:source_mac}\\s+->\\s+%{MAC:destination_mac}\\s+%{DATA:protocol}\\s+%{IP:source_ip}\\s+%{IP:destination_ip}\\s+%{INT:source_port}\\s+%{INT:destination_port}\\s+\\(%{INT:nb_packets} packets\\)"
+
+          # FW: <interface-name> <filter-action> <source_mac> <destination_mac> <?> <?> <?> <protocol> <source_ip> <destination_ip> <source_port> <destination_port> (<nb_packets> packets)
+          NETWORK_2: "FW:\\s+%{DATA:interface_name}\\s+%{DATA:filter_action}\\s+%{MAC:source_mac}\\s+%{MAC:destination_mac}\\s+%{DATA}\\s+%{DATA}\\s+%{DATA}\\s+%{DATA:protocol}\\s+%{IP:source_ip}\\s+%{IP:destination_ip}\\s+%{INT:source_port}\\s+%{INT:destination_port}\\s+\\(%{INT:nb_packets} packets\\)"
+
+          # FW: <interface-name> <filter-action> <protocol> <source_ip> <destination_ip> <source_port> <destination_port> (<nb_packets> packets)
+          NETWORK_3: "FW:\\s+%{DATA:interface_name}\\s+%{DATA:filter_action}\\s+%{DATA:protocol}\\s+%{IP:source_ip}\\s+%{IP:destination_ip}\\s+%{INT:source_port}\\s+%{INT:destination_port}\\s+\\(%{INT:nb_packets} packets\\)"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+          observer.vendor: "Juniper"
+          observer.product: "switch"
+
+      - translate:
+        dictionary:
+          A: "accept"
+          D: "discard"
+          R: "reject"
+        mapping:
+          parsed_event.message.filter_action: event.action
+
+      - set:
+          observer.ingress.interface.name: "{{parsed_event.message.interface_name}}"
+          network.transport: "{{parsed_event.message.protocol.lower()}}"
+          network.packets: "{{parsed_event.message.nb_packets}}"
+
+          source.mac: "{{parsed_event.message.source_mac.replace(':', '-')}}"
+          source.ip: "{{parsed_event.message.source_ip}}"
+          source.port: "{{parsed_event.message.source_port}}"
+
+          destination.mac: "{{parsed_event.message.destination_mac.replace(':', '-')}}"
+          destination.ip: "{{parsed_event.message.destination_ip}}"
+          destination.port: "{{parsed_event.message.destination_port}}"

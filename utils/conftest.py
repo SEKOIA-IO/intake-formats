@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 from collections import defaultdict
+from pathlib import Path
 from typing import Tuple
 
 import pytest
@@ -116,8 +117,9 @@ class IntakeTestManager:
         return self._results[module][intake_format]
 
     def get_parsed_message(self, test_path: str) -> dict:
-        parts = test_path.split("/")
+        parts = Path(test_path).parts
         results = self._get_format_results(parts[0], parts[1])
+
         return results["parsed_messages"].get(test_path, {})
 
     def get_coverage(self, module: str, intake_format: str) -> dict:
