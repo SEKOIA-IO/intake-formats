@@ -4,6 +4,15 @@ pipeline:
     external:
       name: json.parse-json
 
+  - name: parse_remote_ip
+    filter: "{{parsed_event.message.httpRequest.remoteIp != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.httpRequest.remoteIp}}"
+        output_field: message
+        pattern: "%{IP:source_ip}|%{IP:source_ip}:%{NUMBER:source_port}"
+
   - name: set_ecs_fields
 
 stages:
@@ -31,13 +40,12 @@ stages:
           source.geo.region_iso_code: "{{parsed_event.message.jsonPayload.SecurityPolicyRequestData.remoteIpInfo.regionCode}}"
 
       - set:
-          source.ip: "{{parsed_event.message.httpRequest.remoteIp}}"
-        filter: "{{parsed_event.message.httpRequest.remoteIp | is_ipaddress}}"
+          source.ip: "{{parse_remote_ip.message.source_ip}}"
+        filter: "{{parse_remote_ip.message.source_ip != None}}"
 
       - set:
-          source.ip: "{{parsed_event.message.httpRequest.remoteIp.split(':')[0]}}"
-          source.port: "{{parsed_event.message.httpRequest.remoteIp.split(':')[1]}}"
-        filter: "{{parsed_event.message.httpRequest.remoteIp != null and parsed_event.message.httpRequest.remoteIp.split(':')[0] | is_ipaddress}}"
+          source.port: "{{parse_remote_ip.message.source_port}}"
+        filter: "{{parse_remote_ip.message.source_port != None}}"
 
       - set:
           destination.ip: "{{parsed_event.message.httpRequest.serverIp}}"
