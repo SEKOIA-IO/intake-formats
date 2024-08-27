@@ -464,6 +464,13 @@ pipeline:
           AUTHENTICATION_WEB: "User %{USERNAME:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
+  - name: parsed_threat
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.Threat_ContentName}}"
+        pattern: '%{DATA:threat_description}?\(%{NUMBER:threat_code}\)'
+
   - name: set_extracted_fields
   - name: set_finalize_user_name
   - name: set_category_fields
@@ -551,6 +558,14 @@ stages:
         filter: "{{ (parsed_event.message.get('PacketsTotal') != None and (parsed_event.message.PacketsTotal is number or parsed_event.message.PacketsTotal.isdigit())) or (parsed_event.message.get('Packets') != None and (parsed_event.message.Packets is number or parsed_event.message.Packets.isdigit())) }}"
 
       - set:
+          event.reason: "{{parsed_event.message.reason or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError}}"
+
+      - set:
+          event.reason: "{{ parsed_threat.message.threat_description }}"
+          event.code: "{{ parsed_threat.message.threat_code }}"
+        filter: "{{ parsed_threat.get('message') != None }}"
+
+      - set:
           destination.port: "{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}"
           destination.user.name: "{{parsed_event.message.duser or parsed_event.message.DestinationUser}}"
           email.from.address: "{{parsed_event.message.Sender}}"
@@ -559,7 +574,6 @@ stages:
           event.action: "{{parsed_event.message.act or parsed_event.message.Action or parsed_description.message.action}}"
           event.timezone: "{{parsed_event.message.dtz}}"
           event.dataset: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
-          event.reason: "{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError}}"
           event.module: "{{parsed_description.message.module}}"
           host.hostname: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}"
           host.name: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost}}"
