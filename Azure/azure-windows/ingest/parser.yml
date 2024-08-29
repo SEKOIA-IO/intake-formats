@@ -98,10 +98,12 @@ stages:
   set_network_fields:
     actions:
       - set:
+          destination.address: "{{parse_windows_event.message.EventData.DestAddress}}"
           destination.domain: "{{parse_windows_event.message.EventData.DestinationHostname}}"
-          destination.port: "{{parse_windows_event.message.EventData.DestinationPort}}"
+          destination.port: "{{parse_windows_event.message.EventData.DestinationPort or parse_windows_event.message.EventData.DestPort}}"
           dns.response_code: "{{parse_windows_event.message.EventData.QueryStatus}}"
           network.transport: "{{parse_windows_event.message.EventData.Protocol}}"
+          source.address: "{{parse_windows_event.message.EventData.SourceAddress}}"
           source.domain: "{{parse_windows_event.message.EventData.SourceHostname}}"
         filter: "{{parse_json.message.properties.RawXml != null}}"
       - set:
@@ -114,11 +116,17 @@ stages:
           destination.ip: "{{parse_windows_event.message.EventData.DestinationIp}}"
         filter: "{{parse_windows_event.message.EventData.DestinationIp | is_ipaddress }}"
       - set:
+          destination.ip: "{{parse_windows_event.message.EventData.DestAddress}}"
+        filter: "{{parse_windows_event.message.EventData.DestAddress | is_ipaddress }}"
+      - set:
           source.ip: "{{parse_windows_event.message.EventData.IpAddress}}"
         filter: "{{parse_windows_event.message.EventData.IpAddress | is_ipaddress}}"
       - set:
           source.ip: "{{parse_windows_event.message.EventData.SourceIp}}"
         filter: "{{parse_windows_event.message.EventData.SourceIp | is_ipaddress}}"
+      - set:
+          source.ip: "{{parse_windows_event.message.EventData.SourceAddress}}"
+        filter: "{{parse_windows_event.message.EventData.SourceAddress | is_ipaddress}}"
       - set:
           dns.question.name: "{{parse_windows_event.message.EventData.QueryName}}"
           dns.size_in_char: "{{parse_windows_event.message.EventData.QueryName | length}}"
@@ -218,6 +226,11 @@ stages:
           process.working_directory: '{{parse_windows_event.message.EventData.Image.split("\\")[0:-1] | join("\\") | lower}}'
           process.executable: "{{parse_windows_event.message.EventData.Image | lower}}"
         filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.NewProcessName == null and parse_windows_event.message.EventData.Image != null}}"
+      - set:
+          process.name: '{{parse_windows_event.message.EventData.Application.split("\\") | last | lower}}'
+          process.working_directory: '{{parse_windows_event.message.EventData.Application.split("\\")[0:-1] | join("\\") | lower}}'
+          process.executable: "{{parse_windows_event.message.EventData.Application | lower}}"
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.NewProcessName == null and parse_windows_event.message.EventData.Image == null and parse_windows_event.message.EventData.Application != null}}"
       - set:
           process.command_line: '{{parse_windows_event.message.EventData.CommandLine | replace ("\"", "") | lower}}'
         filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.CommandLine != null}}"
@@ -771,3 +784,24 @@ stages:
       - set:
           action.outcome: "success"
         filter: "{% if backward_compatibility is defined %}True{% else %}False{% endif %}"
+      - delete:
+          - azure_windows.event_data.DestPort
+          - azure_windows.event_data.DestinationPort
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData.DestPort != null or parse_windows_event.message.EventData.DestinationPort != null}}"
+      - delete:
+          - azure_windows.event_data.DestAddress
+          - azure_windows.event_data.DestinationAddress
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData.DestAddress != null or parse_windows_event.message.EventData.DestinationAddress != null}}"
+      - delete:
+          - azure_windows.event_data.SourcePort
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData.SourcePort != null}}"
+      - delete:
+          - azure_windows.event_data.SourceAddress
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData.SourceAddress != null}}"
+      - delete:
+          - azure_windows.event_data.SourceIp
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData.SourceAddress | is_ipaddress or parse_windows_event.message.EventData.SourceIp | is_ipaddress or parse_windows_event.message.EventData.IpAddress | is_ipaddress}}"
+      - delete:
+          - azure_windows.event_data.DestIp
+          - azure_windows.event_data.DestinationIp
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData.DestAddress | is_ipaddress or parse_windows_event.message.EventData.DestinationIp | is_ipaddress}}"
