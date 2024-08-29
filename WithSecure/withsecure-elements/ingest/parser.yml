@@ -230,17 +230,60 @@ stages:
   set_email_fields:
     actions:
       - set:
-          email.attachments: "{{json_event.message.details.attachments}}"
           email.delivery_timestamp: "{{json_event.message.details.itemDateTimeReceived | to_rfc3339}}"
-          email.from.address: "{{json_event.message.details.itemSender}}"
-          email.message_id: "{{json_event.message.details.internetMessageId}}"
+          email.from.address: ["{{json_event.message.details.itemSender}}"]
+          email.message_id: "{{json_event.message.details.internetMessageId[1:-1]}}"
           email.subject: "{{json_event.message.details.itemSubject}}"
-          email.to.address: "{{json_event.message.details.userPrincipalName}}"
+          email.to.address: ["{{json_event.message.details.userPrincipalName}}"]
           event.category: ["email"]
           event.type: ["info"]
           service.type: "{{json_event.message.details.serviceType}}"
           source.ip: "{{json_event.message.details.sendingServerIP}}"
           withsecure.incident.fingerprint: "{{json_event.message.fingerprint.similarity}}"
+
+      - set:
+          email.attachments: >
+            {%- set attachments = [] -%}
+            {%- for attachment in json_event.message.details.attachments[1:-1].split("},") -%}
+            {%- set dict = {} -%}
+            {%- set filename = attachment.split('"filename":"')[-1].split('"')[0] -%}
+            {%- set sha1 = attachment.split('"sha1":"')[-1].split('"')[0] -%}
+            {%- set size = attachment.split('"size":')[-1].split(',')[0][1:-1] -%}
+            {%- set _ = dict.update({"file": {"extension": filename.split('.')[-1], "name": filename, "size": size|int, "hash": {"sha1": sha1}}}) -%}
+            {%- set _ = attachments.append(dict) -%}
+            {%- endfor -%}
+            {{attachments}}
+          withsecure.email.attachments: >
+            {%- set attachments = [] -%}
+            {%- for attachment in json_event.message.details.attachments[1:-1].split("},") -%}
+            {%- set dict = {} -%}
+            {%- set filename = attachment.split('"filename":"')[-1].split('"')[0] -%}
+            {%- set prevalence = attachment.split('"prevalence":"')[-1].split('"')[0] -%}
+            {%- set prevalence_score = attachment.split('"prevalenceScore":"')[-1].split('"')[0]|int -%}
+            {%- set reputation = attachment.split('"reputation":"')[-1].split('"')[0] -%}
+            {%- set reputation_score = attachment.split('"reputationScore":"')[-1].split('"')[0]|int -%}
+            {%- set verdict = attachment.split('"verdict":')[-1].split(',')[0][1:-1] -%}
+            {%- set _ = dict.update({"file": {"name": filename, "prevalence": {"code": prevalence_score, "name": prevalence}, "reputation": {"code": reputation_score, "name": reputation}, "verdict":verdict}}) -%}
+            {%- set _ = attachments.append(dict) -%}
+            {%- endfor -%}
+            {{attachments}}
+        filter: "{{json_event.message.details.get('attachments') != None}}"
+
+      - set:
+          withsecure.email.urls: >
+            {%- set urls = [] -%}
+            {%- for url in json_event.message.details.urls[1:-1].split("},") -%}
+            {%- set dict = {} -%}
+            {% set original = url.split('"url":"')[-1].split('"')[0] %}
+            {%- set sha1 = url.split('"sha1":"')[-1].split('"')[0] -%}
+            {%- set reputation = url.split('"reputation":"')[-1].split('"')[0] -%}
+            {%- set reputation_score = url.split('"reputationScore":"')[-1].split('"')[0]|int -%}
+            {%- set verdict = url.split('"verdict":')[-1].split(',')[0][1:-1] -%}
+            {%- set _ = dict.update({"url": {"original": original, "hash":{"sha1": sha1}, "reputation": {"code": reputation_score, "name": reputation}, "verdict":verdict}}) -%}
+            {%- set _ = urls.append(dict) -%}
+            {%- endfor -%}
+            {{urls}}
+        filter: "{{json_event.message.details.get('urls') != None}}"
 
       - set:
           threat.enrichments: >
