@@ -45,6 +45,9 @@ pipeline:
     filter: '{{json_event.message.engine == "connectionControl"}}'
   - name: application_control
     filter: '{{json_event.message.engine == "applicationControl"}}'
+  - name: set_email_fields
+    filter: '{{"emailscan" in json_event.message.engine|lower}}'
+
 stages:
   set_common_fields:
     actions:
@@ -223,6 +226,50 @@ stages:
           withsecure.target.company_name: "{{json_event.message.details.targetVersionCompanyName}}"
           withsecure.alert.type: "{{json_event.message.details.alertType}}"
           withsecure.throttled.count: "{{json_event.message.details.throttledCount}}"
+    
+  set_email_fields:
+    actions:
+      - set:
+          email.attachments: "{{json_event.message.details.attachments}}"
+          email.delivery_timestamp: "{{json_event.message.details.itemDateTimeReceived | to_rfc3339}}"
+          email.from.address: "{{json_event.message.details.itemSender}}"
+          email.message_id: "{{json_event.message.details.internetMessageId}}"
+          email.subject: "{{json_event.message.details.itemSubject}}"
+          email.to.address: "{{json_event.message.details.userPrincipalName}}"
+          event.category: ["email"]
+          event.type: ["info"]
+          service.type: "{{json_event.message.details.serviceType}}"
+          source.ip: "{{json_event.message.details.sendingServerIP}}"
+          withsecure.incident.fingerprint: "{{json_event.message.fingerprint.similarity}}"
+
+      - set:
+          threat.enrichments: >
+            {% set threats = [] %}
+            {%- if json_event.message.details.get("attachments") != None -%}
+            {%- for threat in json_event.message.details.attachments[1:-1].split("},") -%}
+            {%- if "Unsafe" in threat -%}
+            {% set dict = {} %}
+            {% set filename = threat.split('"filename":"')[-1].split('"')[0] %}
+            {% set sha1 = threat.split('"sha1":"')[-1].split('"')[0] %}
+            {% set size = threat.split('"size":')[-1].split(',')[0][1:-1] %}
+            {% set email = json_event.message.details.get("itemSender") %}
+            {% set _ = dict.update({"indicator": {"type": "file", "name": filename, "ip": json_event.message.details.get("sendingServerIP"), "file": {"hash": sha1, "size": size|int}, "email": {"address": email }}}) %}
+            {% set _ = threats.append(dict) %}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endif -%}
+            {%- if json_event.message.details.get("urls") != None -%}
+            {%- for threat in json_event.message.details.urls[1:-1].split("},") -%}
+            {%- if "unsafe_url" in threat -%}
+            {% set dict = {} %}
+            {% set url = threat.split('"url":"')[-1].split('"')[0] %}
+            {% set _ = dict.update({"indicator": {"type": "url", "url": {"original": url}}}) %}
+            {% set _ = threats.append(dict) %}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endif -%}
+            {{threats}}
+        filter: "{{json_event.message.details.get('attachments') != None or json_event.message.details.get('urls') != None}}"
 
   ## https://connect.withsecure.com/api-reference/security-events#get-Browsing-protection-harmful-or-suspicious-page-blocked
 
