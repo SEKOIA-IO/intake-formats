@@ -9,7 +9,13 @@ pipeline:
       properties:
         input_field: "{{json_event.message.alertInfo.description}}"
         output_field: message
-        pattern: " For account: %{DATA:account_name}  : %{GREEDYDATA} %{INT:occurence} times  by user  %{DATA:user_name}    "
+        pattern: "%{HEADER}?\\s*(%{SIGHTING_USER}|%{FIRST_USER}|%{FIRST_SERVICE}|%{AWS_ACCOUNT})\\s*"
+        custom_patterns:
+          HEADER: "\\s*For account:\\s*%{USER:account_name}\\s*(\\(%{DATA:company_name}\\)\\s*)?:\\s*"
+          SIGHTING_USER: "%{GREEDYDATA} %{INT:occurence} times\\s*by user\\s*%{USER:user_name}(\\:(%{EMAILADDRESS:user_email}|%{UUID:user_id}|%{DATA}))?\\s*"
+          FIRST_USER: "((A )?(U|u)ser)?\\s*\\(?%{EMAILADDRESS:user_email}\\)?\\s*%{GREEDYDATA}first time%{GREEDYDATA}"
+          FIRST_SERVICE: "%{GREEDYDATA}A new service %{NOTSPACE:service_name}%{GREEDYDATA}\\(by user\\s*(%{EMAILADDRESS:user_email}|%{USER:user_name}|%{UUID:user_id})\\)\\s*"
+          AWS_ACCOUNT: "\\s*(%{USER:user_name}/%{USER:account_name}:)?(%{EMAILADDRESS:user_email}|%{USER:user_name}|%{UUID:user_id})%{GREEDYDATA}(from an IP address  %{IP:source_ip}%{GREEDYDATA}|%GREEDYDATA})(first time|%{INT:occurence} times)%{GREEDYDATA}"
   - name: set_fields
 
 stages:
@@ -60,6 +66,14 @@ stages:
         filter: "{{json_event.message.entityMap.SourceIpAddress|is_ipaddress}}"
       - set:
           lacework.cloud_security.account.name: "{{grok_extract.message.account_name}}"
-          lacework.cloud_security.alert.sight: "{{grok_extract.message.occurence}}"
-          user.name: "{{grok_extract.message.user_name}}"
+          lacework.cloud_security.company.name: "{{grok_extract.message.company_name}}"
+          lacework.cloud_security.alert.sight: "{{grok_extract.message.occurence or 1}}"
+          service.name: "{{grok_extract.message.service_name}}"
+          source.ip: "{{grok_extract.message.source_ip}}"
+          user.email: "{{grok_extract.message.user_email}}"
+          user.id: "{{grok_extract.message.user_id}}"
         filter: "{{json_event.message.alertInfo.description in json_event.message.alertInfo.subject}}"
+
+      - set:
+          user.name: "{{grok_extract.message.user_name}}"
+        filter: "{{json_event.message.alertInfo.description in json_event.message.alertInfo.subject and grok_extract.message.user_name|lower != 'unknown'}}"
