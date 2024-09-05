@@ -1,5 +1,5 @@
 name: Palo Alto networks next-generation firewall
-ignored_values: ["N/A"]
+ignored_values: ["N/A", "unknown"]
 pipeline:
   - name: parsed_event
     external:
@@ -464,6 +464,13 @@ pipeline:
           AUTHENTICATION_WEB: "User %{USERNAME:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
+  - name: parsed_threat
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.Threat_ContentName}}"
+        pattern: '%{DATA:threat_description}?\(%{NUMBER:threat_code}\)'
+
   - name: set_extracted_fields
   - name: set_finalize_user_name
   - name: set_category_fields
@@ -551,6 +558,14 @@ stages:
         filter: "{{ (parsed_event.message.get('PacketsTotal') != None and (parsed_event.message.PacketsTotal is number or parsed_event.message.PacketsTotal.isdigit())) or (parsed_event.message.get('Packets') != None and (parsed_event.message.Packets is number or parsed_event.message.Packets.isdigit())) }}"
 
       - set:
+          event.reason: "{{parsed_event.message.reason or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError or parsed_event.message.Description}}"
+
+      - set:
+          event.reason: "{{ parsed_threat.message.threat_description }}"
+          event.code: "{{ parsed_threat.message.threat_code }}"
+        filter: "{{ parsed_threat.get('message') != None }}"
+
+      - set:
           destination.port: "{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}"
           destination.user.name: "{{parsed_event.message.duser or parsed_event.message.DestinationUser}}"
           email.from.address: "{{parsed_event.message.Sender}}"
@@ -559,14 +574,13 @@ stages:
           event.action: "{{parsed_event.message.act or parsed_event.message.Action or parsed_description.message.action}}"
           event.timezone: "{{parsed_event.message.dtz}}"
           event.dataset: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
-          event.reason: "{{parsed_event.message.reason or parsed_event.message.Threat_ContentName or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError}}"
           event.module: "{{parsed_description.message.module}}"
           host.hostname: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}"
-          host.name: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost}}"
+          host.name: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost or parsed_event.message.EndpointDeviceName or parsed_event.message.SourceDeviceHost}}"
           host.id: "{{parsed_event.message.deviceExternalId}}"
-          host.mac: "{{parsed_event.message.PanOSSourceDeviceMac}}"
+          host.mac: "{{parsed_event.message.PanOSSourceDeviceMac or parsed_event.message.SourceDeviceMac}}"
           host.os.family: "{{parsed_event.message.PanOSSourceDeviceOSFamily}}"
-          host.os.version: "{{parsed_event.message.PanOSSourceDeviceOSVersion or parsed_event.message.ClientOSVersion}}"
+          host.os.version: "{{parsed_event.message.PanOSSourceDeviceOSVersion or parsed_event.message.ClientOSVersion or parsed_event.message.SourceDeviceOSVersion}}"
           host.os.type: "{{parsed_event.message.PanOSEndpointOSType}}"
           host.type: "{{parsed_event.message.PanOSSourceDeviceCategory}}"
           http.request.method: "{{parsed_event.message.HttpMethod or parsed_event.message.HTTPMethod}}"
@@ -585,8 +599,9 @@ stages:
           observer.product: "PAN-OS"
           observer.vendor: "{{parsed_event.message.DeviceVendor}}"
           observer.type: "{{parsed_event.message.DeviceProduct}}"
-          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          observer.version: "{{parsed_event.message.DeviceVersion or parsed_event.message.GlobalProtectClientVersion}}"
           observer.serial_number: "{{parsed_event.message.DeviceSN}}"
+          observer.name: "{{parsed_event.message.DeviceName}}"
           rule.name: "{{parsed_event.message.Rule}}"
           rule.uuid: "{{parsed_event.message.PanOSRuleUUID or parsed_event.message.RuleUUID}}"
           source.bytes: "{{parsed_event.message.BytesSent or parsed_event.message.in}}"
@@ -602,6 +617,7 @@ stages:
       - set:
           url.original: "{{parsed_event.message.FileName or parsed_event.message.URLFilename}}"
           url.domain: '{{final.url.original.split("/")[0].split(":")[0]}}'
+          destination.domain: '{{final.url.original.split("/")[0].split(":")[0]}}'
           url.port: '{{final.url.original.split("/")[0].split(":")[1]}}'
           url.path: '{{final.url.original.split("?")[0].split("/")[1:] | join("/")}}'
           url.query: '{{final.url.original.split("?")[1]}}'
@@ -610,6 +626,10 @@ stages:
       - delete:
           - url.original
         filter: "{{final.action.type == 'url'}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.PublicIPv4}}"
+        filter: "{{parsed_event.message.PublicIPv4 | is_ipaddress}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIP}}"
@@ -689,7 +709,7 @@ stages:
           source.nat.port: "{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}"
           source.packets: "{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}"
           source.port: "{{parsed_event.message.SourcePort or parsed_event.message.spt}}"
-          source.user.name: "{{parsed_event.message.suser or parsed_event.message.PanOSSourceUserName}}"
+          source.user.name: "{{parsed_event.message.suser or parsed_event.message.PanOSSourceUserName or parsed_event.message.SourceUserName}}"
           user_agent.name: "{{parsed_event.message.UserAgent}}"
           user_agent.os.name: "{{parsed_event.message.ClientOS}}"
           user_agent.os.version: "{{parsed_event.message.ClientOSVersion}}"
@@ -710,7 +730,30 @@ stages:
           paloalto.authentication.method: "{{parsed_event.message.AuthMethod or parsed_event.message.PanOSAuthMethod}}"
           paloalto.connection.method: "{{parsed_event.message.ConnectionMethod or parsed_event.message.PanOSConnectionMethod}}"
           paloalto.endpoint.serial_number: "{{parsed_event.message.EndpointSerialNumber or parsed_event.message.PanOSEndpointSerialNumber}}"
-          paloalto.threat.id: "{{parsed_event.message.ThreatID or parsed_event.message.PanOSThreatID}}"
+          paloalto.threat.id: "{{parsed_event.message.ThreatID or parsed_event.message.PanOSThreatID or parsed_threat.message.threat_code}}"
+          paloalto.threat.name: "{{parsed_threat.message.threat_description}}"
+      - set:
+          paloalto.threat.type: >
+            {%- set id = parsed_threat.message.threat_code | int -%}
+            {%- if id in range(8000, 8100) -%}
+            {%- set name = 'scan detection' -%}
+            {%- elif id in range(8500, 8600) -%}
+            {%- set name = 'flood detection' -%}
+            {%- elif id == 9999 -%}
+            {%- set name = 'URL filtering log' -%}
+            {%- elif id in range(10000, 20000) -%}
+            {%- set name = 'spyware phone home detection' -%}
+            {%- elif id in range(20000, 30000) -%}
+            {%- set name = 'spyware download detection' -%}
+            {%- elif id in range(30000, 45000) -%}
+            {%- set name = 'vulnerability exploit detection' -%}
+            {%- elif id in range(52000, 53000) -%}
+            {%- set name = 'filetype detection' -%}
+            {%- elif id in range(60000 , 70000) -%}
+            {%- set name = 'data filtering detection' -%}
+            {%- endif -%}
+            {{name | default('custom threat')}}
+        filter: "{{parsed_threat.message.get('threat_code') != None}}"
       - set:
           source.user.name: "{{parsed_event.message.SourceUser}}"
           user.name: "{{parsed_event.message.SourceUser}}"
@@ -719,6 +762,26 @@ stages:
       - set:
           user.email: "{{parsed_event.message.SourceUser}}"
         filter: "{{parsed_event.message.SourceUser != None and '@' in parsed_event.message.SourceUser}}"
+
+      - set:
+          paloalto.dns.category: "{{parsed_event.message.DNSCategory}}"
+          dns.question.type: "{{parsed_event.message.RecordType}}"
+          dns.resolved_ip: "{{parsed_event.message.DNSResponse}}"
+
+      - set:
+          paloalto.source.region: "{{parsed_event.message.SourceRegion}}"
+        filter: "{{parsed_event.message.Subtype == 'globalprotect'}}"
+
+      - set:
+          paloalto.source.private.ip: "{{parsed_event.message.PrivateIPv4}}"
+        filter: "{{parsed_event.message.PrivateIPv4 | is_ipaddress}}"
+
+      - set:
+          paloalto.DirectionOfAttack: "{{parsed_event.message.DirectionOfAttack}}"
+          paloalto.threat.category: "{{parsed_event.message.ThreatCategory}}"
+
+      - set:
+          threat.indicator.name: "{{parsed_event.message.URL}}"
 
   set_finalize_user_name:
     actions:
