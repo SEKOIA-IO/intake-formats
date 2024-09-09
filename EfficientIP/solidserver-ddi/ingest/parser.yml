@@ -14,8 +14,8 @@ pipeline:
           EFFICIENTIP_DNS_GUARDIAN_LISTLOG: 'List Matched %{IP:client_ip}#%{POSINT:client_port:int}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type} \(%{IP:server_ip}\) \{%{GREEDYDATA:list_names}\}( \[%{GREEDYDATA:tag_names}\])?'
           EFFICIENTIP_DNS_UPDATING_ZONE: "%{DNS_HEADER}: updating zone '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}': %{DATA:action} %{GREEDYDATA:reason}?"
           EFFICIENTIP_RPZ_QNAME: "%{DNS_HEADER}: rpz QNAME %{GREEDYDATA} %{DATA:rpz_domain}/%{WORD:rpz_view}/%{QUERY_CLASS:rpz_query_class} via %{RPZ_SOURCE}"
-          EFFICIENTIP_RPZ_TRANSFER: "transfer of '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}' from %{IP:server_ip}#%{INT:server_port}: %{GREEDYDATA:reason}"
-          EFFICIENTIP_RPZ_ZONE: "zone %{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}/%{WORD:rpz_view}: %{DATA:action} from %{RPZ_SOURCE}: %{GREEDYDATA:reason}"
+          EFFICIENTIP_RPZ_TRANSFER: "(%{DNS_HEADER}: )?transfer of '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}(/%{WORD:rpz_view})?'( from %{RPZ_SOURCE})?: %{GREEDYDATA:reason}"
+          EFFICIENTIP_RPZ_ZONE: "zone %{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}(/%{WORD:rpz_view})?: (%{DATA:action} from %{RPZ_SOURCE}: )?%{GREEDYDATA:reason}"
           EFFICIENTIP_DNS_ERROR: "%{ERROR_REASON:error} resolving '%{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type}/%{QUERY_CLASS:dns_question_class}': %{IP:server_ip}#%{INT:server_port}"
           EFFICIENTIP_DNS_FORMAT_ERROR: "DNS format error from %{IP:server_ip}#%{INT:server_port} resolving %{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type} for %{IP:client_ip}#%{INT:client_port}: %{GREEDYDATA:reason}"
           EFFICIENTIP_DNS_RECEIVED_NOTIFY: "%{DNS_HEADER}:( view %{WORD}:)? received notify for zone '%{DATA:rpz_domain}'"
@@ -45,7 +45,7 @@ pipeline:
         pattern: ".*?%{DNS_RECORD_HTTPS}.*"
         custom_patterns:
           HTTPS_DATA: "alpn=%{DATA} ipv4hint=((%{IPV4},?)+)( ipv6hint=((%{IPV6},?)+))?"
-          DNS_RECORD_HTTPS: "%{NUMBER:https_ttl} HTTPS %{NUMBER} \\. %{HTTPS_DATA}"
+          DNS_RECORD_HTTPS: "%{NUMBER:https_ttl} HTTPS %{NUMBER} \\.( %{HTTPS_DATA})?"
 
   - name: parse_dns_rrsig
     filter: "{{ parse_event.message.get('dns_records') != None and 'RRSIG' in parse_event.message.get('dns_records')}}"
@@ -136,7 +136,7 @@ stages:
                 {%- for record in records.strip().split() | batch(3) -%}
                   {"ttl": {{record[0]}}, "type": "{{record[1]}}", "data": "{{record[2]}}"},
                 {%- endfor -%}
-                {% if parse_dns_https %}{"ttl": {{parse_dns_https.message.https_ttl}}, "type": "HTTPS", "data": "{{parse_dns_https.message.HTTPS_DATA}}"},{% endif %}
+                {% if parse_dns_https %}{"ttl": {{parse_dns_https.message.https_ttl}}, "type": "HTTPS", "data": "{{parse_dns_https.message.HTTPS_DATA or '.'}}"},{% endif %}
                 {% if parse_dns_rrsig %}{"ttl": {{parse_dns_rrsig.message.rrsig_ttl}}, "type": "RSSIG", "data": "HTTPS"},{% endif %}
             ]
         filter: "{{parse_dns_https != null or parse_dns_rrsig != null}}"
