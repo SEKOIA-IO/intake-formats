@@ -61,7 +61,9 @@ pipeline:
       properties:
         input_field: parsed_event.message.msg
         output_field: msg
-        pattern: 'to=%{DATA:email_to}, (delay=%{DATA:tmp_delay}, )?(xdelay=%{DATA:tmp_xdelay}, )?(mailer=%{DATA:tmp_mailer}, )?(pri=%{NUMBER:tmp_priority_level_msg}, )?(relay=%{HOSTNAME:destination_domain}? \[%{IP:_destination_ip}\], )?(dsn=%{DATA:tmp_dsn_version}, )?stat=%{GREEDYDATA:event_reason}'
+        pattern: 'to=%{DATA:email_to}, (delay=%{DATA:tmp_delay}, )?(xdelay=%{DATA:tmp_xdelay}, )?(mailer=%{DATA:tmp_mailer}, )?(pri=%{NUMBER:tmp_priority_level_msg}, )?(relay=%{RELAY_INFO:relay}, )?(dsn=%{DATA:tmp_dsn_version}, )?stat=%{GREEDYDATA:event_reason}'
+        custom_patterns:
+          RELAY_INFO: '(%{HOSTNAME:destination_domain}? \[%{IP:_destination_ip}\])|(\[%{IP:_destination_ip1}\] \[%{IP:_destination_ip2}\])'
     filter: "{{parsed_event.message.get('type') == 'event' and parsed_event.message.get('msg') and 'stat=' in parsed_event.message.get('msg')}}"
 
   - name: parse_webfilter_full_url
@@ -140,7 +142,6 @@ stages:
           action.properties.nrcpts: "{{parse_event_with_no_stat.msg.nrcpts}}"
           action.properties.policy_id: "{{parsed_event.message.polid}}"
           action.properties.priority_level_msg: "{{parse_stat_message.msg.tmp_priority_level_msg or parse_event_with_no_stat.msg.pri}}"
-          action.properties.relay: '{{parse_event_with_no_stat.msg.relay.split(" ")[0].replace("[", "").replace("]", "")}}'
           action.properties.session_id: "{{parsed_event.message.session_id}}"
           action.properties.source_country: "{{parsed_event.message.client_cc}}"
           action.properties.spam_category: "{{parse_webfilter_full_url.msg.tmp_spam_category}}"
@@ -153,8 +154,20 @@ stages:
           action.properties.xdelay: "{{parse_stat_message.msg.tmp_xdelay or parse_event_with_no_stat.msg.xdelay }}"
 
       - set:
-          source.ip: "{{parsed_event.message.relay.replace('[', '').replace(']', '')}}"
-        filter: "{{parsed_event.message.get('relay') != None}}"
+          action.properties.relay: >
+            {%- set tmp = parse_event_with_no_stat.msg.relay.split(" ") -%}
+            {%- if tmp[0] | length > 0 -%}{{ tmp[0].strip().strip('[]') }}{%- elif tmp[1] | length > 0 -%}{{ tmp[1].strip().strip('[]') }}{%- endif -%}
+        filter: "{{parse_event_with_no_stat.msg.relay | length > 0}}"
+
+      - set:
+          action.properties.relay: >
+            {%- set tmp = parse_stat_message.msg.relay.split(" ") -%}
+            {%- if tmp[0] | length > 0 -%}{{ tmp[0].strip().strip('[]') }}{%- elif tmp[1] | length > 0 -%}{{ tmp[1].strip().strip('[]') }}{%- endif -%}
+        filter: "{{parse_stat_message.msg.relay | length > 0}}"
+
+      - set:
+          source.ip: "{{final.action.properties.relay}}"
+        filter: "{{final.action.properties.relay | is_ipaddress}}"
 
       - set:
           source.ip: "{{parse_ui.msg.source_ip}}"
