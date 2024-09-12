@@ -4,7 +4,7 @@ pipeline:
     external:
       name: grok.match
       properties:
-        pattern: "\\s*(%{COMBINED}|%{ERROR})"
+        pattern: "\\s*(%{COMBINED}|%{ERROR}|%{REVERSE})\\s*"
         custom_patterns:
           TIMER: "%{YEAR}/%{MONTHNUM}/%{MONTHDAY} %{HOUR}:%{MINUTE}:%{SECOND}"
           HTTP_ERROR: '(\\x.{2,3})+'
@@ -12,6 +12,7 @@ pipeline:
           NGINXURL: "(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
           ERROR: '%{TIMER:time_error} \[%{WORD:log_level}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{ERR_MSG:error_message})?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?(%{DATA}upstream: \"%{URIPROTO}://(?:%{USER}(?::[^@]*)?@)?(?:%{IPORHOST:url_name}(?::%{POSINT:url_port})?)?(?:%{URIPATHPARAM})?\")?(%{DATA}host:%{DATA}\"%{IPORHOST:host_name}(:%{INT})?\")?(%{DATA}responder:%{DATA}%{IPORHOST:responder_name})?(%{DATA}peer:%{DATA}%{IPORHOST:url_name}(:%{INT:url_port})?)?(%{DATA}certificate:%{DATA}\"%{URIPATH:certificate}\")?%{GREEDYDATA}'
           COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE:time_local}\] \"(-|%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}|%{HTTP_ERROR:raw_url})?\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?(%{GREEDYDATA})?'
+          REVERSE: '%{NUMBER:epoch} %{NUMBER:elapsed} %{IPORHOST:source_address} %{WORD:code}/(%{NUMBER:status}|-)? %{NUMBER:body_bytes_sent} %{NOTSPACE:request_method} %{IPORHOST:destination_address}:%{NUMBER:destination_port} (-|%{USER:source_user_name})? %{DATA:hierarchy_code}/(-|%{IP:peer_host_ip}|%{DATA:peer_host})? (-|%{DATA:http_response_mimetype})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"'
     filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
   - name: parsed_event
     external:
@@ -31,6 +32,13 @@ pipeline:
         input_field: "{{parsed_event.message.time_error}}"
         output_field: datetime
         format: "%Y/%m/%d %H:%M:%S"
+  - name: parsed_epoch
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.epoch}}"
+        output_field: datetime
+        format: "UNIX"
   - name: set_ecs_fields
   - name: set_fields
 
@@ -53,6 +61,9 @@ stages:
           "@timestamp": "{{date_error.datetime}}"
         filter: '{{parsed_event.message.get("time_error") != None}}'
       - set:
+          "@timestamp": "{{parsed_epoch.datetime | to_rfc3339}}"
+        filter: '{{parsed_event.message.get("epoch") != None}}'
+      - set:
           "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
           destination.address: "{{parsed_event.message.host or parsed_event.message.server_name or parsed_event.message.destination_address}}"
           destination.ip: >
@@ -60,6 +71,8 @@ stages:
               {{parsed_event.message.destination_address}}
             {%- elif parsed_event.message.get("server_addr") != None -%}
               {{parsed_event.message.server_addr}}
+            {%- elif parsed_event.message.get("peer_host_ip") != None -%}
+              {{parsed_event.message.peer_host_ip}}
             {%- elif parsed_event.message.get("host") | is_ipaddress -%}
               {{parsed_event.message.host}}
             {%- elif parsed_event.message.upstream_addr | re_search(":\w+") == False -%}
@@ -75,9 +88,12 @@ stages:
               {{parsed_event.message.server_name}}
             {%- elif parsed_event.message.get("host") | is_ipaddress == False -%}
               {{parsed_event.message.host}}
+            {%- elif parsed_event.message.peer_host != None -%}
+              {{parsed_event.message.peer_host}}
             {%- endif -%}
+          destination.port: "{{parsed_event.message.destination_port}}"
           error.message: "{{parsed_event.message.error_message}}"
-          event.duration: "{{parsed_event.message.request_time | float*10**9}}"
+          event.duration: "{{parsed_event.message.elapsed or parsed_event.message.request_time | float*10**9}}"
           http.request.method: >
             {%- if parsed_event.message.get("request_method") != None -%}
               {{parsed_event.message.request_method}}
