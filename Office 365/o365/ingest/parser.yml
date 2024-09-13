@@ -3,15 +3,8 @@ pipeline:
   - name: json_event
     external:
       name: json.parse-json
-  - name: parse_email
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{json_event.message.UserId}}"
-        output_field: message
-        pattern: "%{EMAILADDRESS:email}"
   - name: parse_data
-    filter: "{{json_event.message.RecordType in (40, 64)}}"
+    filter: "{{json_event.message.RecordType in (40, 64) and json_event.message.Data | length > 0}}"
     external:
       name: json.parse-json
       properties:
@@ -23,8 +16,16 @@ pipeline:
       properties:
         input_field: "{{json_event.message.ClientIP}}"
         output_field: result
-        pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
+        pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?|\[%{IP:ip}\](:%{INT:port})?'
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+  - name: parse_client_ip_address
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.ClientIPAddress}}"
+        output_field: result
+        pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
+    filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
 
   - name: set_common_fields
   - name: set_office365_fields
@@ -74,17 +75,23 @@ stages:
           event.reason: "{{json_event.message.ActionName}}"
           user.name: "{{json_event.message.UserId}}"
           user.id: "{{json_event.message.UserKey}}"
-          user.email: "{{parse_email.message.email}}"
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
           action.name: "{{json_event.message.Operation}}"
       - set:
           source.ip: "{{parse_client_ip.result.ip}}"
+          source.port: "{{parse_client_ip.result.port}}"
         filter: "{{parse_client_ip.result.ip | is_ipaddress}}"
 
       - set:
-          source.port: "{{parse_client_ip.result.port}}"
-        filter: '{{json_event.message.get("ClientIP") != None and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+          user.email: "{{json_event.message.UserId}}"
+        filter: '{{"@" in json_event.message.UserId}}'
+
+      - set:
+          source.ip: "{{parse_client_ip_address.result.ip}}"
+          source.port: "{{parse_client_ip_address.result.port}}"
+        filter: "{{(parse_client_ip_address.result.ip | is_ipaddress) and json_event.message.ClientIP == null}}"
+
       - set:
           action.target: "user"
         filter: '{{json_event.message.get("UserId") != None}}'
@@ -174,9 +181,8 @@ stages:
           event.action: event.type
         fallback: '["info"]'
       - set:
-          user.id: "{{json_event.message.MailboxOwnerSid}}"
+          user.id: "{{json_event.message.LogonUserSid}}"
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
-          office365.exchange.modified_properties: "{{json_event.message.ModifiedProperties}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
       - set:
           email.subject: "{{json_event.message.Item.Subject}}"
@@ -295,6 +301,10 @@ stages:
           office365.context.correlation.id: "{{json_event.message.InterSystemsId}}"
           office365.context.aad_session_id: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "SessionId" %}{{deviceProperty.Value}}{% endif %}{% endfor %}'
 
+      - set:
+          office365.context.modified_properties: "{{json_event.message.ModifiedProperties}}"
+        filter: "{{ json_event.message.get('ModifiedProperties', []) | length > 0 }}"
+
   parse_sharepoint_file_operation:
     actions:
       - set:
@@ -333,6 +343,7 @@ stages:
           office365.teams.team.id: "{{json_event.message.TeamGuid}}"
           office365.teams.team.name: "{{json_event.message.TeamName}}"
           office365.teams.invitee: "{{json_event.message.Invitee}}"
+          office365.teams.has_foreign_tenant_users: "{{json_event.message.ParticipantInfo.HasForeignTenantUsers}}"
       - set:
           office365.teams.team.members: >
             {%
@@ -343,7 +354,11 @@ stages:
               }
             %}[
               {%for member in json_event.message.Members %}
-              {"id": "{{member.UPN}}", "role": "{{mapping.get(member.Role)}}"},
+              {
+                "id": "{{member.UPN}}", 
+                {%if member.get('Role') != None %}"role": "{{mapping.get(member.Role)}}",{%endif%} 
+                {%if member.get('DisplayName') %}"name": "{{member.get('DisplayName')}}"{% endif %}
+              },
               {% endfor %}
             ]
         filter: '{{json_event.message.get("Members", []) != []}}'
@@ -505,6 +520,16 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             ]
+
+          office365.investigation.delivery.action: >
+            [
+            {%- for Property in parse_data.ParsedData.Entities -%}
+              {%- if Property.DeliveryAction -%}
+                "{{ Property.DeliveryAction }}",
+              {%- endif -%}
+            {%- endfor -%}
+            ]
+
           email.from.address: >
             [
             {%- for Property in parse_data.ParsedData.Entities -%}
@@ -513,6 +538,7 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             ]
+
           email.to.address: >
             [
             {%- for Property in parse_data.ParsedData.Entities -%}
@@ -557,6 +583,7 @@ stages:
           event.type: ["info"]
 
       - set:
+          office365.alert.id: "{{json_event.message.AlertId}}"
           office365.alert.category: "{{json_event.message.Category}}"
           office365.alert.display_name: "{{json_event.message.Name}}"
           office365.alert.severity: "{{json_event.message.Severity}}"
@@ -568,6 +595,12 @@ stages:
       - set:
           source.user.email: "{{parse_data.ParsedData.f3u}}"
         filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.f3u}}"
+          user.name: "{{parse_data.ParsedData.f3u.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.f3u.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.f3u != None and '@' in parse_data.ParsedData.f3u}}"
 
       - set:
           office365.alert.entity_type: "{{parse_data.ParsedData.etype}}"

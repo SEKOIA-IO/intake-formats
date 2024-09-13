@@ -4,7 +4,7 @@ import os
 
 import yaml
 
-from helpers import sort_json_keys, YamlDumper, format_expected
+from helpers import YamlDumper, format_expected, sort_json_keys
 
 constant_fields = {
     "sekoiaio": {

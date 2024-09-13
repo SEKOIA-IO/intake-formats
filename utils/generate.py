@@ -10,12 +10,8 @@ app = typer.Typer()
 
 @app.command()
 def new_module(
-    overwrite_if_exists: bool = typer.Option(
-        False, help="Allow to overwrite the output directory if already exist"
-    ),
-    config_file: Optional[Path] = typer.Option(
-        None, help="User configuration file path"
-    ),
+    overwrite_if_exists: bool = typer.Option(False, help="Allow to overwrite the output directory if already exist"),
+    config_file: Optional[Path] = typer.Option(None, help="User configuration file path"),
 ):
     current_dir = Path(os.path.dirname(__file__)).resolve()
     template = current_dir / "new_module"
@@ -30,12 +26,8 @@ def new_module(
 @app.command()
 def new_format(
     module_dir: Path = typer.Argument(..., exists=True, dir_okay=True),
-    overwrite_if_exists: bool = typer.Option(
-        False, help="Allow to overwrite the output directory if already exist"
-    ),
-    config_file: Optional[Path] = typer.Option(
-        None, help="User configuration file path"
-    ),
+    overwrite_if_exists: bool = typer.Option(False, help="Allow to overwrite the output directory if already exist"),
+    config_file: Optional[Path] = typer.Option(None, help="User configuration file path"),
 ):
     current_dir = Path(os.path.dirname(__file__)).resolve()
     module_dir = module_dir.resolve()
@@ -46,9 +38,7 @@ def new_format(
 
     module_manifest = module_dir / "_meta" / "manifest.yml"
     if not module_manifest.exists():
-        typer.echo(
-            "No manifest found in the module. Please ensure to select an existing module."
-        )
+        typer.echo("No manifest found in the module. Please ensure to select an existing module.")
         raise typer.Exit(code=2)
 
     template = current_dir / "new_intake"

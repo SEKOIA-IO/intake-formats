@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2024-06-10 - 1.0.4
+
+### Added
+
+- Support of EppDetectionSummaryEvent
+- Extract AssociatedFile from DetectionSummaryEvent
+
+### Fixed
+
+- Convert host.ip and host.mac into array
+
 ## 2024-01-18 - 1.0.3
 
 ### Added

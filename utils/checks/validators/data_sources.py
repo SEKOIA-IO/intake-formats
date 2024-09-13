@@ -1,10 +1,9 @@
 import argparse
 import functools
-import os.path
 
 import yaml
 
-from . import Validator
+from . import INTAKES_PATH, Validator
 from .constants import CheckResult
 
 
@@ -24,13 +23,10 @@ class ManifestDataSourcesValidator(Validator):
             return
 
         unsupported_data_sources = (
-            set(item.lower() for item in format_data_sources.keys())
-            - get_allowed_data_sources()
+            set(item.lower() for item in format_data_sources.keys()) - get_allowed_data_sources()
         )
         unsupported_data_sources_labels = [
-            item
-            for item in format_data_sources
-            if item.lower() in unsupported_data_sources
+            item for item in format_data_sources if item.lower() in unsupported_data_sources
         ]
         if len(unsupported_data_sources_labels) > 0:
             for data_source in unsupported_data_sources_labels:
@@ -40,7 +36,7 @@ class ManifestDataSourcesValidator(Validator):
 
 @functools.cache
 def get_allowed_data_sources() -> set[str]:
-    with open("utils/checks/validators/data/data_sources.txt", "rt") as f:
+    with open(INTAKES_PATH / "utils/checks/validators/data/data_sources.txt", "rt") as f:
         data_sources = set(item.lower() for item in f.read().split("\n"))
 
     return data_sources

@@ -1,17 +1,16 @@
 import argparse
-import os.path
+from pathlib import Path
 
-from . import (LogoValidator, ManifestValidator, MetaValidator,
-               ModuleTaxonomyValidator)
+from . import LogoValidator, ManifestValidator, MetaValidator, ModuleTaxonomyValidator
 from .constants import CheckResult
 
 
 class ModuleValidator:
-    def __init__(self, path: str, args: argparse.Namespace) -> None:
+    def __init__(self, path: Path, args: argparse.Namespace) -> None:
         self.path = path
         self.args = args
 
-        module_name = os.path.basename(path)
+        module_name = path.name
         self.result = CheckResult(
             name=f"check_module_{module_name}",
             description="Checks the module has a proper definition",

@@ -304,12 +304,19 @@ stages:
           # do not include Message containing a json document
         filter: "{{json.event.Message.strip().startswith('{') == False}}"
 
+      - set:
+          process.name: "{{json.event.Application.split('\\\\')[-1]}}"
+        filter: "{{json.event.Application != null}}"
+
   set_action_properties:
     actions:
       - set:
           action.properties: "{{json.event}}"
 
           action.properties.Accesses: "{{ network_object.event.Accesses.replace('#NEWLINE#', '\\r\\n').replace('#NEWLINE2#', '\\n') }}" # issue with this multi-line field
+
+          action.properties.Attributes: "{{json.event.Attributes}}"
+          action.properties.Requester: "{{json.event.Requester}}"
 
           action.properties.MessEventType: "{{ parsed_message_kv.result.EventType.strip() }}"
           action.properties.ParentImage: "{{ parsed_message_kv.result.ParentImage.strip()}}"
@@ -338,6 +345,8 @@ stages:
           action.properties.New Value: '{{ json.event.get("New Value") }}'
           action.properties.NewValue: '{{ json.event.get("NewValue") }}'
           action.properties.Old Value: '{{ json.event.get("Old Value") }}'
+          action.properties.NewUAC: '{{ json.event.get("NewUacValue") }}'
+          action.properties.OldUAC: '{{ json.event.get("OldUacValue") }}'
           action.properties.SentUpdateServer: '{{ json.event.get("Sent UpdateServer") }}'
           action.properties.ServiceFileName: '{{ json.event.get("Service File Name") or json.event.ServiceFileName }}'
           action.properties.StatusInformation: '{{ json.event.get("Status Information") }}'
@@ -365,7 +374,7 @@ stages:
           action.properties.HostName: "{{ patch_4103.event.HostName.replace('#NEWLINE#','\\r\\n').replace('#NEWLINE2#', '\\n') }}"
         filter: "{{json.event.ContextInfo != null and json.event.EventID == 4103}}"
 
-        # sysmon_15
+      # sysmon_15
       - set:
           action.properties.Content: "{{ sysmon_15.event.Content}}"
           action.properties.HostUrl: "{{ sysmon_15.event.HostUrl}}"
@@ -439,7 +448,7 @@ stages:
       - set:
           registry.path: "{{ json.event.TargetObject}}"
           registry.hive: '{{ json.event.TargetObject.split("\\")[0]}}'
-          registry.key: '{{ json.event.TargetObject.split("\\", 1)[-1]}}'
+          registry.key: '{{ json.event.TargetObject.split("\\")[1:-1] | join("\\")}}'
           registry.value: '{{ json.event.TargetObject.split("\\")[-1]}}'
         filter: "{{json.event.TargetObject != null}}"
 
@@ -504,6 +513,10 @@ stages:
         filter: "{{(json.event.SourceName ==  'Microsoft-Windows-Security-Auditing' and json.event.SourceName != 'null' or json.event.ProcessName != 'null') and json.event.EventID in [4688, 4689] and json.event.NewProcessId != null}}"
 
       - set:
+          process.parent.pid: "{{parsed_message_kv.result.get('Creator Process ID') | int(base=16)}}"
+        filter: "{{(json.event.SourceName ==  'Microsoft-Windows-Security-Auditing' and json.event.SourceName != 'null' or json.event.ProcessName != 'null') and json.event.EventID in [4688, 4689] and parsed_message_kv.result.get('Creator Process ID') != None}}"
+
+      - set:
           process.pid: "{{parsed_message_kv.result.SourceProcessId}}"
         filter: "{{json.event.SourceName ==  'Microsoft-Windows-Sysmon' and json.event.EventID in [8,10]}}"
 
@@ -514,7 +527,7 @@ stages:
   set_user:
     actions:
       - set:
-          user.name: "{{json.event.User or json.event.AccountName}}"
+          user.name: "{{json.event.User or json.event.AccountName or json.event.Requester}}"
 
       - set:
           user.domain: '{{final.user.name.split("\\")[0] }}'
@@ -531,9 +544,11 @@ stages:
         filter: "{{final.user == null or final.user.name == null }}"
 
       - set:
-          user.email: >
-            {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "UserId" in component%}{{component["UserId"].strip()}}{% endif %}{% endfor %}
+          user.name: "{{parsed_message_kv.result.get('User Name')}}"
+          user.domain: "{{parsed_message_kv.result.get('Domain')}}"
+        filter: "{{final.user == null or final.user.name == null }}"
 
+      - set:
           user_agent.original: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "UserAgentString" in component%}{{component["UserAgentString"].strip()}}{% endif %}{% endfor %}
 
@@ -1062,6 +1077,10 @@ stages:
       - set:
           source.ip: "{{json.event.Message.split('Client IP: ')[-1].strip('.')}}"
         filter: "{{json.event.EventID == 56 and json.event.Message != null }}"
+
+      - set:
+          source.ip: "{{parsed_message_kv.result.get('Client Address')}}"
+        filter: "{{final.source == null or final.source.ip == null }}"
 
       - set:
           source.ip: >

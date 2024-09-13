@@ -98,22 +98,35 @@ stages:
   set_network_fields:
     actions:
       - set:
+          destination.address: "{{parse_windows_event.message.EventData.DestAddress}}"
           destination.domain: "{{parse_windows_event.message.EventData.DestinationHostname}}"
-          destination.port: "{{parse_windows_event.message.EventData.DestinationPort}}"
+          destination.port: "{{parse_windows_event.message.EventData.DestinationPort or parse_windows_event.message.EventData.DestPort}}"
           dns.response_code: "{{parse_windows_event.message.EventData.QueryStatus}}"
           network.transport: "{{parse_windows_event.message.EventData.Protocol}}"
+          source.address: "{{parse_windows_event.message.EventData.SourceAddress}}"
           source.domain: "{{parse_windows_event.message.EventData.SourceHostname}}"
-          source.port: "{{parse_windows_event.message.EventData.IpPort or parse_windows_event.message.EventData.SourcePort}}"
         filter: "{{parse_json.message.properties.RawXml != null}}"
+      - set:
+          source.port: "{{parse_windows_event.message.EventData.SourcePort}}"
+        filter: "{{parse_windows_event.message.EventData.SourcePort not in [null, '-'] }}"
+      - set:
+          source.port: "{{parse_windows_event.message.EventData.IpPort}}"
+        filter: "{{parse_windows_event.message.EventData.IpPort not in [null, '-'] }}"
       - set:
           destination.ip: "{{parse_windows_event.message.EventData.DestinationIp}}"
         filter: "{{parse_windows_event.message.EventData.DestinationIp | is_ipaddress }}"
+      - set:
+          destination.ip: "{{parse_windows_event.message.EventData.DestAddress}}"
+        filter: "{{parse_windows_event.message.EventData.DestAddress | is_ipaddress }}"
       - set:
           source.ip: "{{parse_windows_event.message.EventData.IpAddress}}"
         filter: "{{parse_windows_event.message.EventData.IpAddress | is_ipaddress}}"
       - set:
           source.ip: "{{parse_windows_event.message.EventData.SourceIp}}"
         filter: "{{parse_windows_event.message.EventData.SourceIp | is_ipaddress}}"
+      - set:
+          source.ip: "{{parse_windows_event.message.EventData.SourceAddress}}"
+        filter: "{{parse_windows_event.message.EventData.SourceAddress | is_ipaddress}}"
       - set:
           dns.question.name: "{{parse_windows_event.message.EventData.QueryName}}"
           dns.size_in_char: "{{parse_windows_event.message.EventData.QueryName | length}}"
@@ -214,6 +227,11 @@ stages:
           process.executable: "{{parse_windows_event.message.EventData.Image | lower}}"
         filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.NewProcessName == null and parse_windows_event.message.EventData.Image != null}}"
       - set:
+          process.name: '{{parse_windows_event.message.EventData.Application.split("\\") | last | lower}}'
+          process.working_directory: '{{parse_windows_event.message.EventData.Application.split("\\")[0:-1] | join("\\") | lower}}'
+          process.executable: "{{parse_windows_event.message.EventData.Application | lower}}"
+        filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.NewProcessName == null and parse_windows_event.message.EventData.Image == null and parse_windows_event.message.EventData.Application != null}}"
+      - set:
           process.command_line: '{{parse_windows_event.message.EventData.CommandLine | replace ("\"", "") | lower}}'
         filter: "{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.CommandLine != null}}"
       - set:
@@ -251,9 +269,6 @@ stages:
           azure_windows.provider_name: "{{parse_json.message.properties.ProviderName}}"
         filter: "{{parse_json.message.properties.ProviderName != null}}"
       - set:
-          azure_windows.event_data: "{{parse_windows_event.message.EventData | string}}"
-        filter: "{{parse_json.message.properties.RawXml != null}}"
-      - set:
           azure_windows.user.identifier: "{{parse_windows_event.message.EventData.TargetUserSid}}"
           azure_windows.user.type: "targetedUser"
         filter: '{{parse_json.message.properties.RawXml != null and parse_windows_event.message.EventData != null and parse_windows_event.message.EventData.TargetUserSid != null and parse_windows_event.message.EventData.TargetUserSid != "-" and parse_windows_event.message.EventData.TargetUserSid != "S-1-0-0"}}'
@@ -271,16 +286,14 @@ stages:
           action.id: "{{parse_json.message.properties.EventId}}"
       - set:
           action.record_id: "{{parse_windows_event.message.System.EventRecordID}}"
-          action.properties: >
-            [
-              {
-                "opcode": {{parse_json.message.properties.Opcode | int}}
-                {% if parse_windows_event.message.get('EventData', {}).get('AuditPolicyChanges') != None %}, "AuditPolicyChanges": "{{parse_windows_event.message.EventData.AuditPolicyChanges}}"{% endif %}
-                {% if set_custom_fields.azure_windows.user != null %}, "id": "{{set_custom_fields.azure_windows.user.identifier}}"{% if set_custom_fields.azure_windows.user.name != null %}, "name": "{{set_custom_fields.azure_windows.user.name}}"{% endif %}, "type": "{{set_custom_fields.azure_windows.user.type}}"{% if set_custom_fields.azure_windows.user.domain != null %}, "domain": "{{set_custom_fields.azure_windows.user.domain.name}}"{% endif %}{% endif %}
-                {% if set_process_fields.process.parent != null and set_process_fields.process.parent.executable != null %}, "ParentImage": r"{{set_process_fields.process.parent.executable}}"{% endif %}
-              }
-            ]
+          action.properties: "{{parse_windows_event.message.EventData | string}}"
+          action.properties.Opcode: "{{parse_json.message.properties.Opcode | int}}"
         filter: "{{parse_json.message.properties.RawXml != null}}"
+      - set:
+          action.properties.Name: "{{set_custom_fields.azure_windows.user.name}}"
+          action.properties.Type: "{{set_custom_fields.azure_windows.user.type}}"
+          action.properties.Domain: "{{set_custom_fields.azure_windows.user.domain}}"
+        filter: "{{parse_json.message.properties.RawXml != null and set_custom_fields.azure_windows.user != null}}"
       - set:
           registry.hive: '{{parse_windows_event.message.EventData.TargetObject.split("\\") | first}}'
           registry.key: '{{parse_windows_event.message.EventData.TargetObject.split("\\")[1:-1] | join("\\")}}'

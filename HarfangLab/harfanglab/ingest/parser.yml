@@ -44,7 +44,7 @@ pipeline:
     filter: "{{json_event.message.details_file != null}}"
 
   - name: powershell_info
-    filter: "{{json_event.message.details_powershell != null}}"
+    filter: "{{json_event.message.log_type == 'powershell'}}"
 
   - name: alert_info
     filter: "{{json_event.message.log_type == 'alert'}}"
@@ -95,6 +95,10 @@ stages:
           event.start: "{{parse_first_seen.datetime}}"
           event.end: "{{parse_last_seen.datetime}}"
 
+      - set:
+          harfanglab.rule_level: "{{json_event.message.rules[0].rule_level}}"
+        filter: "{{json_event.message.rules | length > 0}}"
+
   agent_info:
     actions:
       - set:
@@ -109,6 +113,7 @@ stages:
           harfanglab.groups: "{{json_event.message.groups}}"
           event.dataset: "{{json_event.message.log_type}}"
           user.roles: "{{ json_event.message.groups | map(attribute='name') | join(',') | replace('\n', '') | replace(' ', '') }}"
+          organization.id: "{{json_event.message.tenant}}"
 
   network_info:
     actions:
@@ -190,8 +195,9 @@ stages:
   powershell_info:
     actions:
       - set:
-          harfanglab.process.powershell.command: "{{json_event.message.details_powershell.PowershellCommand}}"
-          harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
+          action.properties.ScriptBlockText: "{{json_event.message.script_block}}"
+          action.properties.Path: "{{json_event.message.script_path}}"
+          process.executable: "{{json_event.message.process_image_path}}"
 
   alert_info:
     actions:
@@ -207,6 +213,8 @@ stages:
           harfanglab.execution: "{{json_event.message.execution}}"
           harfanglab.status: "{{json_event.message.status}}"
           harfanglab.aggregation_key: "{{json_event.message.aggregation_key}}"
+          harfanglab.process.powershell.command: "{{json_event.message.details_powershell.PowershellCommand}}"
+          harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
 
   alert_process_info:
     actions:
@@ -261,6 +269,7 @@ stages:
           event.provider: "{{json_event.message.source_name}}"
           event.code: "{{json_event.message.event_id|string}}"
           action.properties: "{{json_event.message.event_data}}"
+          source.ip: "{{json_event.message.event_data.IpAddress}}"
           action.id: "{{json_event.message.event_id}}"
           user.name: "{{json_event.message.event_data.SubjectUserName}}"
           user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
@@ -292,7 +301,6 @@ stages:
           user.name: "{{json_event.message.source_username}}"
           user.target.id: "{{json_event.message.windows.target_sid}}"
           user.target.name: "{{json_event.message.target_username}}"
-          organization.id: "{{json_event.message.tenant}}"
 
   dns_info:
     actions:
@@ -304,7 +312,6 @@ stages:
           user.name: "{{json_event.message.username}}"
           dns.question.type: "{{json_event.message.query_type}}"
           dns.question.name: "{{json_event.message.requested_name}}"
-          organization.id: "{{json_event.message.tenant}}"
 
   auditlog_info:
     actions:
@@ -319,7 +326,6 @@ stages:
           source.ip: "{{json_event.message.ip_address}}"
           event.reason: "{{json_event.message.log_description}}"
           event.action: "{{json_event.message.log_slug}}"
-          organization.id: "{{json_event.message.tenant}}"
 
   agentlog_info:
     actions:
@@ -328,7 +334,6 @@ stages:
           event.reason: "{{json_event.message.message}}"
           agent.id: "{{json_event.message.agent_id}}"
           host.name: "{{json_event.message.hostname}}"
-          organization.id: "{{json_event.message.tenant}}"
 
   connectionlog_info:
     actions:
@@ -336,7 +341,6 @@ stages:
           event.category: ["network"]
           event.type: ["info"]
           agent.id: "{{json_event.message.agent_id}}"
-          organization.id: "{{json_event.message.tenant}}"
 
   driverload_info:
     actions:
@@ -346,7 +350,6 @@ stages:
 
           agent.id: "{{json_event.message.agent_id}}"
           agent.version: "{{json_event.message.agent.version}}"
-          organization.id: "{{json_event.message.tenant}}"
           file.hash: "{{json_event.message.hashes}}"
           file.pe.file_version: "{{json_event.message.pe_info.file_version}}"
           file.pe.description: "{{json_event.message.pe_info.file_description}}"
@@ -367,4 +370,3 @@ stages:
           process.executable: "{{json_event.message.process_image}}"
           process.pid: "{{json_event.message.process_id}}"
           process.thread.id: "{{json_event.message.thread_id}}"
-          organization.id: "{{json_event.message.tenant}}"

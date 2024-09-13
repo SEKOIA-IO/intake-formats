@@ -1,4 +1,4 @@
-name: fortigate
+name: fortinet-fortigate
 ignored_values: ["N/A"]
 pipeline:
   # If event is formatted as CEF
@@ -88,7 +88,6 @@ stages:
   backward_compatibility:
     actions:
       - set:
-          event.category: "{{parsed_event.message.type or parsed_event.message.cat.split(':')[0]}}"
           event.provider: "{{parsed_event.message.method}}"
           action.name: "{{final.event.action}}"
           event.type: "{{parsed_event.message.desc}}"
@@ -106,6 +105,18 @@ stages:
         filter: '{{final.url.get("original") != None and final.url.original.startswith("http")}}'
 
       - set:
+          event.category: "{{parsed_event.message.Name.split(':')[0]}}"
+        filter: '{{parsed_event.message.get("Name") != None}}'
+
+      - set:
+          event.category: "{{parsed_event.message.cat.split(':')[0]}}"
+        filter: '{{parsed_event.message.get("cat") != None}}'
+
+      - set:
+          event.category: "{{parsed_event.message.type}}"
+        filter: '{{parsed_event.message.get("type") != None}}'
+
+      - set:
           event.reason: "{{parsed_event.message.reason}}"
 
       - set:
@@ -121,7 +132,7 @@ stages:
 
       - set:
           action.target: "network-traffic"
-        filter: "{{final.source != None and final.destination != None and final.action != None}}"
+        filter: '{{final.get("source") != None and final.get("destination") != None and final.get("action") != None}}'
 
       - set:
           action.outcome: "success"
@@ -155,8 +166,7 @@ stages:
   #      - set:
   #          event.kind: "event"
   #          event.category: ["network"]
-  #
-  #      - set:
+  #action
   #          event.type: [ "allowed", "connection" ]
   #        filter: '{{parsed_event.message.action == "accept"
   #         or parsed_event.message.act in ["pass", "permit", "passthrough", "log-only", "ssl-new-con", "accept", "dns"]
@@ -180,7 +190,7 @@ stages:
           "@timestamp": "{{parsed_date.date}}"
           event.action: "{{parsed_event.message.name or parsed_event.message.FTNTFGTaction or parsed_event.message.FortinetFortiGateaction or parsed_event.message.act or parsed_event.message.action or parsed_event.message.reason}}"
           destination.address: "{{parsed_event.message.dstip or parsed_event.message.dst}}"
-          destination.bytes: "{{parsed_event.message.rcvdbyte or parsed_event.message.out}}"
+          destination.bytes: "{{parsed_event.message.rcvdbyte or parsed_event.message.in}}"
           destination.domain: "{{parsed_event.message.hostname or parsed_event.message.dhost}}"
           destination.mac: "{{parsed_event.message.dstmac}}"
           destination.nat.port: "{{parsed_event.message.destinationTranslatedPort}}"
@@ -214,7 +224,7 @@ stages:
           observer.version: "{{parsed_event.message.DeviceVersion}}"
           rule.category: "{{parsed_event.message.appcat or parsed_event.message.catdesc or parsed_event.message.requestContext}}"
           rule.ruleset: "{{parsed_event.message.applist or parsed_event.message.policytype}}"
-          source.bytes: "{{parsed_event.message.sentbyte or parsed_event.message.in}}"
+          source.bytes: "{{parsed_event.message.sentbyte or parsed_event.message.out}}"
           source.domain: "{{parsed_event.message.shost}}"
           source.mac: "{{parsed_event.message.srcmac}}"
           source.nat.port: "{{parsed_event.message.sourceTranslatedPort}}"
@@ -230,6 +240,12 @@ stages:
           fortinet.fortigate.attack.id: "{{parsed_event.message.attackid}}"
           fortinet.fortigate.policyid: "{{parsed_event.message.policyid}}"
           fortinet.fortigate.poluuid: "{{parsed_event.message.poluuid}}"
+          network.forwarded_ip: "{{parsed_event.message.forwardedfor}}"
+
+      - set:
+          fortinet.fortigate.poluuid: "{{parsed_event.message.uuid}}"
+        filter: "{{parsed_event.message.cfgpath == 'firewall.policy'}}"
+
       - set:
           destination.nat.ip: "{{parsed_event.message.tranip}}"
         filter: "{{parsed_event.message.tranip | is_ipaddress}}"
@@ -269,10 +285,15 @@ stages:
         filter: "{{parsed_event.message.get('sourceTranslatedAddress') | is_ipaddress}}"
 
       - set:
+          source.nat.ip: "{{parsed_event.message.transip}}"
+        filter: "{{parsed_event.message.get('transip') | is_ipaddress}}"
+
+      - set:
           dns.question.name: "{{parsed_event.message.qname.strip()[1:-1]}}"
         filter: "{{parsed_event.message.get('qname') != None and parsed_event.message.qname.strip().startswith('[') and parsed_event.message.qname.strip().endswith(']')}}"
       - set:
           source.user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
+          user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
       - set:
           network.bytes: "{{parsed_event.message.get('in', 0) | int + parsed_event.message.get('out', 0) | int}}"
         filter: "{{parsed_event.message.get('in') != None or parsed_event.message.get('out') != None }}"
@@ -293,11 +314,17 @@ stages:
       - set:
           source.user.domain: '{{final.source.user.name.split("\\") | first}}'
           source.user.name: '{{final.source.user.name.split("\\") | last}}'
+          user.name: '{{final.source.user.name.split("\\") | last}}'
         filter: "{{final.get('source', {}).get('user', {}).get('name') != None and '\\\\' in final.source.user.name}}"
       - set:
           user.domain: '{{final.user.name.split("\\") | first}}'
           user.name: '{{final.user.name.split("\\") | last}}'
         filter: "{{final.get('user', {}).get('name') != None and '\\\\' in final.user.name}}"
+      - set:
+          fortinet.fortigate.logdev.id: "{{parsed_event.message.logdev_id}}"
+          fortinet.fortigate.logdev.name: "{{parsed_event.message.logdev_name}}"
+          fortinet.fortigate.logdev.last_logging: "{{parsed_event.message.logdev_last_logging | to_rfc3339}}"
+        filter: "{{parsed_event.message.subtype == 'logdev'}}"
       - set:
           fortinet.fortigate.tunnel.name: "{{parsed_event.message.vpntunnel}}"
           fortinet.fortigate.tunnel.version: "{{parsed_event.message.version}}"

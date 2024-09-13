@@ -8,25 +8,53 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{CRON}|%{ARROW}|%{LOG}|%{RULE_LOG}"
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG})'
         custom_patterns:
           TLS: "TLSv"
+          HEADER: '%{WORD:action_type}\[\d*\]'
+
+          # Crond messages
+          CROND: "CROND"
+          CRON_LOG: '%{CROND:action_type}\[\d*\]:\s*\(%{NOTSPACE:user_name}\) %{NOTSPACE:action_name} \(%{DATA:process_command_line}\)'
+
+          # SSH messages
+          SSHD: "sshd"
+          SSH_MESSAGE_CONNECTION_CLOSED: "Connection closed"
+          SSH_CLIENT_ADDRESS: "%{IP:source_ip}|%{HOSTNAME:source_domain}"
+          SSH_CONNECTION_CLOSED: '%{SSH_MESSAGE_CONNECTION_CLOSED:ssh_reason} by( %{NOTSPACE:user_name})? %{SSH_CLIENT_ADDRESS:source_ip}( port %{NUMBER:source_port}( \[preauth\])?)?'
+          SSH_LOG: '%{SSHD:action_type}\[\d*\]:\s(%{SSH_CONNECTION_CLOSED}|%{GREEDYDATA})'
+
+          # Logger messages
+          LOGGER: "logger"
+          LOGGER_SSL_ACC: '\[ssl_acc\] %{IP:source_ip} %{NOTSPACE} %{NOTSPACE:user_name} \[%{HTTPDATE}\] \"?%{URIPATH:url_original}\"? %{NUMBER:http_response_status_code} %{NOTSPACE}'
+          LOGGER_SSL_REQ: '\[ssl_req\]\[%{HTTPDATE}\] %{IP:source_ip} %{TLS:tls_version_protocol}%{NUMBER:tls_version} %{NOTSPACE} \"?%{URIPATH:url_original}\"? %{NOTSPACE}'
+          LOGGER_LOG: '%{LOGGER:action_type}\[\d*\]:\s(%{LOGGER_SSL_ACC}|%{LOGGER_SSL_REQ})'
+
+          # Rule messages
+          RULE_LOG_MESSAGE: "(Referer: %{NOTSPACE:referer}|Request: %{WORD:http_method} %{NOTSPACE:path_name}|DNT: %{INT:number}|%{GREEDYDATA})"
+          RULE_HTTP_REQUEST: "<HTTP_REQUEST>: LOGS: %{RULE_LOG_MESSAGE:rule_message}"
+          RULE_HTTP_RESPONSE: "<HTTP_RESPONSE_RELEASE>: %{IPORHOST:destination_ip}:%{POSINT:destination_port}: HTTP: %{POSINT:http_response_status_code} response to( %{IPORHOST:destination_ip}:%{POSINT:destination_port})? from( %{IPORHOST:source_ip}:%{POSINT:source_port} )?URL: %{NOTSPACE:url_original} %{DATA} %{TLS:tls_version_protocol}%{NUMBER:tls_version}"
+          RULE_LOG: "%{HEADER}: Rule %{NOTSPACE:rule_name} (%{RULE_HTTP_REQUEST}|%{RULE_HTTP_RESPONSE})"
+
+          # audit message
+          AUDIT_LOG: '%{HEADER}:\s(\d*:\d*: )AUDIT - %{GREEDYDATA:audit_message}'
+
+          # traffic messages
           ACTION: "(SSL Handshake)|Connection|Rule"
           ACTION_OUTCOME: "failed|error"
-          PROTOCOLE: "TCP|UDP"
-          RULE: 'Rule %{DATA:rule_name} %{DATA}\:'
-          CRON: '%{WORD}\[\d*\]:\s*\(%{NOTSPACE:user_name}\) %{NOTSPACE:action_name} \(%{DATA:process_command_line}\)'
-          ARROW: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )(%{ACTION:action_name} %{ACTION_OUTCOME:action_outcome} (for)? %{PROTOCOLE:network_transport} )?%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}(: %{ACTION:action_name} %{ACTION_OUTCOME:action_outcome}: %{DATA:msg})?'
-          LOG: '\s*%{WORD:action_type}\[\d*\]:\s*(\[%{WORD}\]( %{IP:source_ip} - - \[%{HTTPDATE}\] \"%{NOTSPACE:url_original}\" %{NUMBER:http_response_status_code} (%{NUMBER}|-)|\[%{HTTPDATE}\] %{IP:source_ip} %{DATA} \"%{NOTSPACE:url_original}\" (%{NUMBER}|-))|(%{RULE}|%{DATA}) %{IPORHOST:destination_ip}:%{POSINT:destination_port}: HTTP: %{POSINT:http_response_status_code} response to( %{IPORHOST:destination_ip}:%{POSINT:destination_port})? from( %{IPORHOST:source_ip}:%{POSINT:source_port} )?URL: %{NOTSPACE:url_original} %{DATA} %{TLS:tls_version_protocol}%{NUMBER:tls_version})'
-          RULE_LOG: '%{WORD:action_type}\[\d*\]:\s*%{RULE} LOGS: %{RULE_LOG_MESSAGE:rule_message}'
-          RULE_LOG_MESSAGE: "(Referer: %{NOTSPACE:referer}|Request: %{WORD:http_method} %{NOTSPACE:path_name}|DNT: %{INT:number}|%{GREEDYDATA})"
+          PROTOCOL: "TCP|UDP"
+          ARROW: '%{HEADER}:\s(\d*:\d*: )(%{ACTION:action_name} %{ACTION_OUTCOME:action_outcome} (for)? %{PROTOCOL:network_transport} )?%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}(: %{ACTION:action_name} %{ACTION_OUTCOME:action_outcome}: %{DATA:msg})?'
+
+          # vpn messages
+          VPN_PROTOCOL: "tcp|udp"
+          VPN_LOG: '%{DATA}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{WORD:action_name} ACL\:\s*(%{DATA:rule_name}\:%{NUMBER})\s*packet\:\s*%{VPN_PROTOCOL:network_transport}\s*%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}'
     filter: '{{"CEF:0|" not in original.message}}'
 
   - name: parse_cef_event
     external:
       name: cef.parse-cef
       properties:
-        input_field: '{{original.message.replace("PSM:CEF:0|", "CEF:0|").replace("ASM:CEF:0|", "CEF:0|")}}'
+        input_field: '{{original.message.replace("PSM:CEF:0|", "CEF:0|").replace("ASM:CEF:0|", "CEF:0|").replace("CEF:CEF:0|", "CEF:0|")}}'
     filter: '{{"CEF:0|" in original.message}}'
 
   - name: parse_cef_full_request
@@ -57,6 +85,16 @@ pipeline:
         value_sep: "="
         item_sep: " "
     filter: "{{parse_kv_header.message != None and parse_kv_header.message.kvs != None}}"
+
+  - name: parse_audit_message
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parse_grok_event.message.audit_message }}"
+        output_field: message
+        value_sep: "="
+        item_sep: " "
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.audit_message != None}}"
 
   - name: parse_timestamp
     external:
@@ -108,7 +146,24 @@ stages:
       - set:
           event.category: ["process"]
           event.type: ["start"]
-        filter: "{{parse_grok_event.message.CRON != None}}"
+        filter: "{{parse_grok_event.message.CRON_LOG != None}}"
+
+      - set:
+          event.category: ["session"]
+        filter: "{{parse_grok_event.message.SSH_LOG != None}}"
+
+      - translate:
+        dictionary:
+          "Connection closed": ["end"]
+        mapping:
+          parse_grok_event.message.ssh_reason: event.type
+        fallback: ["info"]
+        filter: "{{parse_grok_event.message.SSH_LOG != None}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: "{{parse_grok_event.message.audit_message != None}}"
 
       - set:
           event.type: "alert"
@@ -123,10 +178,12 @@ stages:
       - set:
           rule.name: "{{parse_grok_event.message.rule_name}}"
 
-          event.reason: "{{parse_grok_event.message.msg or parse_grok_event.message.rule_message}}"
-          user.name: "{{parse_grok_event.message.user_name}}"
+          event.reason: "{{parse_grok_event.message.msg or parse_grok_event.message.rule_message or parse_grok_event.message.ssh_reason}}"
+          user.name: "{{parse_grok_event.message.user_name or parse_audit_message.message.user}}"
           action.name: "{{parse_grok_event.message.action_name}}"
-          process.command_line: "{{parse_grok_event.message.process_command_line}}"
+          process.command_line: "{{parse_grok_event.message.process_command_line or parse_audit_message.message.cmd_data}}"
+          process.pid: "{{parse_audit_message.message.pid}}"
+          process.working_directory: "{{parse_audit_message.message.folder}}"
 
           action.type: "{{parse_grok_event.message.action_type}}"
           action.outcome: "{{parse_grok_event.message.action_outcome}}"
@@ -175,7 +232,10 @@ stages:
           observer.vendor: "{{parse_cef_event.message.DeviceVendor}}"
           observer.product: "{{parse_cef_event.message.DeviceProduct}}"
           observer.version: "{{parse_cef_event.message.DeviceVersion}}"
+
+      - set:
           event.severity: "{{parse_cef_event.message.Severity}}"
+        filter: "{{parse_cef_event.message.Severity | int(-1) > -1}}"
 
       - set:
           observer.ip: "{{parse_cef_event.message.dvc}}"

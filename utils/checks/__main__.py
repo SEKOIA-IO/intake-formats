@@ -2,43 +2,44 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from validators.constants import CheckResult
 from validators.format import FormatValidator
 from validators.module import ModuleValidator
 
+INTAKES_PATH = Path(__file__).parent.parent.parent
 
-def find_modules(root_path: str) -> list[str]:
+
+def find_modules(root_path: Path) -> list[Path]:
     """
     Return the path to all the potential modules
     """
-    module_paths: list[str] = []
+    module_paths: list[Path] = []
 
-    filtered_elements = {".git", ".github", "doc", "utils", ".idea"}
+    filtered_elements = {"doc", "utils"}
 
-    for element in os.listdir(root_path):
-        if element not in filtered_elements:
-            element_path = os.path.join(root_path, element)
-            if os.path.isdir(element_path):
+    for element_path in root_path.iterdir():
+        if element_path.name not in filtered_elements and not element_path.name.startswith("."):
+            if element_path.is_dir():
                 module_paths.append(element_path)
 
     return sorted(module_paths)
 
 
-def find_formats(root_path: str, formats: list[str] | None = None) -> list[str]:
+def find_formats(root_path: Path, formats: list[Path] | None = None) -> list[Path]:
     """
     Return the path to all the potential formats
     """
-    format_paths: list[str] = list()
+    format_paths: list[Path] = list()
 
     filtered_elements = {"_meta"}
 
-    for element in os.listdir(root_path):
-        if element not in filtered_elements:
-            element_path = os.path.join(root_path, element)
-            if os.path.isdir(element_path):
+    for element_path in root_path.iterdir():
+        if element_path.name not in filtered_elements:
+            if element_path.is_dir():
                 if formats:
-                    if element not in formats:
+                    if element_path.name not in formats:
                         continue
 
                 format_paths.append(element_path)
@@ -46,9 +47,7 @@ def find_formats(root_path: str, formats: list[str] | None = None) -> list[str]:
     return sorted(format_paths)
 
 
-def check_format(
-    path: str, module_result: CheckResult, args: argparse.Namespace
-) -> CheckResult:
+def check_format(path: Path, module_result: CheckResult, args: argparse.Namespace) -> CheckResult:
     valid = FormatValidator(path=path, module_result=module_result, args=args)
     valid.validate()
 
@@ -61,8 +60,7 @@ def check_module_formats(
     module_formats = find_formats(module_result.options["path"], formats=formats)
 
     result = [
-        check_format(path=module_format, module_result=module_result, args=args)
-        for module_format in module_formats
+        check_format(path=module_format, module_result=module_result, args=args) for module_format in module_formats
     ]
 
     return result
@@ -74,7 +72,7 @@ def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
     for module_result in check_module_results:
         if (
             len(module_result.errors) == 0
-            and "manifest_slug" in module_result.options
+            and "manifest_uuid" in module_result.options
             and module_result.options["manifest_uuid"] in module_uuids
         ):
             module_result.errors.append(
@@ -82,9 +80,9 @@ def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
                 f"than module {module_uuids[module_result.options['manifest_uuid']]}"
             )
 
-            module_uuids[
-                module_result.options["manifest_uuid"]
-            ] = module_result.options.get("manifest_slug", "unknown")
+            module_uuids[module_result.options["manifest_uuid"]] = module_result.options.get(
+                "manifest_uuid", "unknown"
+            )
 
     # module slugs are unique
     module_slugs: dict[str, str] = dict()
@@ -99,9 +97,9 @@ def check_module_uuids_and_slugs(check_module_results: list[CheckResult]):
                 f"than module {module_slugs[module_result.options['manifest_slug']]}"
             )
 
-            module_slugs[
-                module_result.options["manifest_slug"]
-            ] = module_result.options.get("manifest_slug", "unknown")
+            module_slugs[module_result.options["manifest_slug"]] = module_result.options.get(
+                "manifest_slug", "unknown"
+            )
 
 
 def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
@@ -118,9 +116,9 @@ def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
                 f"than format {format_uuids[format_result.options['manifest_uuid']]}"
             )
 
-            format_uuids[
-                format_result.options["format_uuid"]
-            ] = format_result.options.get("manifest_slug", "unknown")
+            format_uuids[format_result.options["manifest_uuid"]] = format_result.options.get(
+                "manifest_uuid", "unknown"
+            )
 
     # format slugs are unique
     format_slugs: dict[str, str] = dict()
@@ -135,12 +133,12 @@ def check_format_uuids_and_slugs(check_format_results: list[CheckResult]):
                 f"than format {format_slugs[format_result.options['manifest_slug']]}"
             )
 
-            format_slugs[
-                format_result.options["manifest_slug"]
-            ] = format_result.options.get("manifest_slug", "unknown")
+            format_slugs[format_result.options["manifest_slug"]] = format_result.options.get(
+                "manifest_slug", "unknown"
+            )
 
 
-def check_module(path: str, args: argparse.Namespace) -> CheckResult:
+def check_module(path: Path, args: argparse.Namespace) -> CheckResult:
     valid = ModuleValidator(path, args)
     valid.validate()
 
@@ -149,9 +147,7 @@ def check_module(path: str, args: argparse.Namespace) -> CheckResult:
 
 def main():
     parser = argparse.ArgumentParser(description="Check formats")
-    parser.add_argument(
-        "--changes", action="store_true", help="Only check modified formats and modules"
-    )
+    parser.add_argument("--changes", action="store_true", help="Only check modified formats and modules")
     parser.add_argument(
         "--ignore_missing_parsers",
         action="store_true",
@@ -174,23 +170,27 @@ def main():
     )
     args = parser.parse_args()
 
-    modules = find_modules(".")
+    modules = find_modules(INTAKES_PATH)
     intake_formats = None
 
     if args.changes:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "origin/main"], capture_output=True
-        )
+        result = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
         changed_modules = set()
         changed_formats = set()
         for changed_file in result.stdout.splitlines():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
 
-            if parts[-1] in ["conftest.py", "test_formats.py"]:
+            if "utils/checks/" in changed_file:
+                # to see all results whenever we change a code for the compliance check
+                changed_modules = set(modules)
+                changed_formats = set()
                 break
 
-            if len(parts) > 2 and parts[0] != "utils":
+            elif parts[0].startswith("."):
+                continue
+
+            if len(parts) > 2:
                 changed_modules.add(parts[0])
                 changed_formats.add(parts[1])
 
@@ -199,29 +199,33 @@ def main():
 
     in_error = False
 
-    check_module_results = [check_module(module, args) for module in modules]
+    check_module_results = [check_module(INTAKES_PATH / module, args) for module in modules]
     check_module_uuids_and_slugs(check_module_results)
 
-    print(f"🔎 {len(check_module_results)} modules found")
+    print(
+        f"🔎 {len(check_module_results)} module(s) found: %s"
+        % ",".join([str(module).replace(str(INTAKES_PATH), "") for module in modules])
+    )
     for res in check_module_results:
         if len(res.errors) > 0:
             in_error = True
-            module_name = os.path.basename(res.options.get("path"))
+            module_name = res.options.get("path").relative_to(INTAKES_PATH)
             for error in res.errors:
                 print(f"Module: {module_name} Error: {error}")
 
     check_format_results = []
     for check_module_result in check_module_results:
-        check_format_results.extend(
-            check_module_formats(check_module_result, intake_formats, args)
-        )
+        check_format_results.extend(check_module_formats(check_module_result, intake_formats, args))
     check_format_uuids_and_slugs(check_format_results)
 
-    print(f"🔎 {len(check_format_results)} formats found")
+    print(
+        f"🔎 {len(check_format_results)} format(s) found: %s"
+        % ",".join([item.options.get("path").name for item in check_format_results])
+    )
     for res in check_format_results:
         if len(res.errors) > 0:
             in_error = True
-            format_path = res.options.get("path")
+            format_path = res.options.get("path").relative_to(INTAKES_PATH)
             for error in res.errors:
                 print(f"Format: {format_path} Error: {error}")
 

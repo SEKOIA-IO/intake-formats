@@ -2,22 +2,21 @@ import argparse
 import functools
 import itertools
 import json
-import os
+from pathlib import Path
 from typing import Any
 
 import yaml
 
-from . import Validator
-from .constants import (CheckResult, CustomField, DeleteAction, IntakeFormat,
-                        SetAction, TranslateAction)
+from . import INTAKES_PATH, Validator
+from .constants import CheckResult, CustomField, DeleteAction, IntakeFormat, SetAction, TranslateAction
 
 
 class ParserValidator(Validator):
     @classmethod
     def validate(cls, result: CheckResult, args: argparse.Namespace) -> None:
-        format_path = result.options["path"]
-        parser_file = os.path.join(format_path, "ingest", "parser.yml")
-        if not os.path.exists(parser_file):
+        format_path: Path = result.options["path"]
+        parser_file = format_path / "ingest" / "parser.yml"
+        if not parser_file.exists():
             if not args.ignore_missing_parsers:
                 result.errors.append(f"Parser file does not exist")
 
@@ -30,9 +29,7 @@ class ParserValidator(Validator):
             parser_content = IntakeFormat.model_validate(parser)
 
         except Exception as any_error:
-            result.errors.append(
-                f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)"
-            )
+            result.errors.append(f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)")
             return
 
         module_result = result.options["module_result"]
@@ -66,8 +63,7 @@ def check_format_parser(
 
     # Fields we declared in fields.yml either on a format or on a module level
     declared_custom_fields = {
-        item.name
-        for item in itertools.chain(format_taxonomy.values(), module_taxonomy.values())
+        item.name for item in itertools.chain(format_taxonomy.values(), module_taxonomy.values())
     }
 
     # `object`-type field can have arbitrary properties
@@ -91,15 +87,11 @@ def check_format_parser(
 
     # Filter out `object`-type fields from non-declared - they can have arbitrary properties
     for field in object_fields:
-        non_declared_fields = {
-            item for item in non_declared_fields if not item.startswith(f"{field}.")
-        }
+        non_declared_fields = {item for item in non_declared_fields if not item.startswith(f"{field}.")}
 
     if len(non_declared_fields) > 0 and report_undeclared_fields:
         for field in non_declared_fields:
-            result.errors.append(
-                f"Custom field `{field}` needs to be defined in _meta/fields.yml"
-            )
+            result.errors.append(f"Custom field `{field}` needs to be defined in _meta/fields.yml")
 
     # Check whether event.type and event.category are set
     if not ignore_event_fieldset_errors:
@@ -140,9 +132,7 @@ def check_event_category_or_type(field_var: str) -> bool:
     return False
 
 
-def check_event_category_to_type_mapping(
-    event_categories: list[str], event_types: list[str]
-):
+def check_event_category_to_type_mapping(event_categories: list[str], event_types: list[str]):
     ecs_categories = {
         "authentication",
         "configuration",
@@ -211,13 +201,13 @@ def check_event_category_to_type_mapping(
 @functools.cache
 def get_builtin_fields() -> set[str]:
     with open(
-        "utils/checks/validators/data/built_in_fields.txt",
+        INTAKES_PATH / "utils/checks/validators/data/built_in_fields.txt",
         "rt",
     ) as f:
         builtin_fields = f.read().split("\n")
 
     with open(
-        "utils/checks/validators/data/sekoiaio_flat.yml",
+        INTAKES_PATH / "utils/checks/validators/data/sekoiaio_flat.yml",
         "rt",
     ) as f:
         sekoia_flat = yaml.safe_load(f)
