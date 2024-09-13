@@ -1,0 +1,421 @@
+name: clavister-ng-fw
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        reversed: false
+        groups: true
+
+  - name: set_common_fields
+  - name: set_category_and_type
+  - name: set_source_fields # like source.ip etc
+  - name: set_destination_fields # like destination.ip etc
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "Clavister"
+          observer.product: "NGFW"
+          event.code: "{{parsed_event.message.id}}"
+          event.reason: "{{parsed_event.message.message}}"
+          rule.name: "{{parsed_event.message.rules.rule}}"
+          user.name: "{{parsed_event.message.username or parsed_event.message.user or parsed_event.message.userauth.username}}"
+          server.ip: "{{parsed_event.message.server}}"
+
+          clavister.ngfw.ipproto: "{{parsed_event.message.ethernet.ipproto}}" # also available under `ippacket.ipproto` for example: tcp_syn_data
+          clavister.ngfw.knownhw: "{{parsed_event.message.knownhw}}"
+          clavister.ngfw.knownip: "{{parsed_event.message.knownip}}"
+          clavister.ngfw.newhw: "{{parsed_event.message.newhw}}"
+
+          clavister.ngfw.recvzone: "{{parsed_event.message.recvzone or parsed_event.message.connrecvzone}}"
+          clavister.ngfw.destzone: "{{parsed_event.message.destzone or parsed_event.message.conndestzone}}"
+
+      - set:
+          network.transport: "{{parsed_event.message.conn.conn.connipproto | lower}}"
+        filter: "{{parsed_event.message.conn.get('conn') != None}}"
+
+  set_source_fields:
+    actions:
+      - set:
+          source.mac: "{{parsed_event.message.ethernet.hwsender}}"
+          source.ip: "{{parsed_event.message.local_ip or parsed_event.message.ipaddr}}"
+          source.port: "{{parsed_event.message.tcp.srcport}}"
+
+      - set:
+          source.port: "{{parsed_event.message.udp.srcport}}"
+        filter: "{{parsed_event.message.udp.get('srcport') != None}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.conn.conn.newconnsrcip}}"
+          source.nat.port: "{{parsed_event.message.conn.conn.newconnsrcport}}"
+          source.ip: "{{parsed_event.message.conn.conn.connsrcip}}"
+          source.port: "{{parsed_event.message.conn.conn.connsrcport}}"
+        filter: "{{parsed_event.message.conn.get('conn') != None}}"
+
+      - set:
+          client.ip: "{{parsed_event.message.client_ip}}"
+          source.nat.ip: "{{parsed_event.message.client_ip}}"
+        filter: "{{parsed_event.message.get('ipaddr') == None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.ippacket.srcip}}"
+        filter: "{{parsed_event.message.ippacket.get('srcip') != None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.userauth.srcip}}"
+        filter: "{{parsed_event.message.userauth.get('srcip') != None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.arp.ARP.srcip}}"
+        filter: "{{parsed_event.message.arp.get('ARP', {}).get('srcip') != None}}"
+
+  set_destination_fields:
+    actions:
+      - set:
+          destination.mac: "{{parsed_event.message.ethernet.hwdest}}"
+          destination.ip: "{{parsed_event.message.remote_ip}}"
+          destination.port: "{{parsed_event.message.tcp.destport}}"
+
+      - set:
+          destination.port: "{{parsed_event.message.udp.destport}}"
+        filter: "{{parsed_event.message.udp.get('destport') != None}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.ippacket.destip}}"
+        filter: "{{parsed_event.message.ippacket.get('destip') != None}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.userauth.destip}}"
+        filter: "{{parsed_event.message.userauth.get('destip') != None}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.arp.ARP.destip}}"
+        filter: "{{parsed_event.message.arp.get('ARP', {}).get('destip') != None}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.conn.conn.conndestip}}"
+          destination.port: "{{parsed_event.message.conn.conn.conndestport}}"
+        filter: "{{parsed_event.message.conn.get('conn') != None}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.conn.conn.newconndestip}}"
+        filter: "{{parsed_event.message.conn.get('conn') != None and parsed_event.message.conn.conn.get('newconndestip') != None and parsed_event.message.conn.conn.newconndestip != parsed_event.message.conn.conn.get('conndestip')}}"
+
+      - set:
+          destination.nat.port: "{{parsed_event.message.conn.conn.newconndestport}}"
+        filter: "{{parsed_event.message.conn.get('conn') != None and parsed_event.message.conn.conn.get('newconndestport') != None and parsed_event.message.conn.conn.newconndestport != parsed_event.message.conn.conn.get('conndestport')}}"
+
+  set_category_and_type:
+    actions:
+      # Default category and type
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "conn_open"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "conn_close"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "ttl_low"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "ruleset_drop_packet"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "no_sender_ip"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "alg_session_open"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "alg_session_closed"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "unknown_vlantag"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "disallowed_on_sync_iface"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "request_url"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "invalid_http_syntax"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "max_http_sessions_reached"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: '{{parsed_event.message.get("event") == "wcf_connecting"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "wcf_server_connected"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "wcf_server_disconnected"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "invalid_clienthello_server_name"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "sesmgr_session_created"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "sesmgr_session_removed"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "application_identified"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "application_identified"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "application_end"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "unsolicited_reply_drop"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "hwaddr_change"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "no_new_conn_for_this_packet"}}'
+
+      - set:
+          event.category: ["database"]
+          event.type: ["change"]
+        filter: '{{parsed_event.message.get("event") == "dns_cache_freeip4entry"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "route_exported_to_ospf_as"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "route_unexported_from_ospf_as"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "ip_reputation"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "ipreputation_server_connect"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "ipreputation_server_disconnect"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "ike_sa_failed"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.kind: "metric"
+        filter: '{{parsed_event.message.get("event") == "ike_sa_statistics"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "ike_sa_rekeyed"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "ike_sa_deleted"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "ipsec_sa_rekeyed"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "user_login"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "user_logout"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "user_timeout"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "radius_auth_timeout"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "oneconnect_session_created"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{parsed_event.message.get("event") == "oneconnect_session_reconnected"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "oneconnect_session_closed"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "oneconnect_session_disconnected"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: '{{parsed_event.message.get("event") == "user_disconnected"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: '{{parsed_event.message.get("event") == "oneconnect_dtls_conn_failed"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: '{{parsed_event.message.get("event") == "oneconnect_dtls_read_error"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: '{{parsed_event.message.get("event") == "oneconnect_connection_attempt"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.outcome: "failure"
+        filter: '{{parsed_event.message.get("event") == "ssl_error"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.outcome: "failure"
+        filter: '{{parsed_event.message.get("event") == "unable_to_find_iface_to_stub_net"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "directed_broadcasts"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "unhandled_local"}}'
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: '{{parsed_event.message.get("event") == "ip4_address_added"}}'
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: '{{parsed_event.message.get("event") == "ip4_address_removed"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "disallowed_sender"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "tcp_flag_set"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "tcp_flags_set"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "unexpected_tcp_flags"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["denied"]
+        filter: '{{parsed_event.message.get("event") == "tcp_syn_data"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "tcp_mss_above_log_level"}}'
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: '{{parsed_event.message.get("event") == "tcp_option_strip"}}'
