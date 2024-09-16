@@ -559,6 +559,40 @@ stages:
 
           file.name: "{{parsed_event.message.event.TargetFilename}}"
 
+      - set:
+          crowdstrike.mobile.network_connections: >
+            {%- set connections = [] -%}
+            {%- for item in parsed_event.message.event.MobileNetworkConnections -%}
+            {%- set connection = {} -%}
+            {%- set timestamp = item.get("AccessTimestamp") | to_rfc3339 -%}
+            {%- set direction = item.get("ConnectionDirection") | int -%}
+            {%- set flags = item.get("ConnectionFlags") | int -%}
+            {%- set context = {"pid":item.get("ContextProcessId") | string} -%}
+            {%- set is_ipv6 = item.get("IsIPV6") -%}
+            {%- set protocol = item.get("Protocol") | int -%}
+            {%- set url = item.get("Url") -%}
+            {%- set _ = connection.update({"timestamp":timestamp, "direction":direction, "flags":flags, "context":context, "is_ipv6":is_ipv6, "protocol":protocol, "url":url}) -%}
+            {%- if item.get("LocalAddress") not in [None, ""] -%}
+            {%- set source = {"address":item.get("LocalAddress")} -%}
+            {%- if item.get("LocalPort") not in [None, ""] -%}
+            {%- set _ = source.update({"port":item.get("LocalPort")}) -%}
+            {%- endif -%}
+            {%- set _ = connection.update({"source":source}) -%}
+            {%- endif -%}
+            {%- if item.get("RemoteAddress") not in [None, ""] -%}
+            {%- set destination = {"address":item.get("RemoteAddress")} -%}
+            {%- if item.get("RemotePort") not in [None, ""] -%}
+            {%- set _ = destination.update({"port":item.get("RemotePort")}) -%}
+            {%- endif -%}
+            {%- set _ = connection.update({"destination":destination}) -%}
+            {%- endif -%}
+            {%- set _ = connections.append(connection) -%}
+            {%- endfor -%}
+            {{connections}}
+        filter: "{{parsed_event.message.event.get('MobileNetworkConnections') != None}}"
+
+        #"{{parsed_event.message.event.MobileNetworkConnections}}"
+
   xdr_detection_summary_event:
     actions:
       - set:
