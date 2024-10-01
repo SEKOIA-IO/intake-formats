@@ -26,7 +26,7 @@ pipeline:
         input_field: "{{json_event.message.properties.LoggedOnUsers}}"
         output_field: "users"
   - name: parse_additional_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-AlertEvidence"}}'
+    filter: '{{json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
     external:
       name: json.parse-json
       properties:
@@ -60,6 +60,8 @@ pipeline:
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceLogonEvents"}}'
   - name: set_device_network_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkEvents"}}'
+  - name: set_device_network_inbound_connection_fields
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkEvents" and (json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"] or (json_event.message.properties.ActionType in ["ConnectionAttempt", "ConnectionAcknowledged"] and parse_additional_fields.fields.get("direction") == "In"))}}'
   - name: set_device_network_info_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkInfo"}}'
   - name: set_device_process_events_fields
@@ -202,10 +204,7 @@ stages:
           microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
       - set:
           source.ip: "{{json_event.message.properties.LocalIP}}"
-        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress and json_event.message.properties.ActionType not in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
-          source.ip: "{{json_event.message.properties.RemoteIP}}"
-        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress and json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
+        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress}}'
       - set:
           source.ip: "{{json_event.message.properties.IPAddress}}"
         filter: '{{json_event.message.properties.get("IPAddress")  | is_ipaddress}}'
@@ -223,10 +222,7 @@ stages:
         filter: '{{json_event.message.properties.get("SenderIPv6")  | is_ipaddress}}'
       - set:
           destination.ip: "{{json_event.message.properties.RemoteIP}}"
-        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress and json_event.message.properties.ActionType not in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
-          destination.ip: "{{json_event.message.properties.LocalIP}}"
-        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress and json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
+        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress}}'
       - set:
           destination.ip: "{{json_event.message.properties.DestinationIPAddress}}"
         filter: '{{json_event.message.properties.get("DestinationIPAddress")  | is_ipaddress}}'
@@ -416,6 +412,25 @@ stages:
       - set:
           event.dataset: "device_network_events"
           event.category: ["network"]
+          source.mac: '{{parse_additional_fields.fields.get("Source Mac")}}'
+          destination.mac: '{{parse_additional_fields.fields.get("Destination Mac")}}'
+  set_device_network_inbound_connection_fields:
+    actions:
+      - set:
+          source.mac: '{{parse_additional_fields.fields.get("Destination Mac")}}'
+          destination.mac: '{{parse_additional_fields.fields.get("Source Mac")}}'
+      - set:
+          source.port: "{{json_event.message.properties.RemotePort}}"
+        filter: '{{json_event.message.properties.get("RemotePort") != None}}'
+      - set:
+          source.ip: "{{json_event.message.properties.RemoteIP}}"
+        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress}}'
+      - set:
+          destination.port: "{{json_event.message.properties.LocalPort}}"
+        filter: '{{json_event.message.properties.get("LocalPort") != None}}'
+      - set:
+          destination.ip: "{{json_event.message.properties.LocalIP}}"
+        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress}}'
   set_device_network_info_fields:
     actions:
       - set:

@@ -1,0 +1,105 @@
+name: 1password-epm
+ignored_values: [""]
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Agilebits"
+          observer.product: "1Password EPM"
+          event.outcome: "failure"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parse_event.message.category == 'success'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{parse_event.message.sekoia_event_type == 'signinattempts'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+        filter: "{{parse_event.message.sekoia_event_type == 'itemusages'}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{parse_event.message.sekoia_event_type == 'auditevents'}}"
+
+      - set:
+          "@timestamp": "{{parse_event.message.timestamp | to_rfc3339}}"
+          event.action: "{{parse_event.message.action}}"
+          event.dataset: "{{parse_event.message.sekoia_event_type}}"
+
+      - set:
+          user.id: "{{parse_event.message.actor_details.uuid}}"
+          user.email: "{{parse_event.message.actor_details.email}}"
+          user.name: "{{parse_event.message.actor_details.name}}"
+        filter: "{{parse_event.message.actor_details != null}}"
+
+      - set:
+          user.id: "{{parse_event.message.user.uuid}}"
+          user.email: "{{parse_event.message.user.email}}"
+          user.name: "{{parse_event.message.user.name}}"
+        filter: "{{parse_event.message.user != null}}"
+
+      - set:
+          user.target.id: "{{parse_event.message.aux_details.uuid}}"
+          user.target.name: "{{parse_event.message.aux_details.name}}"
+          user.target.email: "{{parse_event.message.aux_details.email}}"
+        filter: "{{parse_event.message.aux_details != null}}"
+
+      - set:
+          user.target.id: "{{parse_event.message.target_user.uuid}}"
+          user.target.name: "{{parse_event.message.target_user.name}}"
+          user.target.email: "{{parse_event.message.target_user.email}}"
+        filter: "{{parse_event.message.target_user != null}}"
+
+      - set:
+          1password.session_uuid: "{{parse_event.message.session_uuid}}"
+        filter: ""
+
+      - set:
+          1password.session_uuid: "{{parse_event.message.session.uuid}}"
+        filter: "{{parse_event.message.session != null}}"
+
+      - set:
+          host.id: "{{parse_event.message.session.device_uuid}}"
+
+          client.geo.country_name: "{{parse_event.message.location.country}}"
+          client.geo.region_name: "{{parse_event.message.location.region}}"
+          client.geo.city_name: "{{parse_event.message.location.city}}"
+          client.geo.location.lat: "{{parse_event.message.location.latitude}}"
+          client.geo.location.lon: "{{parse_event.message.location.longitude}}"
+          1password.object.uuid: "{{parse_event.message.object_uuid}}"
+
+          1password.object.name: "{{parse_event.message.object_details.name}}"
+          1password.object.email: "{{parse_event.message.object_details.email}}"
+          1password.object.type: "{{parse_event.message.object_type}}"
+          host.os.name: "{{parse_event.message.client.os_name}}"
+          host.os.version: "{{parse_event.message.client.os_version}}"
+
+          1password.vault_uuid: "{{parse_event.message.vault_uuid}}"
+          1password.item_uuid: "{{parse_event.message.item_uuid}}"
+
+          1password.category: "{{parse_event.message.category}}"
+          1password.type: "{{parse_event.message.type}}"
+
+      - set:
+          client.ip: "{{parse_event.message.session.ip}}"
+        filter: "{{parse_event.message.session.ip | is_ipaddress}}"
+
+      - set:
+          client.ip: "{{parse_event.message.client.ip_address}}"
+        filter: "{{parse_event.message.client.ip_address | is_ipaddress}}"
