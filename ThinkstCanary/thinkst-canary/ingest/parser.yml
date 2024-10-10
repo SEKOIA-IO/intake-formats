@@ -8,6 +8,14 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  - name: parsed_incident_field
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.incident_id}}"
+        output_field: message
+        pattern: "(incident:%{WORD:event_type}:%{DATA:token_id}:%{IP:ip_address}:%{NUMBER:timestamp})"
+
   - name: parsed_dn
     filter: "{{parsed_event.get('DN') != None}}"
     external:
@@ -52,8 +60,10 @@ stages:
         filter: "{{parsed_event.message.dst_host_public_ip | is_ipaddress}}"
 
       - set:
-          source.ip: "{{parsed_event.message.src_host}}"
-        filter: "{{parsed_event.message.src_host | is_ipaddress}}"
+        #   source.ip: "{{parsed_event.message.src_host or parsed_incident_field.message.ip_address}}"
+        # filter: "{{parsed_event.message.src_host | is_ipaddress or parsed_incident_field.message.ip_address | is_ipaddress}}"
+          source.ip: "{{parsed_event.message.src_host or parsed_incident_field.message.ip_address}}"
+        filter: "{{parsed_event.message.src_host | is_ipaddress or parsed_incident_field.message.ip_address | is_ipaddress}}"
 
       - set:
           destination.domain: "{{parsed_event.message.HOST or parsed_event.message.hostname or parsed_event.message.HOSTNAME}}"
