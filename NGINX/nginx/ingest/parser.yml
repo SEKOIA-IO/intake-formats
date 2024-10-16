@@ -11,7 +11,7 @@ pipeline:
           ERR_MSG: "[^,]*"
           NGINXURL: "(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
           ERROR: '%{TIMER:time_error} \[%{WORD:log_level}\] %{NUMBER}#%{NUMBER}: (\*%{NUMBER} )?(%{ERR_MSG:error_message})?(%{DATA}client:\s+%{IP:source_address})?(%{DATA}server:\s+%{IPORHOST:destination_address})?(%{DATA}request: \"%{WORD:request_method} %{NGINXURL:url_original} HTTP/%{NUMBER:http_version}\")?(%{DATA}upstream: \"%{URIPROTO}://(?:%{USER}(?::[^@]*)?@)?(?:%{IPORHOST:url_name}(?::%{POSINT:url_port})?)?(?:%{URIPATHPARAM})?\")?(%{DATA}host:%{DATA}\"%{IPORHOST:host_name}(:%{INT})?\")?(%{DATA}responder:%{DATA}%{IPORHOST:responder_name})?(%{DATA}peer:%{DATA}%{IPORHOST:url_name}(:%{INT:url_port})?)?(%{DATA}certificate:%{DATA}\"%{URIPATH:certificate}\")?%{GREEDYDATA}'
-          COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE:time_local}\] \"(-|%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}|%{HTTP_ERROR:raw_url})?\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?(%{GREEDYDATA})?'
+          COMBINED: '(%{IPORHOST:destination_address} )?%{IP:source_address} - (-|%{DATA:source_user_name})? \[%{HTTPDATE:time_local}\] \"(-|%{WORD:request_method} %{NOTSPACE:url_original} HTTP/%{NUMBER:http_version}|%{HTTP_ERROR:raw_url})?\" %{NUMBER:response_status} (-|%{NUMBER:body_bytes_sent})? \"(-|%{DATA:http_referrer})?\" \"%{DATA:http_user_agent}\"( \"%{DATA:proxy_add_x_forwarded_for}\")?( \"%{DATA}\")?( \"%{DATA}\")?( \"%{DATA:http_response_mimetype}\")?(%{GREEDYDATA})?'
     filter: '{{original.message | re_match("\{(?:[^{}]|())*\}") == False}}'
   - name: parsed_event
     external:
@@ -99,7 +99,6 @@ stages:
             {%- endif -%}
           host.name: "{{parsed_event.message.host_name}}"
           log.level: "{{parsed_event.message.log_level}}"
-          network.forwarded_ip: "{{parsed_event.message.proxy_add_x_forwarded_for}}"
           network.protocol: "{{parsed_event.message.http_scheme}}"
           nginx.server.certificate.directory: "{{parsed_event.message.certificate.split('/')[:-1]|join('/')}}"
           nginx.server.certificate.extension: "{{parsed_event.message.certificate.split('.')|last}}"
@@ -109,6 +108,9 @@ stages:
       - set:
           source.ip: "{{parsed_event.message.remote_addr}}"
         filter: "{{parsed_event.message.remote_addr | is_ipaddress}}"
+      - set:
+          network.forwarded_ip: "{{parsed_event.message.proxy_add_x_forwarded_for.split(', ')[0]}}"
+        filter: "{{parsed_event.message.proxy_add_x_forwarded_for not in ['', '-']}}"
       - set:
           source.ip: "{{parsed_event.message.source_address}}"
         filter: "{{parsed_event.message.source_address | is_ipaddress}}"
@@ -147,11 +149,11 @@ stages:
             {%- endif -%}
           action.outcome: >
             {%- if parsed_event.message.get("response_status") != None -%}
-              {%- if parsed_event.message.response_status < 200 -%}
+              {%- if 100 <= parsed_event.message.response_status | int < 200 -%}
                 information
-              {%- elif parsed_event.message.response_status < 300 -%}
+              {%- elif 100 < parsed_event.message.response_status| int < 300 -%}
                 success
-              {%- elif parsed_event.message.response_status < 400 -%}
+              {%- elif 100 < parsed_event.message.response_status | int < 400 -%}
                 redirect
               {%- else -%}
                 failure

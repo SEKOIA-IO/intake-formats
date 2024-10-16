@@ -26,7 +26,7 @@ pipeline:
         input_field: "{{json_event.message.properties.LoggedOnUsers}}"
         output_field: "users"
   - name: parse_additional_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-AlertEvidence"}}'
+    filter: '{{json_event.message.get("category") in ["AdvancedHunting-AlertEvidence","AdvancedHunting-DeviceNetworkEvents"] and json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
     external:
       name: json.parse-json
       properties:
@@ -60,6 +60,8 @@ pipeline:
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceLogonEvents"}}'
   - name: set_device_network_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkEvents"}}'
+  - name: set_device_network_inbound_connection_fields
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkEvents" and (json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"] or (json_event.message.properties.ActionType in ["ConnectionAttempt", "ConnectionAcknowledged"] and parse_additional_fields.fields.get("direction") == "In"))}}'
   - name: set_device_network_info_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkInfo"}}'
   - name: set_device_process_events_fields
@@ -90,12 +92,14 @@ pipeline:
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityDirectoryEvents"}}'
   # These were commented since they are not defined.
   # Uncomment once the stages are implemented.
-  #   - name: set_identity_info_fields
-  #     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityInfo"}}'
+  - name: set_identity_info_fields
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityInfo"}}'
   - name: set_identity_logon_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityLogonEvents"}}'
   - name: set_identity_query_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityQueryEvents"}}'
+  - name: set_url_click_events
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-UrlClickEvents"}}'
 
 stages:
   set_common_fields:
@@ -105,7 +109,7 @@ stages:
           event.type: ["info"]
           event.action: "{{json_event.message.properties.Action or json_event.message.properties.DeliveryAction}}"
           agent.version: "{{json_event.message.properties.ClientVersion}}"
-          destination.port: "{{json_event.message.properties.DestinationPort}}"
+          destination.port: "{{json_event.message.properties.RemotePort or json_event.message.properties.DestinationPort}}"
           email.local_id: "{{json_event.message.properties.NetworkMessageId}}"
           email.message_id: "{{json_event.message.properties.InternetMessageId}}"
           email.subject: "{{json_event.message.properties.EmailSubject or json_event.message.properties.Subject}}"
@@ -122,22 +126,6 @@ stages:
           host.os.full: "{{json_event.message.properties.OSPlatform}}"
           host.os.version: "{{json_event.message.properties.OSVersion}}"
           host.type: "{{json_event.message.properties.DeviceType}}"
-          process.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
-          process.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
-          process.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
-          process.pid: "{{json_event.message.properties.ProcessId or json_event.message.properties.InitiatingProcessId}}"
-          process.start: "{{json_event.message.properties.ProcessCreationTime or json_event.message.properties.InitiatingProcessCreationTime}}"
-          process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
-          process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
-          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
-          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
-          process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
-          process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
-          process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
-          process.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
-          process.parent.pid: "{{json_event.message.properties.InitiatingProcessParentId}}"
-          process.parent.name: "{{json_event.message.properties.InitiatingProcessParentFileName | basename}}"
-          process.parent.start: "{{json_event.message.properties.InitiatingProcessParentCreationTime}}"
           registry.data.type: "{{json_event.message.properties.RegistryValueType}}"
           registry.key: "{{json_event.message.properties.RegistryKey}}"
           registry.value: "{{json_event.message.properties.RegistryValueName}}"
@@ -145,7 +133,7 @@ stages:
           service.type: "{{json_event.message.properties.DetectionSource}}"
           source.geo.city_name: "{{json_event.message.properties.City}}"
           source.geo.country_iso_code: "{{json_event.message.properties.CountryCode}}"
-          source.port: "{{json_event.message.properties.RequestSourcePort}}"
+          source.port: "{{json_event.message.properties.LocalPort or json_event.message.properties.RequestSourcePort}}"
           url.domain: "{{json_event.message.properties.UrlDomain}}"
           url.original: "{{json_event.message.properties.FileOriginUrl or json_event.message.properties.Url}}"
           user.domain: "{{json_event.message.properties.AccountDomain or json_event.message.properties.RequestAccountDomain}}"
@@ -201,17 +189,8 @@ stages:
           microsoft.defender.threat.names: "{{json_event.message.properties.ThreatNames}}"
           microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
       - set:
-          source.port: "{{json_event.message.properties.LocalPort}}"
-        filter: '{{json_event.message.properties.get("LocalPort") and json_event.message.properties.ActionType not in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
-          source.port: "{{json_event.message.properties.RemotePort}}"
-        filter: '{{json_event.message.properties.get("RemotePort") and json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
           source.ip: "{{json_event.message.properties.LocalIP}}"
-        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress and json_event.message.properties.ActionType not in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
-          source.ip: "{{json_event.message.properties.RemoteIP}}"
-        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress and json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
+        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress}}'
       - set:
           source.ip: "{{json_event.message.properties.IPAddress}}"
         filter: '{{json_event.message.properties.get("IPAddress")  | is_ipaddress}}'
@@ -228,17 +207,8 @@ stages:
           source.ip: "{{json_event.message.properties.SenderIPv6}}"
         filter: '{{json_event.message.properties.get("SenderIPv6")  | is_ipaddress}}'
       - set:
-          destination.port: "{{json_event.message.properties.RemotePort}}"
-        filter: '{{json_event.message.properties.get("RemotePort") and json_event.message.properties.ActionType not in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
-          destination.port: "{{json_event.message.properties.LocalPort}}"
-        filter: '{{json_event.message.properties.get("LocalPort") and json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
           destination.ip: "{{json_event.message.properties.RemoteIP}}"
-        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress and json_event.message.properties.ActionType not in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
-      - set:
-          destination.ip: "{{json_event.message.properties.LocalIP}}"
-        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress and json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"]}}'
+        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress}}'
       - set:
           destination.ip: "{{json_event.message.properties.DestinationIPAddress}}"
         filter: '{{json_event.message.properties.get("DestinationIPAddress")  | is_ipaddress}}'
@@ -273,6 +243,46 @@ stages:
       - set:
           network.protocol: "{{json_event.message.properties.RequestProtocol or json_event.message.properties.Protocol}}"
         filter: '{{json_event.message.properties.get("RequestProtocol") != None or (json_event.message.properties.get("Protocol") != None and json_event.message.properties.Protocol != "Negotiate")}}'
+
+      - set:
+          process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
+          process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
+          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
+          process.pid: "{{json_event.message.properties.ProcessId or json_event.message.properties.InitiatingProcessId}}"
+          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
+          process.start: "{{json_event.message.properties.ProcessCreationTime or json_event.message.properties.InitiatingProcessCreationTime}}"
+          process.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
+          process.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
+          process.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
+          process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
+          process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
+          process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
+          process.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
+          process.parent.pid: "{{json_event.message.properties.InitiatingProcessParentId}}"
+          process.parent.name: "{{json_event.message.properties.InitiatingProcessParentFileName | basename}}"
+          process.parent.start: "{{json_event.message.properties.InitiatingProcessParentCreationTime}}"
+        filter: '{{ json_event.message.get("category") not in ["AdvancedHunting-DeviceEvents", "AdvancedHunting-DeviceProcessEvents"]}}'
+
+      - set:
+          process.name: "{{json_event.message.properties.FileName}}"
+          process.executable: "{{json_event.message.properties.FolderPath}}"
+          process.command_line: "{{json_event.message.properties.ProcessCommandLine}}"
+          process.start: "{{json_event.message.properties.ProcessCreationTime}}"
+          process.pid: "{{json_event.message.properties.ProcessId}}"
+          process.hash.md5: "{{json_event.message.properties.MD5}}"
+          process.hash.sha1: "{{json_event.message.properties.SHA1}}"
+          process.hash.sha256: "{{json_event.message.properties.SHA256}}"
+          process.parent.pid: "{{json_event.message.properties.InitiatingProcessId}}"
+          process.parent.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
+          process.parent.name: "{{json_event.message.properties.InitiatingProcessFileName}}"
+          process.parent.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
+          process.parent.command_line: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          process.parent.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
+          process.parent.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
+          process.parent.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
+          process.parent.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
+          process.parent.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
+        filter: '{{json_event.message.get("category") in ["AdvancedHunting-DeviceEvents", "AdvancedHunting-DeviceProcessEvents"]}}'
   set_alert_evidence_fields:
     actions:
       - set:
@@ -428,6 +438,25 @@ stages:
       - set:
           event.dataset: "device_network_events"
           event.category: ["network"]
+          source.mac: '{{parse_additional_fields.fields.get("Source Mac")}}'
+          destination.mac: '{{parse_additional_fields.fields.get("Destination Mac")}}'
+  set_device_network_inbound_connection_fields:
+    actions:
+      - set:
+          source.mac: '{{parse_additional_fields.fields.get("Destination Mac")}}'
+          destination.mac: '{{parse_additional_fields.fields.get("Source Mac")}}'
+      - set:
+          source.port: "{{json_event.message.properties.RemotePort}}"
+        filter: '{{json_event.message.properties.get("RemotePort") != None}}'
+      - set:
+          source.ip: "{{json_event.message.properties.RemoteIP}}"
+        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress}}'
+      - set:
+          destination.port: "{{json_event.message.properties.LocalPort}}"
+        filter: '{{json_event.message.properties.get("LocalPort") != None}}'
+      - set:
+          destination.ip: "{{json_event.message.properties.LocalIP}}"
+        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress}}'
   set_device_network_info_fields:
     actions:
       - set:
@@ -539,3 +568,15 @@ stages:
           action.properties.QueryType: "{{json_event.message.properties.QueryType}}"
           action.properties.QueryTarget: "{{json_event.message.properties.QueryTarget}}"
           action.properties.Query: "{{json_event.message.properties.Query}}"
+  set_url_click_events:
+    actions:
+      - set:
+          event.dataset: "url_click_events"
+          event.category: ["web"]
+          event.type: ["info"]
+  set_identity_info_fields:
+    actions:
+      - set:
+          event.dataset: "identity_info"
+          event.category: ["iam"]
+          event.type: ["user"]
