@@ -112,12 +112,15 @@ pipeline:
         output_field: message
         pattern: '%{HEADER}?%{DATA:rule_name}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{PAYLOAD}'
         custom_patterns:
-          HEADER: '\s*%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
-          PAYLOAD: "%{PAYLOAD_USER}|%{PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{PAYLOAD_USER_AUTH}|%{PAYLOAD_NEW_SESSION}"
+          HEADER: "%{HEADER_1}|%{HEADER_2}"
+          HEADER_1: '%{DATA:date} %{TIME:time} %{IPORHOST:source_domain} %{DATA:action_type} %{DATA}\[\d*\]:\s*(\d*:\d*: )'
+          HEADER_2: '\s*%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
+          PAYLOAD: "%{PAYLOAD_USER}|%{PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{PAYLOAD_USER_AUTH}|%{PAYLOAD_NEW_SESSION}|%{PAYLOAD_ACCESS}"
           PAYLOAD_USER: "Username '%{DATA:user_name}'"
           PAYLOAD_USER_AUTH: ".*authenticate with '%{DATA:user_name}'.*"
           PAYLOAD_USER_AUTH_WITH_DOMAIN: ".*authenticate with '%{DATA:user_name}@%{DATA:user_domain}'.*"
           PAYLOAD_NEW_SESSION: 'New session from \s*client IP %{IP:src_ip} \(%{DATA}\) at VIP %{IP:dest_ip}.*'
+          PAYLOAD_ACCESS: "Following rule '%{DATA:rule_name}' from item '%{DATA:rule_item}' to %{DATA} '%{DATA}'"
 
   - name: set_apm_event
     filter: "{{ parse_apm_event.message != None }}"
@@ -333,6 +336,12 @@ stages:
       - set:
           event.type: ["start"]
         filter: "{{parse_apm_event.message.PAYLOAD_USER_AUTH != None or parse_apm_event.message.PAYLOAD_USER_AUTH_WITH_DOMAIN != None}}"
+
+      - set:
+          rule.name: "{{parse_apm_event.message.rule_name}}"
+          f5.bigip.apm.rule_item: "{{parse_apm_event.message.rule_item}}"
+          source.domain: "{{parse_apm_event.message.source_domain}}"
+        filter: "{{parse_apm_event.message.PAYLOAD_ACCESS != None}}"
 
       - set:
           action.target: "network-traffic"

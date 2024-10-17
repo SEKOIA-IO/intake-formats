@@ -112,6 +112,16 @@ pipeline:
           CONTEXTINFO_FR: "(%{SPACE}Gravit%{DATA} = %{DATA:Severity}#NEWLINE#%{SPACE}Nom d%{DATA}h%{DATA}te = %{DATA:HostName}#NEWLINE#%{SPACE}Version de l%{DATA}h%{DATA}te = %{DATA:HostVersion}#NEWLINE#%{SPACE}ID d%{DATA}h%{DATA}te = %{DATA:HostId}#NEWLINE#%{SPACE}Application h%{DATA}te = %{DATA:HostApplication}#NEWLINE#%{SPACE}Version du moteur = %{DATA:EnginVersion}#NEWLINE#%{SPACE}ID d%{DATA}instance d%{DATA}ex%{DATA}cution = %{DATA:RunspaceID}#NEWLINE#%{SPACE}ID de pipeline = %{DATA:PipelineID}#NEWLINE#%{SPACE}Nom de commande = %{DATA:CommandName}#NEWLINE#%{SPACE}Type de commande = %{DATA:CommantType}#NEWLINE#%{SPACE}Nom du script = %{DATA:ScriptName}#NEWLINE#%{SPACE}Chemin de la commande = %{DATA:CommandPath}#NEWLINE#%{SPACE}Num%{DATA}ro de s%{DATA}quence = %{DATA:SequenceNumber}#NEWLINE#%{SPACE}Utilisateur = %{DATA:User}#NEWLINE#%{SPACE}Utilisateur connect%{DATA} = %{DATA:ConnectedUser}#NEWLINE#%{SPACE}ID d%{DATA}interpr%{DATA}teur de commandes = %{DATA:ShellID}#NEWLINE#%{GREEDYDATA})"
           CONTEXTINFO_EN: "(%{SPACE}Severity = %{DATA:Severity}#NEWLINE#%{SPACE}Host Name = %{DATA:HostName}#NEWLINE#%{SPACE}Host Version = %{DATA:HostVersion}#NEWLINE#%{SPACE}Host ID = %{DATA:HostID}#NEWLINE#%{SPACE}Host Application = %{DATA:HostApplication}#NEWLINE#%{SPACE}Engine Version = %{DATA:EnginVersion}#NEWLINE#%{SPACE}Runspace ID = %{DATA:RunspaceID}#NEWLINE#%{SPACE}Pipeline ID = %{DATA:PipelineID}#NEWLINE#%{SPACE}Command Name = %{DATA:CommandName}#NEWLINE#%{SPACE}Command Type = %{DATA:CommandType}#NEWLINE#%{SPACE}Script Name = %{DATA:ScriptName}#NEWLINE#%{SPACE}Command Path = %{DATA:CommandPath}#NEWLINE#%{SPACE}Sequence Number = %{DATA:SequenceNumber}#NEWLINE#%{SPACE}User = %{DATA:User}#NEWLINE#%{SPACE}Connected User = %{DATA:ConnectedUser}#NEWLINE#%{SPACE}Shell ID = %{DATA:ShellID}#NEWLINE#)"
 
+  - name: message_failure_reason
+    filter: "{{json.event.Message != null and 'Failure Reason' in json.event.Message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{json.event.Message.replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: result
+        pattern: >-
+          (%{GREEDYDATA}Failure Reason:\t\t%{DATA:FailureReason}#NEWLINE#\t%{GREEDYDATA})
+
   - name: network_object
     description: #NEWLINE# is used because grok does not match multi-line fields and the KV stage does not support this field format.
     filter: "{{json.event.Message != null and 'Accesses' in json.event.Message}}"
@@ -202,6 +212,11 @@ stages:
           file.hash.sha256: "{{parsed_hashes_kv.result.SHA256}}"
         filter: "{{json.event.EventID in (15,23,24,28) }}"
 
+      - set:
+          file.name: '{{json.event.Message.split(" ")[0].split("\\")[-1]}}'
+          file.path: "{{json.event.Message.split(' ')[0]}}"
+        filter: "{{json.event.EventID in (8002, 8005)}}"
+
   finalize:
     actions:
       - set:
@@ -275,7 +290,7 @@ stages:
           event.code: "{{json.event.EventID}}"
           action.id: "{{json.event.EventID}}"
           event.provider: "{{json.event.SourceName}}"
-          event.reason: "{{json.event.Description}}"
+          event.reason: "{{json.event.Description or message_failure_reason.result.FailureReason}}"
           file.created: "{{json.event.CreationUtcTime}}"
           file.owner: "{{json.event.jobOwner}}"
           log.hostname: "{{json.event.Hostname}}"
