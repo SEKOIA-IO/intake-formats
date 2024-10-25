@@ -63,7 +63,7 @@ stages:
           event.kind: "alert"
           event.category: >
             [
-              {% if parsed_event.message.cs1 != null %}"email"{% else %}"network"{% endif %}
+              {% if parsed_event.message.cs1 != null %}"email"{% elif parsed_event.message.AlertCategory == "Intrusion" %}"intrusion_detection"{% else %}"network"{% endif %}
             ]
           event.type: ["info"]
 
@@ -76,19 +76,34 @@ stages:
   set_cef_extension_fields:
     actions:
       - set:
+          destination.ip: "{{parsed_event.message.DestinationDip}}"
+          destination.user.name: "{{parsed_event.message.AffectedObjectSAM}}"
+          destination.user.domain: "{{parsed_event.message.AffectedObjectDomain}}"
+
           event.dataset: "{{parsed_event.message.cat}}"
           event.action: "{{parsed_event.message.act}}"
           event.end: "{{parse_end_date.date}}"
 
           rule.name: "{{parsed_event.message.cn1}}"
-          rule.description: "{{parsed_event.message.cs2}}"
+          rule.description: "{{parsed_event.message.DescriptionRule or parsed_event.message.cs2}}"
 
-          user.name: "{{parsed_event.message.duser}}"
+          user.name: "{{parsed_event.message.duser.split('\\\\')[-1]}}"
           host.name: "{{parsed_event.message.dhost}}"
 
           file.path: "{{parsed_event.message.filePath}}"
           file.name: "{{parsed_event.message.fname}}"
+
           source.domain: "{{parsed_event.message.dvchost}}"
+          source.user.name: "{{parsed_event.message.ActingObjectSAM}}"
+          source.user.domain: "{{parsed_event.message.ActingObjectDomaineName}}"
+
+      - set:
+          rule.name: "{{parsed_event.message.cs2}}"
+        filter: "{{parsed_event.message.cs2Label == 'RuleName'}}"
+
+      - set:
+          rule.id: "{{parsed_event.message.cn1}}"
+        filter: "{{parsed_event.message.cn1Label == 'RuleID' and parsed_event.message.cn1 | int > 0}}"
 
       - set:
           event.severity: "{{parsed_event.message.Severity}}"
@@ -104,6 +119,10 @@ stages:
       - set:
           event.url: "{{parsed_event.message.cs4}}"
         filter: "{{parsed_event.message.cs4 != null}}"
+
+      - set:
+          user.domain: "{{parsed_event.message.duser.split('\\\\')[0]}}"
+        filter: "{{parsed_event.message.duser.split('\\\\') | length > 1}}"
 
       - set:
           email.attachments: >
@@ -124,3 +143,6 @@ stages:
           varonis.datalert.outcome: "{{parsed_event.message.outcome}}"
           varonis.datalert.num_events: "{{parsed_event.message.cnt}}"
           varonis.datalert.id: "{{parsed_event.message.externalId}}"
+          varonis.datalert.destination.device: "{{parsed_event.message.DestinationDeviceName}}"
+          varonis.datalert.description: "{{parsed_event.message.DescriptionAlert}}"
+          varonis.datalert.rule.storyline: "{{parsed_event.message.RuleStoryline}}"
