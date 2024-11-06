@@ -498,7 +498,7 @@ stages:
                 {%- for entity in action.Entities -%}
                 {
                   {%- if entity.AntispamDirection != null -%}"direction": "{{entity.AntispamDirection}}",{%- endif -%}
-                  {%- if entity.NetworkMessageIds != null -%}"message_ids": "{{entity.NetworkMessageIds}}",{%- endif -%}
+                  {%- if entity.NetworkMessageIds != null -%}"message_ids": {{entity.NetworkMessageIds}},{%- endif -%}
                   {%- if entity.NetworkMessageId != null -%}"message_ids": ["{{entity.NetworkMessageId}}"],{%- endif -%}
                   {%- if entity.Language != null -%}"language": "{{entity.Language}}",{%- endif -%}
                   {%- if entity.DeliveryAction != null or entity.DeliveryLocation != null or entity.OriginalDeliveryLocation != null -%}
@@ -511,8 +511,41 @@ stages:
                 },
                 {%- endfor -%}
               {%- endfor -%}
+
+              {%- for entity in parse_data.ParsedData.Entities -%}
+                {%- if entity.AntispamDirection != null or entity.NetworkMessageIds != null or entity.Language != null or entity.DeliveryAction != null or entity.DeliveryLocation != null or entity.OriginalDeliveryLocation != null -%}
+                {
+                  {%- if entity.AntispamDirection != null -%}"direction": "{{entity.AntispamDirection}}",{%- endif -%}
+                  {%- if entity.NetworkMessageIds != null -%}"message_ids": {{entity.NetworkMessageIds}},{%- endif -%}
+                  {%- if entity.NetworkMessageId != null -%}"message_ids": ["{{entity.NetworkMessageId}}"],{%- endif -%}
+                  {%- if entity.Language != null -%}"language": "{{entity.Language}}",{%- endif -%}
+                  {%- if entity.DeliveryAction != null or entity.DeliveryLocation != null or entity.OriginalDeliveryLocation != null -%}
+                    "delivery": {
+                      {%- if entity.DeliveryAction!= null -%}"action": "{{entity.DeliveryAction}}",{%- endif -%}
+                      {%- if entity.DeliveryLocation != null -%}"location": "{{entity.DeliveryLocation}}",{%- endif -%}
+                      {%- if entity.OriginalDeliveryLocation -%}"original_location": "{{entity.OriginalDeliveryLocation}}",{%- endif -%}
+                    },
+                  {%- endif -%}
+                },
+                {%- endif -%}
+              {%- endfor -%}
             ]
-        filter: '{{json_event.message.get("Actions") != None and json_event.message.Actions | map("from_json") | rejectattr("Entities") | list | length  !=  json_event.message.Actions | list | length}}'
+        filter: '{{(json_event.message.get("Actions") != None and json_event.message.Actions | map("from_json") | rejectattr("Entities") | list | length  !=  json_event.message.Actions | list | length) or parse_data.ParsedData.get("Entities", []) | length > 0}}'
+
+      - set:
+          office365.investigation.emails: >
+            [
+              {% set result = [] %}
+              {% for data in final.office365.investigation.emails %}
+                {% if data not in result %}
+                  {% set result = result.append(data) %}
+                {% endif %}
+              {% endfor %}
+              {%- for data in result -%}
+                {{data}},
+              {%- endfor -%}
+            ]
+        filter: "{{final.office365.get('investigation', {}).get('emails', []) | length > 1}}"
 
       - set:
           office365.investigation.email.urls: '[{% for Property in parse_data.ParsedData.Entities %}{% for Url in Property.Urls %} "{{Url}}", {% endfor %}{% endfor %}]'
