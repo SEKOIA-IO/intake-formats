@@ -19,6 +19,8 @@ pipeline:
         output_field: datetime
         format: "%Y-%m-%d %H:%M:%S"
   - name: set_common_fields
+  - name: set_breach_devices_fields
+    filter: "{{json_event.message.breachDevices | length > 0}}"
   - name: set_aianalyst_fields
     filter: "{{json_event.message.log_type == 'aianalyst/incidentevents' or json_event.message.aiaScore != null}}"
   - name: set_modelbreaches_fields
@@ -136,19 +138,32 @@ stages:
             {%- endif -%}
             {{filters}}
 
-  set_aianalyst_fields:
+  set_breach_devices_fields:
     actions:
       - set:
           device.id: "{{json_event.message.breachDevices[0].did}}"
           event.action: "{{json_event.message.breachDevices[0].title}}"
-          host.hostname: "{{json_event.message.breachDevices[0].hostname}}"
           host.id: "{{json_event.message.breachDevices[0].did}}"
           host.mac: "{{json_event.message.breachDevices[0].mac}}"
+
+      - set:
+          host.hostname: "{{json_event.message.breachDevices[0].hostname}}"
+        filter: '{{not json_event.message.breachDevices[0].hostname.startswith("SaaS::")}}'
+
+      - set:
           host.name: "{{json_event.message.breachDevices[0].identifier}}"
-        filter: "{{json_event.message.breachDevices | length > 0}}"
+        filter: '{{not json_event.message.breachDevices[0].identifier.startswith("SaaS::")}}'
+
+      - set:
+          user.email: "{{json_event.message.breachDevices[0].hostname.split()[-1]}}"
+        filter: '{{json_event.message.breachDevices[0].hostname.startswith("SaaS::") and "@" in json_event.message.breachDevices[0].hostname.split()[-1]}}'
+
       - set:
           host.ip: "{{json_event.message.breachDevices[0].ip}}"
-        filter: "{{json_event.message.breachDevices | length > 0 and (json_event.message.breachDevices[0].ip | is_ipaddress)}}"
+        filter: "{{json_event.message.breachDevices[0].ip | is_ipaddress}}"
+
+  set_aianalyst_fields:
+    actions:
       - set:
           event.kind: "alert"
           event.category: "threat"
