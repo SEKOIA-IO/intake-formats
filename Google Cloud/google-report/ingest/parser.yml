@@ -28,6 +28,8 @@ pipeline:
     filter: '{{ json_event.message.id.applicationName == "admin"}}'
   - name: set_vault_fields
     filter: '{{ json_event.message.id.applicationName == "vault"}}'
+  - name: set_saml_fields
+    filter: '{{ json_event.message.id.applicationName == "saml"}}'
   - name: set_parameters_fields
     filter: '{{ json_event.message.events[0].name == "SUSPEND_USER"}}'
 
@@ -258,3 +260,21 @@ stages:
                 {%- endif -%}
             {% endfor %}
             {{ types|unique|list }}
+
+  set_saml_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          device.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "device_id" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.saml.status_code: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "saml_status_code" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.saml.initiator: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "initiated_by" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.saml.application_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "application_name" %}{{param.value}}{% endif %}{% endfor %}'
+      
+      - set:
+          event.type: ["allowed"]
+        filter: '{{ json_event.message.events[0].name == "login_success"}}'
+      
+      - set:
+          event.type: ["denied"]
+          event.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "failure_type" %}{{param.value}}{% endif %}{% endfor %}'
+        filter: '{{ json_event.message.events[0].name == "login_failure"}}'   
