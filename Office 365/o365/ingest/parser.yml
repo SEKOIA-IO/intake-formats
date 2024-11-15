@@ -118,6 +118,21 @@ stages:
           office365.audit.object_id: "{{json_event.message.ObjectId}}"
           office365.virus_info: "{{json_event.message.VirusInfo}}"
           office365.virus_vendor: "{{json_event.message.VirusVendor}}"
+      - set:
+          office365.operation.properties: >
+            {
+              {%- for property in json_event.message.OperationProperties -%}
+                {%- if property.Value != null -%}
+                  {%- if property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            }
+        filter: '{{json_event.message.get("OperationProperties") != None}}'
+
       - translate:
         dictionary:
           0: "Regular"
@@ -164,6 +179,10 @@ stages:
         filter: '{{json_event.message.get("Parameters") != None}}'
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
+      - set:
+          office365.context.client.id: "{{json_event.message.AppId}}"
+        filter: '{{json_event.message.get("ClientAppId") == ""}}'
 
   parse_exchange_item:
     actions:
@@ -189,6 +208,7 @@ stages:
           user.id: "{{json_event.message.LogonUserSid}}"
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
       - set:
           email.subject: "{{json_event.message.Item.Subject}}"
           email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
@@ -237,6 +257,7 @@ stages:
             ]
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
   parse_share_point:
     actions:
       - set:
@@ -254,6 +275,7 @@ stages:
     actions:
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
   parse_network_traffic:
     actions:
@@ -494,11 +516,19 @@ stages:
       - set:
           office365.investigation.emails: >
             [
-              {%- for action in json_event.message.Actions | map("from_json") -%}
-                {%- for entity in action.Entities -%}
+              {% set total_entities = [] %}
+              {% for action in json_event.message.Actions | map("from_json") %}
+                {% for entity in action.Entities %}
+                  {% set total_entities = total_entities.append(entity) %}
+                {% endfor %}
+              {% endfor %}
+              {% for entity in parse_data.ParsedData.Entities %}
+                {% set total_entities = total_entities.append(entity) %}
+              {% endfor %}
+              {%- for entity in total_entities -%}
                 {
                   {%- if entity.AntispamDirection != null -%}"direction": "{{entity.AntispamDirection}}",{%- endif -%}
-                  {%- if entity.NetworkMessageIds != null -%}"message_ids": "{{entity.NetworkMessageIds}}",{%- endif -%}
+                  {%- if entity.NetworkMessageIds != null -%}"message_ids": {{entity.NetworkMessageIds}},{%- endif -%}
                   {%- if entity.NetworkMessageId != null -%}"message_ids": ["{{entity.NetworkMessageId}}"],{%- endif -%}
                   {%- if entity.Language != null -%}"language": "{{entity.Language}}",{%- endif -%}
                   {%- if entity.DeliveryAction != null or entity.DeliveryLocation != null or entity.OriginalDeliveryLocation != null -%}
@@ -509,10 +539,25 @@ stages:
                     },
                   {%- endif -%}
                 },
-                {%- endfor -%}
               {%- endfor -%}
             ]
-        filter: '{{json_event.message.get("Actions") != None and json_event.message.Actions | map("from_json") | rejectattr("Entities") | list | length  !=  json_event.message.Actions | list | length}}'
+        filter: '{{(json_event.message.get("Actions") != None and json_event.message.Actions | map("from_json") | rejectattr("Entities") | list | length  !=  json_event.message.Actions | list | length) or parse_data.ParsedData.get("Entities", []) | length > 0}}'
+
+      # Filter step to remove duplicates from the list
+      - set:
+          office365.investigation.emails: >
+            [
+              {% set result = [] %}
+              {% for data in final.office365.investigation.emails %}
+                {% if data not in result and data != {} %}
+                  {% set result = result.append(data) %}
+                {% endif %}
+              {% endfor %}
+              {%- for data in result -%}
+                {{data}},
+              {%- endfor -%}
+            ]
+        filter: "{{final.office365.get('investigation', {}).get('emails', []) | length > 1}}"
 
       - set:
           office365.investigation.email.urls: '[{% for Property in parse_data.ParsedData.Entities %}{% for Url in Property.Urls %} "{{Url}}", {% endfor %}{% endfor %}]'
