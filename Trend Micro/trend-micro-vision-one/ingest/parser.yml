@@ -1,0 +1,79 @@
+name: trend-micro-vision-one
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          observer.vendor: "TrendMicro"
+          observer.product: "Vision One"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.createdDateTime}}"
+
+          organization.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'account') | first).entityValue }}"
+          organization.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'account') | first).entityId }}"
+          host.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'host') | first).entityValue.name }}"
+          host.ip: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'host') | first).entityValue.ips }}"
+
+          user.email: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'emailAddress') | first).entityValue }}"
+          container.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'container') | first).entityValue }}"
+          container.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'container') | first).entityId }}"
+
+          rule.name: "{{parsed_event.message.model}}"
+          rule.id: "{{parsed_event.message.model.modelId}}"
+
+          event.url: "{{parsed_event.message.model.workbenchLink}}"
+
+          process.command_line: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processCmd') | first).value }}"
+          process.parent.command_line: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentCmd') | first).value }}"
+
+          registry.hive: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_key') | first).value.split('\\\\')[0] }}"
+          registry.key: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_key') | first).value.split('\\\\')[1:] | join('\\\\') }}"
+
+          registry.value: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_value') | first).value }}"
+
+          registry.path: >
+            {%- set path = [] -%}
+            {%- for indicator in parsed_event.message.indicators -%}
+              {%- if indicator.type == 'registry_key' -%}{%- set path = path.append(indicator.value) -%}{% endif %}
+            {%- endfor -%}
+            {%- for indicator in parsed_event.message.indicators -%}
+              {%- if indicator.type == 'registry_value' -%}{%- set path = path.append(indicator.value) -%}{% endif %}
+            {%- endfor -%}
+            {%- if path | length > 0 -%}{{ path | join('\\') }}{%- endif -%}
+
+          # @todo should be along with registry.data.type to REG_SZ
+          registry.data.strings: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_value_data') | first).value }}"
+
+          file.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFileHashSha1') | first).value }}"
+          file.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFileHashSha256') | first).value }}"
+          file.path: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFilePath') | first).value or (parsed_event.message.indicators | selectattr('field', 'equalto', 'filePath') | first).value}}"
+          file.name: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'fileName') | first).value }}"
+
+          process.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFilePath') | first).value }}"
+          process.parent.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentFilePath') | first).value }}"
+          process.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha1') | first).value }}"
+          process.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha256') | first).value }}"
+          process.pid: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectPid') | first).value }}"
+
+          user.name: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'logonUser') | first).value }}"
+
+          trendmicro.vision_one.severity: "{{parsed_event.message.severity}}"
+          trendmicro.vision_one.incident_id: "{{parsed_event.message.incidentId}}"
+          trendmicro.vision_one.case_id: "{{parsed_event.message.caseId}}"
+          trendmicro.vision_one.alert_id: "{{parsed_event.message.id}}"
+          trendmicro.vision_one.status: "{{parsed_event.message.status}}"
+          trendmicro.vision_one.investigation_status: "{{parsed_event.message.investigationStatus}}"
