@@ -39,14 +39,19 @@ stages:
 
           event.url: "{{parsed_event.message.model.workbenchLink}}"
 
+      - set:
           process.command_line: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processCmd') | first).value }}"
           process.parent.command_line: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentCmd') | first).value }}"
+          process.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFilePath') | first).value }}"
+          process.parent.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentFilePath') | first).value }}"
+          process.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha1') | first).value }}"
+          process.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha256') | first).value }}"
+          process.pid: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectPid') | first).value }}"
 
+      - set:
           registry.hive: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_key') | first).value.split('\\\\')[0] }}"
           registry.key: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_key') | first).value.split('\\\\')[1:] | join('\\\\') }}"
-
           registry.value: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_value') | first).value }}"
-
           registry.path: >
             {%- set path = [] -%}
             {%- for indicator in parsed_event.message.indicators -%}
@@ -57,22 +62,21 @@ stages:
             {%- endfor -%}
             {%- if path | length > 0 -%}{{ path | join('\\') }}{%- endif -%}
 
-          # @todo should be along with registry.data.type to REG_SZ
           registry.data.strings: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_value_data') | first).value }}"
 
+      - set:
+          registry.data.type: "REG_SZ"
+        filter: "{{final.registry.data.strings != null }}"
+
+      - set:
           file.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFileHashSha1') | first).value }}"
           file.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFileHashSha256') | first).value }}"
           file.path: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFilePath') | first).value or (parsed_event.message.indicators | selectattr('field', 'equalto', 'filePath') | first).value}}"
           file.name: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'fileName') | first).value }}"
 
-          process.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFilePath') | first).value }}"
-          process.parent.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentFilePath') | first).value }}"
-          process.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha1') | first).value }}"
-          process.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha256') | first).value }}"
-          process.pid: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectPid') | first).value }}"
-
           user.name: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'logonUser') | first).value }}"
 
+      - set:
           trendmicro.vision_one.severity: "{{parsed_event.message.severity}}"
           trendmicro.vision_one.incident_id: "{{parsed_event.message.incidentId}}"
           trendmicro.vision_one.case_id: "{{parsed_event.message.caseId}}"
