@@ -162,8 +162,7 @@ pipeline:
   - name: set_file
   - name: set_user
   - name: process_ids
-  - name: source_ip
-  - name: source_address
+  - name: set_source_fields
   - name: action_outcome
   - name: set_dll
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Sysmon' and json.event.EventID == 7}}"
@@ -174,6 +173,8 @@ pipeline:
   - name: dns_fields
   - name: action_target
   - name: destination
+  - name: set_network_policy_fields
+    filter: "{{ json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [6272, 6273, 6274, 6275, 6276, 6277, 6278, 6279, 6280]}}"
   - name: rule
   - name: finalize
 
@@ -1115,7 +1116,7 @@ stages:
           action.outcome: "failure"
         filter: "{{json.event.EventType == 'AUDIT_FAILURE' }}"
 
-  source_ip:
+  set_source_fields:
     actions:
       - set:
           source.ip: "{{json.event.SourceIp or json.event.SourceAddress}}"
@@ -1140,8 +1141,6 @@ stages:
       - set:
           source.ip: "{{source_ip_ip_address.event.ip}}"
 
-  source_address:
-    actions:
       - set:
           source.address: "{{json.event.SourceIp}}"
         filter: "{{json.event.SourceIp | is_ipaddress}}"
@@ -1161,6 +1160,17 @@ stages:
       - set:
           source.address: "{{json_event.message.SourceAddr}}"
         filter: "{{json.event.SourceAddr | is_ipaddress}}"
+
+  set_network_policy_fields:
+    actions:
+      - set:
+          source.ip: "{{ json.event.CallingStationID }}"
+        filter: "{{json.event.CallingStationID | is_ipaddress}}"
+      - set:
+          source.mac: "{{ json.event.CallingStationID }}"
+        filter: "{{ final.source.ip == null }}"
+      - set:
+          destination.domain: "{{ json.event.AuthenticationServer }}"
 
   rule:
     actions:
