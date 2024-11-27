@@ -1,0 +1,67 @@
+name: identity
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+
+  - name: detected_at
+    filter: "{{json_event.message.detectedAt != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.detectedAt}}"
+        output_field: timestamp
+
+  - name: started_at
+    filter: "{{json_event.message.firstSeenAt != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.firstSeenAt}}"
+        output_field: timestamp
+
+  - name: last_seen_at
+    filter: "{{json_event.message.lastSeenAt != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.lastSeenAt}}"
+        output_field: timestamp
+
+  - name: set_meta_fields
+stages:
+  set_meta_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: "intrusion_detection"
+          event.type: "info"
+          observer.vendor: "SentinelOne"
+          observer.product: "Singularity Identity"
+
+          "@timestamp": "{{detected_at.timestamp}}"
+          event.start: "{{started_at.timestamp}}"
+          event.end: "{{last_seen_at.timestamp}}"
+
+          event.provider: "{{json_event.message.detectionSource.product}}"
+          event.reason: "{{json_event.message.description}}"
+
+          process.command_line: "{{json_event.message.process.cmdLine}}"
+          process.parent.name: "{{json_event.message.process.parentName}}"
+
+          file.path: "{{json_event.message.process.file.path}}"
+          file.name: "{{json_event.message.process.file.path | basename}}"
+          file.hash.sha1: "{{json_event.message.process.file.sha1}}"
+          file.hash.sha256: "{{json_event.message.process.file.sha256}}"
+          file.hash.md5: "{{json_event.message.process.file.md5}}"
+
+          sentinelone.identity.id: "{{json_event.message.id}}"
+          sentinelone.identity.name: "{{json_event.message.name}}"
+          sentinelone.identity.attackSurfaces: "{{json_event.message.attackSurfaces}}"
+          sentinelone.identity.status: "{{json_event.message.status}}"
+          sentinelone.identity.classification: "{{json_event.message.classification}}"
+          sentinelone.identity.confidenceLevel: "{{json_event.message.confidenceLevel}}"
+          sentinelone.identity.result: "{{json_event.message.result}}"
+          sentinelone.identity.storyLineId: "{{json_event.message.storyLineId}}"
