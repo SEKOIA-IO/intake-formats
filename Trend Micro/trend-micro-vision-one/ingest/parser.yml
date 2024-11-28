@@ -25,12 +25,13 @@ stages:
       - set:
           "@timestamp": "{{parsed_event.message.createdDateTime}}"
 
-          host.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'host') | first).entityValue.name }}"
-          host.ip: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'host') | first).entityValue.ips }}"
+          host.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'host') | first).entityValue.name }}"
+          host.ip: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'host') | first).entityValue.ips }}"
+          host.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'host') | first).entityValue.guid }}"
 
-          user.email: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'emailAddress') | first).entityValue }}"
-          container.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'container') | first).entityValue }}"
-          container.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'container') | first).entityId }}"
+          user.email: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'emailAddress') | first).entityValue }}"
+          container.name: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'container') | first).entityValue }}"
+          container.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'container') | first).entityId }}"
 
           rule.name: "{{parsed_event.message.model}}"
           rule.id: "{{parsed_event.message.model.modelId}}"
@@ -38,7 +39,7 @@ stages:
           event.url: "{{parsed_event.message.model.workbenchLink}}"
 
       - set:
-          user.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', 'equalto', 'account') | first).entityValue }}"
+          user.id: "{{ (parsed_event.message.impactScope.entities | selectattr('entityType', '==', 'account') | first).entityValue }}"
 
       - set:
           user.name: "{{final.user.id.split('\\\\') | last}}"
@@ -46,18 +47,23 @@ stages:
         filter: "{{final.user.id != null}}"
 
       - set:
-          process.command_line: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processCmd') | first).value }}"
-          process.parent.command_line: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentCmd') | first).value }}"
-          process.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFilePath') | first).value }}"
-          process.parent.executable: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'parentFilePath') | first).value }}"
-          process.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha1') | first).value }}"
-          process.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'processFileHashSha256') | first).value }}"
-          process.pid: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectPid') | first).value }}"
+          process.command_line: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'processCmd') | first).value }}"
+          process.parent.command_line: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'parentCmd') | first).value }}"
+          process.executable: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'processFilePath') | first).value }}"
+          process.parent.executable: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'parentFilePath') | first).value }}"
+          process.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'processFileHashSha1') | first).value }}"
+          process.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'processFileHashSha256') | first).value }}"
+
+          process.parent.pid: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'parentPid') | first).value }}"
+          process.pid: "{{ (parsed_event.message.indicators | selectattr('field', 'in', ['processPid', 'objectPid']) | first).value }}"
+
+          process.parent.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'parentFileHashSha1') | first).value }}"
+          process.parent.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'parentFileHashSha256') | first).value }}"
 
       - set:
-          registry.hive: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_key') | first).value.split('\\\\')[0] }}"
-          registry.key: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_key') | first).value.split('\\\\')[1:] | join('\\\\') }}"
-          registry.value: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_value') | first).value }}"
+          registry.hive: "{{ (parsed_event.message.indicators | selectattr('type', '==', 'registry_key') | first).value.split('\\\\')[0] }}"
+          registry.key: "{{ (parsed_event.message.indicators | selectattr('type', '==', 'registry_key') | first).value.split('\\\\')[1:] | join('\\\\') }}"
+          registry.value: "{{ (parsed_event.message.indicators | selectattr('type', '==', 'registry_value') | first).value }}"
           registry.path: >
             {%- set path = [] -%}
             {%- for indicator in parsed_event.message.indicators -%}
@@ -68,19 +74,22 @@ stages:
             {%- endfor -%}
             {%- if path | length > 0 -%}{{ path | join('\\') }}{%- endif -%}
 
-          registry.data.strings: "{{ (parsed_event.message.indicators | selectattr('type', 'equalto', 'registry_value_data') | first).value }}"
+          registry.data.strings: "{{ (parsed_event.message.indicators | selectattr('type', '==', 'registry_value_data') | first).value }}"
 
       - set:
           registry.data.type: "REG_SZ"
         filter: "{{final.registry.data.strings != null }}"
 
       - set:
-          file.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFileHashSha1') | first).value }}"
-          file.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFileHashSha256') | first).value }}"
-          file.path: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'objectFilePath') | first).value or (parsed_event.message.indicators | selectattr('field', 'equalto', 'filePath') | first).value}}"
-          file.name: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'fileName') | first).value }}"
+          file.hash.sha1: "{{ (parsed_event.message.indicators | selectattr('type', '==', 'file_sha1') | selectattr('field', 'in', ['fileHash', 'objectFileHashSha1']) | first).value }}"
+          file.hash.sha256: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'objectFileHashSha256') | first).value }}"
+          file.path: "{{ (parsed_event.message.indicators | selectattr('field', 'in', ['objectFilePath', 'fullPath']) | first).value }}"
+          file.name: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'fileName') | first).value }}"
 
-          user.name: "{{ (parsed_event.message.indicators | selectattr('field', 'equalto', 'logonUser') | first).value }}"
+          user.name: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'logonUser') | first).value }}"
+
+      - set:
+          action.properties.ScriptBlockText: "{{ (parsed_event.message.indicators | selectattr('field', '==', 'objectRawDataStr') | first).value }}"
 
       - set:
           trendmicro.vision_one.severity: "{{parsed_event.message.severity}}"
@@ -89,3 +98,4 @@ stages:
           trendmicro.vision_one.alert_id: "{{parsed_event.message.id}}"
           trendmicro.vision_one.status: "{{parsed_event.message.status}}"
           trendmicro.vision_one.investigation_status: "{{parsed_event.message.investigationStatus}}"
+          trendmicro.vision_one.detection_name: "{{ (parsed_event.message.indicators | selectattr('type', '==', 'detection_name') | first).value }}"
