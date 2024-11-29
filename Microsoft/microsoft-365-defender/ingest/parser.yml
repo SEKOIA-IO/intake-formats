@@ -40,6 +40,10 @@ pipeline:
         input_field: "{{json_event.message.properties.RawEventData.Data}}"
         output_field: "data"
   - name: set_common_fields
+  - name: set_process_events
+    filter: '{{json_event.message.get("category") != "AdvancedHunting-DeviceProcessEvents"}}'
+  - name: set_process_deviceprocess_events
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceProcessEvents"}}'
   - name: set_alert_evidence_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-AlertEvidence"}}'
   - name: set_alert_info_fields
@@ -126,22 +130,6 @@ stages:
           host.os.full: "{{json_event.message.properties.OSPlatform}}"
           host.os.version: "{{json_event.message.properties.OSVersion}}"
           host.type: "{{json_event.message.properties.DeviceType}}"
-          process.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
-          process.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
-          process.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
-          process.pid: "{{json_event.message.properties.ProcessId or json_event.message.properties.InitiatingProcessId}}"
-          process.start: "{{json_event.message.properties.ProcessCreationTime or json_event.message.properties.InitiatingProcessCreationTime}}"
-          process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
-          process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
-          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
-          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
-          process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
-          process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
-          process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
-          process.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
-          process.parent.pid: "{{json_event.message.properties.InitiatingProcessParentId}}"
-          process.parent.name: "{{json_event.message.properties.InitiatingProcessParentFileName | basename}}"
-          process.parent.start: "{{json_event.message.properties.InitiatingProcessParentCreationTime}}"
           registry.data.type: "{{json_event.message.properties.RegistryValueType}}"
           registry.key: "{{json_event.message.properties.RegistryKey}}"
           registry.value: "{{json_event.message.properties.RegistryValueName}}"
@@ -166,18 +154,6 @@ stages:
           action.properties.FileOriginReferrerUrl: "{{json_event.message.properties.FileOriginReferrerUrl}}"
           action.properties.FileOriginUrl: "{{json_event.message.properties.FileOriginUrl}}"
           action.properties.ISP: "{{json_event.message.properties.ISP or json_event.message.properties.Isp}}"
-          action.properties.InitiatingProcessAccountObjectId: "{{json_event.message.properties.InitiatingProcessAccountObjectId}}"
-          action.properties.InitiatingProcessFileSize: "{{json_event.message.properties.InitiatingProcessFileSize}}"
-          action.properties.InitiatingProcessIntegrityLevel: "{{json_event.message.properties.InitiatingProcessIntegrityLevel}}"
-          action.properties.InitiatingProcessLogonId: "{{json_event.message.properties.InitiatingProcessLogonId}}"
-          action.properties.InitiatingProcessTokenElevation: "{{json_event.message.properties.InitiatingProcessTokenElevation}}"
-          action.properties.InitiatingProcessCommandLine: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
-          action.properties.InitiatingProcessVersionInfoCompanyName: "{{json_event.message.properties.InitiatingProcessVersionInfoCompanyName}}"
-          action.properties.InitiatingProcessVersionInfoFileDescription: "{{json_event.message.properties.InitiatingProcessVersionInfoFileDescription}}"
-          action.properties.InitiatingProcessVersionInfoInternalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoInternalFileName}}"
-          action.properties.InitiatingProcessVersionInfoOriginalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoOriginalFileName}}"
-          action.properties.InitiatingProcessVersionInfoProductName: "{{json_event.message.properties.InitiatingProcessVersionInfoProductName}}"
-          action.properties.InitiatingProcessVersionInfoProductVersion: "{{json_event.message.properties.InitiatingProcessVersionInfoProductVersion}}"
           action.properties.LocalIPType: "{{json_event.message.properties.LocalIPType}}"
           action.properties.Location: "{{json_event.message.properties.Location}}"
           action.properties.LogonId: "{{json_event.message.properties.LogonId}}"
@@ -251,14 +227,116 @@ stages:
           user.roles: '["{{json_event.message.properties.AccountType}}"]'
         filter: '{{json_event.message.properties.get("AccountType")}}'
       - set:
-          process.args: '{{json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:]}}'
-        filter: '{{json_event.message.properties.get("InitiatingProcessCommandLine") and json_event.message.properties.InitiatingProcessCommandLine.split(" ") | length > 0}}'
-      - set:
-          process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
-        filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 0}}'
-      - set:
           network.protocol: "{{json_event.message.properties.RequestProtocol or json_event.message.properties.Protocol}}"
         filter: '{{json_event.message.properties.get("RequestProtocol") != None or (json_event.message.properties.get("Protocol") != None and json_event.message.properties.Protocol != "Negotiate")}}'
+      - set:
+          microsoft.defender.operation.properties: >
+            {
+              {%- for property in json_event.message.properties.RawEventData.OperationProperties -%}
+                {%- if property.Value != null -%}
+                  {%- if property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            }
+        filter: '{{json_event.message.properties.RawEventData.get("OperationProperties") != None}}'
+
+  set_process_events:
+    actions:
+      - set:
+          process.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
+          process.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
+          process.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
+          process.pid: "{{json_event.message.properties.ProcessId or json_event.message.properties.InitiatingProcessId}}"
+          process.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
+          process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
+          process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
+          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
+          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
+          process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
+          process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
+          process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
+          process.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
+          process.parent.pid: "{{json_event.message.properties.InitiatingProcessParentId}}"
+          process.parent.name: "{{json_event.message.properties.InitiatingProcessParentFileName | basename}}"
+          process.parent.start: "{{json_event.message.properties.InitiatingProcessParentCreationTime}}"
+          action.properties.InitiatingProcessAccountObjectId: "{{json_event.message.properties.InitiatingProcessAccountObjectId}}"
+          action.properties.InitiatingProcessFileSize: "{{json_event.message.properties.InitiatingProcessFileSize}}"
+          action.properties.InitiatingProcessIntegrityLevel: "{{json_event.message.properties.InitiatingProcessIntegrityLevel}}"
+          action.properties.InitiatingProcessLogonId: "{{json_event.message.properties.InitiatingProcessLogonId}}"
+          action.properties.InitiatingProcessTokenElevation: "{{json_event.message.properties.InitiatingProcessTokenElevation}}"
+          action.properties.ProcessTokenElevation: "{{json_event.message.properties.ProcessTokenElevation}}"
+          action.properties.InitiatingProcessCommandLine: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          action.properties.InitiatingProcessVersionInfoCompanyName: "{{json_event.message.properties.InitiatingProcessVersionInfoCompanyName}}"
+          action.properties.InitiatingProcessVersionInfoFileDescription: "{{json_event.message.properties.InitiatingProcessVersionInfoFileDescription}}"
+          action.properties.InitiatingProcessVersionInfoInternalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoInternalFileName}}"
+          action.properties.InitiatingProcessVersionInfoOriginalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoOriginalFileName}}"
+          action.properties.InitiatingProcessVersionInfoProductName: "{{json_event.message.properties.InitiatingProcessVersionInfoProductName}}"
+          action.properties.InitiatingProcessVersionInfoProductVersion: "{{json_event.message.properties.InitiatingProcessVersionInfoProductVersion}}"
+
+      - set:
+          process.args: '{{json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("InitiatingProcessCommandLine") and json_event.message.properties.InitiatingProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      - set:
+          process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
+  set_process_deviceprocess_events:
+    actions:
+      - set:
+          process.parent.code_signature.status: "{{json_event.message.properties.InitiatingProcessSignatureStatus}}"
+          process.parent.code_signature.subject_name: "{{json_event.message.properties.InitiatingProcessSignerType}}"
+          process.parent.command_line: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          process.parent.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
+          process.parent.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
+          process.parent.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
+          process.parent.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
+          process.parent.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
+          process.parent.pid: "{{json_event.message.properties.InitiatingProcessId}}"
+          process.parent.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
+          process.parent.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
+          process.parent.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
+          process.parent.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
+          process.parent.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
+          process.parent.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
+          process.pid: "{{json_event.message.properties.ProcessId}}"
+          process.start: "{{json_event.message.properties.ProcessCreationTime}}"
+          process.name: "{{json_event.message.properties.FileName | basename}}"
+          process.command_line: "{{json_event.message.properties.ProcessCommandLine}}"
+          process.working_directory: "{{json_event.message.properties.FolderPath | dirname}}"
+          action.properties.ProcessTokenElevation: "{{json_event.message.properties.ProcessTokenElevation}}"
+          action.properties.ProcessIntegrityLevel: "{{json_event.message.properties.ProcessIntegrityLevel}}"
+          action.properties.ProcessVersionInfoCompanyName: "{{json_event.message.properties.ProcessVersionInfoCompanyName}}"
+          action.properties.ProcessVersionInfoFileDescription: "{{json_event.message.properties.ProcessVersionInfoFileDescription}}"
+          action.properties.ProcessVersionInfoInternalFileName: "{{json_event.message.properties.ProcessVersionInfoInternalFileName}}"
+          action.properties.ProcessVersionInfoOriginalFileName: "{{json_event.message.properties.ProcessVersionInfoOriginalFileName}}"
+          action.properties.ProcessVersionInfoProductName: "{{json_event.message.properties.ProcessVersionInfoProductName}}"
+          action.properties.ProcessVersionInfoProductVersion: "{{json_event.message.properties.ProcessVersionInfoProductVersion}}"
+          action.properties.InitiatingProcessAccountObjectId: "{{json_event.message.properties.InitiatingProcessAccountObjectId}}"
+          action.properties.InitiatingProcessFileSize: "{{json_event.message.properties.InitiatingProcessFileSize}}"
+          action.properties.InitiatingProcessIntegrityLevel: "{{json_event.message.properties.InitiatingProcessIntegrityLevel}}"
+          action.properties.InitiatingProcessLogonId: "{{json_event.message.properties.InitiatingProcessLogonId}}"
+          action.properties.InitiatingProcessTokenElevation: "{{json_event.message.properties.InitiatingProcessTokenElevation}}"
+          action.properties.InitiatingProcessCommandLine: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          action.properties.InitiatingProcessVersionInfoCompanyName: "{{json_event.message.properties.InitiatingProcessVersionInfoCompanyName}}"
+          action.properties.InitiatingProcessVersionInfoFileDescription: "{{json_event.message.properties.InitiatingProcessVersionInfoFileDescription}}"
+          action.properties.InitiatingProcessVersionInfoInternalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoInternalFileName}}"
+          action.properties.InitiatingProcessVersionInfoOriginalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoOriginalFileName}}"
+          action.properties.InitiatingProcessVersionInfoProductName: "{{json_event.message.properties.InitiatingProcessVersionInfoProductName}}"
+          action.properties.InitiatingProcessVersionInfoProductVersion: "{{json_event.message.properties.InitiatingProcessVersionInfoProductVersion}}"
+
+      - set:
+          process.parent.args: '{{json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("InitiatingProcessCommandLine") and json_event.message.properties.InitiatingProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      - set:
+          process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
   set_alert_evidence_fields:
     actions:
       - set:
@@ -341,7 +419,6 @@ stages:
           event.dataset: "device_events"
           event.category: ["host"]
           action.properties.RemoteDeviceName: "{{json_event.message.properties.RemoteDeviceName}}"
-          action.properties.ProcessTokenElevation: "{{json_event.message.properties.ProcessTokenElevation}}"
   set_device_file_certificate_info_fields:
     actions:
       - set:
@@ -454,15 +531,6 @@ stages:
       - set:
           event.dataset: "device_process_events"
           event.category: ["process"]
-          process.code_signature.status: "{{json_event.message.properties.InitiatingProcessSignatureStatus}}"
-          process.code_signature.subject_name: "{{json_event.message.properties.InitiatingProcessSignerType}}"
-          action.properties.ProcessIntegrityLevel: "{{json_event.message.properties.ProcessIntegrityLevel}}"
-          action.properties.ProcessVersionInfoCompanyName: "{{json_event.message.properties.ProcessVersionInfoCompanyName}}"
-          action.properties.ProcessVersionInfoFileDescription: "{{json_event.message.properties.ProcessVersionInfoFileDescription}}"
-          action.properties.ProcessVersionInfoInternalFileName: "{{json_event.message.properties.ProcessVersionInfoInternalFileName}}"
-          action.properties.ProcessVersionInfoOriginalFileName: "{{json_event.message.properties.ProcessVersionInfoOriginalFileName}}"
-          action.properties.ProcessVersionInfoProductName: "{{json_event.message.properties.ProcessVersionInfoProductName}}"
-          action.properties.ProcessVersionInfoProductVersion: "{{json_event.message.properties.ProcessVersionInfoProductVersion}}"
   set_device_registry_events_fields:
     actions:
       - set:
