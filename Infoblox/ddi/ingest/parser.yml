@@ -43,7 +43,7 @@ pipeline:
 
           ## For DNS message like:
           ## FORMERR resolving 'test.testing.io/AAAA/IN': 192.168.1.136#53
-          DNS_FORMERR: "%{WORD:event_action} resolving '%{DATA:dns_question_name}/%{DATA:dns_question_type}/%{DATA:dns_question_class}': %{IP:client_ip}#%{NUMBER:client_port}"
+          DNS_FORMERR: "%{WORD:event_action} resolving '%{DATA:dns_question_name}/%{DATA:dns_question_type}/%{DATA:dns_question_class}': %{IP:destination_ip}#%{NUMBER:destination_port}"
 
           ## For other message like:
           ## r-l-e:192.168.1.113,Fixed,P76984,c4:d0:e3:b4:08:4d,1732119022,1732291822,,$
@@ -74,7 +74,7 @@ pipeline:
 
           ## For DHCP message like:
           ## Option 82: received a REQUEST DHCP packet from relay-agent eth2 with a circuit-id of "1a:02:30:00:00:00:00:76:00:00:00:00:00:00:2a:f0", a remote-id of "0a:44:70:46" for 192.168.1.222 (00:50:56:ae:b3:44) lease time is undefined seconds. (NEW)
-          DHCP_OTHER: 'Option %{NUMBER}: received a %{DATA:event_action} packet from %{NOTSPACE} %{DATA:infoblox_nios_log_dhcp_relay_interface_name} with a circuit-id of \"%{DATA:infoblox_nios_log_dhcp_circuit_id}\", a remote-id of \"%{DATA:infoblox_nios_log_dhcp_remote_id}\" for %{IP:client_ip} \(%{MAC:client_mac}\) lease time is %{DATA:infoblox_nios_log_dhcp_lease_time} seconds. \(%{DATA:infoblox_nios_log_dhcp_lease_message}\)'
+          DHCP_OTHER: 'Option %{NUMBER}: received a %{DATA:event_action} packet from %{NOTSPACE} %{DATA:infoblox_nios_log_dhcp_relay_interface_name} with a circuit-id of \"%{DATA:infoblox_nios_log_dhcp_circuit_id}\", a remote-id of \"%{DATA:infoblox_nios_log_dhcp_remote_id}\" for %{IP:client_ip} \(%{MAC:client_mac}\) %{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}'
 
   - name: parse_event
     filter: "{{'DHCPACK' in original.message}}"
@@ -119,17 +119,19 @@ stages:
       - set:
           "@timestamp": "{{parse_datetime.result}}"
           event.action: "{{parse_event.message.event_action}}"
+          event.reason: "{{parse_event.message.infoblox_nios_log_dhcp_request_message or parse_event.message.infoblox_nios_log_dhcp_lease_message}}"
 
           source.port: "{{parse_event.message.client_port}}"
           source.mac: "{{parse_event.message.client_mac}}"
+
+          destination.ip: "{{parse_event.message.destination_ip}}"
+          destination.port: "{{parse_event.message.destination_port}}"
 
           observer.ingress.interface.name: "{{parse_event.message.observer_ingress_interface_name}}"
 
           infoblox.dhcp.interface_ip: "{{parse_event.message.infoblox_nios_log_dhcp_interface_ip}}"
           infoblox.dhcp.trans_id: "{{parse_event.message.infoblox_nios_log_dhcp_trans_id}}"
           infoblox.dhcp.router_ip: "{{parse_event.message.infoblox_nios_log_dhcp_router_ip}}"
-          infoblox.dhcp.request_message: "{{parse_event.message.infoblox_nios_log_dhcp_request_message}}"
-          infoblox.dhcp.lease_message: "{{parse_event.message.infoblox_nios_log_dhcp_lease_message}}"
           infoblox.dhcp.lease_time: "{{parse_event.message.infoblox_nios_log_dhcp_lease_time}}"
           infoblox.dhcp.circuit_id: "{{parse_event.message.infoblox_nios_log_dhcp_circuit_id}}"
 
