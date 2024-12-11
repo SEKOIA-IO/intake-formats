@@ -16,6 +16,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{parsed_event.message.user}}"
         output_field: result
         pattern: "%{USER_WITH_DOMAIN}|%{GREEDYDATA:user_name}"
@@ -36,6 +37,7 @@ stages:
           observer.vendor: "Netskope"
           event.dataset: "{{parsed_event.message.type}}"
           event.action: "{{parsed_event.message.activity}}"
+          action.name: "{{parsed_event.message.action or 'Allow'}}"
           event.reason: "{{parsed_event.message.audit_log_event or parsed_event.message.bypass_reason}}"
           event.duration: "{{parsed_event.message.conn_duration}}"
           user_agent.original: "{{parsed_event.message.user_agent}}"
@@ -91,6 +93,9 @@ stages:
       - set:
           file.path: "{{parsed_event.message.file_path}}"
         filter: '{{parsed_event.message.file_path not in [None, "", "NA"]}}'
+      - set:
+          file.size: "{{parsed_event.message.file_size}}"
+        filter: "{{parsed_event.message.file_size not in [None, 0]}}"
       - translate:
         dictionary:
           "yes": "alert"
@@ -141,6 +146,28 @@ stages:
           netskope.events.ccl: "{{parsed_event.message.ccl}}"
           netskope.events.severity.id: "{{parsed_event.message.severity_id}}"
           netskope.events.severity.level: "{{parsed_event.message.severity_level}}"
+      - set:
+          netskope.dlp.action: "{{parsed_event.message.dlp_match_info[0].dlp_action}}"
+          netskope.dlp.forensic_id: "{{parsed_event.message.dlp_match_info[0].dlp_forensic_id}}"
+          netskope.dlp.policy: "{{parsed_event.message.dlp_match_info[0].dlp_policy}}"
+          netskope.dlp.profile_name: "{{parsed_event.message.dlp_match_info[0].dlp_profile_name}}"
+        filter: "{{parsed_event.message.dlp_match_info[0] != None}}"
+
+      - set:
+          netskope.dlp.rules: >
+            {%- set rules = [] -%}
+            {%- for rule in parsed_event.message.dlp_match_info[0].dlp_rules -%}
+            {%- set _ = rules.append({
+              "name": rule.dlp_rule_name,
+              "score": rule.dlp_rule_score,
+              "severity": rule.dlp_rule_severity,
+              "count": rule.dlp_incident_rule_count,
+              "unique_count": rule.is_unique_count,
+              "data_identifiers": rule.dlp_data_identifiers
+            }) -%}
+            {%- endfor -%}
+            {{rules}}
+        filter: "{{parsed_event.message.dlp_match_info[0] != None and parsed_event.message.dlp_match_info[0].dlp_rules != None}}"
       - set:
           netskope.dlp.incident.id: "{{parsed_event.message.dlp_incident_id}}"
         filter: "{{parsed_event.message.dlp_incident_id not in [None, 0]}}"

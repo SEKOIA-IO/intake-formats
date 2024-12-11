@@ -8,7 +8,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG})'
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{RULE_LOG_REASON_ONLY}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG}|%{APM_EVENT}|%{KV_HEADERS})'
         custom_patterns:
           TLS: "TLSv"
           HEADER: '%{WORD:action_type}\[\d*\]'
@@ -35,6 +35,7 @@ pipeline:
           RULE_HTTP_REQUEST: "<HTTP_REQUEST>: LOGS: %{RULE_LOG_MESSAGE:rule_message}"
           RULE_HTTP_RESPONSE: "<HTTP_RESPONSE_RELEASE>: %{IPORHOST:destination_ip}:%{POSINT:destination_port}: HTTP: %{POSINT:http_response_status_code} response to( %{IPORHOST:destination_ip}:%{POSINT:destination_port})? from( %{IPORHOST:source_ip}:%{POSINT:source_port} )?URL: %{NOTSPACE:url_original} %{DATA} %{TLS:tls_version_protocol}%{NUMBER:tls_version}"
           RULE_LOG: "%{HEADER}: Rule %{NOTSPACE:rule_name} (%{RULE_HTTP_REQUEST}|%{RULE_HTTP_RESPONSE})"
+          RULE_LOG_REASON_ONLY: '(%{HEADER}:\s?)?\s?Rule %{NOTSPACE:rule_name} \: %{GREEDYDATA:rule_message}'
 
           # audit message
           AUDIT_LOG: '%{HEADER}:\s(\d*:\d*: )AUDIT - %{GREEDYDATA:audit_message}'
@@ -48,6 +49,22 @@ pipeline:
           # vpn messages
           VPN_PROTOCOL: "tcp|udp"
           VPN_LOG: '%{DATA}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{WORD:action_name} ACL\:\s*(%{DATA:rule_name}\:%{NUMBER})\s*packet\:\s*%{VPN_PROTOCOL:network_transport}\s*%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}'
+
+          # apm events
+          APM_EVENT: '%{APM_HEADER}?%{DATA:rule_name}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{APM_PAYLOAD}'
+          APM_HEADER: "%{APM_HEADER_1}|%{APM_HEADER_2}"
+          APM_HEADER_1: '%{DATA:date} %{TIME:time} %{IPORHOST:source_domain} %{DATA:action_type} %{DATA}\[\d*\]:\s*(\d*:\d*: )'
+          APM_HEADER_2: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
+          APM_PAYLOAD: "%{APM_PAYLOAD_USER}|%{APM_PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{APM_PAYLOAD_USER_AUTH}|%{APM_PAYLOAD_NEW_SESSION}|%{APM_PAYLOAD_ACCESS}"
+          APM_PAYLOAD_USER: "Username '%{DATA:user_name}'"
+          APM_PAYLOAD_USER_AUTH: ".*authenticate with '%{DATA:user_name}'.*"
+          APM_PAYLOAD_USER_AUTH_WITH_DOMAIN: ".*authenticate with '%{DATA:user_name}@%{DATA:user_domain}'.*"
+          APM_PAYLOAD_NEW_SESSION: 'New session from \s*client IP %{IP:src_ip} \(%{DATA}\) at VIP %{IP:dest_ip}.*'
+          APM_PAYLOAD_ACCESS: "Following rule '%{DATA:rule_name}' from item '%{DATA:rule_item}' to %{DATA} '%{DATA}'"
+
+          # kv headers
+          KV_HEADERS: 'Rule %{DATA:rule_name} %{DATA}\:\s*%{GREEDYDATA:kvs}'
+
     filter: '{{"CEF:0|" not in original.message}}'
 
   - name: parse_cef_event
@@ -61,35 +78,29 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
+        raise_errors: false
         input_field: '{{ parse_cef_event.message.full_request.replace("\\r\\n", "\r\n") }}'
         output_field: message
         value_sep: ": "
         item_sep: '\r\n'
     filter: "{{parse_cef_event.message != null and parse_cef_event.message.full_request != null}}"
 
-  - name: parse_kv_header
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{original.message}}"
-        output_field: message
-        pattern: '\s*Rule %{DATA:rule_name} %{DATA}\:\s*%{GREEDYDATA:kvs}'
-    filter: '{{"CEF:0|" not in original.message}}'
-
   - name: parse_kv_event
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{ parse_kv_header.message.kvs }}"
+        raise_errors: false
+        input_field: "{{ parse_grok_event.message.kvs }}"
         output_field: message
         value_sep: "="
         item_sep: " "
-    filter: "{{parse_kv_header.message != None and parse_kv_header.message.kvs != None}}"
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.kvs != None}}"
 
   - name: parse_audit_message
     external:
       name: kv.parse-kv
       properties:
+        raise_errors: false
         input_field: "{{ parse_grok_event.message.audit_message }}"
         output_field: message
         value_sep: "="
@@ -104,22 +115,8 @@ pipeline:
         output_field: datetime
     filter: "{{ parse_cef_event.message != None }}"
 
-  - name: parse_apm_event
-    external:
-      name: grok.match
-      properties:
-        output_field: message
-        pattern: '%{HEADER}?%{DATA:rule_name}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{PAYLOAD}'
-        custom_patterns:
-          HEADER: '\s*%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
-          PAYLOAD: "%{PAYLOAD_USER}|%{PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{PAYLOAD_USER_AUTH}|%{PAYLOAD_NEW_SESSION}"
-          PAYLOAD_USER: "Username '%{DATA:user_name}'"
-          PAYLOAD_USER_AUTH: ".*authenticate with '%{DATA:user_name}'.*"
-          PAYLOAD_USER_AUTH_WITH_DOMAIN: ".*authenticate with '%{DATA:user_name}@%{DATA:user_domain}'.*"
-          PAYLOAD_NEW_SESSION: 'New session from \s*client IP %{IP:src_ip} \(%{DATA}\) at VIP %{IP:dest_ip}.*'
-
   - name: set_apm_event
-    filter: "{{ parse_apm_event.message != None }}"
+    filter: "{{ parse_grok_event.message.get('APM_EVENT') != None }}"
 
   - name: set_cef_fields
     filter: "{{ parse_cef_event.message != None }}"
@@ -296,7 +293,7 @@ stages:
   set_kv_fields:
     actions:
       - set:
-          rule.name: "{{parse_kv_header.message.rule_name}}"
+          rule.name: "{{parse_grok_event.message.rule_name}}"
 
           source.ip: "{{parse_kv_event.message.client_ip}}"
           source.port: "{{parse_kv_event.message.client_port}}"
@@ -331,13 +328,19 @@ stages:
 
       - set:
           event.type: ["start"]
-        filter: "{{parse_apm_event.message.PAYLOAD_USER_AUTH != None or parse_apm_event.message.PAYLOAD_USER_AUTH_WITH_DOMAIN != None}}"
+        filter: "{{parse_grok_event.message.APM_PAYLOAD_USER_AUTH != None or parse_grok_event.message.APM_PAYLOAD_USER_AUTH_WITH_DOMAIN != None}}"
+
+      - set:
+          rule.name: "{{parse_grok_event.message.rule_name}}"
+          f5.bigip.apm.rule_item: "{{parse_grok_event.message.rule_item}}"
+          source.domain: "{{parse_grok_event.message.source_domain}}"
+        filter: "{{parse_grok_event.message.APM_PAYLOAD_ACCESS != None}}"
 
       - set:
           action.target: "network-traffic"
 
-          user.name: "{{parse_apm_event.message.user_name}}"
-          user.domain: "{{parse_apm_event.message.user_domain}}"
+          user.name: "{{parse_grok_event.message.user_name}}"
+          user.domain: "{{parse_grok_event.message.user_domain}}"
 
-          source.ip: "{{parse_apm_event.message.src_ip}}"
-          destination.ip: "{{parse_apm_event.message.dest_ip}}"
+          source.ip: "{{parse_grok_event.message.src_ip}}"
+          destination.ip: "{{parse_grok_event.message.dest_ip}}"
