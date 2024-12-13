@@ -14,6 +14,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{json_event.message.ClientIP}}"
         output_field: result
         pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?|\[%{IP:ip}\](:%{INT:port})?'
@@ -22,6 +23,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{json_event.message.ClientIPAddress}}"
         output_field: result
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
@@ -63,6 +65,8 @@ pipeline:
     filter: "{{json_event.message.RecordType == 36}}"
   - name: parse_power_bi
     filter: "{{json_event.message.RecordType == 20}}"
+  - name: parse_threat_intelligence_url
+    filter: "{{json_event.message.RecordType == 41}}"
 
 stages:
   set_common_fields:
@@ -78,6 +82,7 @@ stages:
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
           action.name: "{{json_event.message.Operation}}"
+          user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
       - set:
           source.ip: "{{parse_client_ip.result.ip}}"
           source.port: "{{parse_client_ip.result.port}}"
@@ -113,6 +118,21 @@ stages:
           office365.audit.object_id: "{{json_event.message.ObjectId}}"
           office365.virus_info: "{{json_event.message.VirusInfo}}"
           office365.virus_vendor: "{{json_event.message.VirusVendor}}"
+      - set:
+          office365.operation.properties: >
+            {
+              {%- for property in json_event.message.OperationProperties -%}
+                {%- if property.Value != null -%}
+                  {%- if property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            }
+        filter: '{{json_event.message.get("OperationProperties") != None}}'
+
       - translate:
         dictionary:
           0: "Regular"
@@ -159,6 +179,10 @@ stages:
         filter: '{{json_event.message.get("Parameters") != None}}'
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
+      - set:
+          office365.context.client.id: "{{json_event.message.AppId}}"
+        filter: '{{json_event.message.get("ClientAppId") == ""}}'
 
   parse_exchange_item:
     actions:
@@ -184,6 +208,7 @@ stages:
           user.id: "{{json_event.message.LogonUserSid}}"
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
       - set:
           email.subject: "{{json_event.message.Item.Subject}}"
           email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
@@ -232,6 +257,7 @@ stages:
             ]
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
   parse_share_point:
     actions:
       - set:
@@ -249,6 +275,7 @@ stages:
     actions:
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
   parse_network_traffic:
     actions:
@@ -487,6 +514,52 @@ stages:
           event.kind: '{% if parse_data.ParsedData.IsIncident %}{{"alert"}}{% else %}{{"event"}}{% endif %}'
 
       - set:
+          office365.investigation.emails: >
+            [
+              {% set total_entities = [] %}
+              {% for action in json_event.message.Actions | map("from_json") %}
+                {% for entity in action.Entities %}
+                  {% set total_entities = total_entities.append(entity) %}
+                {% endfor %}
+              {% endfor %}
+              {% for entity in parse_data.ParsedData.Entities %}
+                {% set total_entities = total_entities.append(entity) %}
+              {% endfor %}
+              {%- for entity in total_entities -%}
+                {
+                  {%- if entity.AntispamDirection != null -%}"direction": "{{entity.AntispamDirection}}",{%- endif -%}
+                  {%- if entity.NetworkMessageIds != null -%}"message_ids": {{entity.NetworkMessageIds}},{%- endif -%}
+                  {%- if entity.NetworkMessageId != null -%}"message_ids": ["{{entity.NetworkMessageId}}"],{%- endif -%}
+                  {%- if entity.Language != null -%}"language": "{{entity.Language}}",{%- endif -%}
+                  {%- if entity.DeliveryAction != null or entity.DeliveryLocation != null or entity.OriginalDeliveryLocation != null -%}
+                    "delivery": {
+                      {%- if entity.DeliveryAction!= null -%}"action": "{{entity.DeliveryAction}}",{%- endif -%}
+                      {%- if entity.DeliveryLocation != null -%}"location": "{{entity.DeliveryLocation}}",{%- endif -%}
+                      {%- if entity.OriginalDeliveryLocation -%}"original_location": "{{entity.OriginalDeliveryLocation}}",{%- endif -%}
+                    },
+                  {%- endif -%}
+                },
+              {%- endfor -%}
+            ]
+        filter: '{{(json_event.message.get("Actions") != None and json_event.message.Actions | map("from_json") | rejectattr("Entities") | list | length  !=  json_event.message.Actions | list | length) or parse_data.ParsedData.get("Entities", []) | length > 0}}'
+
+      # Filter step to remove duplicates from the list
+      - set:
+          office365.investigation.emails: >
+            [
+              {% set result = [] %}
+              {% for data in final.office365.investigation.emails %}
+                {% if data not in result and data != {} %}
+                  {% set result = result.append(data) %}
+                {% endif %}
+              {% endfor %}
+              {%- for data in result -%}
+                {{data}},
+              {%- endfor -%}
+            ]
+        filter: "{{final.office365.get('investigation', {}).get('emails', []) | length > 1}}"
+
+      - set:
           office365.investigation.email.urls: '[{% for Property in parse_data.ParsedData.Entities %}{% for Url in Property.Urls %} "{{Url}}", {% endfor %}{% endfor %}]'
           office365.investigation.email.sender.ip: >
             [
@@ -624,7 +697,20 @@ stages:
           email.to.address: "{{parse_data.ParsedData.trc.split(',')}}"
         filter: "{{parse_data.ParsedData.trc != None}}"
 
+      - set:
+          url.original: "//{{parse_data.ParsedData.pud}}"
+        filter: "{{parse_data.ParsedData.pud[0] != None}}"
+
+      - set:
+          url.original: "{{json_event.message.ObjectId}}"
+        filter: "{{json_event.message.EntityType == 'MaliciousUrl'}}"
+
   parse_power_bi:
     actions:
       - set:
           user_agent.original: "{{json_event.message.UserAgent}}"
+
+  parse_threat_intelligence_url:
+    actions:
+      - set:
+          url.original: "{{json_event.message.Url}}"

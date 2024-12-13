@@ -35,6 +35,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{parsed_event.message.name}}"
         output_field: technique
         pattern: "%{TID:id} - %{DATA:name} : %{DATA}"
@@ -61,19 +62,43 @@ stages:
       - set:
           observer.vendor: "Cybereason"
           observer.product: "Cybereason"
+
   handle_malop:
     actions:
       - set:
           "@timestamp": "{{parsed_timestamp.datetime}}"
         filter: "{{parsed_event.message.lastUpdateTime != null}}"
+
       - set:
           file.name: "{{parsed_event.message.primaryRootCauseName}}"
           file.hash.sha1: "{{parsed_event.message.rootCauseElementHashes}}"
         filter: '{{parsed_event.message.rootCauseElementType == "File"}}'
+
       - set:
           process.name: "{{parsed_event.message.primaryRootCauseName}}"
           process.hash.sha1: "{{parsed_event.message.rootCauseElementHashes}}"
         filter: '{{parsed_event.message.rootCauseElementType == "Process"}}'
+
+      - set:
+          host.os.type: "{{parsed_event.message.machines[0].get('osType', '').lower()}}"
+          host.name: "{{parsed_event.message.machines[0].get('displayName')}}"
+          host.domain: "{{parsed_event.message.machines[0].get('adDNSHostName')}}"
+          cybereason.malop.host.id: "{{parsed_event.message.machines[0].get('guid')}}"
+          cybereason.malop.host.is_online: "{{parsed_event.message.machines[0].get('connected')}}"
+          cybereason.malop.host.is_isolated: "{{parsed_event.message.machines[0].get('isolated')}}"
+        filter: "{{parsed_event.message.get('machines', []) != []}}"
+
+      - set:
+          user.name: "{{parsed_event.message.users[0].get('displayName')}}"
+          cybereason.malop.user.id: "{{parsed_event.message.users[0].get('guid')}}"
+          cybereason.malop.user.is_admin: "{{parsed_event.message.users[0].get('admin')}}"
+        filter: "{{parsed_event.message.get('users', []) != []}}"
+
+      - set:
+          user.name: '{{parsed_event.message.users[0].displayName.split("\\")[1]}}'
+          user.domain: '{{parsed_event.message.users[0].displayName.split("\\")[0]}}'
+        filter: '{{parsed_event.message.get("users", []) != [] and "\\" in parsed_event.message.users[0].get("displayName")}}'
+
       - set:
           event.kind: "alert"
           event.category: ["malware"]
@@ -88,22 +113,28 @@ stages:
           cybereason.malop.root_cause.type: "{{parsed_event.message.rootCauseElementType}}"
           cybereason.malop.root_cause.name: "{{parsed_event.message.primaryRootCauseName}}"
           cybereason.malop.is_edr: "{{parsed_event.message.edr}}"
+
       - set:
           cybereason.malop.created_at: "{{parsed_creation_time.datetime}}"
         filter: "{{parsed_event.message.malopCloseTime != null}}"
+
       - set:
           cybereason.malop.modified_at: "{{parsed_timestamp.datetime}}"
         filter: "{{parsed_event.message.creationTime != null}}"
+
       - set:
           cybereason.malop.closed_at: "{{parsed_closing_time.datetime}}"
         filter: "{{parsed_event.message.malopCloseTime != null}}"
+
   handle_model:
     actions:
       - set:
           "@timestamp": "{{parsed_timestamp.datetime}}"
         filter: "{{parsed_event.message.metadata.timestamp != null}}"
+
       - set:
           cybereason.malop.id: "{{parsed_event.message.metadata.malopGuid}}"
+
   handle_machine_model:
     actions:
       - set:
@@ -118,6 +149,7 @@ stages:
       - set:
           host.os.type: "{{parsed_event.message.osType.lower()}}"
         filter: "{{parsed_event.message.osType != null}}"
+
   handle_user_model:
     actions:
       - set:
@@ -127,10 +159,12 @@ stages:
           user.name: "{{parsed_event.message.displayName}}"
           cybereason.malop.user.id: "{{parsed_event.message.guid}}"
           cybereason.malop.user.is_admin: "{{parsed_event.message.admin}}"
+
       - set:
           user.name: '{{parsed_event.message.displayName.split("\\")[1]}}'
           user.domain: '{{parsed_event.message.displayName.split("\\")[0]}}'
         filter: '{{parsed_event.message.displayName != null and "\\" in parsed_event.message.displayName}}'
+
   handle_file_suspect_model:
     actions:
       - set:
