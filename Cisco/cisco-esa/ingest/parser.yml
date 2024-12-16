@@ -32,6 +32,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{parsed_event.message.ExternalMsgID}}"
         output_field: message
         pattern: "<%{MESSAGE_ID}>|%{MESSAGE_ID}"
@@ -42,6 +43,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{parsed_event.message.duser}}"
         output_field: message
         pattern: "%{GREEDYDATA:duser_name}@%{GREEDYDATA:duser_domain}"
@@ -50,6 +52,7 @@ pipeline:
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: "{{parsed_event.message.suser}}"
         output_field: message
         pattern: "%{GREEDYDATA:suser_name}@%{GREEDYDATA:suser_domain}"
@@ -67,6 +70,7 @@ pipeline:
     external:
       name: dict.parse
       properties:
+        output_field: message
         input_field: >
           {{ parsed_event.message.ESAURLDetails }}
 
@@ -209,11 +213,6 @@ stages:
                 {% endif %}
               {% endif %}
             {%- endfor %}]
-          cisco.esa.url: >-
-            [{% for url, details in dict(json_event_url_details.message).items() %}
-              "{% if details.get('ExpandedUrl') is not none %}{{ details.ExpandedUrl }}{% else %}{{ url }}{% endif %}"
-              {% if not loop.last %},{% endif %}
-            {% endfor %}]
           url.domain: "{{parsed_event.message.EAURLDetails}}"
           cisco.esa.delivery.connection_id: "{{parsed_event.message.ESADCID}}"
           cisco.esa.injection.connection_id: "{{parsed_event.message.ESAICID}}"
@@ -231,6 +230,19 @@ stages:
       - set:
           cisco.esa.helo.ip: "{{parsed_event.message.ESAHeloIP}}"
         filter: "{{parsed_event.message.ESAHeloIP | is_ipaddress}}"
+
+      - set:
+          cisco.esa.url_domain: >-
+            [{% for url, details in json_event_url_details.message.items() %}
+              {% if details.get('ExpandedUrl') is not none %}"{{url.replace('https://','').replace('http://','').split('/')[0]}}", "{{ details.ExpandedUrl.replace('https://','').replace('http://','').split('/')[0] }}"{% else %}"{{ url.replace('https://','').replace('http://','').split('/')[0] }}"{% endif %}
+              {% if not loop.last %},{% endif %}
+            {% endfor %}]
+          cisco.esa.url: >-
+            [{% for url, details in json_event_url_details.message.items() %}
+              {% if details.get('ExpandedUrl') is not none %}"{{url}}", "{{ details.ExpandedUrl }}"{% else %}"{{ url }}"{% endif %}
+              {% if not loop.last %},{% endif %}
+            {% endfor %}]
+        filter: "{{json_event_url_details.message | length > 0}}"
 
       - set:
           cisco.esa.helo.domain: "{{parsed_event.message.ESAHeloDomain}}"
