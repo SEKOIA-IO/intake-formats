@@ -77,7 +77,7 @@ stages:
           event.action: "{{json_event.message.Operation}}"
           event.code: "{{json_event.message.RecordType | string}}"
           event.reason: "{{json_event.message.ActionName}}"
-          user.name: "{{json_event.message.UserId}}"
+          user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
           user.id: "{{json_event.message.UserKey}}"
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
@@ -89,8 +89,11 @@ stages:
         filter: "{{parse_client_ip.result.ip | is_ipaddress}}"
 
       - set:
-          user.email: "{{json_event.message.UserId}}"
+          user.email: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
         filter: '{{"@" in json_event.message.UserId}}'
+
+      - set:
+          office365.user_type.is_external: "{{'urn:spo:guest#' in json_event.message.UserId}}"
 
       - set:
           source.ip: "{{parse_client_ip_address.result.ip}}"
@@ -118,6 +121,21 @@ stages:
           office365.audit.object_id: "{{json_event.message.ObjectId}}"
           office365.virus_info: "{{json_event.message.VirusInfo}}"
           office365.virus_vendor: "{{json_event.message.VirusVendor}}"
+      - set:
+          office365.operation.properties: >
+            {
+              {%- for property in json_event.message.OperationProperties -%}
+                {%- if property.Value != null -%}
+                  {%- if property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            }
+        filter: '{{json_event.message.get("OperationProperties") != None}}'
+
       - translate:
         dictionary:
           0: "Regular"
@@ -164,6 +182,10 @@ stages:
         filter: '{{json_event.message.get("Parameters") != None}}'
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
+      - set:
+          office365.context.client.id: "{{json_event.message.AppId}}"
+        filter: '{{json_event.message.get("ClientAppId") == ""}}'
 
   parse_exchange_item:
     actions:
@@ -189,6 +211,7 @@ stages:
           user.id: "{{json_event.message.LogonUserSid}}"
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
       - set:
           email.subject: "{{json_event.message.Item.Subject}}"
           email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
@@ -237,6 +260,7 @@ stages:
             ]
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
   parse_share_point:
     actions:
       - set:
@@ -254,6 +278,7 @@ stages:
     actions:
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
   parse_network_traffic:
     actions:
