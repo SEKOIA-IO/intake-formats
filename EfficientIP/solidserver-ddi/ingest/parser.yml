@@ -5,8 +5,9 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER_1}|%{EFFICIENTIP_DNS_ANSWER_DEFAULT}|%{EFFICIENTIP_DNS_UPDATING_ZONE}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_RPZ_QNAME}|%{EFFICIENTIP_DNS_ERROR}|%{EFFICIENTIP_DNS_FORMAT_ERROR}|%{EFFICIENTIP_DNS_RECEIVED_NOTIFY}"
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER_1}|%{EFFICIENTIP_DNS_ANSWER_DEFAULT}|%{EFFICIENTIP_DNS_UPDATING_ZONE}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_RPZ_QNAME}|%{EFFICIENTIP_DNS_ERROR}|%{EFFICIENTIP_DNS_FORMAT_ERROR}|%{EFFICIENTIP_DNS_RECEIVED_NOTIFY}|%{EFFICIENTIP_DHCP}"
         custom_patterns:
+          EFFICIENTIP_DHCP: "DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?"
           EFFICIENTIP_DNS_QUERY: '%{DNS_HEADER}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
           EFFICIENTIP_DNS_ANSWER_1: '%{DNS_HEADER}: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code} %{GREEDYDATA:dns_records}$'
           EFFICIENTIP_DNS_ANSWER_DEFAULT: '%{DNS_HEADER}: answer: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\) -> %{WORD:response_code}( %{GREEDYDATA:dns_records})?$'
@@ -34,6 +35,13 @@ pipeline:
           GUARDIAN_ACTION: "(DIS)?ARMING"
           RPZ_SOURCE: "(%{IP:source_ip}#%{INT:source_port}|%{DATA:source_name})"
           ERROR_REASON: "FORMERR|REFUSED %{DATA:reason}"
+          DHCPD_VIA: 'via (%{IP:destination_ip}|(?P<destination_name>[^: ]+))( \[%{INT}\])?'
+          DHCPD_DISCOVER: '(?P<dhcp_operation>DISCOVER) from %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA}'
+          DHCPD_OFFER_ACK: '(?P<dhcp_operation>(OFFER|N?ACK)) on %{IP:client_ip} to %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA}'
+          DHCPD_REQUEST: '(?P<dhcp_operation>REQUEST) for %{IP:client_ip}( \(%{DATA:server_ip}\))? from %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA}'
+          DHCPD_DECLINE: '(?P<dhcp_operation>DECLINE) of %{IP:client_ip} from %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA}'
+          DHCPD_RELEASE: '(?P<dhcp_operation>RELEASE) of %{IP:client_ip} from %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA} \((?P<dhcpd_release>(not )?found)\)'
+          DHCPD_INFORM: "(?P<dhcp_operation>INFORM) from %{IP:client_ip}? %{DHCPD_VIA}"
 
   - name: parse_dns_https
     filter: "{{ parse_event.message.get('dns_records') != None and 'HTTPS' in parse_event.message.get('dns_records')}}"
@@ -79,6 +87,10 @@ stages:
           event.type: ["info"]
           observer.vendor: "EfficientIp"
           client.port: "{{parse_event.message.client_port}}"
+          client.mac: "{{parse_event.message.client_mac}}"
+          destination.ip: "{{parse_event.message.destination_ip}}"
+          destination.domain: "{{parse_event.message.destination_name}}"
+          source.domain: "{{parse_event.message.client_name}}"
           source.port: "{{parse_event.message.source_port}}"
           server.port: "{{parse_event.message.server_port}}"
           event.action: "{{parse_event.message.action}}"
@@ -175,3 +187,15 @@ stages:
           efficientip.rpz.query.class: "{{parse_event.message.rpz_query_class}}"
           efficientip.rpz.view: "{{parse_event.message.rpz_view}}"
           efficientip.rpz.source.name: "{{parse_event.message.source_name}}"
+
+      - set:
+          efficientip.dhcp.operation: "{{parse_event.message.dhcp_operation|lower}}"
+        filter: '{{parse_event.message.get("dhcp_operation") != None}}'
+
+      - set:
+          efficientip.dhcp.release_state: "{{parse_event.message.dhcpd_release}}"
+        filter: '{{parse_event.message.get("dhcpd_release") != None}}'
+
+      - set:
+          efficientip.dhcp.message: "{{parse_event.message.dhcpd_message}}"
+        filter: '{{parse_event.message.get("dhcpd_message") != None}}'
