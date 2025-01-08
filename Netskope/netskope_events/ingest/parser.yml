@@ -144,8 +144,24 @@ stages:
           netskope.events.application.activity: "{{parsed_event.message.app_activity}}"
           netskope.events.access_method: "{{parsed_event.message.access_method}}"
           netskope.events.ccl: "{{parsed_event.message.ccl}}"
+
+      - set:
           netskope.events.severity.id: "{{parsed_event.message.severity_id}}"
           netskope.events.severity.level: "{{parsed_event.message.severity_level}}"
+        filter: '{{ parsed_event.message.severity_level|int(-1) == -1 }}'
+
+      - set:
+          netskope.events.severity.id: "{{parsed_event.message.severity_level}}"
+        filter: '{{ parsed_event.message.severity_level|int(-1) >= 0 }}'
+
+      - translate:
+        dictionary:
+          3: "high"
+          1: "med"
+        mapping:
+          parsed_event.message.severity_level: netskope.events.severity.level
+        filter: '{{ parsed_event.message.severity_level|int(-1) >= 0 }}'
+
       - set:
           netskope.dlp.action: "{{parsed_event.message.dlp_match_info[0].dlp_action}}"
           netskope.dlp.forensic_id: "{{parsed_event.message.dlp_match_info[0].dlp_forensic_id}}"
@@ -215,4 +231,10 @@ stages:
           event.type: ["info"]
           event.kind: "alert"
           event.dataset: "dlp_incident"
-        filter: '{{parsed_event.message.get("dlp_incident_id") not in [None, 0]}}'
+        filter: '{{parsed_event.message.get("dlp_incident_id") not in [None, 0] and parsed_event.message.get("alert_type") == None }}'
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]        
+          event.kind: "alert"
+          event.dataset: "dlp_alert"
+        filter: '{{parsed_event.message.alert_type == "DLP" }}'
