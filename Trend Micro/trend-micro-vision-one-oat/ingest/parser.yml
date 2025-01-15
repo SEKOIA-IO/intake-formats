@@ -1,5 +1,5 @@
 name: trend-micro-vision-one-oat
-ignored_values: []
+ignored_values: [ ]
 pipeline:
   - name: parsed_event
     external:
@@ -9,6 +9,15 @@ pipeline:
         output_field: message
 
   - name: set_ecs_fields
+
+  - name: parse_email_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt_utc}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.scanType in ['exchange_mailbox_realtime_detection_logs', 'realtime_mailmeta-exchange']}}"
+
   - name: set_email_fields
     filter: "{{parsed_event.message.scanType in ['exchange_mailbox_realtime_detection_logs', 'realtime_mailmeta-exchange']}}"
 
@@ -16,8 +25,8 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          event.category: ["intrusion_detection"]
-          event.type: ["info"]
+          event.category: [ "intrusion_detection" ]
+          event.type: [ "info" ]
           observer.vendor: "TrendMicro"
           observer.product: "Vision One"
 
@@ -70,6 +79,9 @@ stages:
           process.hash.sha1: "{{parsed_event.message.detail.ObjectFileHashSha1}}"
           process.hash.sha256: "{{parsed_event.message.detail.ObjectFileHashSha256}}"
 
+      - set:
+          threat.tactic.id: "{{parsed_event.message.filters | map(attribute='mitreTacticIds') | list | sum(start = [])}}"
+
           threat.technique.id: >
             {%- set ids = [] -%}
             {%- for item in parsed_event.message.filters | map(attribute='mitreTechniqueIds') | list | sum(start = []) -%}
@@ -84,20 +96,18 @@ stages:
             {%- endfor -%}
             {%- if ids | length > 0 -%}{{ ids | tojson }}{%- endif -%}
 
-      - set:
-          threat.tactic.id: "{{parsed_event.message.filters | map(attribute='mitreTacticIds') | list | sum(start = [])}}"
         filter: "{{parsed_event.message.filters | length > 0 }}"
 
   set_email_fields:
     actions:
       - set:
-          event.category: ["email"]
-          event.type: ["info"]
+          event.category: [ "email" ]
+          event.type: [ "info" ]
 
           email.from.address: "{{ parsed_event.message.suser }}"
           email.to.address: "{{ parsed_event.message.duser }}"
           email.subject: "{{ parsed_event.message.mailMsgSubject }}"
           email.local_id: "{{ parsed_event.message.msgUuid }}"
           email.message_id: "{{ parsed_event.message.msgId }}"
-          email.delivery_timestamp: "{{ parsed_event.message.rt_utc }}"
+          email.delivery_timestamp: "{{ parse_email_date.datetime }}"
           email.attachments: "{{ parsed_event.message.attachment }}"
