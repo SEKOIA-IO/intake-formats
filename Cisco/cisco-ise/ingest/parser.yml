@@ -6,7 +6,11 @@ pipeline:
       properties:
         input_field: original.message
         output_field: pre_message
-        pattern: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
+        pattern: "%{RESPONSE_MESSAGE}|%{WITH_HEADER}|%{KV_MESSAGE}"
+        custom_patterns:
+          WITH_HEADER: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
+          RESPONSE_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}  Response=%{GREEDYDATA:response_message}"
+          KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER} %{GREEDYDATA:reason_with_kv}"
 
   - name: grok_timestamp_in_status
     filter: "{{pre_parsed_event.pre_message.status[0].isdigit()}}"
@@ -62,6 +66,16 @@ pipeline:
         output_field: result
         value_sep: "="
         item_sep: ';\s'
+
+  - name: parsed_kv_sentence
+    filter: '{{"=" in pre_parsed_event.pre_message.reason_with_kv and "," in pre_parsed_event.pre_message.reason_with_kv}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{pre_parsed_event.pre_message.reason_with_kv.strip()}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ',\s'
 
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
@@ -119,6 +133,19 @@ stages:
       - set:
           event.reason: "{{parsed_event.message.kv}}"
         filter: '{{":" in parsed_event.message.kv and "=" not in parsed_event.message.kv}}'
+
+      - set:
+          event.reason: "{{parsed_kv_sentence.result.get('EapChainingResult')}}"
+        filter: '{{parsed_kv_sentence.result.get("EapChainingResult") != None}}'
+
+      - set:
+          event.category: ["network"]
+          event.reason: "{{pre_parsed_event.pre_message.get('response_message')}}"
+        filter: "{{pre_parsed_event.pre_message.get('response_message') != None}}"
+
+      - set:
+          event.category: ["authentication"]
+        filter: '{{"Authentication" in parsed_kv_sentence.result.get("AuthenticationStatus")}}'
 
       - set:
           event.reason: "{{grok_timestamp_in_status.time_message.reason}}"
