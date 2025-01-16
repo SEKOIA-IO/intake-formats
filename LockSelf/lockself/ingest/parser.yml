@@ -1,0 +1,445 @@
+name: lockself
+ignored_values: []
+
+pipeline:
+  - name: json_event
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  
+  - name: parse_credential_path
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: '%{GREEDYDATA:path} / %{DATA:name}'
+    filter: "{{json_event.message.logType == 'Credential'}}"
+  
+  - name: group_user_removing
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} users from %{DATA:groups_names}'
+    filter: "{{json_event.message.logType == 'Group'}}"
+
+  - name: group_user_adding
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} in %{DATA:group_name}'
+    filter: "{{json_event.message.logType == 'Group'}}"
+
+  - name: credential_moving
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: 'Move %{DATA:credential_name} from %{DATA:source_category} to %{DATA:target_category}'
+    filter: "{{json_event.message.logType == 'Credential'}}"
+
+  - name: credential_deletion
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: 'Credential %{GREEDYDATA:credential_action} %{DATA:category_name}'
+      filter: "{{json_event.message.logType == 'Credential' or json_event.message.logType == 'Credentials'}}"
+
+  - name: credential_permanent_deletion
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:credential_action} from trash %{DATA:category_name}'
+      filter: "{{json_event.message.logType == 'Credential' or json_event.message.logType == 'Credentials'}}"
+
+  - name: credential_sharing
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: 'User %{EMAILADDRESS:source_user} has %{WORD:action} %{DATA:object} passwords with user %{EMAILADDRESS:destination_user}'
+      filter: "{{json_event.message.logType == 'Credential' or json_event.message.logType == 'Credentials'}}"
+
+  - name: credential_tag_management
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} tag %{DATA:word} %{DATA:credential_name}'
+      filter: "{{json_event.message.logType == 'Credential' or json_event.message.logType == 'Credentials'}}"
+
+  - name: credential_change_owner
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: '%{EMAILADDRESS:target_user} became the owner of %{DATA:credential_name}'
+      filter: "{{json_event.message.logType == 'Credential' or json_event.message.logType == 'Credentials'}}"
+
+  - name: user_downgrade
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{WORD:action} %{WORD:previous_status} as %{WORD:current_status} '
+    filter: "{{json_event.message.logType == 'User'}}"
+
+  - name: user_promote
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} %{WORD:previous_status} to %{WORD:current_status} '
+    filter: "{{json_event.message.logType == 'User'}}"
+
+  - name: category_deleting_group
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} : %{DATA:groups_names}'
+    filter: "{{json_event.message.logType == 'Category' and 'Deleting group' in json_event.message.logMessage}}"
+
+  - name: category_manage_members
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} %{DATA:member_type} %{DATA:member_name}'
+    filter: "{{(json_event.message.logType in 'Category' or json_event.message.logType in 'category') and ('Adding' in json_event.message.logMessage or 'Deleting' in json_event.message.logMessage)}}"
+
+  - name: category_set_permissions
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:permission} - %{WORD:status}'
+    filter: "{{json_event.message.logType == 'Category'}}"
+
+  - name: category_deletion
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{WORD:action} %{DATA:category_name}'
+    filter: "{{(json_event.message.logType == 'Category') and ('Deleting' in json_event.message.logMessage)}}"
+
+  - name: category_update_name
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} to %{DATA:category_name}'
+    filter: "{{json_event.message.logType == 'Category'}}"
+  
+  - name: option_setting_update
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: '%{DATA:scope} - %{DATA:action} to %{DATA:duration}'
+    filter: "{{json_event.message.logType == 'Option'}}"
+  
+  - name: option_connection_setting_update
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: '%{DATA:scope} - %{GREEDYDATA:action} %{DATA:status}'
+    filter: "{{json_event.message.logType == 'Option'}}"
+
+  - name: deposit_box_manage_user_file
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} in %{DATA:box_name}'
+    filter: "{{(json_event.message.logType == 'Deposit Box') or (json_event.message.logType == 'Deposit box')}}"
+
+  - name: deposit_box_deletion
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} - User deletion'
+    filter: "{{(json_event.message.logType == 'Deposit Box') or (json_event.message.logType == 'Deposit box')}}"
+
+  - name: transfer_manage
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logMessage
+        output_field: message
+        pattern: '%{DATA:action} - %{DATA:properties}'
+    filter: "{{json_event.message.logType == 'Transfer'}}"
+  
+  - name: transfer_split_object
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.logObject
+        output_field: message
+        pattern: '%{EMAILADDRESS:user}- %{DATA:file}'
+    filter: "{{json_event.message.logType == 'Transfer'}}"
+
+  - name: set_ecs_fields
+  - name: set_lockself_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.time}}"
+          observer.vendor: "LockSelf"
+          observer.product: >
+            {% if json_event.message.logType in ["Credential", "Credentials"] %}
+              {{- "LockPass" -}}
+            {% elif json_event.message.logType in ["FileStorage"] %}
+              {{- "LockFiles" -}}
+            {% elif json_event.message.logType in ["Deposit Box", "Deposit box", "Transfer"] %}
+              {{- "LockTransfer" -}}
+            {% else %}
+              {{- "Global" -}}
+            {% endif %}
+          event.type: "{{json_event.message.logType}}"
+          user_agent.name: "{{json_event.message.userAgent}}"
+          event.message: "{{json_event.message.logMessage}}"
+          organization.name: "{{json_event.message.organisationName}}"
+          source.user.email: "{{json_event.message.userEmail}}"
+          user.target.email: >
+            {% if credential_change_owner and credential_change_owner.message and credential_change_owner.message.get("target_user") != None %}
+              {{- credential_change_owner.message.target_user -}}
+            {% elif credential_sharing and credential_sharing.message and credential_sharing.message.get("destination_user") != None %}
+              {{- credential_sharing.message.destination_user -}}
+            {% elif user_downgrade and user_downgrade.message and user_downgrade.message.get("action") != None %}
+              {{- json_event.message.logObject -}}
+            {% elif user_promote and user_promote.message and user_promote.message.get("action") != None %}
+              {{- json_event.message.logObject -}}
+            {% elif transfer_split_object and transfer_split_object.message and transfer_split_object.message.get("user") %}
+              {{- transfer_split_object.message.user -}}
+            {% elif group_user_removing and group_user_removing.message and group_user_removing.message.get("action") != None %}
+              {{- json_event.message.logObject.split(";") -}}
+            {% elif group_user_adding and group_user_adding.message and group_user_adding.message.get("action") != None %}
+              {{- json_event.message.logObject.split(";") -}}  
+            {% elif (json_event.message.get("logType") == "User") and (json_event.message.get("logMessage") in ["Creating via SSO"]) %}
+              {{- json_event.message.logObject -}}
+            {% elif (json_event.message.get("logMessage") in ["Deleting", "Removing the temporary password", "Adding a temporary password", "Creating"]) and (json_event.message.get("logType") not in ["Credential", "Group"]) %}
+              {{- json_event.message.logObject -}}
+            {% elif deposit_box_manage_user_file.message.action == "Adding user" %}
+              {{- json_event.message.logObject -}}
+            {% endif %}
+
+          event.action: >
+            {% if credential_deletion and credential_deletion.message and credential_deletion.message.get("credential_action") != None %}
+              {{- credential_deletion.message.credential_action -}}
+            {% elif credential_tag_management and credential_tag_management.message and credential_tag_management.message.get("action") != None %}
+              {{- credential_tag_management.message.action -}}
+            {% elif credential_permanent_deletion and credential_permanent_deletion.message and credential_permanent_deletion.message.get("credential_action") != None %}
+              {{- credential_permanent_deletion.message.credential_action -}}
+            {% elif credential_sharing and credential_sharing.message and credential_sharing.message.get("action") != None %}
+              {{- credential_sharing.message.action -}}
+            {% elif group_user_removing and group_user_removing.message and group_user_removing.message.get("action") != None %}
+              {{- group_user_removing.message.action -}}
+            {% elif user_downgrade and user_downgrade.message and user_downgrade.message.get("action") != None %}
+              {{- user_downgrade.message.action -}}
+            {% elif user_promote and user_promote.message and user_promote.message.get("action") != None %}
+              {{- user_promote.message.action -}}
+            {% elif category_set_permissions and category_set_permissions.message and category_set_permissions.message.get("permission") != None %}
+              {{- category_set_permissions.message.permission -}}
+            {% elif category_deletion and category_deletion.message and category_deletion.message.get("action") != None %}
+              {{- category_deletion.message.action -}}
+            {% elif category_manage_members and category_manage_members.message and category_manage_members.message.get("action") != None %}
+              {{- category_manage_members.message.action -}}
+            {% elif category_deleting_group and category_deleting_group.message and category_deleting_group.message.get("action") != None %}
+              {{- category_deleting_group.message.action -}}
+            {% elif category_update_name and category_update_name.message and category_update_name.message.get("action") != None %}
+              {{- category_update_name.message.action -}}
+            {% elif option_setting_update and option_setting_update.message and option_setting_update.message.get("action") != None %}
+              {{- option_setting_update.message.action -}}
+            {% elif option_connection_setting_update and option_connection_setting_update.message and option_connection_setting_update.message.get("action") != None %}
+              {{- option_connection_setting_update.message.action -}}
+            {% elif deposit_box_manage_user_file and deposit_box_manage_user_file.message and deposit_box_manage_user_file.message.get("action") != None %}
+              {{- deposit_box_manage_user_file.message.action -}}
+            {% elif deposit_box_deletion and deposit_box_deletion.message and deposit_box_deletion.message.get("action") != None %}
+              {{- deposit_box_deletion.message.action -}}
+            {% elif transfer_manage and transfer_manage.message and transfer_manage.message.get("action") != None %}
+              {{- transfer_manage.message.action -}}
+            {% elif group_user_adding and group_user_adding.message and group_user_adding.message.get("action") != None %}
+              {{- group_user_adding.message.action -}}
+            {% elif json_event and json_event.message and json_event.message.get("logMessage") != None %}
+              {{- json_event.message.logMessage -}}
+            {% endif %}
+
+  set_lockself_fields:
+    actions:
+      - set:
+          lockself.client.ip: "{{json_event.message.userIp}}"
+      
+      - set:
+          lockself.credential.name: >
+            {% if credential_moving and credential_moving.message and credential_moving.message.get("credential_name") != None %}
+              {{- credential_moving.message.credential_name -}}
+            {% elif credential_tag_management and credential_tag_management.message and credential_tag_management.message.get("credential_name") != None %}
+              {{- credential_tag_management.message.credential_name -}}
+            {% elif credential_tag_management and credential_tag_management.message and credential_tag_management.message.get("credential_name") != None %}
+              {{- credential_tag_management.message.credential_name -}}
+            {% elif parse_credential_path and parse_credential_path.message and parse_credential_path.message.get("name") != None %}
+              {{- parse_credential_path.message.name -}}
+            {% elif credential_change_owner and credential_change_owner.message and credential_change_owner.message.get("credential_name") != None %}
+              {{- credential_change_owner.message.credential_name -}}
+            {% elif json_event and json_event.message and json_event.message.logObject != None  %}
+              {{- json_event.message.logObject -}}
+            {% endif %}
+
+          lockself.credential.category.name: >
+            {% if credential_deletion and credential_deletion.message and credential_deletion.message.get("category_name") != None %}
+              {{- credential_deletion.message.category_name -}}
+            {% elif credential_tag_management and credential_tag_management.message and credential_tag_management.message.get("credential_name") != None %}
+              {{- parse_credential_path.message.path.replace("\\", "") -}}
+            {% elif credential_tag_management and credential_tag_management.message and credential_tag_management.message.get("credential_name") != None %}
+              {{- parse_credential_path.message.path.replace("\\", "") -}}
+            {% elif credential_permanent_deletion and credential_permanent_deletion.message and credential_permanent_deletion.message.get("category_name") != None %}
+              {{- credential_permanent_deletion.message.category_name -}}
+            {% elif parse_credential_path and parse_credential_path.message and parse_credential_path.message.get("path") != None  %}
+              {{- parse_credential_path.message.path.replace("\\", "") -}}
+            {% endif %}
+          lockself.credential.category.source: "{{credential_moving.message.source_category}}"
+          lockself.credential.category.destination: "{{credential_moving.message.target_category}}"
+          lockself.credential.tag.name: >
+            {% if "Adding tag" in json_event.message.logMessage %}
+              {{- parse_credential_path.message.name -}}
+            {% elif "Removing tag" in json_event.message.logMessage %}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'Credential' or json_event.message.logType == 'Credentials'}}"
+      
+      - set:
+          lockself.credential.sharing.object: "{{credential_sharing.message.object}}"
+        filter: "{{json_event.message.logMessage == 'Shared credentials'}}"
+      
+      - delete:
+          - lockself.credential.name
+        filter: '{{json_event.message.logMessage == "Global export"}}'
+
+      - set:
+          lockself.groups.names: >
+            {% if group_user_removing and group_user_removing.message and group_user_removing.message.get("groups_names") != None %}
+              {{- group_user_removing.message.groups_names.split(";") -}}
+            {% elif category_manage_members and category_manage_members.message and category_manage_members.message.get("groups_names") != None  %}
+              {{- category_manage_members.message.groups_names -}}
+            {% elif category_deleting_group and category_deleting_group.message and category_deleting_group.message.get("groups_names") != None  %}
+              {{- category_deleting_group.message.groups_names -}}
+            {% elif group_user_adding and group_user_adding.message and group_user_adding.message.get("group_name") != None  %}
+              {{- group_user_adding.message.group_name -}}
+            {% elif (json_event.message.logType == "Group") and (json_event.message.logMessage == "Deleting") %}
+              {{- json_event.message.logObject.split(",") -}}
+            {% elif json_event.message.logObject and json_event.message and json_event.message.get("logObject") != None %}
+              {{- json_event.message.logObject -}}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'Group'}}"
+      
+      - set:
+          lockself.user.status.previous: >
+            {% if user_downgrade and user_downgrade.message and user_downgrade.message.get("previous_status") != None  %}
+              {{- user_downgrade.message.previous_status -}}
+            {% elif user_promote and user_promote.message and user_promote.message.get("previous_status") != None  %}
+              {{- user_promote.message.previous_status -}}
+            {% endif %}
+          lockself.user.status.current: >
+            {% if user_downgrade and user_downgrade.message and user_downgrade.message.get("current_status") != None %}
+              {{- user_downgrade.message.current_status -}}
+            {% elif user_promote and user_promote.message and user_promote.message.get("current_status") != None %}
+              {{- user_promote.message.current_status -}}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'User'}}"
+      
+      - set:
+          lockself.category.name: "{{json_event.message.logObject}}"
+          lockself.category.member.type: "{{category_manage_members.message.member_type}}"
+          lockself.category.member.name: >
+            {% if category_deleting_group and category_deleting_group.message and category_deleting_group.message.get("groups_names") != None %}
+              {{- category_deleting_group.message.groups_names.replace(": ","") -}}
+            {% elif category_manage_members and category_manage_members.message and category_manage_members.message.get("member_name") != None %}
+              {{- category_manage_members.message.member_name -}}
+            {% endif %}
+          lockself.category.permission.name: >
+            {% if category_set_permissions and category_set_permissions.message and category_set_permissions.message.get("permission") != None %}
+              {{- category_set_permissions.message.permission -}}
+            {% endif %}
+          lockself.category.permission.status: >
+            {% if category_set_permissions and category_set_permissions.message and category_set_permissions.message.get("status") != None %}
+              {{- category_set_permissions.message.status -}}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'Category' or json_event.message.logType == 'category'}}"
+      
+      - set:
+          lockself.connection.method: "{{json_event.message.logMessage}}"
+          lockself.connection.status: "{{json_event.message.logObject}}"
+        filter: "{{json_event.message.logType == 'Connection'}}"
+      
+      - set:
+          lockself.option.value: >
+            {% if option_setting_update and option_setting_update.message and option_setting_update.message.get("duration") != None %}
+              {{- option_setting_update.message.duration -}}
+            {% elif option_connection_setting_update and option_connection_setting_update.message and option_connection_setting_update.message.get("status") != None %}
+              {{- option_connection_setting_update.message.status -}}
+            {% endif %}
+          lockself.option.scope: >
+            {% if option_setting_update and option_setting_update.message and option_setting_update.message.get("scope") != None %}
+              {{- option_setting_update.message.scope -}}
+            {% elif option_connection_setting_update and option_connection_setting_update.message and option_connection_setting_update.message.get("scope") != None %}
+              {{- option_connection_setting_update.message.scope -}}
+            {% endif %}
+          lockself.option.type: >
+            {% if json_event and json_event.message and json_event.message.get("logMessage") != None %}
+              {{- json_event.message.logMessage -}}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'Option'}}"
+
+      - set:
+          lockself.deposit_box.name: >
+            {% if deposit_box_manage_user_file and deposit_box_manage_user_file.message and deposit_box_manage_user_file.message.get("box_name") != None %}
+              {{- deposit_box_manage_user_file.message.box_name -}}
+            {% elif json_event and json_event.message and json_event.message.get("logObject") != None %}
+              {{- json_event.message.logObject -}}
+            {% endif %}
+          lockself.deposit_box.file.name: >
+            {% if deposit_box_manage_user_file.message.action == "Adding file" %}
+              {{- json_event.message.logObject -}}
+            {% endif %}
+        filter: "{{json_event.message.logType in ['Deposit Box', 'Deposit box']}}"
+
+      - set:
+          lockself.transfer.file.name: >
+            {% if transfer_split_object and transfer_split_object.message and transfer_split_object.message.get("file") %}
+              {{- transfer_split_object.message.file -}}
+            {% elif json_event and json_event.message and json_event.message.get("logObject") != None %}
+              {{- json_event.message.logObject -}}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'Transfer'}}"
