@@ -228,12 +228,33 @@ stages:
           event.category: ["authentication"]
           event.type: ["start"]
           event.outcome: >
-            {% if json_event and json_event.message and json_event.message.get("logObject") != "OK" %}
+            {% if json_event.message.get("logObject") != "OK" %}
               {{- "failure" -}}
             {% else %}
               {{- "success" -}}
             {% endif %}
         filter: "{{json_event.message.logType == 'Connection'}}"
+
+      - set:
+          event.category: >
+            {% set configuration_keywords = ["Changed the name", "Creation", "Deletable", "Editable", "Hidden", "Deleting"] %}
+            {% set iam_keywords = ["group", "farmer", "user", "User"] %}
+            {% if iam_keywords | select("in", json_event.message.get("logMessage")) | list | length > 0 %}
+              {{- ["iam"] -}}
+            {% elif configuration_keywords | select("in", json_event.message.get("logMessage")) | list | length > 0 %}
+              {{- ["configuration"] -}}
+            {% endif %}
+          event.type: >
+            {% set creation_keywords = ["Creation", "Adding"] %}
+            {% set change_keywords = ["Changed the name", "Deletable", "Editable", "Hidden",] %}
+            {% if "Deleting" in json_event.message.get("logMessage") %}
+              {{- ["deletion"] -}}
+            {% elif creation_keywords | select("in", json_event.message.get("logMessage")) | list | length > 0 %}
+              {{- ["creation"] -}}
+            {% elif change_keywords | select("in", json_event.message.get("logMessage")) | list | length > 0 %}
+              {{- ["change"] -}}
+            {% endif %}
+        filter: "{{json_event.message.logType == 'Category' or json_event.message.logType == 'category'}}"
 
   set_lockself_fields:
     actions:
