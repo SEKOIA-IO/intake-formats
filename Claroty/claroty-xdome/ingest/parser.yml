@@ -59,6 +59,9 @@ stages:
 
       - set:
           source.ip: "{{parsed_event.message.src_ip}}"
+        filter: "{{parsed_event.message.src_ip | is_ipaddress}}"
+
+      - set:
           source.mac: "{{parsed_event.message.src_mac}}"
           source.port: "{{parsed_event.message.src_port}}"
           user.name: "{{parsed_event.message.username}}"
@@ -70,7 +73,14 @@ stages:
           event.reason: "{{parsed_event.message.event_description}}"
           event.code: "{{parsed_event.message.event_type}}"
           host.mac: "{{parsed_event.message.device_mac_list}}"
-          host.ip: "{{parsed_event.message.device_ip_list}}"
+          host.ip: >
+            [
+              {% for ip in parsed_event.message.device_ip_list[1:-1].split(", ") %}
+              {% if ip.split("'")[1] | is_ipaddress %}
+                {{ip}}{% if not loop.last %},{% endif %}
+              {% endif %}
+              {% endfor %}
+            ]
           host.type: "{{parsed_event.message.device_type}}"
           host.os.full: "{{parsed_event.message.device_os}}"
 
@@ -141,3 +151,8 @@ stages:
           claroty.xdome.threat.signature_content: "{{parsed_event.message.signature_content}}"
           claroty.xdome.threat.signature_confidence: "{{parsed_event.message.signature_confidence}}"
           claroty.xdome.threat.signature_severity: "{{parsed_event.message.signature_severity}}"
+
+      - set:
+          file.name: "{{parsed_event.message.file_name}}"
+          file.type: "{{parsed_event.message.file_type}}"
+        filter: "{{parsed_event.message.event_type.lower() == 'executable file transfer' }}"

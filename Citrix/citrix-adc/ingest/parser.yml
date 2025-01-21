@@ -15,7 +15,7 @@ pipeline:
         output_field: message
         pattern: '\"?\s*%{HEADER:header}\s+:\s+%{WORD:mode}\s+%{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :\s+%{GREEDYDATA:payload}\"?'
         custom_patterns:
-          HEADER: '%{DATE_TIME:timestamp} %{TIMEZONE}? %{USERNAME:observer}\s%{USERNAME:s2}'
+          HEADER: '%{DATE_TIME:timestamp}(?:\s%{TIMEZONE})?\s+%{USERNAME:observer}\s%{USERNAME:s2}'
           DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}"
           DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
@@ -46,9 +46,10 @@ pipeline:
       properties:
         input_field: "{{parse_audit_header.message.payload}}"
         output_field: message
-        pattern: "%{SOURCE}%{SEP}(%{VSERVER}%{SEP})?(%{NAT}%{SEP})?%{DEST}.*%{BYTES_SEND}.*%{BYTES_RECV}.*"
+        pattern: "(%{USER}%{SEP})?%{SOURCE}%{SEP}(%{VSERVER}%{SEP})?(%{NAT}%{SEP})?%{DEST}.*%{BYTES_SEND}.*%{BYTES_RECV}.*"
         custom_patterns:
           SEP: '\s+-\s+'
+          USER: "User %{USERNAME:user_name}"
           SOURCE: "Source %{IP:src_ip}:%{POSINT:src_port}"
           VSERVER: "Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}"
           NAT: "NatIP %{IP:nat_ip}:%{POSINT:nat_port}"
@@ -62,11 +63,14 @@ pipeline:
       properties:
         input_field: "{{parse_audit_header.message.payload}}"
         output_field: message
-        pattern: "%{OPTION_1}|%{OPTION_2}|%{OPTION_3}"
+        pattern: "%{OPTION_1}|%{OPTION_2_0}|%{OPTION_2_1}|%{OPTION_2_2}|%{OPTION_3}|%{OPTION_4}"
         custom_patterns:
-          OPTION_1: ".*User <?%{USERNAME:user_name}?>.*Srcip: %{IP:src_ip}.*Dstip: %{IP:dest_ip}.*denied_by_policy: %{POLICY_NAME:policy}.*"
-          OPTION_2: ".*User %{USERNAME:user_name}.*Nat_ip %{IP:nat_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Source %{IP:src_ip}:%{POSINT:src_port}.*Destination %{IP:dest_ip}:%{POSINT:dest_port}.*Denied_by_policy %{POLICY_NAME:policy}.*"
+          OPTION_1: "(.*User <?%{USERNAME:user_name}?>)?.*Srcip: %{IP:src_ip}.*Dstip: %{IP:dest_ip}(.*denied_by_policy: %{POLICY_NAME:policy})?.*"
+          OPTION_2_0: ".*User %{USERNAME:user_name}.*Nat_ip %{IP:nat_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Source %{IP:src_ip}:%{POSINT:src_port}.*Destination %{IP:dest_ip}:%{POSINT:dest_port}.*Denied_by_policy %{POLICY_NAME:policy}.*"
+          OPTION_2_1: ".*User %{USERNAME:user_name} -.*Client_ip %{IP:client_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Source %{IP:src_ip}(:%{POSINT:src_port})?.*Destination %{IP:dest_ip}(:%{POSINT:dest_port})?.*"
+          OPTION_2_2: ".*User %{USERNAME:user_name}.*Client_ip %{IP:client_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*"
           OPTION_3: ".*user %{USERNAME:user_name}@%{HOSTNAME:user_domain}.*clientip %{IP:client_ip}.*"
+          OPTION_4: ".*Context %{USERNAME:user_name}(@(%{IP:client_ip}|%{HOSTNAME:user_domain}))?.*- %{DATA:url_original} User.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*SSO %{DATA}: %{WORD:http_method} %{DATA:http_path} %{DATA} %{DATA}"
           POLICY_NAME: '"?"?\w+"?"?'
 
   - name: parse_audit_snmp_logs
@@ -172,23 +176,36 @@ stages:
 
           citrix.adc.message: '{{ parse_audit_header.message.payload.strip(''"'') }}'
           destination.ip: "{{ parse_audit_sslvpn_logs.message.dest_ip }}"
+          destination.port: "{{ parse_audit_sslvpn_logs.message.dest_port }}"
+          url.original: "{{ parse_audit_sslvpn_logs.message.url_original }}"
+          url.path: "{{ parse_audit_sslvpn_logs.message.http_path }}"
           rule.name: '{{ parse_audit_sslvpn_logs.message.policy.strip(''"'') }}'
           source.ip: "{{ parse_audit_sslvpn_logs.message.src_ip }}"
+          source.port: "{{ parse_audit_sslvpn_logs.message.src_port }}"
           client.ip: "{{ parse_audit_sslvpn_logs.message.client_ip }}"
           user.name: "{{ parse_audit_sslvpn_logs.message.user_name }}"
           user.domain: "{{ parse_audit_sslvpn_logs.message.user_domain }}"
+          http.request.method: "{{ parse_audit_sslvpn_logs.message.http_method }}"
 
   set_sslvpn_log_fields:
     actions:
       - set:
           event.dataset: "audit_sslvpn"
+
           source.ip: "{{ parse_audit_sslvpn_logs.message.src_ip }}"
+          source.port: "{{ parse_audit_sslvpn_logs.message.src_port }}"
           destination.ip: "{{ parse_audit_sslvpn_logs.message.dest_ip }}"
+          destination.port: "{{ parse_audit_sslvpn_logs.message.dest_port }}"
+          url.original: "{{ parse_audit_sslvpn_logs.message.url_original }}"
+          url.path: "{{ parse_audit_sslvpn_logs.message.http_path }}"
           user.name: "{{ parse_audit_sslvpn_logs.message.user_name }}"
+          user.domain: "{{ parse_audit_sslvpn_logs.message.user_domain }}"
+          client.ip: "{{ parse_audit_sslvpn_logs.message.client_ip }}"
           rule.name: '{{ parse_audit_sslvpn_logs.message.policy.strip(''"'') }}'
           source.nat.ip: "{{ parse_audit_sslvpn_logs.message.nat_ip }}"
           citrix.adc.virtual_server.ip: "{{ parse_audit_sslvpn_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_sslvpn_logs.message.vserver_port }}"
+          http.request.method: "{{ parse_audit_sslvpn_logs.message.http_method }}"
 
   set_ssl_log_fields:
     actions:
