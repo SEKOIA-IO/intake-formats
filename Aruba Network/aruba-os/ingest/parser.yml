@@ -6,7 +6,7 @@ pipeline:
       properties:
         pattern: "%{SYSLOG}|%{DEFAULT}"
         custom_patterns:
-          SYSLOG: '<%{NUMBER:code}> <%{NUMBER}> (<%{WORD}> )?<%{WORD} %{IP:src_ip}>\s*(%{WORD}:\s*)?%{GREEDYDATA:syslog_payload}'
+          SYSLOG: '<%{NUMBER:code}> <%{NUMBER}> (<%{WORD}> )?<%{WORD} %{IP:src_ip}>\s*(%{WORD}:\s*)?\s*%{GREEDYDATA:syslog_payload}'
           DEFAULT: '%{DATA:prefix}\:\s*%{USERNAME:obs}\s*\:\s*%{GREEDYDATA:payload}\s*'
 
   - name: parse_syslog_message
@@ -14,11 +14,11 @@ pipeline:
       name: grok.match
       properties:
         input_field: "parse_message.message.syslog_payload"
-        pattern: "%{FORMAT_133121}|%{KV_PART}|%{DEFAULT}"
+        pattern: "%{USER_INFO}|%{FORMAT_133121}|%{KV_PART}"
         custom_patterns:
           FORMAT_133121: "%{DATA} to %{IP:dst_ip}(:%{NUMBER:dst_port})? with %{GREEDYDATA}"
           KV_PART: '%{DATA:payload}.\s*%{GREEDYDATA:kv_part}'
-          DEFAULT: "User %{USERNAME:user_name}.*?"
+          USER_INFO: "User %{USERNAME:user_name}.*?"
     filter: "{{ parse_message.message.get('syslog_payload') != None }}"
 
   - name: syslog_parse_kv_part_message
@@ -113,9 +113,10 @@ stages:
           event.type: ["info"]
           event.reason: "{{ parse_message.message.syslog_payload }}"
           source.ip: "{{ parse_message.message.src_ip }}"
+          destination.domain: "{{ syslog_parse_kv_part_message.message.servername }}"
           destination.ip: "{{ parse_syslog_message.message.dst_ip or syslog_parse_kv_part_message.message.serverip }}"
           destination.port: "{{ parse_syslog_message.message.dst_port }}"
-          user.name: "{{ syslog_parse_kv_part_message.message.username or parse_syslog_message.message.user_name }}"
+          user.name: "{{ parse_syslog_message.message.user_name or syslog_parse_kv_part_message.message.username }}"
 
       - set:
           source.ip: "{{ syslog_parse_kv_part_message.message.userip }}"
