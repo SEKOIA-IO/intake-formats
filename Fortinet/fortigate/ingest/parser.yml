@@ -56,9 +56,23 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{parsed_event.message.timestamp }}"
+        input_field: "{{parsed_event.message.timestamp}}"
         output_field: date
         timezone: "{{parsed_event.message.tz}}"
+
+  - name: parsed_date_with_tz
+    filter: '{{parsed_event.message.get("v010xxxxdate") != None and parsed_event.message.get("time") != None and parsed_event.message.get("tz", "") != None}}'
+    external:
+      name: date.parse
+      properties:
+        # “Local” time at which the log was recorded in the log file
+        # String in “YYYY-MM-DD HH:MM:SS” format.
+        input_field: "{{parsed_event.message.v010xxxxdate}} {{parsed_event.message.time}}{{parsed_event.message.tz}}"
+        output_field: date
+        # timezone: +0100
+        # This depends on the time zone used.
+        # String in “+HHMM” or “-HHMM” format.
+        format: "%Y-%m-%d %H:%M:%S%z"
 
   - name: parsed_date
     filter: '{{parsed_event.message.get("start") != None}}'
@@ -244,6 +258,10 @@ stages:
           fortinet.fortigate.poluuid: "{{parsed_event.message.poluuid}}"
           network.forwarded_ip: "{{parsed_event.message.forwardedfor}}"
           group.name: "{{parsed_event.message.group or parsed_event.message.FTNTFGTgroup}}"
+
+      - set:
+          "@timestamp": "{{parsed_date_with_tz.date}}"
+        filter: '{{parsed_date_with_tz.get("date") != None}}'
 
       - set:
           fortinet.fortigate.poluuid: "{{parsed_event.message.uuid}}"
