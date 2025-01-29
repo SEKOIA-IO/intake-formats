@@ -6,7 +6,7 @@ pipeline:
       properties:
         input_field: original.message
         output_field: message
-        pattern: '%{PREFIX}%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}\s+%{NOTSPACE:acl_decision}\s+<%{VERDICT:scanning_verdict_information}>\s+%{DATA:user_agent}.*'
+        pattern: '%{PREFIX}%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}%{GREEDYDATA}\s+%{NOTSPACE:acl_decision}\s+<%{VERDICT:scanning_verdict_information}>\s+%{DATA:user_agent}.*'
         custom_patterns:
           PREFIX: '(?:Info:\s+)*'
           VERDICT: "(?:[^>]+)"
@@ -24,7 +24,7 @@ pipeline:
       properties:
         input_field: parsed_event.message.acl_decision
         output_field: result
-        pattern: "%{WORD:decision_tag}-%{WORD:policy_group_name}-%{WORD:policy_identity}-%{WORD:outbound_malware_scanning_policy}-%{WORD:data_security_policy}-%{WORD:external_dlp_policy}-%{WORD:routing_policy}"
+        pattern: "%{WORD:decision_tag}-%{WORD:policy_group_name}-%{WORD:policy_identity}-%{WORD:outbound_malware_scanning_policy}-%{WORD:data_security_policy}-%{WORD:external_dlp_policy}-%{WORD:routing_policy}(-%{WORD})?"
   - name: parsed_scanning_verdict
     filter: '{{ parsed_event.get("message") != None }}'
     external:
@@ -105,8 +105,8 @@ stages:
         filter: '{{parsed_acl_decision.get("result").get("decision_tag") != None}}'
 
       - set:
-          user_agent.original: "{{parsed_event.message.useragent}}"
-        filter: '{{parsed_event.message.useragent != "-"}}'
+          user_agent.original: "{{parsed_event.message.user_agent}}"
+        filter: '{{parsed_event.message.user_agent != "-"}}'
 
       - set:
           user.name: "{{parsed_event.message.username}}"
@@ -177,7 +177,7 @@ stages:
 
       - set:
           cisco_wsa.url.category_code: "{{parsed_scanning_verdict.results.url_category}}"
-        filter: '{{parsed_scanning_verdict.results.url_category != "nc"}}'
+        filter: '{{parsed_scanning_verdict.results.url_category not in ["nc", "-"]}}'
 
       - translate:
         dictionary:
@@ -262,11 +262,11 @@ stages:
         mapping:
           cisco_wsa.url.category_code: cisco_wsa.url.category
         fallback: "Unclassified"
-        filter: '{{parsed_scanning_verdict.results.url_category != "nc"}}'
+        filter: '{{parsed_scanning_verdict.results.url_category not in ["nc", "-"]}}'
 
       - set:
           cisco_wsa.threat.name: "{{parsed_scanning_verdict.results.threat_name}}"
-        filter: '{{parsed_scanning_verdict.results.threat_name != "\"-\""}}'
+        filter: '{{parsed_scanning_verdict.results.threat_name not in ["\"-\"", "-"]}}'
 
       - set:
           cisco_wsa.threat.category_code: "{{parsed_scanning_verdict.results.threat_category_code}}"
@@ -305,3 +305,4 @@ stages:
         mapping:
           cisco_wsa.threat.category_code: cisco_wsa.threat.category
         fallback: "Not Set"
+        filter: '{{parsed_scanning_verdict.results.threat_category_code != "-"}}'
