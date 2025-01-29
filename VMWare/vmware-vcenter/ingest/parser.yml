@@ -6,7 +6,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "%{SESSION_TYPE_1}|%{SESSION_TYPE_2}|%{SESSION_TYPE_3}|%{SESSION_TYPE_4}|%{SESSION_TYPE_5}|%{SESSION_TYPE_6}|%{CONNECTIONS}|%{FAULT}|%{FAULT_TYPE_2}|%{HTTP_LOGS_1}|%{HTTP_LOGS_2}|%{OTHERS_EVENTS_TYPE_6}|%{OTHERS_EVENTS}|%{OTHERS_EVENTS_TYPE_2}|%{OTHERS_EVENTS_TYPE_3}|%{OTHERS_EVENTS_TYPE_5}|%{OTHERS_EVENTS_TYPE_7}"
+        pattern: "%{SESSION_TYPE_1}|%{SESSION_TYPE_2}|%{SESSION_TYPE_3}|%{SESSION_TYPE_4}|%{SESSION_TYPE_5}|%{SESSION_TYPE_6}|%{CONNECTIONS}|%{FAULT}|%{FAULT_TYPE_2}|%{HTTP_LOGS_1}|%{HTTP_LOGS_2}|%{LOGIN}|%{OTHERS_EVENTS_TYPE_6}|%{OTHERS_EVENTS}|%{OTHERS_EVENTS_TYPE_2}|%{OTHERS_EVENTS_TYPE_3}|%{OTHERS_EVENTS_TYPE_5}|%{OTHERS_EVENTS_TYPE_7}"
         custom_patterns:
           SESSION_TYPE_1: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA:source_user_name}\] \[%{HOSTNAME:hostname}\] \[%{INT}] \[Cannot login %{USERNAME:username}@%{IP:ip_address}\]'
           SESSION_TYPE_2: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA}\] \[%{DATA}\] \[%{INT}\] \[User (%{DATA:source_user_domain}\\)?%{DATA:source_user_name}@%{IP:ip_address} logged in as %{DATA:username}\]'
@@ -19,12 +19,22 @@ pipeline:
           FAULT_TYPE_2: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{DATA:pid}\] \[%{DATA:originator_info}\] %{GREEDYDATA:reason}: %{DATA:event_code}:%{GREEDYDATA} userName:\\\\n--> \\\"%{DATA:username}\\\"%{GREEDYDATA} \\\"%{DATA:locale}\\\"'
           HTTP_LOGS_1: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{DATA:pid}\] \[%{DATA:originator_info}\] %{TIMESTAMP_ISO8601:datetime} %{DATA:http_method} %{URIPATH:url_path} HTTP/%{NUMBER:http_version} %{NUMBER:response_status} %{DATA:upstream_status} - %{NUMBER} %{NUMBER} %{NUMBER} %{NUMBER} %{NUMBER} %{IP:source_ip}:%{NUMBER:source_port} %{IP:destination_ip}:%{NUMBER:destination_port} %{IP:ip_address}:%{NUMBER:local_port1} %{IP:local_ip2}:%{NUMBER:local_port2}'
           HTTP_LOGS_2: '\[%{HTTPDATE:http_logs2_timestamp}\] %{DATA:thread} \[Request]\ %{IP:source_ip}:%{NUMBER:source_port} to local %{NUMBER:destination_port} - HTTP/%{NUMBER:http_version} %{DATA:http_method} %{URIPATH:url_path} %{DATA} %{NUMBER:response_status} - %{NUMBER:response_bytes} bytes %{DATA} process %{NUMBER:process_time}ms / commit %{NUMBER:commit_time}ms / conn \[%{DATA:conn_status}\]'
+          LOGIN: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{INT:pid}:%{DATA:thread}\] \[CorId=%{UUID:corid}\] \[%{DATA:logger}\] %{GREEDYDATA:reason}'
           OTHERS_EVENTS: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{INT:pid}\] \[%{DATA}\] %{DATA} -- %{GREEDYDATA:reason}'
           OTHERS_EVENTS_TYPE_2: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA:thread}\] %{DATA:log_level} opId=%{DATA:operationID} %{DATA:process} - %{GREEDYDATA:reason}'
           OTHERS_EVENTS_TYPE_3: '%{TIMESTAMP_ISO8601:timestamp}: %{DATA}: \[%{GREEDYDATA:reason}\]'
           OTHERS_EVENTS_TYPE_5: '\[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:log_level} \] %{GREEDYDATA:reason}'
           OTHERS_EVENTS_TYPE_6: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA}\] \[%{DATA}\] \[%{INT}\] \[A ticket for %{USERNAME:username} of type %{DATA} on %{IP:ip_address} in %{DATA} has been acquired\]'
           OTHERS_EVENTS_TYPE_7: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA:source_user_name}?\] \[%{HOSTNAME:hostname}?\] \[%{INT}] \[%{GREEDYDATA:reason}\]'
+
+  - name: parsed_json
+    filter: "{{parsed_event.message.LOGIN != None}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parsed_event.message.reason}}"
+        output_field: message
+
   - name: parsed_date
     external:
       name: date.parse
@@ -40,8 +50,8 @@ stages:
     actions:
       - set:
           "@timestamp": "{{parsed_event.message.timestamp}}"
-          user.name: "{{parsed_event.message.username}}"
-          user.domain: "{{parsed_event.message.user_domain}}"
+          user.name: "{{parsed_event.message.username or parsed_json.message.user.split('@')[0]}}"
+          user.domain: "{{parsed_event.message.user_domain or parsed_json.message.user.split('@')[1]}}"
           source.ip: "{{parsed_event.message.source_ip}}"
           destination.ip: "{{parsed_event.message.destination_ip}}"
           source.user.name: "{{parsed_event.message.source_user_name}}"
@@ -50,6 +60,7 @@ stages:
           host.name: "{{parsed_event.message.hostname}}"
           event.reason: "{{parsed_event.message.reason}}"
           log.level: "{{parsed_event.message.log_level}}"
+          log.logger: "{{parsed_event.message.logger}}"
           http.request.method: "{{parsed_event.message.http_method}}"
           url.path: "{{parsed_event.message.url_path}}"
           http.response.status_code: "{{parsed_event.message.response_status}}"
@@ -59,6 +70,7 @@ stages:
           process.pid: "{{parsed_event.message.pid}}"
           process.name: "{{parsed_event.message.process}}"
           source.port: "{{parsed_event.message.source_port}}"
+          trace.id: "{{parsed_event.message.corid}}"
           http.version: "{{parsed_event.message.http_version}}"
           destination.port: "{{parsed_event.message.destination_port}}"
           source.address: "{{parsed_event.message.source_address}}"
@@ -83,6 +95,33 @@ stages:
       - set:
           process.end: "{{parsed_event.message.process_time}}"
         filter: "{{parsed_event.message.process_time > 0}}"
+
+      - set:
+          host.ip: "{{parsed_json.message.client}}"
+        filter: "{{parsed_json.message.get('client') | is_ipaddress}}"
+
+      - set:
+          host.name: "{{parsed_json.message.client}}"
+        filter: "{{parsed_json.message.get('client') | is_ipaddress == False}}"
+
+      - set:
+          event.outcome: >
+            {%- if parsed_json.message.type == "com.vmware.sso.LoginSuccess" -%}
+              success
+            {%- elif parsed_json.message.type == "com.vmware.sso.LoginFailure" -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+        filter: "{{parsed_json.message.get('type') != None}}"
+
+      - set:
+          event.reason: "{{parsed_json.message.description}}"
+        filter: "{{parsed_json.message.get('description') != None}}"
+
+      - set:
+          http.response.status_code: "{{parsed_json.message.description.split(' ')[-1] | int}}"
+        filter: "{{parsed_json.message.get('description') != None}}"
 
       - set:
           observer.vendor: "VMWare"
