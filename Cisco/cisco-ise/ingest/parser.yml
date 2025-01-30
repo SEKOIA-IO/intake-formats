@@ -6,7 +6,11 @@ pipeline:
       properties:
         input_field: original.message
         output_field: pre_message
-        pattern: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
+        pattern: "%{RESPONSE_MESSAGE}|%{WITH_HEADER}|%{KV_MESSAGE}"
+        custom_patterns:
+          WITH_HEADER: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
+          RESPONSE_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}  Response=%{GREEDYDATA:response_message}"
+          KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER} %{GREEDYDATA:reason_with_kv}"
 
   - name: grok_timestamp_in_status
     filter: "{{pre_parsed_event.pre_message.status[0].isdigit()}}"
@@ -63,6 +67,16 @@ pipeline:
         value_sep: "="
         item_sep: ';\s'
 
+  - name: parsed_kv_sentence
+    filter: '{{"=" in pre_parsed_event.pre_message.reason_with_kv and "," in pre_parsed_event.pre_message.reason_with_kv}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{pre_parsed_event.pre_message.reason_with_kv.strip()}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ',\s'
+
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
     external:
@@ -104,11 +118,22 @@ stages:
           event.category: ["network"]
           event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason")}}'
           cisco.ise.network_calling_station.id: '{{parsed_kv_sentence.result.get("Error Message")}}'
-          user.name: '{{parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("Calling Station Id")}}'
+          user.name: '{{parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("Calling Station Id") or parsed_kv_sentence.result.get("UserName")}}'
           source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
           source.mac: "{{grok_mac.adress_mac.adress}}"
-          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP")}}'
+          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address")}}'
+          destination.ip: '{{parsed_kv_sentence.result.get("DestinationIPAddress")}}'
+          destination.port: '{{parsed_kv_sentence.result.get("DestinationPort")}}'
+          network.protocol: '{{parsed_kv_sentence.result.get("Protocol")}}'
         filter: '{{"Configuration" not in parsed_event.message.reason }}'
+
+      - set:
+          destination.mac: '{{parsed_kv_sentence.result["Called-Station-ID"] | to_mac_address}}'
+        filter: '{{parsed_kv_sentence.result.get("Called-Station-ID") != None }}'
+
+      - set:
+          source.mac: '{{parsed_kv_sentence.result["Calling-Station-ID"] | to_mac_address}}'
+        filter: '{{parsed_kv_sentence.result.get("Calling-Station-ID") != None }}'
 
   set_miscellaneous_fields:
     actions:
@@ -119,6 +144,21 @@ stages:
       - set:
           event.reason: "{{parsed_event.message.kv}}"
         filter: '{{":" in parsed_event.message.kv and "=" not in parsed_event.message.kv}}'
+
+      - set:
+          event.reason: "{{parsed_kv_sentence.result.get('EapChainingResult')}}"
+        filter: '{{parsed_kv_sentence.result.get("EapChainingResult") != None}}'
+
+      - set:
+          event.category: ["network"]
+          event.reason: "{{pre_parsed_event.pre_message.get('response_message')}}"
+        filter: "{{pre_parsed_event.pre_message.get('response_message') != None}}"
+
+      - set:
+          event.category: ["authentication"]
+          source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress')}}"
+          user.name: "{{parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
+        filter: '{{"Authentication" in parsed_kv_sentence.result.get("AuthenticationStatus")}}'
 
       - set:
           event.reason: "{{grok_timestamp_in_status.time_message.reason}}"
