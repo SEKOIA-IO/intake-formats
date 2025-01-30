@@ -1,0 +1,58 @@
+name: wiz-cloud-configuration-findings
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.firstSeenAt}}" # TODO: check maybe we should use `analyzedAt`
+        output_field: datetime
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["vulnerability"]
+          event.type: ["info"]
+          observer.vendor: "Wiz"
+          event.dataset: "Cloud Configuration Finding"
+
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          log.level: "{{json_event.message.severity}}"
+
+          rule.id: "{{json_event.message.rule.id}}"
+          rule.name: "{{json_event.message.rule.name}}"
+
+          wiz.findings.id: "{{json_event.message.id}}"
+          wiz.findings.status: "{{json_event.message.status}}"
+          wiz.findings.result: "{{json_event.message.result}}"
+          wiz.findings.deleted: "{{json_event.message.deleted}}"
+          wiz.findings.resource.id: "{{json_event.message.resource.id}}"
+          wiz.findings.resource.name: "{{json_event.message.resource.name}}"
+          wiz.findings.resource.type: "{{json_event.message.resource.type}}"
+          wiz.findings.resource.nativeType: "{{json_event.message.resource.nativeType}}"
+          wiz.findings.resource.projects: >
+            [ {%- for project in json_event.message.resource.projects -%}
+              {
+                "id": "{{project.id}}",
+                "name": "{{project.name}}",
+                "businessImpact": "{{project.riskProfile.businessImpact}}",
+              },
+              {%- endfor -%}
+            ]
+
+          wiz.findings.securitySubCategories.titles: >
+            [ {%- for subcategory in json_event.message.securitySubCategories -%}
+              "{{subcategory.title}}",
+              {%- endfor -%}
+            ]
