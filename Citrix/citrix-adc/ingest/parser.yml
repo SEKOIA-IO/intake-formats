@@ -71,7 +71,7 @@ pipeline:
           OPTION_2_2: ".*User %{USERNAME:user_name}.*Client_ip %{IP:client_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*"
           OPTION_3: ".*user %{USERNAME:user_name}@%{HOSTNAME:user_domain}.*clientip %{IP:client_ip}.*"
           OPTION_4: ".*Context %{USERNAME:user_name}(@(%{IP:client_ip}|%{HOSTNAME:user_domain}))?.*- %{DATA:url_original} User.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*SSO %{DATA}: %{WORD:http_method} %{DATA:http_path} %{DATA} %{DATA}"
-          OPTION_5: "User %{USERNAME:user_name} - Client_ip %{IP:client_ip}.*"
+          OPTION_5: 'User %{USERNAME:user_name} - Client_ip %{IP:client_ip} - %{WORD} "%{DATA:reason}" - Browser %{DATA:browser}'
           POLICY_NAME: '"?"?\w+"?"?'
 
   - name: parse_audit_snmp_logs
@@ -230,6 +230,7 @@ stages:
           citrix.adc.virtual_server.ip: "{{ parse_audit_sslvpn_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_sslvpn_logs.message.vserver_port }}"
           http.request.method: "{{ parse_audit_sslvpn_logs.message.http_method }}"
+          user_agent.original: "{{ parse_audit_sslvpn_logs.message.browser }}"
 
   set_ssl_log_fields:
     actions:
@@ -249,3 +250,7 @@ stages:
       - set:
           event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
           event.reason: "{{parse_audit_header.message.payload}}"
+
+      - set:
+          event.reason: "{{ parse_audit_sslvpn_logs.message.reason }}"
+        filter: "{{ parse_audit_sslvpn_logs.message.get('reason') != None }}"
