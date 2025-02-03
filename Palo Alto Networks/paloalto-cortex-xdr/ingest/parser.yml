@@ -12,12 +12,30 @@ pipeline:
         input_field: "{{json_event.message.detection_timestamp or json_event.message.event_timestamp}}"
         output_field: datetime
 
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.description}}"
+        output_field: message
+        pattern: "(%{COMMANDLINE}|%{IPDST}|%{IPSRC}|%{HOST}|%{PROC}|%{SERVICE}|%{DATA})*"
+        custom_patterns:
+          COMMANDLINE: '(C|c)ommand (L|l)ine: "%{DATA:process_executable}" %{GREEDYDATA:process_command_line}'
+          IPDST: "(connected )?to %{IP:dest_ip}((:|/)%{NUMBER:dest_port})?"
+          IPSRC: "(connected )?from %{IP:src_ip}((:|/)%{NUMBER:src_port})?"
+          HOST: "((t|T)he )?(h|H)ost %{DATA:hostname}?"
+          PROC: "((T|t)he )?((P|p)rocess|(E|e)ngine) %{DATA:process_name}.%{WORD:process_extension}"
+          VERSION: "%{NUMBER}.%{NUMBER}.%{NUMBER}.%{NUMBER}"
+          SERVICE: "(T|t)he (S|s)ervice %{WORD:service_name}(-%{VERSION:service_version})?"
+
   # Alerts stage
   - name: set_alerts_fields
     filter: '{{json_event.message.get("severity") != None }}'
   # Events stage
   - name: set_events_fields
     filter: '{{json_event.message.get("agent_install_type") != None }}'
+  - name: set_description_fields
+    filter: '{{json_event.message.get("description") != None }}'
 
 stages:
   set_alerts_fields:
@@ -133,3 +151,28 @@ stages:
           event.category: ["host"]
           event.type: ["change"]
         filter: '{{"Host" in json_event.message.event_type}}'
+
+  set_description_fields:
+    actions:
+      - set:
+          process.executable: "{{parsed_description.message.process_executable}}"
+          process.command_line: '{{"\"" ~ parsed_description.message.process_executable ~ "\" " ~ parsed_description.message.process_command_line}}'
+        filter: '{{json_event.message.get("actor_process_command_line") == None and parsed_description.message.get("process_executable") != None}}'
+
+      - set:
+          process.name: '{{parsed_description.message.process_name ~ "." ~ parsed_description.message.process_extension}}'
+        filter: '{{json_event.message.get("actor_process_image_name") == None and parsed_description.message.get("process_name") != None}}'
+
+      - set:
+          destination.ip: "{{parsed_description.message.dest_ip}}"
+          destination.port: "{{parsed_description.message.dest_port}}"
+          source.ip: "{{parsed_description.message.src_ip}}"
+          source.port: "{{parsed_description.message.src_port}}"
+
+      - set:
+          host.name: "{{parsed_description.message.hostname}}"
+
+      - set:
+          service.name: "{{parsed_description.message.service_name}}"
+          service.version: "{{parsed_description.message.service_version}}"
+        filter: '{{parsed_description.message.get("service_name") != None}}'
