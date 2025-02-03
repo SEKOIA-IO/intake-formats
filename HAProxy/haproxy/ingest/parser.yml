@@ -5,7 +5,7 @@ pipeline:
       name: grok.match
       properties:
         input_field: "{{original.message.strip().replace('\n','')}}"
-        pattern: "(%{JSON_MESSAGE}|%{HAPROXYHTTPBASE})"
+        pattern: "(%{JSON_MESSAGE}|%{HAPROXYHTTPBASE}|%{HAPROXYERROR})"
         custom_patterns:
           JSON_MESSAGE: >-
             %{DATA}\[%{INT}\]: \[%{WORD}\] %{INT} %{GREEDYDATA:json_msg}
@@ -15,6 +15,7 @@ pipeline:
           HAPROXYURL: "(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
           TLS_PROTOCOL: "TLS"
           HAPROXYHTTPBASE: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE} %{NOTSPACE}/%{NOTSPACE} %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT:http_response_status_code} %{NOTSPACE:http_response_bytes} %{DATA:http_request_cookie} %{DATA:http_response_cookie} %{NOTSPACE} %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT}/%{INT} (\{%{DATA:captured_request_headers}\})?( )?(\{%{DATA:captured_response_headers}\})?( )?"(<BADREQ>|(%{WORD:http_request_method} (?:%{HAPROXYURL:url_original})?( HTTP/%{NUMBER:http_version})?))?"( %{TLS_PROTOCOL:tls_protocol}v%{NUMBER:tls_version})?%{GREEDYDATA}'
+          HAPROXYERROR: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE}: %{GREEDYDATA:error_msg}'
 
   - name: json
     filter: "{{grok.message.json_msg | length > 0}}"
@@ -27,6 +28,8 @@ pipeline:
     filter: "{{grok.message.json_msg | length > 0}}"
   - name: grok_main_stage
     filter: "{{grok.message.HAPROXYHTTPBASE | length > 0}}"
+  - name: grok_error_stage
+    filter: "{{grok.message.HAPROXYERROR | length > 0}}"
   - name: finalizer
 
 stages:
@@ -73,3 +76,13 @@ stages:
           # legacy
           url.original: "{{final.destination.domain+final.url.path}}"
           http.version: "{{json.message.vers.split('/')[1]}}"
+
+  grok_error_stage:
+    actions:
+      - set:
+          error.message: "{{grok.message.error_msg}}"
+          source.address: "{{grok.message.source_ip}}"
+          source.ip: "{{grok.message.source_ip}}"
+          source.port: "{{grok.message.source_port}}"
+          event.kind: "error"
+          error.type: "HAProxy error"
