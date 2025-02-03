@@ -7,11 +7,18 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
-  - name: parsed_date
+  - name: parsed_analyzed_at
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.firstSeenAt}}" # TODO: check maybe we should use `analyzedAt`
+        input_field: "{{json_event.message.analyzedAt}}"
+        output_field: datetime
+
+  - name: parsed_first_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.firstSeenAt}}"
         output_field: datetime
 
   - name: set_ecs_fields
@@ -26,7 +33,8 @@ stages:
           observer.vendor: "Wiz"
           event.dataset: "Cloud Configuration Finding"
 
-          "@timestamp": "{{parsed_date.datetime}}"
+          "@timestamp": "{{parsed_analyzed_at.datetime}}"
+          event.start: "{{parsed_first_seen.datetime}}"
 
           log.level: "{{json_event.message.severity}}"
 
@@ -56,3 +64,10 @@ stages:
               "{{subcategory.title}}",
               {%- endfor -%}
             ]
+      - translate:
+        dictionary:
+          PASS: "success"
+          FAIL: "failure"
+          ERROR: "failure"
+        mapping:
+          json_event.message.result: event.outcome
