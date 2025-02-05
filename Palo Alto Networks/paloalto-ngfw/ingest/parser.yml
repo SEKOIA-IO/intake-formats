@@ -640,6 +640,20 @@ pipeline:
         input_field: "{{parsed_event.message.Threat_ContentName}}"
         pattern: '%{DATA:threat_description}?\(%{NUMBER:threat_code}\)'
 
+  - name: parsed_ip_range_destination
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.DestinationLocation or parsed_event.message.PanOSDestinationLocation}}"
+        pattern: "(%{IP:range_1}-%{IP:range_2})|%{GREEDYDATA:geoname}"
+
+  - name: parsed_ip_range_source
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
+        pattern: "%{IP:range_1}-%{IP:range_2}|%{GREEDYDATA:geoname}"
+
   - name: set_extracted_fields
   - name: set_finalize_user_name
   - name: set_category_fields
@@ -884,10 +898,16 @@ stages:
 
       - set:
           source.geo.name: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
-        filter: "{{parsed_event.message.SourceLocation | length != 2 and parsed_event.message.PanOSSourceLocation | length != 2}}"
+        filter: "{{parsed_event.message.SourceLocation | length != 2 and parsed_event.message.PanOSSourceLocation | length != 2 and parsed_ip_range_source.message.get('geoname') != None}}"
+      - set:
+          paloalto.source.ips_range: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
+        filter: "{{parsed_ip_range_source.message.get('range_1') != None and parsed_ip_range_source.message.get('range_2') != None}}"
       - set:
           destination.geo.name: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
-        filter: "{{parsed_event.message.DestinationLocation | length != 2 and parsed_event.message.PanOSDestinationLocation | length != 2}}"
+        filter: "{{(parsed_event.message.DestinationLocation | length != 2 and parsed_event.message.PanOSDestinationLocation | length != 2) and parsed_ip_range_destination.message.get('geoname') != None}}"
+      - set:
+          paloalto.destination.ips_range: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
+        filter: "{{parsed_ip_range_destination.message.get('range_1') != None and parsed_ip_range_destination.message.get('range_2') != None}}"
 
       - set:
           action.name: "{{parsed_event.message.EventID}}"
