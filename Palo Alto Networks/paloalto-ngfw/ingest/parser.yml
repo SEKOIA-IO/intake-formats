@@ -599,7 +599,7 @@ pipeline:
       properties:
         raise_errors: false
         input_field: "{{parsed_event.message.EventDescription}}"
-        pattern: "%{SYSTEM_AUTH_AUTHENTICATION_FOR}|%{CONNECTION}|%{CONTENT}|%{WILDFIRE}|%{NETWORK}|%{PANDB_GENERIC}|%{CLOUD_ELECTION}|%{AUTHENTICATION}|%{REASON1}|%{REASON2}|%{REASON3}|%{REASON4}|%{REASON5}"
+        pattern: "%{SYSTEM_AUTH_AUTHENTICATION_FOR}|%{CONNECTION}|%{CONTENT}|%{WILDFIRE}|%{NETWORK}|%{PANDB_GENERIC}|%{CLOUD_ELECTION}|%{AUTHENTICATION}|%{REASON}"
         custom_patterns:
           SYSTEM_AUTH_AUTHENTICATION_FOR: "authenticated for user '%{USERNAME:user}'.   auth profile '%{DATA:auth_profile}', vsys '%{DATA:vsys}', server profile '%{DATA:server_profile}', server address '%{HOSTNAME:server_address}', From: %{IP:src}."
           CONNECTION: "%{CONNECTION_SUCCESS}|%{CONNECTION_TO_SERVER}|%{CONNECTION_REGISTERED}"
@@ -624,10 +624,11 @@ pipeline:
           AUTHENTICATION: "%{AUTHENTICATION_CONSOLE}|%{AUTHENTICATION_WEB}"
           AUTHENTICATION_CONSOLE: "authenticated for user '%{USERNAME:user}'.   From: %{IP:src}."
           AUTHENTICATION_WEB: "User %{USERNAME:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
+          REASON: "%{REASON1}|%{REASON2}|%{REASON3}|%{REASON4}|%{REASON5}"
           REASON1: 'User-ID server monitor %{HOSTNAME:hostname}\(%{WORD:vsys}\) %{GREEDYDATA:message}'
           REASON2: "ldap cfg %{WORD:config_name} connected to server %{IP:destination_ip}:%{INT:port}, initiated by: %{IP:source_ip}"
           REASON3: "When authenticating user '?%{WORD:user}'? from '?%{IP:source_ip}'?, a less secure authentication method %{WORD:auth_method} is used. Please migrate to %{WORD:recommended_methods1} or %{DATA:recommended_methods2}. Authentication Profile '?%{WORD:auth_profile}'?, vsys '?%{WORD:vsys}'?, Server Profile '?%{WORD:server_profile}'?, Server Address '?%{IP:destination_ip}'?"
-          REASON4: "failed authentication for user %{WORD:user}. Reason: %{GREEDYDATA:reason} auth profile %{WORD:auth_profile}, vsys %{WORD:vsys}, server profile %{WORD:server_profile}, server address %{IP:destination_ip}, auth protocol %{WORD:auth_protocol}, From: %{IP:source_ip}"
+          REASON4: "failed authentication for user '?%{USERNAME:user}'?. Reason: %{GREEDYDATA:reason} auth profile '?%{DATA:auth_profile}'?, vsys '?%{WORD:vsys}'?, server profile '?%{WORD:server_profile}'?, server address '?%{IP:destination_ip}'?, auth protocol '?%{WORD:auth_protocol}'?, From: '?%{IP:source_ip}'?."
           REASON5: 'authenticated for user %{WORD:user}\.   auth profile %{WORD:auth_profile}, vsys %{WORD:vsys}, server profile %{DATA:server_profile}, server address %{IP:destination_ip}, auth protocol %{WORD:auth_protocol}, admin role %{WORD:admin_role}, From: %{IP:source_ip}\.'
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
@@ -798,17 +799,9 @@ stages:
           url.original: "{{parsed_event.message.URL}}"
 
       - set:
-          url.original: "{{parsed_event.message.FileName or parsed_event.message.URLFilename}}"
-          url.domain: '{{final.url.original.split("/")[0].split(":")[0]}}'
-          destination.domain: '{{final.url.original.split("/")[0].split(":")[0]}}'
-          url.port: '{{final.url.original.split("/")[0].split(":")[1]}}'
-          url.path: '{{final.url.original.split("?")[0].split("/")[1:] | join("/")}}'
-          url.query: '{{final.url.original.split("?")[1]}}'
-        filter: "{{final.action.type == 'url'}}"
-
-      - delete:
-          - url.original
-        filter: "{{final.action.type == 'url'}}"
+          url.original: "https://{{parsed_event.message.URL or parsed_event.message.FileName or parsed_event.message.URLFilename}}"
+          destination.domain: '{{final.url.original.split("://")[1].split("/")[0].split(":")[0]}}'
+        filter: "{{final.action.type == 'url' and (parsed_event.message.URL != null or parsed_event.message.FileName != null or parsed_event.message.URLFilename != null)}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIPv4}}"
@@ -918,11 +911,13 @@ stages:
           paloalto.threat.id: "{{parsed_event.message.ThreatID or parsed_event.message.PanOSThreatID or parsed_threat.message.threat_code}}"
           paloalto.threat.name: "{{parsed_threat.message.threat_description}}"
           paloalto.vsys: "{{parsed_description.message.vsys}}"
-          paloalto.authetification.profile: "{{parsed_description.message.auth_profile}}"
+          paloalto.authentication.profile: "{{parsed_description.message.auth_profile}}"
           paloalto.server.profile: "{{parsed_description.message.server_profile}}"
           paloalto.tls.chain_status: "{{parsed_event.message.ChainStatus}}"
           paloalto.tls.root_status: "{{parsed_event.message.RootStatus}}"
           paloalto.tls.sni: "{{parsed_event.message.ServerNameIndication}}"
+          paloalto.session.id: "{{parsed_event.message.SessionID}}"
+          paloalto.session.end_reason: "{{parsed_event.message.SessionEndReason}}"
       - set:
           paloalto.threat.type: >
             {%- set id = parsed_threat.message.threat_code | int -%}
