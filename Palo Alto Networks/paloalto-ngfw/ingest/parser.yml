@@ -640,6 +640,20 @@ pipeline:
         input_field: "{{parsed_event.message.Threat_ContentName}}"
         pattern: '%{DATA:threat_description}?\(%{NUMBER:threat_code}\)'
 
+  - name: parsed_ip_range_destination
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.DestinationLocation or parsed_event.message.PanOSDestinationLocation}}"
+        pattern: "(%{IP:range_1}-%{IP:range_2})|%{GREEDYDATA:geoname}"
+
+  - name: parsed_ip_range_source
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
+        pattern: "%{IP:range_1}-%{IP:range_2}|%{GREEDYDATA:geoname}"
+
   - name: set_extracted_fields
   - name: set_finalize_user_name
   - name: set_category_fields
@@ -672,11 +686,11 @@ stages:
   set_action_outcome:
     actions:
       - set:
-          action.outcome: "{{parsed_event.message.Status}}"
-        filter: "{{parsed_event.message.Status != None}}"
-      - set:
           action.outcome: "success"
-        filter: "{{parsed_event.message.Action != null}}"
+        filter: "{{parsed_event.message.get('Action') != None}}"
+      - set:
+          action.outcome: "{{parsed_event.message.Status or parsed_event.message.PanOSEventStatus}}"
+        filter: "{{parsed_event.message.Status != None or parsed_event.message.PanOSEventStatus != None}}"
 
   set_extracted_fields:
     actions:
@@ -801,7 +815,7 @@ stages:
       - set:
           url.original: "https://{{parsed_event.message.URL or parsed_event.message.FileName or parsed_event.message.URLFilename}}"
           destination.domain: '{{final.url.original.split("://")[1].split("/")[0].split(":")[0]}}'
-        filter: "{{final.action.type == 'url' and (parsed_event.message.URL != null or parsed_event.message.FileName != null or parsed_event.message.URLFilename != null)}}"
+        filter: "{{final.action.type == 'url' and (parsed_event.message.URL != None or parsed_event.message.FileName != None or parsed_event.message.URLFilename != None)}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIPv4}}"
@@ -881,9 +895,21 @@ stages:
       - set:
           destination.geo.country_iso_code: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
         filter: "{{parsed_event.message.DestinationLocation | length == 2 or parsed_event.message.PanOSDestinationLocation | length == 2}}"
+
       - set:
-          action.name: "{{parsed_event.message.EventID or parsed_event.message.PanOSEventIDValue}}"
-        filter: '{{final.action.name == null and (parsed_event.message.EventID not in [null, "0"] or parsed_event.message.PanOSEventIDValue not in [null, "0"])}}'
+          source.geo.name: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
+        filter: "{{parsed_event.message.SourceLocation | length != 2 and parsed_event.message.PanOSSourceLocation | length != 2 and parsed_ip_range_source.message.get('geoname') != None}}"
+      - set:
+          destination.geo.name: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
+        filter: "{{(parsed_event.message.DestinationLocation | length != 2 and parsed_event.message.PanOSDestinationLocation | length != 2) and parsed_ip_range_destination.message.get('geoname') != None}}"
+
+      - set:
+          action.name: "{{parsed_event.message.EventID}}"
+        filter: '{{parsed_event.message.EventID not in ["0",0,None]}}'
+
+      - set:
+          action.name: "{{parsed_event.message.PanOSEventIDValue}}"
+        filter: '{{parsed_event.message.PanOSEventIDValue not in ["0",0,None]}}'
 
       - set:
           source.nat.port: "{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}"
@@ -955,10 +981,6 @@ stages:
           dns.resolved_ip: "{{parsed_event.message.DNSResponse}}"
 
       - set:
-          paloalto.source.region: "{{parsed_event.message.SourceRegion}}"
-        filter: "{{parsed_event.message.Subtype == 'globalprotect'}}"
-
-      - set:
           paloalto.source.private.ip: "{{parsed_event.message.PrivateIPv4}}"
         filter: "{{parsed_event.message.PrivateIPv4 | is_ipaddress}}"
 
@@ -969,24 +991,32 @@ stages:
       - set:
           threat.indicator.name: "{{parsed_event.message.URL}}"
 
+      - set:
+          paloalto.source.region: "{{parsed_event.message.SourceRegion or parsed_event.message.SourceLocation}}"
+        filter: "{{parsed_ip_range_source.message.get('range_1') != None and parsed_ip_range_source.message.get('range_2') != None}}"
+
+      - set:
+          paloalto.destination.region: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
+        filter: "{{parsed_ip_range_destination.message.get('range_1') != None and parsed_ip_range_destination.message.get('range_2') != None}}"
+
   set_finalize_user_name:
     actions:
       - set:
           user.domain: '{{final.user.name.split("\\") | first}}'
           user.name: '{{final.user.name.split("\\") | last}}'
-        filter: '{{final.user.name != null and "\\" in final.user.name}}'
+        filter: '{{final.user.name != None and "\\" in final.user.name}}'
       - set:
           user.domain: '{{final.user.email.split("@") | last}}'
           user.name: '{{final.user.email.split("@") | first}}'
-        filter: '{{final.user.email != null and "@" in final.user.email}}'
+        filter: '{{final.user.email != None and "@" in final.user.email}}'
       - set:
           source.user.domain: '{{final.source.user.name.split("\\") | first}}'
           source.user.name: '{{final.source.user.name.split("\\") | last}}'
-        filter: '{{final.source.user.name != null and "\\" in final.source.user.name}}'
+        filter: '{{final.source.user.name != None and "\\" in final.source.user.name}}'
       - set:
           destination.user.domain: '{{final.destination.user.name.split("\\") | first}}'
           destination.user.name: '{{final.destination.user.name.split("\\") | last}}'
-        filter: '{{final.destination.user.name != null and "\\" in final.destination.user.name}}'
+        filter: '{{final.destination.user.name != None and "\\" in final.destination.user.name}}'
 
   set_category_fields:
     actions:
