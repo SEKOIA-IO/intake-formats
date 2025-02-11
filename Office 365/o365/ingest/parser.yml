@@ -774,6 +774,17 @@ stages:
           rule.name: "{{parse_data.ParsedData.AlertDisplayName}}"
 
       - set:
+          office365.investigation.alert.urls: >
+            {%- set urls = [] -%}
+            {%- for link in parse_data.ParsedData.ExtendedLinks -%}
+              {%- if link.Type == "webLink" -%}
+                {%- set urls = urls.append(link.Href) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{urls|unique|list}}
+        filter: '{{parse_data.ParsedData.ExtendedLinks|selectattr("Type", "equalto", "webLink") | list | length > 0}}'
+
+      - set:
           event.kind: '{% if parse_data.ParsedData.IsIncident %}{{"alert"}}{% else %}{{"event"}}{% endif %}'
 
       - set:
@@ -876,13 +887,16 @@ stages:
             ]
 
           email.to.address: >
-            [
+            {%- set receivers = [] -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
-              {%- if Property.Recipient -%}
-                "{{Property.Recipient}}",
+              {%- if Property.Recipient != null -%}
+                {%- set receivers = receivers.append(Property.Recipient) -%}
+              {%- endif -%}
+              {%- if Property.MailboxPrimaryAddress != null-%}
+                {%- set receivers = receivers.append(Property.MailboxPrimaryAddress) -%}
               {%- endif -%}
             {%- endfor -%}
-            ]
+            {{receivers|unique|list}}
           email.attachments: >-
             [
             {%- for Property in parse_data.ParsedData.Entities -%}
