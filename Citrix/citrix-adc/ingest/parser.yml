@@ -94,6 +94,14 @@ pipeline:
         custom_patterns:
           CIPHER_SUITE: '"?"?[\w\-\.]+"?"?'
 
+  - name: parse_audit_cmd_logs
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: '.*User %{USERNAME:user_name} -.*ADM_User (NONE|%{USERNAME:adm_user}).*Remote_ip %{IP:src_ip}.*Command "%{GREEDYDATA:command}".*Status \"%{DATA:status}\".*'
+
   - name: set_audit_log_fields
     filter: '{{not original.message.startswith("CEF") and parse_audit_header.message.type not in ["AAATM"]}}'
 
@@ -109,8 +117,11 @@ pipeline:
   - name: set_ssl_log_fields
     filter: "{{ parse_audit_header.message.type == 'SSLLOG' }}"
 
+  - name: set_cmd_log_fields
+    filter: "{{ parse_audit_header.message.message_type == 'CMD_EXECUTED' }}"
+
   - name: set_other_log_fields
-    filter: "{{ parse_audit_header.message.type not in ['SSLVPN', 'SSLLOG', 'TCP', 'AAATM'] }}"
+    filter: "{{ parse_audit_header.message.type not in ['SSLVPN', 'SSLLOG', 'TCP', 'AAATM'] and parse_audit_header.message.message_type != 'CMD_EXECUTED'}}"
 
 stages:
   set_cef_header_fields:
@@ -169,6 +180,18 @@ stages:
           citrix.adc.bytes.sent: "{{ parse_audit_connection_logs.message.bytes_send }}"
           citrix.adc.virtual_server.ip: "{{ parse_audit_connection_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_connection_logs.message.vserver_port }}"
+
+  set_cmd_log_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          event.outcome: "{{ parse_audit_cmd_logs.message.status | lower }}"
+          event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
+          source.ip: "{{ parse_audit_cmd_logs.message.src_ip }}"
+          process.command_line: "{{ parse_audit_cmd_logs.message.command }}"
+          citrix.adc.adm_user: "{{ parse_audit_cmd_logs.message.adm_user }}"
+          user.name: "{{ parse_audit_cmd_logs.message.user_name }}"
 
   set_sslvpn_freeform_log_fields:
     actions:
