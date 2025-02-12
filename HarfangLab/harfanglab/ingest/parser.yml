@@ -1,5 +1,5 @@
 name: harfanglab
-ignored_values: [null, "", "-"]
+ignored_values: [None, "", "-"]
 pipeline:
   - name: json_event
     external:
@@ -22,7 +22,7 @@ pipeline:
         output_field: datetime
 
   - name: parse_task_info
-    filter: "{{json_event.message.event_data.TaskContent != null and '<?xml' in json_event.message.event_data.TaskContent}}"
+    filter: "{{json_event.message.event_data.TaskContent != None and '<?xml' in json_event.message.event_data.TaskContent}}"
     external:
       name: xml.parse-xml
       properties:
@@ -30,7 +30,7 @@ pipeline:
         output_field: message
 
   - name: parse_task_info_2
-    filter: "{{json_event.message.eventlog.event_data.TaskContent != null and '<?xml' in json_event.message.event_data.TaskContent}}"
+    filter: "{{json_event.message.eventlog.event_data.TaskContent != None and '<?xml' in json_event.message.event_data.TaskContent}}"
     external:
       name: xml.parse-xml
       properties:
@@ -64,10 +64,10 @@ pipeline:
     filter: "{{json_event.message.log_type == 'process'}}"
 
   - name: registry_info
-    filter: "{{json_event.message.details_registry != null}}"
+    filter: "{{json_event.message.details_registry != None}}"
 
   - name: details_file
-    filter: "{{json_event.message.details_file != null}}"
+    filter: "{{json_event.message.details_file != None}}"
 
   - name: powershell_info
     filter: "{{json_event.message.log_type == 'powershell'}}"
@@ -129,7 +129,26 @@ stages:
 
       - set:
           user.name: '{{json_event.message.impacted_users[0].user_name.replace("\\", " ")}}'
-        filter: "{{json_event.message.impacted_users | length > 0}}"
+        filter: "{{json_event.message.impacted_users | length > 0 }}"
+
+      - set:
+          harfanglab.impacted_users: >
+            [
+              {%- for elt in json_event.message.impacted_users -%}
+                {%- if elt.user_name.split('\\') | length > 1 -%}
+                  {
+                    "name": "{{elt.user_name.split('\\')[1]}}",
+                    "domain": "{{elt.user_name.split('\\')[0]}}"
+                  }
+                {%- else -%}
+                  {
+                    "name": "{{elt.user_name}}"
+                  }
+                {%- endif -%}
+                {%- if not loop.last -%},{%- endif -%}
+              {%- endfor -%}
+            ]
+        filter: "{{json_event.message.impacted_users | length > 1}}"
 
   agent_info:
     actions:
@@ -149,7 +168,16 @@ stages:
           url.original: "{{json_event.message.details_url_request.url}}"
 
       - set:
-          harfanglab.agent_ids: "{{json_event.message.agents | map(attribute='agent_id') | list}}"
+          harfanglab.agents: >
+            [
+              {%- for elt in json_event.message.agents -%}
+                {
+                  "id": "{{elt.agent_id}}",
+                  "hostname": "{{elt.agent_hostname}}"
+                }
+                {%- if not loop.last -%},{%- endif -%}
+              {%- endfor -%}
+            ]
         filter: "{{json_event.message.agents | length > 0}}"
 
   network_info:
@@ -233,7 +261,7 @@ stages:
           file.hash.md5: "{{json_event.message.hashes.md5}}"
           file.hash.sha256: "{{json_event.message.hashes.sha256}}"
           file.hash.sha1: "{{json_event.message.hashes.sha1}}"
-        filter: "{{json_event.message.hashes != null}}"
+        filter: "{{json_event.message.hashes != None}}"
 
   details_file:
     actions:
@@ -313,7 +341,7 @@ stages:
           file.hash.md5: "{{json_event.message.process.hashes.md5}}"
           file.hash.sha256: "{{json_event.message.process.hashes.sha256}}"
           file.hash.sha1: "{{json_event.message.process.hashes.sha1}}"
-        filter: "{{json_event.message.process.hashes != null}}"
+        filter: "{{json_event.message.process.hashes != None}}"
 
   investigation_info:
     actions:
@@ -536,7 +564,7 @@ stages:
           action.properties.param9: "{{json_event.message.event_data.get('param9')}}"
           action.properties.TaskContentNew_Command: "{{parse_task_info.message.Task.Actions.Exec.Command}}"
           action.properties.TaskContentNew_Args: "{{parse_task_info.message.Task.Actions.Exec.Arguments}}"
-        filter: "{{json_event.message.event_data != null}}"
+        filter: "{{json_event.message.event_data != None}}"
 
       - set:
           source.ip: "{{json_event.message.event_data.IpAddress}}"
@@ -738,7 +766,7 @@ stages:
           action.properties.param9: "{{json_event.message.eventlog.event_data.get('param9')}}"
           action.properties.TaskContentNew_Command: "{{parse_task_info_2.message.Task.Actions.Exec.Command}}"
           action.properties.TaskContentNew_Args: "{{parse_task_info_2.message.Task.Actions.Exec.Arguments}}"
-        filter: "{{json_event.message.eventlog.event_data != null}}"
+        filter: "{{json_event.message.eventlog.event_data != None}}"
 
       - set:
           source.ip: "{{json_event.message.eventlog.event_data.IpAddress}}"
@@ -756,7 +784,6 @@ stages:
                 {% set type_value = ["start"] %}
             {% endif %}
             {{- type_value }}
-          source.ip: "{{json_event.message.source_address}}"
           process.name: "{{json_event.message.process_name}}"
           agent.version: "{{json_event.message.agent.version}}"
           action.id: "{{json_event.message.windows.event_id}}"
@@ -787,6 +814,23 @@ stages:
             {%- if '\\' in json_event.message.target_username -%}
               {{ json_event.message.target_username.split('\\')[0] }}
             {%- endif -%}
+
+      - set:
+          source.ip: "{{json_event.message.source_address}}"
+        filter: "{{json_event.message.source_address | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{json_event.message.source_address}}"
+        filter: "{{json_event.message.source_address | is_ipaddress == False}}"
+
+      - set:
+          action.outcome: >
+            {%- if json_event.message.success -%}
+              success
+            {%- else -%}
+              failure
+            {%- endif -%}
+        filter: "{{json_event.message.get('success') != None}}"
 
   dns_info:
     actions:

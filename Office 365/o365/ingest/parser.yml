@@ -74,15 +74,19 @@ stages:
       - set:
           "@timestamp": "{{json_event.message.CreationTime}}"
           service.name: "{{json_event.message.Workload}}"
-          event.action: "{{json_event.message.Operation}}"
           event.code: "{{json_event.message.RecordType | string}}"
           event.reason: "{{json_event.message.ActionName}}"
           user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
           user.id: "{{json_event.message.UserKey}}"
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
-          action.name: "{{json_event.message.Operation}}"
           user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
+
+      - set:
+          event.action: "{{json_event.message.Operation.rstrip('.')}}"
+          action.name: "{{json_event.message.Operation.rstrip('.')}}"
+        filter: "{{json_event.message.Operation != null}}"
+
       - set:
           source.ip: "{{parse_client_ip.result.ip}}"
           source.port: "{{parse_client_ip.result.port}}"
@@ -655,8 +659,6 @@ stages:
       - set:
           event.url: "{{json_event.message.EventDeepLink}}"
           rule.category: "{{json.event.message.Policy}}"
-          event.action: "{{json_event.message.DeliveryAction or json_event.message.PolicyAction}}"
-          action.name: "{{json_event.message.DeliveryAction or json_event.message.PolicyAction}}"
           office365.defender.email.verdict.reason: "{{json_event.message.Verdict}}"
           office365.defender.email.verdict.confidence: "{{json_event.message.PhishConfidenceLevel}}"
           office365.defender.email.delivery.action: "{{json_event.message.DeliveryAction}}"
@@ -669,6 +671,16 @@ stages:
           office365.defender.additional_actions: "{{json_event.message.AdditionalActionsAndResults}}"
           office365.defender.auth_details: "{{json_event.message.AuthDetails}}"
           office365.defender.system_overrides: "{{json_event.message.SystemOverrides}}"
+
+      - set:
+          event.action: "{{json_event.message.PolicyAction.rstrip('.')}}"
+          action.name: "{{json_event.message.PolicyAction.rstrip('.')}}"
+        filter: "{{json_event.message.PolicyAction != null}}"
+
+      - set:
+          event.action: "{{json_event.message.DeliveryAction.rstrip('.')}}"
+          action.name: "{{json_event.message.DeliveryAction.rstrip('.')}}"
+        filter: "{{json_event.message.DeliveryAction != null}}"
 
       - set:
           file.name: "{{json_event.message.FileData.FileName}}"
@@ -762,6 +774,17 @@ stages:
           rule.name: "{{parse_data.ParsedData.AlertDisplayName}}"
 
       - set:
+          office365.investigation.alert.urls: >
+            {%- set urls = [] -%}
+            {%- for link in parse_data.ParsedData.ExtendedLinks -%}
+              {%- if link.Type == "webLink" -%}
+                {%- set urls = urls.append(link.Href) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{urls|unique|list or None}}
+        filter: '{{parse_data.ParsedData.ExtendedLinks|selectattr("Type", "equalto", "webLink") | list | length > 0}}'
+
+      - set:
           event.kind: '{% if parse_data.ParsedData.IsIncident %}{{"alert"}}{% else %}{{"event"}}{% endif %}'
 
       - set:
@@ -811,78 +834,96 @@ stages:
         filter: "{{final.office365.get('investigation', {}).get('emails', []) | length > 1}}"
 
       - set:
-          office365.investigation.email.urls: '[{% for Property in parse_data.ParsedData.Entities %}{% for Url in Property.Urls %} "{{Url}}", {% endfor %}{% endfor %}]'
+          office365.investigation.email.urls: >
+            {%- set urls = [] -%}
+              {%- for Property in parse_data.ParsedData.Entities -%}
+                {%- if Property.Urls -%}
+                  {%- set urls = urls.extend(Property.Urls) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {{urls|unique|list or None}}
+
           office365.investigation.email.sender.ip: >
-            [
+            {%- set senders = [] -%}
               {%- for Property in parse_data.ParsedData.Entities -%}
                 {%- if Property.SenderIP -%}
-                  "{{Property.SenderIP}}",
+                  {%- set senders = senders.append(Property.SenderIP) -%}
                 {%- endif -%}
               {%- endfor -%}
-            ]
+            {{senders|unique|list or None}}
+
           office365.investigation.email.subjects: >
-            [
+            {%- set subjects = [] -%}
               {%- for Property in parse_data.ParsedData.Entities -%}
                 {%- if Property.Subject -%}
-                  "{{Property.Subject}}",
+                  {%- set subjects = subjects.append(Property.Subject) -%}
                 {%- endif -%}
               {%- endfor -%}
-            ]
+            {{ subjects or None}}
+
           office365.investigation.email.sender.domains: >
-            [
+            {%- set senders = [] -%}
               {%- for Property in parse_data.ParsedData.Entities -%}
                 {%- if Property.P1SenderDomain -%}
-                  "{{Property.P1SenderDomain}}",
+                  {%- set senders = senders.append(Property.P1SenderDomain) -%}
                 {%- endif -%}
               {%- endfor -%}
-            ]
+            {{senders|unique|list or None}}
+
           office365.investigation.threats: >
-            [
+            {%- set threats = [] -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- if Property.Threats -%}
-                "{{Property.Threats}}",
+                {%- if Property.Threats is iterable -%}
+                  {%- set threats = threats.extend(Property.Threats) -%}
+                {%- else -%}
+                  {%- set threats = threats.append(Property.Threats | string) -%}
+                {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            ]
+            {{ threats or None}}
 
           office365.investigation.delivery.action: >
-            [
+            {%- set actions = [] -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- if Property.DeliveryAction -%}
-                "{{ Property.DeliveryAction }}",
+                {%- set actions = actions.append(Property.DeliveryAction) -%}
               {%- endif -%}
             {%- endfor -%}
-            ]
+            {{ actions or None}}
 
           email.from.address: >
-            [
+            {%- set senders = [] -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- if Property.Sender -%}
-                "{{Property.Sender}}",
+                {%- set senders = senders.append(Property.Sender) -%}
               {%- endif -%}
             {%- endfor -%}
-            ]
+            {{senders|unique|list or None}}
 
           email.to.address: >
-            [
+            {%- set receivers = [] -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
-              {%- if Property.Recipient -%}
-                "{{Property.Recipient}}",
+              {%- if Property.Recipient != null -%}
+                {%- set receivers = receivers.append(Property.Recipient) -%}
+              {%- endif -%}
+              {%- if Property.MailboxPrimaryAddress != null-%}
+                {%- set receivers = receivers.append(Property.MailboxPrimaryAddress) -%}
               {%- endif -%}
             {%- endfor -%}
-            ]
+            {{receivers|unique|list or None}}
           email.attachments: >-
-            [
+            {%- set attachments = [] -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- for file in Property.Files -%}
                 {%- for file_hash in file.FileHashes -%}
                   {%- if file_hash.Algorithm == 'SHA256' -%}
-                    {"file": {"name": "{{ file.Name }}", "hash": {"sha256": "{{ file_hash.Value }}"}}}
+                    {%- set attachments = attachments.append({"file": {"name": file.Name, "hash": {"sha256": file_hash.Value }}}) -%}
                   {%- endif -%}
                 {%- endfor -%}
               {%- endfor -%}
             {%- endfor -%}
-            ]
+            {{attachments or None}}
         filter: "{{parse_data.ParsedData.Entities != None and parse_data.ParsedData.Entities | length > 0}}"
 
   parse_mcas_alerts:

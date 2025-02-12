@@ -63,7 +63,7 @@ pipeline:
       properties:
         input_field: "{{parse_audit_header.message.payload}}"
         output_field: message
-        pattern: "%{OPTION_1}|%{OPTION_2_0}|%{OPTION_2_1}|%{OPTION_2_2}|%{OPTION_3}|%{OPTION_4}"
+        pattern: "%{OPTION_1}|%{OPTION_2_0}|%{OPTION_2_1}|%{OPTION_2_2}|%{OPTION_3}|%{OPTION_4}|%{OPTION_5}"
         custom_patterns:
           OPTION_1: "(.*User <?%{USERNAME:user_name}?>)?.*Srcip: %{IP:src_ip}.*Dstip: %{IP:dest_ip}(.*denied_by_policy: %{POLICY_NAME:policy})?.*"
           OPTION_2_0: ".*User %{USERNAME:user_name}.*Nat_ip %{IP:nat_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*Source %{IP:src_ip}:%{POSINT:src_port}.*Destination %{IP:dest_ip}:%{POSINT:dest_port}.*Denied_by_policy %{POLICY_NAME:policy}.*"
@@ -71,6 +71,7 @@ pipeline:
           OPTION_2_2: ".*User %{USERNAME:user_name}.*Client_ip %{IP:client_ip}.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*"
           OPTION_3: ".*user %{USERNAME:user_name}@%{HOSTNAME:user_domain}.*clientip %{IP:client_ip}.*"
           OPTION_4: ".*Context %{USERNAME:user_name}(@(%{IP:client_ip}|%{HOSTNAME:user_domain}))?.*- %{DATA:url_original} User.*Vserver %{IP:vserver_ip}:%{POSINT:vserver_port}.*SSO %{DATA}: %{WORD:http_method} %{DATA:http_path} %{DATA} %{DATA}"
+          OPTION_5: 'User %{USERNAME:user_name} - Client_ip %{IP:client_ip} - %{WORD} "%{DATA:reason}" - Browser %{DATA:browser}'
           POLICY_NAME: '"?"?\w+"?"?'
 
   - name: parse_audit_snmp_logs
@@ -93,6 +94,14 @@ pipeline:
         custom_patterns:
           CIPHER_SUITE: '"?"?[\w\-\.]+"?"?'
 
+  - name: parse_audit_cmd_logs
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: '.*User %{USERNAME:user_name} -.*ADM_User (NONE|%{USERNAME:adm_user}).*Remote_ip %{IP:src_ip}.*Command "%{GREEDYDATA:command}".*Status \"%{DATA:status}\".*'
+
   - name: set_audit_log_fields
     filter: '{{not original.message.startswith("CEF") and parse_audit_header.message.type not in ["AAATM"]}}'
 
@@ -100,16 +109,19 @@ pipeline:
     filter: "{{ parse_audit_header.message.type == 'TCP' }}"
 
   - name: set_sslvpn_log_fields
-    filter: "{{ parse_audit_header.message.type == 'SSLVPN' and parse_audit_header.message.message_type != 'Message' }}"
+    filter: "{{ parse_audit_header.message.type in ['SSLVPN', 'AAA'] and parse_audit_header.message.message_type != 'Message' }}"
 
   - name: set_sslvpn_freeform_log_fields
-    filter: "{{ parse_audit_header.message.type == 'SSLVPN' and parse_audit_header.message.message_type == 'Message' }}"
+    filter: "{{ parse_audit_header.message.type in ['SSLVPN'] and parse_audit_header.message.message_type == 'Message' }}"
 
   - name: set_ssl_log_fields
     filter: "{{ parse_audit_header.message.type == 'SSLLOG' }}"
 
+  - name: set_cmd_log_fields
+    filter: "{{ parse_audit_header.message.message_type == 'CMD_EXECUTED' }}"
+
   - name: set_other_log_fields
-    filter: "{{ parse_audit_header.message.type not in ['SSLVPN', 'SSLLOG', 'TCP', 'AAATM'] }}"
+    filter: "{{ parse_audit_header.message.type not in ['SSLVPN', 'SSLLOG', 'TCP', 'AAATM'] and parse_audit_header.message.message_type != 'CMD_EXECUTED'}}"
 
 stages:
   set_cef_header_fields:
@@ -169,6 +181,18 @@ stages:
           citrix.adc.virtual_server.ip: "{{ parse_audit_connection_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_connection_logs.message.vserver_port }}"
 
+  set_cmd_log_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          event.outcome: "{{ parse_audit_cmd_logs.message.status | lower }}"
+          event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
+          source.ip: "{{ parse_audit_cmd_logs.message.src_ip }}"
+          process.command_line: "{{ parse_audit_cmd_logs.message.command }}"
+          citrix.adc.adm_user: "{{ parse_audit_cmd_logs.message.adm_user }}"
+          user.name: "{{ parse_audit_cmd_logs.message.user_name }}"
+
   set_sslvpn_freeform_log_fields:
     actions:
       - set:
@@ -206,6 +230,17 @@ stages:
           citrix.adc.virtual_server.ip: "{{ parse_audit_sslvpn_logs.message.vserver_ip }}"
           citrix.adc.virtual_server.port: "{{ parse_audit_sslvpn_logs.message.vserver_port }}"
           http.request.method: "{{ parse_audit_sslvpn_logs.message.http_method }}"
+          user_agent.original: "{{ parse_audit_sslvpn_logs.message.browser }}"
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{ parse_audit_header.message.type.lower() == 'aaa' }}"
+
+      - set:
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{ parse_audit_header.message.type.lower() == 'aaa' and parse_audit_header.message.message_type.lower() == 'login_failed' }}"
 
   set_ssl_log_fields:
     actions:
@@ -225,3 +260,7 @@ stages:
       - set:
           event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
           event.reason: "{{parse_audit_header.message.payload}}"
+
+      - set:
+          event.reason: "{{ parse_audit_sslvpn_logs.message.reason }}"
+        filter: "{{ parse_audit_sslvpn_logs.message.get('reason') != None }}"
