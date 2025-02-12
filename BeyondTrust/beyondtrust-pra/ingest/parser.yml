@@ -1,0 +1,110 @@
+name: beyondtrust-pra
+ignored_values: [""]
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parse_public_ip
+    filter: "{{parsed_event.message.get('data', {}).get('public_ip') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.data.public_ip}}"
+        output_field: message
+        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+
+  - name: set_ecs_fields
+  - name: set_category_and_type
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "BeyondTrust"
+          observer.product: "Privileged Remote Access"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          event.code: "{{parsed_event.message.event_type}}"
+
+          group.name: "{{parsed_event.message.jump_group.name}}"
+          user.name: "{{parsed_event.message.performed_by.name}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.data.private_ip}}"
+        filter: "{{parsed_event.message.data.private_ip | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parse_public_ip.message.public_ip}}"
+          source.nat.port: "{{parse_public_ip.message.public_port}}"
+        filter: "{{parse_public_ip.message.public_ip | is_ipaddress}}"
+
+      - set:
+          event.reason: "{{parsed_event.message.body or parsed_event.message.data.failure_reason}}"
+          host.name: "{{parsed_event.message.data.hostname}}"
+          host.os.full: "{{parsed_event.message.data.os}}"
+          user.target.id: "{{parsed_event.message.data.user_id}}"
+          user.target.name: "{{parsed_event.message.data.username}}"
+          process.executable: "{{parsed_event.message.data.exeName}}"
+          process.title: "{{parsed_event.message.data.windowName}}"
+          event.action: "{{parsed_event.message.data.action_name}}"
+          url.original: "{{parsed_event.message.data.download_url or parsed_event.message.data.view_url}}"
+          file.path: "{{parsed_event.message.data.path}}"
+          file.name: "{{parsed_event.message.data.filename}}"
+          registry.key: "{{parsed_event.message.data.key_name}}"
+          registry.value: "{{parsed_event.message.data.value_name}}"
+
+      - set:
+          registry.data.type: "REG_SZ"
+          registry.data.strings: "{{parsed_event.message.data.value_data}}"
+        filter: "{{parsed_event.get('message', {}).get('data', {}).get('value_data') != None}}"
+
+      - set:
+          beyondtrust.pra.session_id: "{{parsed_event.message.session_id}}"
+          beyondtrust.pra.performed_by.type: "{{parsed_event.message.performed_by.type}}"
+          beyondtrust.pra.jump_group.type: "{{parsed_event.message.jump_group.type}}"
+          beyondtrust.pra.state: "{{parsed_event.message.data.state}}"
+          beyondtrust.pra.owner: "{{parsed_event.message.data.owner}}"
+          beyondtrust.pra.destination_type: "{{parsed_event.message.destination.type}}"
+          beyondtrust.pra.destination_name: "{{parsed_event.message.destination.name}}"
+
+  set_category_and_type:
+    actions:
+      # default one
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["file"]
+          event.type: ["delete"]
+        filter: "{{final.event.code == 'File Deleted'}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{final.event.code in ('File Download', 'File Upload', 'Directory Created')}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: "{{final.event.code == 'Session Start'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{final.event.code == 'Session End'}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{final.event.code.startswith('Conference')}}"
+
+      - set:
+          event.category: ["registry"]
+          event.type: ["change"]
+        filter: "{{final.event.code.startswith('Registry')}}"
