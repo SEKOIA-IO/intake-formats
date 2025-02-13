@@ -1,0 +1,82 @@
+name: wiz-cloud-configuration-findings
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_analyzed_at
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.analyzedAt}}"
+        output_field: datetime
+
+  - name: parsed_first_seen
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.firstSeenAt}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["vulnerability"]
+          event.type: ["info"]
+          observer.vendor: "Wiz"
+          event.dataset: "Cloud Configuration Finding"
+
+          "@timestamp": "{{parsed_analyzed_at.datetime}}"
+          event.start: "{{parsed_first_seen.datetime}}"
+
+          log.level: "{{json_event.message.severity}}"
+
+          rule.id: "{{json_event.message.rule.id}}"
+          rule.name: "{{json_event.message.rule.name}}"
+
+          cloud.account.id: "{{json_event.message.resource.subscription.externalId}}"
+          cloud.provider: "{{json_event.message.resource.subscription.cloudProvider | lower}}"
+          cloud.region: "{{json_event.message.resource.region}}"
+
+          wiz.findings.id: "{{json_event.message.id}}"
+          wiz.findings.status: "{{json_event.message.status}}"
+          wiz.findings.result: "{{json_event.message.result}}"
+          wiz.findings.deleted: "{{json_event.message.deleted}}"
+          wiz.findings.resource.id: "{{json_event.message.resource.id}}"
+          wiz.findings.resource.name: "{{json_event.message.resource.name}}"
+          wiz.findings.resource.type: "{{json_event.message.resource.type}}"
+          wiz.findings.resource.nativeType: "{{json_event.message.resource.nativeType}}"
+
+      - set:
+          wiz.findings.resource.projects: >
+            [ {%- for project in json_event.message.resource.projects -%}
+              {
+                "id": "{{project.id}}",
+                "name": "{{project.name}}",
+                "businessImpact": "{{project.riskProfile.businessImpact}}",
+              },
+              {%- endfor -%}
+            ]
+        filter: "{{json_event.message.resource.get('projects') != None}}"
+
+      - set:
+          wiz.findings.securitySubCategories.titles: >
+            [ {%- for subcategory in json_event.message.securitySubCategories -%}
+              "{{subcategory.title}}",
+              {%- endfor -%}
+            ]
+        filter: "{{json_event.message.get('securitySubCategories') != None}}"
+      - translate:
+        dictionary:
+          PASS: "success"
+          FAIL: "failure"
+          ERROR: "failure"
+        mapping:
+          json_event.message.result: event.outcome
