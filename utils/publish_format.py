@@ -6,7 +6,7 @@ import sys
 from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import requests
 import structlog
@@ -44,7 +44,7 @@ def clean_parser(obj: Any) -> Any:
 
 class Differ(ABC):
     @abstractmethod
-    def validate(self, original: Any, replacement: Any) -> bool:
+    def validate(self, original: Any, replacement: Any, title: str) -> bool:
         raise NotImplementedError
 
     @abstractproperty
@@ -94,7 +94,7 @@ class AskForDiff(Differ):
 
 
 class AlwaysValidateDiff(Differ):
-    def validate(self, original: Any, replacement: Any) -> bool:
+    def validate(self, original: Any, replacement: Any, title: str) -> bool:
         return True
 
     @property
@@ -125,53 +125,9 @@ class Item:
         raise NotImplementedError
 
 
-class Module(Item):
-    @property
-    def type(self) -> str:
-        return "module"
-
-    @property
-    def url_path(self) -> str:
-        return "modules"
-
-    @staticmethod
-    def from_module_dir(module_dir: Path) -> "Module":
-        if not module_dir.exists():
-            raise OSError("Module doesn't exist")
-
-        manifest_file = module_dir / "_meta/manifest.yml"
-        if not manifest_file.exists():
-            raise OSError("Missing manifest in the module")
-
-        taxonomy = {}
-        taxonomy_file = module_dir / "_meta/fields.yml"
-        if taxonomy_file.exists():
-            taxonomy = read_yaml(taxonomy_file) or {}
-        else:
-            logger.warning("No taxonomy found for the module", module_name=module_dir.name)
-
-        logo_file = module_dir / "_meta/logo.png"
-        if not logo_file.exists():
-            raise OSError("Missing logo in the module")
-        elif logo_file.stat().st_size > 51200:
-            raise OSError(
-                f"Oversized module logo. expected lesser than 50KiB. got '{logo_file.stat().st_size}'"  # noqa: B028
-            )
-
-        manifest = read_yaml(manifest_file)
-        return Module(
-            uuid=manifest["uuid"],
-            name=manifest["name"],
-            slug=manifest["slug"],
-            description=manifest["description"],
-            taxonomy=list(taxonomy.values()),
-            logo=logo_file,
-        )
-
 
 @dataclass
 class Format(Item):
-    module: Module
     parser: dict
     datasources: list
     smartdescriptions: list | None = None
@@ -190,8 +146,6 @@ class Format(Item):
     def from_format_dir(format_dir: Path) -> "Format":
         if not format_dir.exists():
             raise OSError(f"Format '{format_dir.name}' doesn't exist")  # noqa: B028
-
-        module = Module.from_module_dir(format_dir.parent)
 
         manifest_file = format_dir / "_meta/manifest.yml"
         if not manifest_file.exists():
@@ -212,7 +166,7 @@ class Format(Item):
         else:
             logger.warning("No parser found for the format", format_name=format_dir.name)
 
-        taxonomy = {}
+        taxonomy: dict[str, str] = {}
         taxonomy_file = format_dir / "_meta/fields.yml"
         if taxonomy_file.exists():
             taxonomy = read_yaml(taxonomy_file)
@@ -232,7 +186,6 @@ class Format(Item):
             logger.warning("No data sources found for the format", format_name=format_dir.name)
 
         return Format(
-            module=module,
             uuid=manifest["uuid"],
             name=manifest["name"],
             slug=manifest["slug"],
@@ -247,14 +200,13 @@ class Format(Item):
         )
 
     def as_payload(self, with_uuid=False) -> dict:
-        payload = {
+        payload: dict[str, Any | dict] = {
             "format_uuid": self.uuid,
             "name": self.name,
             "slug": self.slug,
             "description": self.description,
             "datasources": self.datasources,
             "taxonomy": self.taxonomy,
-            "module_uuid": self.module.uuid,
             "automation_connector_uuid": self.automation_connector_uuid,
             "automation_module_uuid": self.automation_module_uuid,
         }
@@ -325,63 +277,6 @@ class Client:
             headers=self.headers,
             verify=self.verify,
         )
-
-
-def update_module(client: Client, module: Module, differ: Differ):
-    if not differ.bypass:
-        get_response = client.get(module)
-        if get_response.status_code > 399 and get_response.status_code != 404:
-            logger.error(
-                "Failed to get module",
-                module_uuid=module.uuid,
-                status_code=get_response.status_code,
-                body=get_response.text,
-            )
-            sys.exit(22)
-
-        content = get_response.json()
-        if not differ.validate(
-            {
-                "uuid": content.get("uuid"),
-                "name": content.get("name"),
-                "slug": content.get("slug"),
-                "description": content.get("description"),
-            },
-            {
-                "uuid": module.uuid,
-                "name": module.name,
-                "slug": module.slug,
-                "description": module.description,
-            },
-            "module",
-        ):
-            logger.info("Diff not validated. Module not published")
-            return
-
-    update_response = client.update(module)
-    if update_response.status_code == 200:
-        logger.info(
-            "Module updated",
-            module_uuid=module.uuid,
-            status_code=update_response.status_code,
-        )
-    elif update_response.status_code == 404:
-        update_response = client.create(module)
-        if update_response.status_code == 200:
-            logger.info(
-                "Module created",
-                module_uuid=module.uuid,
-                status_code=update_response.status_code,
-            )
-
-    if update_response.status_code > 399:
-        logger.error(
-            "Failed to update module",
-            module_uuid=module.uuid,
-            status_code=update_response.status_code,
-            body=update_response.text,
-        )
-        sys.exit(21)
 
 
 def update_format(client: Client, intake_format: Format, differ: Differ):
@@ -521,8 +416,6 @@ def publish_format(format: Path, platform_url: str, apikey: str, ssl_verify: boo
         logger.exception("Failed to publish format")
         sys.exit(10)
 
-    update_module(client, intake_format.module, differ)
-    update_logo(client, intake_format.module)
     update_format(client, intake_format, differ)
     update_logo(client, intake_format)
     if intake_format.smartdescriptions:
@@ -535,7 +428,7 @@ def main(
     apikey: str,
     url: str = "https://app.sekoia.io",
     insecure: bool = False,
-    host: str = None,
+    host: Optional[str] = None, #noqa: UP007
     no_diff: bool = False,
 ):
     """
