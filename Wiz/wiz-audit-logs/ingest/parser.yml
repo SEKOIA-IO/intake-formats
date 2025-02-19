@@ -1,0 +1,59 @@
+name: wiz-audit-logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.timestamp}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+  - name: set_login_fields
+    filter: "{{json_event.message.action == 'Login'}}"
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Wiz"
+          event.dataset: "Audit Logs"
+
+          event.message: "{{json_event.message.actionParameters.error}}"
+
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          user.email: "{{json_event.message.actionParameters.userEmail}}"
+          user.id: "{{json_event.message.serviceAccount.id}}" # TODO: Or it should be in other place?
+          user.name: "{{json_event.message.serviceAccount.name}}"
+
+          user_agent.original: "{{json_event.message.userAgent}}"
+          source.ip: "{{json_event.message.sourceIP}}"
+
+          wiz.audit.status: "{{json_event.message.status}}"
+          wiz.audit.action: "{{json_event.message.action}}"
+          wiz.audit.scopes: "{{json_event.message.actionParameters.scopes}}"
+          wiz.audit.products: "{{json_event.message.actionParameters.products}}"
+          wiz.audit.groups: "{{json_event.message.actionParameters.groups}}"
+          wiz.audit.role: "{{json_event.message.actionParameters.role}}"
+
+      - set:
+          user.id: "{{json_event.message.user.id}}"
+          user.name: "{{json_event.message.user.name}}"
+        filter: "{{json_event.message.get('user') != None}}" # TODO: Check if it is correct for user along with serviceAccount
+
+  set_login_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+
+      - set:
+          event.type: ["start"]
+        filter: "{{json_event.message.status == 'SUCCESS'}}"
