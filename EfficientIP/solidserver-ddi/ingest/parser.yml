@@ -1,4 +1,5 @@
 name: solidserver-ddi
+ignored_values: ['']
 pipeline:
   - name: parse_event
     external:
@@ -159,6 +160,29 @@ stages:
                 {%- endfor -%}
             ]
         filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) != -1}}"
+      
+      - set:
+          efficientip.dns.answers: >
+            {%- set records = parse_event.message.dns_records.split() -%}
+            {%- set dns_answers = [] -%}
+            {%- set dns_record = {} -%}
+            {%- for record in records -%}
+              {%- if "." in record or "-" in record -%}
+                {%- if dns_record -%}
+                  {%- set dns_answers = dns_answers.append(dns_record.copy()) -%}
+                {%- endif -%}   
+                {%- set _ = dns_record.update({"data": record}) -%}
+                {%- set _ = dns_record.update({"ttl": ""}) -%}
+                {%- set _ = dns_record.update({"type": ""}) -%}
+              {%- elif record|int(-1) != -1 and dns_record -%}
+                {%- set _ = dns_record.update({"ttl": record}) -%}
+              {%- elif dns_record -%}
+                {%- set _ = dns_record.update({"type": record}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = dns_answers.append(dns_record.copy()) -%}
+            {{dns_answers}}
+        filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) == -1}}"
 
       - set:
           event.outcome: "failure"
