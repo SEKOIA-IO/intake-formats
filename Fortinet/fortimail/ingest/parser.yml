@@ -113,7 +113,7 @@ pipeline:
           RELAY: "%{RELAY_HOST_AND_IP}|%{RELAY_HOST_ONLY}|%{RELAY_IP_ONLY}"
           RELAY_HOST_AND_IP: '%{HOSTNAME:destination_domain} \[%{IP:_destination_ip}\]'
           RELAY_HOST_ONLY: "%{HOSTNAME:destination_domain}"
-          RELAY_IP_ONLY: ' \[%{IP:_destination_ip}\]'
+          RELAY_IP_ONLY: '\s*\[%{IP:_destination_ip}\]'
     filter: "{{parse_event_with_no_stat.get('msg') != None}}"
 
   - name: set_ecs_fields
@@ -177,12 +177,18 @@ stages:
           action.properties.xdelay: "{{parse_stat_message.msg.tmp_xdelay or parse_event_with_no_stat.msg.xdelay }}"
 
       - set:
-          action.properties.relay: >
-            {%- if parse_relay_data.msg.destination_domain | length > 0 -%}{{parse_relay_data.msg.destination_domain}}{%- elif parse_relay_data.msg._destination_ip | length > 0-%}{{parse_relay_data.msg._destination_ip}}{%- endif -%}
           destination.domain: "{{parse_relay_data.msg.destination_domain}}"
           destination.address: "{{parse_relay_data.msg.destination_domain}}"
           destination.ip: "{{parse_relay_data.msg._destination_ip}}"
         filter: "{{parse_relay_data.msg.relay | length > 0}}"
+
+      - set:
+          action.properties.relay: "{{parse_relay_data.msg._destination_ip}}"
+        filter: "{{parse_relay_data.msg._destination_ip | length > 0}}"
+
+      - set:
+          action.properties.relay: "{{parse_relay_data.msg.destination_domain}}"
+        filter: "{{parse_relay_data.msg.destination_domain | length > 0}}"
 
       - set:
           action.properties.relay: "{{parse_stat_message.msg._destination_ip}}"
