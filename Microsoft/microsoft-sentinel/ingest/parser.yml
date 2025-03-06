@@ -1,0 +1,46 @@
+name: microsoft-sentinel
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.created_time_utc }}"
+        output_field: timestamp
+
+  - name: parsed_last_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.last_modified_time_utc }}"
+        output_field: timestamp
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.timestamp}}"
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.reason: "{{json_event.message.description}}"
+          event.url: "{{json_event.message.incident_url}}"
+          event.end: "{{parsed_last_timestamp.timestamp}}"
+
+          observer.vendor: "Microsoft"
+          observer.product: "Sentinel"
+
+          log.level: "{{json_event.message.severity}}"
+          user.email: "{{json_event.message.owner.email}}"
+
+          microsoft.sentinel.title: "{{json_event.message.title}}"
+          microsoft.sentinel.classification.type: "{{json_event.message.classification}}"
+          microsoft.sentinel.classification.comment: "{{json_event.message.classification_comment}}"
+          microsoft.sentinel.classification.reason: "{{json_event.message.classification_reason}}"
+          microsoft.sentinel.status: "{{json_event.message.status}}"
+          microsoft.sentinel.incident.number: "{{json_event.message.incident_number}}"
