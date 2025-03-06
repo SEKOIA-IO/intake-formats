@@ -92,6 +92,16 @@ pipeline:
         output_field: event
         pattern: "%{GREEDYDATA}%{IPV4:ip}%{GREEDYDATA}"
 
+  - name: source_ip_client_address
+    filter: "{{parsed_message_kv.result.get('Client Address') != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.result.get('Client Address')}}"
+        output_field: event
+        pattern: '%{IP:source_ip}(\:%{NUMBER:source_port})?'
+
   - name: sysmon_15
     description: issue 17164
     filter: "{{parsed_message_kv.result.Contents != null and json.event.EventID == 15 }}"
@@ -231,7 +241,7 @@ stages:
           file.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
           file.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
           file.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
-        filter: "{{json.event.EventID in (15,23,24,28) }}"
+        filter: "{{json.event.EventID in (15,23,24,26,28) }}"
 
       - set:
           file.name: '{{json.event.Message.split(" ")[0].split("\\")[-1]}}'
@@ -1125,13 +1135,14 @@ stages:
     actions:
       - set:
           source.ip: "{{json.event.SourceIp or json.event.SourceAddress}}"
+        filter: "{{json.event.SourceIp | is_ipaddress or json.event.SourceAddress | is_ipaddress}}"
 
       - set:
           source.ip: "{{json.event.Message.split('Client IP: ')[-1].strip('.')}}"
         filter: "{{json.event.EventID == 56 and json.event.Message != null }}"
 
       - set:
-          source.ip: "{{parsed_message_kv.result.get('Client Address')}}"
+          source.ip: "{{source_ip_client_address.event.source_ip}}"
         filter: "{{final.source == null or final.source.ip == null }}"
 
       - set:
@@ -1145,6 +1156,7 @@ stages:
 
       - set:
           source.ip: "{{source_ip_ip_address.event.ip}}"
+        filter: "{{source_ip_ip_address.event.ip | is_ipaddress}}"
 
       - set:
           source.address: "{{json.event.SourceIp}}"
