@@ -8,7 +8,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{RULE_LOG_REASON_ONLY}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG}|%{APM_EVENT}|%{KV_HEADERS})'
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{RULE_LOG_REASON_ONLY}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG}|%{APM_EVENT}|%{PERL_EVENT}|%{KV_HEADERS})'
         custom_patterns:
           TLS: "TLSv"
           HEADER: '%{WORD:action_type}\[\d*\]'
@@ -62,6 +62,11 @@ pipeline:
           APM_PAYLOAD_NEW_SESSION: 'New session from \s*client IP %{IP:src_ip} \(%{DATA}\) at VIP %{IP:dest_ip}.*'
           APM_PAYLOAD_ACCESS: "Following rule '%{DATA:rule_name}' from item '%{DATA:rule_item}' to %{DATA} '%{DATA}'"
 
+          # perl events
+          PERL_EVENT: '%{PERL_HEADER}%{DATA:rule_name}\: %{DATA:rule_message}\. Support id\: %{NUMBER}\, %{DATA:kvs}(%{PERL_REQUEST})?'
+          PERL_HEADER: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
+          PERL_REQUEST: ', request\: \<%{DATA:http_method} %{DATA:path_name} %{GREEDYDATA}'
+
           # kv headers
           KV_HEADERS: 'Rule %{DATA:rule_name} %{DATA}\:\s*%{GREEDYDATA:kvs}'
 
@@ -96,6 +101,16 @@ pipeline:
         item_sep: " "
     filter: "{{parse_grok_event.message != None and parse_grok_event.message.kvs != None}}"
 
+  - name: parse_kv_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parse_grok_event.message.kvs }}"
+        output_field: message
+        value_sep: ":"
+        item_sep: ',\s'
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.kvs != None and parse_grok_event.message.action_type == 'perl'}}"
+
   - name: parse_audit_message
     external:
       name: kv.parse-kv
@@ -118,6 +133,9 @@ pipeline:
   - name: set_apm_event
     filter: "{{ parse_grok_event.message.get('APM_EVENT') != None }}"
 
+  - name: set_perl_event
+    filter: "{{ parse_grok_event.message.action_type == 'perl' }}"
+
   - name: set_cef_fields
     filter: "{{ parse_cef_event.message != None }}"
 
@@ -137,6 +155,19 @@ stages:
       - set:
           os.family: "linux"
           os.platform: "linux"
+
+  set_perl_event:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          source.ip: "{{parse_kv_event.message.get('source ip')}}"
+          source.port: "{{parse_kv_event.message.get('source port')}}"
+          destination.ip: "{{parse_kv_event.message.get('destination ip')}}"
+          destination.port: "{{parse_kv_event.message.get('destination port')}}"
+
+          http.request.method: "{{parse_grok_event.message.get('http_method')}}"
+          url.original: "{{parse_grok_event.message.get('path_name')}}"
 
   set_grokked_fields:
     actions:
