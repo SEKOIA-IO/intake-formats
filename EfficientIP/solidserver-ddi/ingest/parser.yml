@@ -162,14 +162,21 @@ stages:
         filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) != -1}}"
 
       - set:
-          efficientip.dns.answers: >
+          dns.answers: >
             {%- set records = parse_event.message.dns_records.split() -%}
             {%- set dns_answers = [] -%}
             {%- set dns_record = {} -%}
             {%- for record in records -%}
-              {%- if "." in record or "-" in record -%}
+              {%- if "." in record or "-" in record or record | is_ipaddress-%}
                 {%- if dns_record -%}
-                  {%- set dns_answers = dns_answers.append(dns_record.copy()) -%}
+                  {%- set new = dns_record.copy() -%}
+                  {%- set new_dict = {} -%}
+                  {%- for key, value in new|items -%}
+                    {%- if value != "" -%}
+                      {%- set _ = new_dict.update({key: value}) -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- set dns_answers = dns_answers.append(new_dict) -%}
                 {%- endif -%}   
                 {%- set _ = dns_record.update({"data": record}) -%}
                 {%- set _ = dns_record.update({"ttl": ""}) -%}
@@ -180,7 +187,14 @@ stages:
                 {%- set _ = dns_record.update({"type": record}) -%}
               {%- endif -%}
             {%- endfor -%}
-            {%- set _ = dns_answers.append(dns_record.copy()) -%}
+            {%- set new = dns_record.copy() -%}
+            {%- set new_dict = {} -%}
+            {%- for key, value in new|items -%}
+              {%- if value != "" -%}
+                    {%- set _ = new_dict.update({key: value}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = dns_answers.append(new_dict) -%}
             {{dns_answers}}
         filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) == -1}}"
 
