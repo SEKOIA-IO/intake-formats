@@ -1,0 +1,47 @@
+name: olfeo-saas
+ignored_values: ["-"]
+pipeline:
+  - name: json_livelog
+    external:
+      name: json.parse-json
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_livelog.message.timestamp}}'
+        output_field: timestamp
+        format: timestamp
+        timezone: UTC
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.timestamp}}"
+          observer.vendor: "Olfeo"
+          observer.type: "{{json_livelog.message.type}}"
+          observer.product: "Olfeo SAAS"
+          event.category: ["web"]
+          event.type: ["access"]
+          event.action: "{{json_livelog.message.action}}"
+          url.original: |
+            {%- if json_livelog.message.url != "" -%}
+              {{ json_livelog.message.url }}
+            {%- else -%}
+              {{ json_livelog.message.domain }}
+            {%- endif -%}
+          source.ip: "{{json_livelog.message.src_ip}}"
+          source.port: "{{json_livelog.message.src_port}}"
+          source.user.name: "{{json_livelog.message.display_name}}"
+          olfeo.request.category: "{{json_livelog.message.category_label}}"
+          olfeo.response.dns: |
+            {%- if json_livelog.message.dns_answer != None -%}
+              {{ json_livelog.message.dns_answer }}
+            {%- endif -%}
+          http.version: "{{json_livelog.message.http_version}}"
+          http.request.method: "{{json_livelog.message.http_method}}"
+          http.response.status_code: "{{json_livelog.message.user_status_code}}"
+          http.response.bytes: "{{json_livelog.message.user_received_bytes}}"
+        filter: ""
+        name: set
