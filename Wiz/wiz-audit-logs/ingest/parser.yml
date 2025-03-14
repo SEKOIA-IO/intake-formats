@@ -15,8 +15,7 @@ pipeline:
         output_field: datetime
 
   - name: set_ecs_fields
-  - name: set_login_fields
-    filter: "{{json_event.message.action == 'Login'}}"
+  - name: set_categorization_fields
 
 stages:
   set_ecs_fields:
@@ -58,12 +57,45 @@ stages:
         mapping:
           json_event.message.status: event.outcome
 
-  set_login_fields:
+  set_categorization_fields:
     actions:
       - set:
-          event.category: ["authentication"]
+          event.category: ["configuration"]
           event.type: ["info"]
 
       - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+        filter: "{{json_event.message.action.lower() in ['createsamlidentityprovider', 'createsamluser', 'createserviceaccount', 'createuser', 'createuserrole', 'deletesamlidentityprovider', 'deleteserviceaccount', 'deleteuser', 'deleteuserrole', 'duplicateuserrole', 'migrateusers', 'modifysamlidentityprovidergroupmappings', 'modifysamlidentityproviderportalviewgroupmappings', 'resetuserpassword', 'updatesamlidentityprovider', 'updateserviceaccount', 'updateuser', 'updateuserrole']}}"
+
+      - set:
+          event.type: ["creation"]
+        filter: "{{json_event.message.action.lower().startswith('create')}}"
+
+      - set:
+          event.type: ["change"]
+        filter: "{{json_event.message.action.lower().startswith('update')}}"
+
+      - set:
+          event.type: ["deletion"]
+        filter: "{{json_event.message.action.lower().startswith('delete')}}"
+
+      - set:
+          event.category: ["authentication"]
           event.type: ["start"]
-        filter: "{{json_event.message.status == 'SUCCESS'}}"
+        filter: "{{json_event.message.action.lower() in ['login', 'devicelogin']}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{json_event.message.action.lower() in ['revokesessions', 'revokeusersessions']}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+        filter: "{{json_event.message.action.lower() in ['tokenrefresh', 'tokendevicerefresh']}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["start"]
+        filter: "{{json_event.message.action.lower() in ['report', 'rerunreport']}}"
