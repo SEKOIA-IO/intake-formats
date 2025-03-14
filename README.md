@@ -35,7 +35,7 @@ stages:
 
 # Documentation
 
-Documentation along with tutorials and examples are available in the [doc](./doc) directory.
+Documentation along with tutorials and examples are available on the [documentation website](https://docs.sekoia.io/integration/develop_integration/overview/).
 
 # Organization
 
