@@ -1,0 +1,58 @@
+name: akamai-waf
+ignored_values: [""]
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.dataset: "Security logs"
+          event.module: "akamai.waf"
+
+          observer.vendor: "Akamai"
+          observer.product: "Akamai WAF"
+          observer.type: "waf"
+
+      - set:
+          client.ip: "{{parse_event.message.attackData.clientIP}}"
+          url.port: "{{parse_event.message.httpMessage.port}}"
+          url.domain: "{{parse_event.message.httpMessage.host}}"
+          package.version: "{{parse_event.message.clientData.appVersion}}"
+          user.name: "{{parse_event.message.userRiskData.username}}"
+          user.id: "{{parse_event.message.userRiskData.uuid}}"
+          user.risk.calculated_score: "{{parse_event.message.userRiskData.score}}"
+          source.geo.region_iso_code: "{{parse_event.message.geo.regionCode}}"
+          geo.country_iso_code: "{{parse_event.message.source.geo.country_iso_code}}"
+          geo.continent_iso_code: "{{parse_event.message.source.geo.continent_code}}"
+          geo.city_name: "{{parse_event.message.source.geo.city_name}}"
+          http.response.bytes: "{{parse_event.message.httpMessage.bytes}}"
+          http.request.id: "{{parse_event.message.httpMessage.requestId}}"
+          http.version: "{{parse_event.message.httpMessage.protocol}}"
+          http.request.method: "{{parse_event.message.httpMessage.method}}"
+
+          akamai.configuration.id: "{{parse_event.message.configId}}"
+          akamai.bot.score: "{{parse_event.message.botData.botScore}}"
+          akamai.bot.response_segment: "{{parse_event.message.botData.responseSegment}}"
+
+      - set:
+          akamai.rules: >
+            [
+              {%- for rule in parse_event.message.attackData.rules -%}
+                {
+                  "version": {{ rule.get("ruleVersion") | tojson if rule.get("ruleVersion") }},
+                  "id": {{ rule.get("rule") | tojson if rule.get("rule") }},
+                  "description": {{ rule.get("ruleDescription") | tojson if rule.get("ruleDescription") }},
+                  "tags": {{ rule.get("ruleTags") | tojson if rule.get("ruleTags") }},
+                  "data": {{ rule.get("ruleData") | tojson if rule.get("ruleData") }},
+                },
+              {%- endfor -%}
+            ]
