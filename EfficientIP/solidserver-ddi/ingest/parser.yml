@@ -44,30 +44,6 @@ pipeline:
           DHCPD_RELEASE: '(?P<dhcp_operation>RELEASE) of %{IP:client_ip} from %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA} \((?P<dhcpd_release>(not )?found)\)'
           DHCPD_INFORM: "(?P<dhcp_operation>INFORM) from %{IP:client_ip}? %{DHCPD_VIA}"
 
-  - name: parse_dns_https
-    filter: "{{ parse_event.message.get('dns_records') != None and 'HTTPS' in parse_event.message.get('dns_records')}}"
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{parse_event.message.dns_records}}"
-        output_field: message
-        pattern: ".*?%{DNS_RECORD_HTTPS}.*"
-        custom_patterns:
-          HTTPS_DATA: "alpn=%{DATA} ipv4hint=((%{IPV4},?)+)( ipv6hint=((%{IPV6},?)+))?"
-          DNS_RECORD_HTTPS: "%{NUMBER:https_ttl} HTTPS %{NUMBER} \\.( %{HTTPS_DATA})?"
-
-  - name: parse_dns_rrsig
-    filter: "{{ parse_event.message.get('dns_records') != None and 'RRSIG' in parse_event.message.get('dns_records')}}"
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{parse_event.message.dns_records}}"
-        output_field: message
-        pattern: ".*?%{DNS_RECORD_RRSIG}.*"
-        custom_patterns:
-          DNS_RECORD_RRSIG: "%{NUMBER:rrsig_ttl} RRSIG %{WORD:type_covered} %{NUMBER:algo}( %{NUMBER:num_labels} %{NUMBER:original_ttl} %{NUMBER:expiration} %{NUMBER:inception} %{NUMBER:key_tag} %{HOSTNAME:signers_name} %{BASE64:signature})?"
-          BASE64: '[-A-Za-z0-9+/\=]+'
-
   - name: parse_date
     filter: "{{parse_event.message.timestamp != null}}"
     external:
@@ -141,6 +117,7 @@ stages:
       - set:
           # 1. Find `ttl` and `type` positions in string by assuming the former is integer and the latter is all-caps word
           # 2. Using found string indices, get all in-between as a `data`
+          # NOTE: we ignore "1 ." part for HTTPS record
           dns.answers: >
             {%- set tokens = parse_event.message.dns_records.split() -%}
 
