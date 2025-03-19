@@ -1,14 +1,12 @@
 name: f5-big-ip
 ignored_values: ["-", "N/A", ""]
 pipeline:
-  - name: set_common_fields
-
   - name: parse_grok_event
     external:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{RULE_LOG_REASON_ONLY}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG}|%{APM_EVENT}|%{PERL_EVENT}|%{KV_HEADERS})'
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{RULE_LOG_REASON_ONLY}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG}|%{PERL_EVENT}|%{KV_HEADERS}|%{APM_EVENT}|%{APM_SHORT_EVENT})'
         custom_patterns:
           TLS: "TLSv"
           HEADER: '%{WORD:action_type}\[\d*\]'
@@ -55,12 +53,18 @@ pipeline:
           APM_HEADER: "%{APM_HEADER_1}|%{APM_HEADER_2}"
           APM_HEADER_1: '%{DATA:date} %{TIME:time} %{IPORHOST:source_domain} %{DATA:action_type} %{DATA}\[\d*\]:\s*(\d*:\d*: )'
           APM_HEADER_2: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
-          APM_PAYLOAD: "%{APM_PAYLOAD_USER}|%{APM_PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{APM_PAYLOAD_USER_AUTH}|%{APM_PAYLOAD_NEW_SESSION}|%{APM_PAYLOAD_ACCESS}"
+          APM_PAYLOAD: "%{APM_PAYLOAD_USER}|%{APM_PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{APM_PAYLOAD_USER_AUTH}|%{APM_PAYLOAD_NEW_SESSION}|%{APM_PAYLOAD_ACCESS}|%{APM_PAYLOAD_USER_CLIENT_IP}|%{APM_PAYLOAD_USER_CLIENT_USERAGENT}|%{APM_PAYLOAD_DEFAULT}"
           APM_PAYLOAD_USER: "Username '%{DATA:user_name}'"
           APM_PAYLOAD_USER_AUTH: ".*authenticate with '%{DATA:user_name}'.*"
           APM_PAYLOAD_USER_AUTH_WITH_DOMAIN: ".*authenticate with '%{DATA:user_name}@%{DATA:user_domain}'.*"
           APM_PAYLOAD_NEW_SESSION: 'New session from \s*client IP %{IP:src_ip} \(%{DATA}\) at VIP %{IP:dest_ip}.*'
           APM_PAYLOAD_ACCESS: "Following rule '%{DATA:rule_name}' from item '%{DATA:rule_item}' to %{DATA} '%{DATA}'"
+          APM_PAYLOAD_USER_CLIENT_IP: "session.user.clientip is %{IP:src_ip}"
+          APM_PAYLOAD_USER_CLIENT_USERAGENT: "session.user.agent is %{GREEDYDATA:user_agent}"
+          APM_PAYLOAD_DEFAULT: "%{GREEDYDATA:msg}"
+
+          # short APM event
+          APM_SHORT_EVENT: '%{WORD:action_type}\[\d*\]: %{GREEDYDATA:msg}'
 
           # perl events
           PERL_EVENT: '%{PERL_HEADER}(\[%{WORD:rule_type}\]\s*)?%{DATA:rule_name}\: %{DATA:rule_message}\. Support id\: %{NUMBER}\, %{DATA:kvs}(%{PERL_REQUEST})?'
@@ -130,6 +134,8 @@ pipeline:
         output_field: datetime
     filter: "{{ parse_cef_event.message != None }}"
 
+  - name: set_common_fields
+
   - name: set_apm_event
     filter: "{{ parse_grok_event.message.get('APM_EVENT') != None }}"
 
@@ -151,6 +157,7 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["info"]
+          #email.attachments: "{{parse_grok_event.message}}"
 
       - set:
           os.family: "linux"
@@ -379,3 +386,5 @@ stages:
 
           source.ip: "{{parse_grok_event.message.src_ip}}"
           destination.ip: "{{parse_grok_event.message.dest_ip}}"
+
+          user_agent.original: "{{parse_grok_event.message.user_agent}}"
