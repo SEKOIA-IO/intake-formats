@@ -1,4 +1,5 @@
 name: solidserver-ddi
+ignored_values: [""]
 pipeline:
   - name: parse_event
     external:
@@ -158,7 +159,44 @@ stages:
                   {"ttl": {{record[0]}}, "type": "{{record[1]}}", "data": "{{record[2]}}"},
                 {%- endfor -%}
             ]
-        filter: "{{parse_dns_https == null and parse_dns_rrsig == null}}"
+        filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) != -1}}"
+
+      - set:
+          dns.answers: >
+            {%- set records = parse_event.message.dns_records.split() -%}
+            {%- set dns_answers = [] -%}
+            {%- set dns_record = {} -%}
+            {%- for record in records -%}
+              {%- if "." in record or "-" in record or record | is_ipaddress-%}
+                {%- if dns_record -%}
+                  {%- set new = dns_record.copy() -%}
+                  {%- set new_dict = {} -%}
+                  {%- for key, value in new|items -%}
+                    {%- if value != "" -%}
+                      {%- set _ = new_dict.update({key: value}) -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- set dns_answers = dns_answers.append(new_dict) -%}
+                {%- endif -%}   
+                {%- set _ = dns_record.update({"data": record}) -%}
+                {%- set _ = dns_record.update({"ttl": ""}) -%}
+                {%- set _ = dns_record.update({"type": ""}) -%}
+              {%- elif record|int(-1) != -1 and dns_record -%}
+                {%- set _ = dns_record.update({"ttl": record}) -%}
+              {%- elif dns_record -%}
+                {%- set _ = dns_record.update({"type": record}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set new = dns_record.copy() -%}
+            {%- set new_dict = {} -%}
+            {%- for key, value in new|items -%}
+              {%- if value != "" -%}
+                    {%- set _ = new_dict.update({key: value}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = dns_answers.append(new_dict) -%}
+            {{dns_answers}}
+        filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) == -1}}"
 
       - set:
           event.outcome: "failure"
