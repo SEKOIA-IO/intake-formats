@@ -4,7 +4,7 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: "{{original.message[3:]}}"
+        input_field: "{{original.message.lstrip(':-').lstrip('-:').lstrip('- :').lstrip(': -').lstrip()}}"
         output_field: message
 
   - name: message_parse_grok
@@ -111,7 +111,18 @@ stages:
           vectra.history.host_access_hostname: "[{{json_event.message.host_access_history|map(attribute='name')|map('tojson')|join(', ') }}]"
           vectra.detection.last_type: "{{json_event.message.last_detection_type}}"
           vectra.history.service_access: "{{json_event.message.service_access_history}}"
-          vectra.history.service_access_uid.host: "[{%for i in json_event.message.service_access_history %}{% set proto, host=i.uid.split('/') %}'{{ host }}',{% endfor %}]"
+          vectra.history.service_access_uid.host: >
+            [
+              {%for i in json_event.message.service_access_history %}
+                {% if '/' in i.uid %}
+                  {% set proto, host=i.uid.split('/') %}
+                  '{{ host }}',
+                {% else %}
+                  '{{ i.uid }}',
+                {% endif %}
+              {% endfor %}
+            ]
+
           vectra.history.service_access_uid.proto_host: "[{{ json_event.message.service_access_history|map(attribute='uid')|map('tojson')|join(', ') }}]"
         # If Account Scoring log event
         filter: "{{json_event.message.category == 'ACCOUNT SCORING'}}"
