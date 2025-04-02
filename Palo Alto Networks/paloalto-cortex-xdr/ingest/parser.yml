@@ -1,0 +1,178 @@
+name: paloalto-cortex-xdr
+ignored_values: ["N/A"]
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.detection_timestamp or json_event.message.event_timestamp}}"
+        output_field: datetime
+
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.description}}"
+        output_field: message
+        pattern: "(%{COMMANDLINE}|%{IPDST}|%{IPSRC}|%{HOST}|%{PROC}|%{SERVICE}|%{DATA})*"
+        custom_patterns:
+          COMMANDLINE: '(C|c)ommand (L|l)ine: "%{DATA:process_executable}" %{GREEDYDATA:process_command_line}'
+          IPDST: "(connected )?to %{IP:dest_ip}((:|/)%{NUMBER:dest_port})?"
+          IPSRC: "(connected )?from %{IP:src_ip}((:|/)%{NUMBER:src_port})?"
+          HOST: "((t|T)he )?(h|H)ost %{DATA:hostname}?"
+          PROC: "((T|t)he )?((P|p)rocess|(E|e)ngine) %{DATA:process_name}.%{WORD:process_extension}"
+          VERSION: "%{NUMBER}.%{NUMBER}.%{NUMBER}.%{NUMBER}"
+          SERVICE: "(T|t)he (S|s)ervice %{WORD:service_name}(-%{VERSION:service_version})?"
+
+  # Alerts stage
+  - name: set_alerts_fields
+    filter: '{{json_event.message.get("severity") != None }}'
+  # Events stage
+  - name: set_events_fields
+    filter: '{{json_event.message.get("agent_install_type") != None }}'
+  - name: set_description_fields
+    filter: '{{json_event.message.get("description") != None }}'
+
+stages:
+  set_alerts_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.dataset: alert
+
+          observer.vendor: "Palo Alto"
+          observer.product: "Palo Alto Cortex XDR"
+
+          event.action: "{{json_event.message.action}}"
+          event.reason: "{{json_event.message.description}}"
+          event.outcome: "{{json_event.message.matching_status}}"
+
+          agent.version: "{{json_event.message.agent_version}}"
+          agent.name: "{{json_event.message.agent_fqdn}}"
+
+          host.os.name: "{{json_event.message.agent_os_type}}"
+          host.mac: "{{json_event.message.mac_address}}"
+          host.name: "{{json_event.message.host_name}}"
+          host.ip: "{{json_event.message.host_ip}}"
+          host.id: "{{json_event.message.endpoint_id}}"
+
+          paloalto.cortex.xdr.alert.name: "{{json_event.message.name}}"
+          paloalto.cortex.xdr.alert.category: "{{json_event.message.category}}"
+          paloalto.cortex.xdr.alert.severity: "{{json_event.message.severity}}"
+          paloalto.cortex.xdr.alert.id: "{{json_event.message.alert_id}}"
+          paloalto.cortex.xdr.alert.externalID: "{{json_event.message.external_id}}"
+          paloalto.cortex.xdr.alert.ruleID.matching_service: "{{json_event.message.matching_service_rule_id}}"
+          paloalto.cortex.xdr.alert.ruleID.filter: "{{json_event.message.filter_rule_id}}"
+
+  set_events_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+          event.provider: "{{json_event.message.module_id}}"
+          event.dataset: "{{json_event.message.event_type}}"
+
+          process.executable: "{{json_event.message.actor_process_image_path}}"
+          process.name: "{{json_event.message.actor_process_image_name}}"
+          process.command_line: "{{json_event.message.actor_process_command_line}}"
+          process.hash.sha256: "{{json_event.message.actor_process_image_sha256}}"
+          process.hash.md5: "{{json_event.message.actor_process_image_md5}}"
+          process.pid: "{{json_event.message.actor_process_os_pid}}"
+          process.thread.id: "{{json_event.message.actor_thread_thread_id}}"
+
+          file.path: "{{json_event.message.action_file_path}}"
+          file.name: "{{json_event.message.action_file_name}}"
+          file.hash.md5: "{{json_event.message.action_file_md5}}"
+          file.hash.sha256: "{{json_event.message.action_file_sha256}}"
+
+          registry.key: "{{json_event.message.action_registry_full_key}}"
+          registry.value: "{{json_event.message.action_registry_value_name}}"
+
+          source.ip: "{{json_event.message.action_local_ip}}"
+          source.port: "{{json_event.message.action_local_port}}"
+
+          destination.ip: "{{json_event.message.action_remote_ip}}"
+          destination.port: "{{json_event.message.action_remote_port}}"
+
+          observer.ingress.interface.name: "{{json_event.message.fw_interface_from}}"
+          observer.egress.interface.name: "{{json_event.message.fw_interface_to}}"
+
+          rule.name: "{{json_event.message.fw_rule}}"
+          rule.id: "{{json_event.message.fw_rule_id}}"
+
+          observer.name: "{{json_event.message.fw_device_name}}"
+          observer.serial_number: "{{json_event.message.fw_serial_number}}"
+
+          url.domain: "{{json_event.message.fw_url_domain}}"
+
+          email.subject: "{{json_event.message.fw_email_subject}}"
+          email.sender.address: "{{json_event.message.fw_email_sender}}"
+          email.to.address: "{{json_event.message.fw_email_recipient}}"
+
+          user.name: "{{json_event.message.user_name}}"
+          dns.question.name: "{{json_event.message.dns_query_name}}"
+
+          paloalto.cortex.xdr.alert.id: "{{json_event.message.alert_id}}"
+          paloalto.cortex.xdr.event.firewall.app.category: "{{json_event.message.fw_app_category}}"
+          paloalto.cortex.xdr.event.firewall.app.subcategory: "{{json_event.message.fw_app_subcategory}}"
+          paloalto.cortex.xdr.event.firewall.app.technology: "{{json_event.message.fw_app_technology}}"
+
+      - set:
+          registry.path: "{{json_event.message.action_registry_full_key +'/'+ json_event.message.action_registry_value_name}}"
+        filter: "{{json_event.message.action_registry_full_key and json_event.message.action_registry_value_name}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: '{{"Network" in json_event.message.event_type or "VPN" in json_event.message.event_type }}'
+
+      - set:
+          event.category: ["file"]
+          event.type: ["change"]
+        filter: '{{"File" in json_event.message.event_type}}'
+
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: '{{"Process" in json_event.message.event_type or "Load Image Event" == json_event.message.event_type or "RPC Call" in json_event.message.event_type}}'
+
+      - set:
+          event.category: ["registry"]
+          event.type: ["change"]
+        filter: '{{"Registry" in json_event.message.event_type}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["change"]
+        filter: '{{"Host" in json_event.message.event_type}}'
+
+  set_description_fields:
+    actions:
+      - set:
+          process.executable: "{{parsed_description.message.process_executable}}"
+          process.command_line: '{{"\"" ~ parsed_description.message.process_executable ~ "\" " ~ parsed_description.message.process_command_line}}'
+        filter: '{{json_event.message.get("actor_process_command_line") == None and parsed_description.message.get("process_executable") != None}}'
+
+      - set:
+          process.name: '{{parsed_description.message.process_name ~ "." ~ parsed_description.message.process_extension}}'
+        filter: '{{json_event.message.get("actor_process_image_name") == None and parsed_description.message.get("process_name") != None}}'
+
+      - set:
+          destination.ip: "{{parsed_description.message.dest_ip}}"
+          destination.port: "{{parsed_description.message.dest_port}}"
+          source.ip: "{{parsed_description.message.src_ip}}"
+          source.port: "{{parsed_description.message.src_port}}"
+
+      - set:
+          host.name: "{{parsed_description.message.hostname}}"
+
+      - set:
+          service.name: "{{parsed_description.message.service_name}}"
+          service.version: "{{parsed_description.message.service_version}}"
+        filter: '{{parsed_description.message.get("service_name") != None}}'

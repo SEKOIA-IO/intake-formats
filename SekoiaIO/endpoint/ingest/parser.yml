@@ -1,56 +1,124 @@
-name: SEKOIA.IO for Endpoints
+name: Sekoia.io for Endpoints
 pipeline:
   - name: json
     external:
       name: json.parse-json
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: event
+
+  - name: parsed_task_content_xml
+    filter: "{{json.event.action.properties.TaskContent != null and '<?xml' in json.event.action.properties.TaskContent and '</Task>' in json.event.action.properties.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: "{{json.event.action.properties.TaskContent.replace('<?xml', '#BEGIN#<?xml').split('#BEGIN#')[-1].split('>')[:-1] | join('>')}}>"
+        output_field: result
+
   - name: fields
+  - name: linux_authentication_related_fields
+    filter: '{{ "authentication" in final.event.category and final.host.os.type == "linux"}}'
+
 stages:
+  linux_authentication_related_fields:
+    actions:
+      - set:
+          client.ip: "{{json.event.source.ip}}"
+          client.geo.country_iso_code: "{{json.event.source.geo.country_iso_code}}"
+          server: "{{json.event.host}}"
+          sekoiaio.server: "{{json.event.host}}"
+          sekoiaio.server.name: "{{json.event.host.hostname}}"
+          user.target: "{{json.event.user.effective}}"
+          client.user: "{{json.event.user}}"
+          sekoiaio.authentication.process.name: "{{final.process.name}}"
+
+      - set:
+          sekoiaio.server.os.type: "linux"
+          host.os.type: "linux"
+        filter: "{{ json.event.host.os == null or json.event.host.os.type == null }}"
+
+      - set:
+          client: "{{final.host}}"
+          sekoiaio.client: "{{final.host}}"
+          sekoiaio.client.name: "{{json.event.host.hostname}}"
+        filter: "{{ json.event.source == null  or json.event.source.ip == null }}"
+
   fields:
     actions:
       - name: set
         set:
-          '@timestamp': '{{json.event["@timestamp"]}}'
-          action: '{{json.event.action}}'
-          agent: '{{json.event.agent}}'
-          destination: '{{json.event.destination}}'
-          dll: '{{json.event.dll}}'
-          dns: '{{json.event.dns}}'
-          error: '{{json.event.error}}'
-          event.action: '{{json.event.event.action}}'
-          event.category: '{{json.event.event.category}}'
-          event.code: '{{json.event.event.code | string}}'
-          event.kind: '{{json.event.event.kind}}'
-          event.reason: '{{json.event.event.reason}}'
-          event.provider: '{{json.event.event.provider}}'
-          event.type: '{{json.event.event.type}}'
-          action.outcome: '{{json.event.event.outcome}}'
-          file: '{{json.event.file}}'
-          host: '{{json.event.host}}'
-          log: '{{json.event.log}}'
-          network: '{{json.event.network}}'
-          process: '{{json.event.process}}'
-          registry: '{{json.event.registry}}'
-          source: '{{json.event.source}}'
-          url: '{{json.event.url}}'
-          user: '{{json.event.user}}'
-          sekoiaio.agent: '{{json.event.sekoiaio.agent}}'
-          sekoiaio.host: '{{json.event.sekoiaio.host}}'
-          sekoiaio.process: '{{json.event.sekoiaio.process}}'
-          sekoiaio.source_process: '{{json.event.sekoiaio.source_process}}'
-          sekoiaio.target_process: '{{json.event.sekoiaio.target_process}}'
+          "@timestamp": '{{json.event["@timestamp"]}}'
+          action: "{{json.event.action}}"
+          agent: "{{json.event.agent}}"
+          destination: "{{json.event.destination}}"
+          dll: "{{json.event.dll}}"
+          error: "{{json.event.error}}"
+          event.action: "{{json.event.event.action}}"
+          event.category: "{{json.event.event.category}}"
+          event.code: "{{json.event.event.code | string}}"
+          event.kind: "{{json.event.event.kind}}"
+          event.reason: "{{json.event.event.reason}}"
+          event.provider: "{{json.event.event.provider}}"
+          event.type: "{{json.event.event.type}}"
+          event.start: "{{json.event.event.start}}"
+          event.end: "{{json.event.event.end}}"
+          action.outcome: "{{json.event.event.outcome}}"
+          file: "{{json.event.file}}"
+          host: "{{json.event.host}}"
+          log: "{{json.event.log}}"
+          network: "{{json.event.network}}"
+          process: "{{json.event.process}}"
+          process.name: "{{json.event.process.executable | basename}}"
+          registry: "{{json.event.registry}}"
+          source: "{{json.event.source}}"
+          url: "{{json.event.url}}"
+          user: "{{json.event.user}}"
+          sekoiaio.agent: "{{json.event.sekoiaio.agent}}"
+          sekoiaio.host: "{{json.event.sekoiaio.host}}"
+          sekoiaio.process: "{{json.event.sekoiaio.process}}"
+          sekoiaio.source_process: "{{json.event.sekoiaio.source_process}}"
+          sekoiaio.target_process: "{{json.event.sekoiaio.target_process}}"
+          sekoiaio.repeat.count: "{{json.event.sekoiaio.repeat.count}}"
+
+      - set:
+          dns.answers: "{{json.event.dns.answers}}"
+          dns.id: "{{json.event.dns.id}}"
+          dns.op_code: "{{json.event.dns.op_code}}"
+          dns.question: "{{json.event.dns.question}}"
+          dns.response_code: "{{json.event.dns.response_code}}"
+          dns.type: "{{json.event.dns.type}}"
+          dns.resolved_ip: >
+            {% set ips = [] %}
+            {%- for answer in json.event.dns.resolved_ip -%}
+            {%- if answer | is_ipaddress -%}
+            {% set ips = ips.append(answer) %}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- if ips | length > 0 -%}
+            {{ips}}
+            {%- endif -%}
+
+      - set:
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.result.Task.Actions.Exec.Command}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.result.Task.Actions.Exec.Arguments}}"
+        filter: "{{json.event.action.properties.TaskContent != null}}"
+
+      - set:
+          process.name: "{{json.event.action.properties.Application.split('\\\\')[-1]}}"
+        filter: "{{json.event.action.properties.Application != null}}"
 
       - set:
           # prevent event to contain 'type': ['null'] and covert it only if it is not already a list
-          event.type: ['{{json.event.event.type}}']
-        filter: '{{json.event.event.type != null and json.event.event.type != json.event.event.type | list}}'
+          event.type: ["{{json.event.event.type}}"]
+        filter: "{{json.event.event.type != null and json.event.event.type != json.event.event.type | list}}"
       - set:
-          auditd.data.a1: '{{json.event.action.properties.a1}}'
-          auditd.data.a2: '{{json.event.action.properties.a2}}'
-          auditd.data.a3: '{{json.event.action.properties.a3}}'
-          auditd.data.syscall: '{{json.event.action.properties.syscall}}'
-          auditd.data.socket.family: '{{json.event.action.properties.socket_family}}'
-          auditd.data.socket.addr: '{{json.event.action.properties.socket_addr}}'
-          auditd.data.socket.port: '{{json.event.action.properties.socket_port}}'
+          auditd.data.a1: "{{json.event.action.properties.a1}}"
+          auditd.data.a2: "{{json.event.action.properties.a2}}"
+          auditd.data.a3: "{{json.event.action.properties.a3}}"
+          auditd.data.syscall: "{{json.event.action.properties.syscall}}"
+          auditd.data.socket.family: "{{json.event.action.properties.socket_family}}"
+          auditd.data.socket.addr: "{{json.event.action.properties.socket_addr}}"
+          auditd.data.socket.port: "{{json.event.action.properties.socket_port}}"
+          user.target.domain: "{{json.event.action.properties.TargetDomainName}}"
+          user.target.name: "{{json.event.action.properties.TargetUserName}}"

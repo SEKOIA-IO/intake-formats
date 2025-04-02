@@ -1,0 +1,123 @@
+name: apache
+ignored_values: ["", "-"]
+pipeline:
+  - name: grok
+    description: parse received message
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: event
+        pattern: "(%{MODSECAPACHEERROR}|%{HTTPD24_ERRORLOG}|%{HTTPD20_ERRORLOG}|%{HTTPD_COMBINEDLOG}|%{HTTPD_COMMONLOG})"
+        custom_patterns:
+          # HTTPD standard logs
+          HTTPD20_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{LOGLEVEL:action_name}\] (?:\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?\] ){0,1}%{GREEDYDATA:action_outcome_reason}'
+          HTTPD24_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{WORD}?:%{LOGLEVEL:action_name}\] \[pid %{POSINT:process_id}(:tid %{NUMBER:process_thread_id})?\]( \(%{POSINT}\)%{DATA}:)?( \[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{POSINT:source_port})?\])?( %{DATA}:)? %{GREEDYDATA:action_outcome_reason}'
+          HTTPD_COMBINEDLOG: '%{HTTPD_COMMONLOG} "%{DATA:http_request_referrer}" "%{DATA:user_agent_original}"'
+          HTTPD_COMMONLOG: >-
+            ((%{IPORHOST:destination_address}(:%{NUMBER:destination_port})|-)? )?%{IPORHOST:source_ip} (?:(\()?-(\))?|%{HTTPDUSER:apache_access_user_identity}) (?:-( -)*|%{HTTPDUSER:user_name}) \[%{HTTPDATE:timestamp}]\ "(?:%{WORD:http_request_method} %{NOTSPACE:url_original}(?: HTTP/%{NUMBER:http_version})?|%{DATA})" (?:-|%{INT:http_response_status_code:int}) (?:-|%{INT:http_response_body_bytes:int})%{GREEDYDATA}
+          # Apache ModSecurity logs
+          APACHEERRORPREFIX: '(\[%{HTTPDERROR_DATE:timestamp}\] )?(\[%{WORD}?:%{LOGLEVEL:action_name}\] )?(\[pid %{POSINT:process_pid}(:tid %{NUMBER:process_thread_id})?\] )?(\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{NUMBER:source_port})?\])?.*'
+          MODSECHOSTNAME: '\[hostname "?%{DATA:destination_domain}"?\]'
+          MODSECMATCHOFFSET: '\[offset "?%{DATA:matchoffset}"?\]'
+          MODSECPREFIX: '%{APACHEERRORPREFIX} ModSecurity: %{NOTSPACE:action_type}\. %{GREEDYDATA:modsecmessage}'
+          MODSECRULEDATA: '\[data "?%{DATA:ruledata}"?\]'
+          MODSECRULEFILE: '\[file "?%{DATA:rulefile}"?\]'
+          MODSECRULEID: '\[id "?%{DATA:ruleid}"?\]'
+          MODSECRULELINE: '\[line "?%{DATA:ruleline}"?\]'
+          MODSECRULEMSG: '\[msg "?%{DATA:action_outcome_reason}"?\]'
+          MODSECRULEREV: '\[rev "?%{DATA:rulerev}"?\]'
+          MODSECRULESEVERITY: '\[severity "?%{DATA:ruleseverity}"?\]'
+          MODSECRULETAGS: '(?:\[tag "?%{DATA:ruletag0}"?\] )?(?:\[tag "?%{DATA:ruletag1}"?\] )?(?:\[tag "?%{DATA:ruletag2}"?\] )?(?:\[tag "?%{DATA:ruletag3}"?\] )?(?:\[tag "?%{DATA:ruletag4}"?\] )?(?:\[tag "?%{DATA:ruletag5}"?\] )?(?:\[tag "?%{DATA:ruletag6}"?\] )?(?:\[tag "?%{DATA:ruletag7}"?\] )?(?:\[tag "?%{DATA:ruletag8}"?\] )?(?:\[tag "?%{DATA:ruletag9}"?\] )?(?:\[tag "?%{DATA}"?\] )*'
+          MODSECUID: '\[unique_id "?%{DATA:uniqueid}"?\]'
+          MODSECURI: '\[uri "?%{DATA:url_original}"?\]'
+          MODSECAPACHEERROR: "%{MODSECPREFIX} %{MODSECRULEFILE} %{MODSECRULELINE} (?:%{MODSECMATCHOFFSET} )?(?:%{MODSECRULEID} )?(?:%{MODSECRULEREV} )?(?:%{MODSECRULEMSG} )?(?:%{MODSECRULEDATA} )?(?:%{MODSECRULESEVERITY} )?%{MODSECRULETAGS}.*%{MODSECHOSTNAME} %{MODSECURI} %{MODSECUID}.*"
+
+  - name: set_apache_fields
+  - name: set_action_properties
+  - name: translate_action_outcome
+  - name: finalizer
+
+stages:
+  set_action_properties:
+    actions:
+      - set:
+          action.properties.matchoffset: "{{grok.event.matchoffset}}"
+          action.properties.modsecmessage: "{{grok.event.modsecmessage}}"
+          action.properties.ruledata: "{{grok.event.ruledata}}"
+          action.properties.rulefile: "{{grok.event.rulefile}}"
+          action.properties.ruleid: "{{grok.event.ruleid}}"
+          action.properties.ruleline: "{{grok.event.ruleline}}"
+          action.properties.rulerev: "{{grok.event.rulerev}}"
+          action.properties.ruleseverity: "{{grok.event.ruleseverity}}"
+          action.properties.timestamp: "{{grok.event.timestamp}}"
+          action.properties.uniqueid: "{{grok.event.uniqueid}}"
+
+  finalizer:
+    actions:
+      - set:
+          action.name: "{{final.request.method}}"
+          action.type: "{{final.action.type | lower}}"
+          destination.port: "{{final.destination.port | int}}"
+          destination.size_in_char: "{{final.destination.domain | length }}"
+          http.response.bytes: "{{final.http.response.bytes | int}}"
+          process.id: "{{final.process.pid | int}}" # legacy
+          user.name: "{{final.url.username}}"
+
+  translate_action_outcome:
+    actions:
+      - set:
+          # translate status_code to int before going through the filters
+          http.response.status_code: "{{final.http.response.status_code | int}}"
+
+      - set:
+          action.outcome: failure
+        filter: "{{final.http.response.status_code != null}}"
+      - set:
+          action.outcome: redirect
+        filter: "{{final.http.response.status_code != null and final.http.response.status_code  < 400}}"
+      - set:
+          action.outcome: success
+        filter: "{{final.http.response.status_code != null and final.http.response.status_code  < 300}}"
+      - set:
+          action.outcome: information
+        filter: "{{final.http.response.status_code != null and final.http.response.status_code  < 200}}"
+
+      - set:
+          action.outcome: success
+        filter: "{{final.action.outcome == null}}"
+      - set:
+          action.outcome: failure
+        filter: '{{final.action.name in ["error", "crit", "alert", "emerg"]}}'
+
+  set_apache_fields:
+    actions:
+      - set:
+          event.category: ["web"]
+          action.name: "{{grok.event.action_name or grok.event.http_request_method}}"
+          action.outcome_reason: "{{grok.event.action_outcome_reason}}"
+          action.type: "{{grok.event.action_type}}"
+          destination.domain: "{{grok.event.destination_domain}}"
+          http.request.method: "{{grok.event.http_request_method}}"
+          http.request.referrer: "{{grok.event.http_request_referrer}}"
+          http.response.bytes: "{{grok.event.http_response_body_bytes}}"
+          http.response.status_code: "{{grok.event.http_response_status_code}}"
+          http.version: "{{grok.event.http_version}}"
+          process.pid: "{{grok.event.process_pid}}"
+          process.id: "{{grok.event.process_id}}"
+          process.thread.id: "{{grok.event.process_thread_id}}"
+          source.domain: "{{grok.event.source_domain}}"
+          source.ip: "{{grok.event.source_ip}}"
+          source.port: "{{grok.event.source_port}}"
+          url.original: "{{grok.event.url_original}}"
+          user.name: "{{grok.event.user_name}}"
+          user_agent.original: "{{grok.event.user_agent_original}}"
+          destination.address: "{{grok.event.destination_address}}"
+          destination.port: "{{grok.event.destination_port}}"
+      - translate:
+        dictionary:
+          "info": ["info"]
+          "error": ["error"]
+        mapping:
+          grok.event.action_name: event.type
+        fallback: ["access"]

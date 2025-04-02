@@ -11,13 +11,14 @@ stages:
     actions:
       - set:
           "@timestamp": "{{json_event.message.time}}"
-          event.kind: "event"
+          cloud.provider: "azure"
           event.category: ["web"]
-          event.action: "{{json_event.message.operationName}}"
+          event.action: "{{json_event.message.properties.action | lower}}"
+          event.reason: "{{json_event.message.properties.details.msg}}"
+          event.module: "azure.waf"
           observer.vendor: "Microsoft"
           observer.product: "Azure Front Door"
           observer.hostname: "{{json_event.message.properties.endpoint}}"
-          source.ip: "{{json_event.message.properties.originIP or json_event.message.properties.clientIp}}"
           source.port: "{{json_event.message.properties.clientPort}}"
           http.request.method: "{{json_event.message.properties.httpVerb or json_event.message.properties.httpMethod}}"
           http.request.bytes: "{{json_event.message.properties.requestBytes}}"
@@ -29,6 +30,21 @@ stages:
           network.protocol: "{{json_event.message.properties.requestProtocol}}"
           tls.cipher: "{{json_event.message.properties.securityCipher}}"
           error.code: "{{json_event.message.properties.errorInfo}}"
+          rule.name: "{{json_event.message.properties.ruleName}}"
+          rule.ruleset: "{{json_event.message.properties.policy}}"
+
+      - set:
+          source.ip: "{{json_event.message.properties.originIP}}"
+        filter: "{{json_event.message.properties.originIP | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json_event.message.properties.clientIp}}"
+        filter: "{{json_event.message.properties.clientIp | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json_event.message.properties.clientIP}}"
+        filter: "{{json_event.message.properties.clientIP | is_ipaddress}}"
+
       - set:
           http.version: "{{json_event.message.properties.httpVersion.split('.')[0:2] | join('.')}}"
         filter: "{{json_event.message.properties.get('httpVersion') != None}}"
@@ -44,10 +60,10 @@ stages:
         fallback: access
       - translate:
         dictionary:
-          FrontDoorHealthProbeLog: ['info']
+          FrontDoorHealthProbeLog: ["info"]
         mapping:
           json_event.message.category: event.type
-        fallback: ['access']
+        fallback: ["access"]
   set_custom_fields:
     actions:
       - set:
@@ -57,3 +73,7 @@ stages:
           azure_front_door.cache_status: "{{json_event.message.propertiescacheStatus}}"
           azure_front_door.route_name: "{{json_event.message.properties.routeName}}"
           azure_front_door.rule.names: "{{json_event.message.properties.matchedRulesSetName.split(',')}}"
+          azure_front_door.tracking_reference: "{{json_event.message.properties.trackingReference}}"
+          azure_front_door.operation_name: "{{json_event.message.operationName}}"
+          azure_front_door.waf.details: "{{json_event.message.properties.details}}"
+          azure_front_door.waf.policy_mode: "{{json_event.message.properties.policyMode}}"

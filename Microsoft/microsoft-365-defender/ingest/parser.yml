@@ -1,4 +1,5 @@
 name: microsoft-365-defender
+ignored_values: ["-"]
 pipeline:
   - name: json_event
     external:
@@ -7,14 +8,14 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.properties.Timestamp}}'
+        input_field: "{{json_event.message.properties.Timestamp}}"
         output_field: datetime
     filter: '{{json_event.message.properties.get("Timestamp") != None}}'
   - name: parsed_date
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.time}}'
+        input_field: "{{json_event.message.time}}"
         output_field: datetime
     filter: '{{json_event.message.properties.get("Timestamp") == None}}'
   - name: parse_device_info_user
@@ -22,9 +23,27 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: '{{json_event.message.properties.LoggedOnUsers}}'
-        output_field: 'users'
+        input_field: "{{json_event.message.properties.LoggedOnUsers}}"
+        output_field: "users"
+  - name: parse_additional_fields
+    filter: '{{json_event.message.get("category") in ["AdvancedHunting-AlertEvidence","AdvancedHunting-DeviceNetworkEvents"] and json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json_event.message.properties.AdditionalFields}}"
+        output_field: "fields"
+  - name: parse_raw_event_data
+    filter: '{{json_event.message.get("properties", {}).get("RawEventData", {}).get("Data") != None}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json_event.message.properties.RawEventData.Data}}"
+        output_field: "data"
   - name: set_common_fields
+  - name: set_process_events
+    filter: '{{json_event.message.get("category") != "AdvancedHunting-DeviceProcessEvents"}}'
+  - name: set_process_deviceprocess_events
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceProcessEvents"}}'
   - name: set_alert_evidence_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-AlertEvidence"}}'
   - name: set_alert_info_fields
@@ -45,22 +64,26 @@ pipeline:
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceLogonEvents"}}'
   - name: set_device_network_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkEvents"}}'
+  - name: set_device_network_inbound_connection_fields
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkEvents" and (json_event.message.properties.ActionType in ["InboundConnectionAttempt", "InboundConnectionAcknowledged"] or (json_event.message.properties.ActionType in ["ConnectionAttempt", "ConnectionAcknowledged"] and parse_additional_fields.fields.get("direction") == "In"))}}'
   - name: set_device_network_info_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceNetworkInfo"}}'
   - name: set_device_process_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceProcessEvents"}}'
   - name: set_device_registry_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceRegistryEvents"}}'
-  - name: set_device_tvm_secure_configuration_assessment_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSecureConfigurationAssessment"}}'
-  - name: set_device_tvm_secure_configuration_assessment_k_b_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSecureConfigurationAssessmentKB"}}'
-  - name: set_device_tvm_software_inventory_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSoftwareInventory"}}'
-  - name: set_device_tvm_software_vulnerabilities_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSoftwareVulnerabilities"}}'
-  - name: set_device_tvm_software_vulnerabilities_k_b_fields
-    filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSoftwareVulnerabilitiesKB"}}'
+  # These were commented since they are not defined.
+  # Uncomment once the stages are implemented.
+  # - name: set_device_tvm_secure_configuration_assessment_fields
+  #   filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSecureConfigurationAssessment"}}'
+  # - name: set_device_tvm_secure_configuration_assessment_k_b_fields
+  #   filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSecureConfigurationAssessmentKB"}}'
+  # - name: set_device_tvm_software_inventory_fields
+  #   filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSoftwareInventory"}}'
+  # - name: set_device_tvm_software_vulnerabilities_fields
+  #   filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSoftwareVulnerabilities"}}'
+  # - name: set_device_tvm_software_vulnerabilities_k_b_fields
+  #   filter: '{{json_event.message.get("category") == "AdvancedHunting-DeviceTvmSoftwareVulnerabilitiesKB"}}'
   - name: set_email_attachment_info_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-EmailAttachmentInfo"}}'
   - name: set_email_events_fields
@@ -71,140 +94,118 @@ pipeline:
     filter: '{{json_event.message.get("category") == "AdvancedHunting-EmailUrlInfo"}}'
   - name: set_identity_directory_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityDirectoryEvents"}}'
+  # These were commented since they are not defined.
+  # Uncomment once the stages are implemented.
   - name: set_identity_info_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityInfo"}}'
   - name: set_identity_logon_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityLogonEvents"}}'
   - name: set_identity_query_events_fields
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityQueryEvents"}}'
+  - name: set_url_click_events
+    filter: '{{json_event.message.get("category") == "AdvancedHunting-UrlClickEvents"}}'
 
 stages:
   set_common_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_date.datetime}}'
-          event.kind: 'event'
-          event.type: ['info']
-          event.action: '{{json_event.message.properties.Action or json_event.message.properties.DeliveryAction}}'
-          agent.version: '{{json_event.message.properties.ClientVersion}}'
-          destination.port: '{{json_event.message.properties.RemotePort or json_event.message.properties.DestinationPort}}'
-          email.local_id: '{{json_event.message.properties.NetworkMessageId}}'
-          email.message_id: '{{json_event.message.properties.InternetMessageId}}'
-          email.subject: '{{json_event.message.properties.EmailSubject or json_event.message.properties.Subject}}'
-          file.directory: '{{json_event.message.properties.FolderPath}}'
-          file.hash.md5: '{{json_event.message.properties.MD5}}'
-          file.hash.sha1: '{{json_event.message.properties.SHA1}}'
-          file.hash.sha256: '{{json_event.message.properties.SHA256}}'
-          file.name: '{{json_event.message.properties.FileName}}'
-          file.size: '{{json_event.message.properties.FileSize}}'
-          host.architecture: '{{json_event.message.properties.OSArchitecture}}'
-          host.id: '{{json_event.message.properties.DeviceId}}'
-          host.name: '{{json_event.message.properties.DeviceName}}'
-          host.os.family: '{{json_event.message.properties.OSDistribution}}'
-          host.os.full: '{{json_event.message.properties.OSPlatform}}'
-          host.os.version: '{{json_event.message.properties.OSVersion}}'
-          host.type: '{{json_event.message.properties.DeviceType}}'
-          process.hash.md5: '{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}'
-          process.hash.sha1: '{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}'
-          process.hash.sha256: '{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}'
-          process.pid: '{{json_event.message.properties.ProcessId or json_event.message.properties.InitiatingProcessId}}'
-          process.start: '{{json_event.message.properties.ProcessCreationTime or json_event.message.properties.InitiatingProcessCreationTime}}'
-          process.executable: '{{json_event.message.properties.InitiatingProcessFileName}}'
-          process.command_line: '{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}'
-          process.working_directory: '{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}'
-          process.user.domain: '{{json_event.message.properties.InitiatingProcessAccountDomain}}'
-          process.user.name: '{{json_event.message.properties.InitiatingProcessAccountName}}'
-          process.user.id: '{{json_event.message.properties.InitiatingProcessAccountSid}}'
-          process.user.email: '{{json_event.message.properties.InitiatingProcessAccountUpn}}'
-          process.parent.pid: '{{json_event.message.properties.InitiatingProcessParentId}}'
-          process.parent.executable: '{{json_event.message.properties.InitiatingProcessParentFileName}}'
-          process.parent.start: '{{json_event.message.properties.InitiatingProcessParentCreationTime}}'
-          registry.data.type: '{{json_event.message.properties.RegistryValueType}}'
-          registry.key: '{{json_event.message.properties.RegistryKey}}'
-          registry.value: '{{json_event.message.properties.RegistryValueName}}'
-          service.name: '{{json_event.message.properties.ServiceSource}}'
-          service.type: '{{json_event.message.properties.DetectionSource}}'
-          source.geo.city_name: '{{json_event.message.properties.City}}'
-          source.geo.country_iso_code: '{{json_event.message.properties.CountryCode}}'
-          source.port: '{{json_event.message.properties.LocalPort or json_event.message.properties.RequestSourcePort}}'
-          url.domain: '{{json_event.message.properties.UrlDomain}}'
-          url.original: '{{json_event.message.properties.FileOriginUrl or json_event.message.properties.Url}}'
-          user.domain: '{{json_event.message.properties.AccountDomain or json_event.message.properties.RequestAccountDomain}}'
-          user.full_name: '{{json_event.message.properties.AccountDisplayName}}'
-          user.name: '{{json_event.message.properties.AccountName or json_event.message.properties.RequestAccountName}}'
-          user_agent.original: '{{json_event.message.properties.UserAgent}}'
-          action.outcome: '{{json_event.message.properties.FailureReason}}'
-          action.type: '{{json_event.message.properties.ActionType}}'
-          action.properties.Application: '{{json_event.message.properties.Application}}'
-          action.properties.ApplicationId: '{{json_event.message.properties.ApplicationId}}'
-          action.properties.DeliveryLocation: '{{json_event.message.properties.DeliveryLocation}}'
-          action.properties.DestinationDeviceName: '{{json_event.message.properties.DestinationDeviceName}}'
-          action.properties.FileOriginIP: '{{json_event.message.properties.FileOriginIP}}'
-          action.properties.FileOriginReferrerUrl: '{{json_event.message.properties.FileOriginReferrerUrl}}'
-          action.properties.FileOriginUrl: '{{json_event.message.properties.FileOriginUrl}}'
-          action.properties.ISP: '{{json_event.message.properties.ISP or json_event.message.properties.Isp}}'
-          action.properties.InitiatingProcessAccountObjectId: '{{json_event.message.properties.InitiatingProcessAccountObjectId}}'
-          action.properties.InitiatingProcessFileSize: '{{json_event.message.properties.InitiatingProcessFileSize}}'
-          action.properties.InitiatingProcessIntegrityLevel: '{{json_event.message.properties.InitiatingProcessIntegrityLevel}}'
-          action.properties.InitiatingProcessLogonId: '{{json_event.message.properties.InitiatingProcessLogonId}}'
-          action.properties.InitiatingProcessTokenElevation: '{{json_event.message.properties.InitiatingProcessTokenElevation}}'
-          action.properties.InitiatingProcessVersionInfoCompanyName: '{{json_event.message.properties.InitiatingProcessVersionInfoCompanyName}}'
-          action.properties.InitiatingProcessVersionInfoFileDescription: '{{json_event.message.properties.InitiatingProcessVersionInfoFileDescription}}'
-          action.properties.InitiatingProcessVersionInfoInternalFileName: '{{json_event.message.properties.InitiatingProcessVersionInfoInternalFileName}}'
-          action.properties.InitiatingProcessVersionInfoOriginalFileName: '{{json_event.message.properties.InitiatingProcessVersionInfoOriginalFileName}}'
-          action.properties.InitiatingProcessVersionInfoProductName: '{{json_event.message.properties.InitiatingProcessVersionInfoProductName}}'
-          action.properties.InitiatingProcessVersionInfoProductVersion: '{{json_event.message.properties.InitiatingProcessVersionInfoProductVersion}}'
-          action.properties.LocalIPType: '{{json_event.message.properties.LocalIPType}}'
-          action.properties.Location: '{{json_event.message.properties.Location}}'
-          action.properties.LogonId: '{{json_event.message.properties.LogonId}}'
-          action.properties.LogonType: '{{json_event.message.properties.LogonType}}'
-          action.properties.ObjectId: '{{json_event.message.properties.ObjectId}}'
-          action.properties.ObjectName: '{{json_event.message.properties.ObjectName}}'
-          action.properties.ObjectType: '{{json_event.message.properties.ObjectType}}'
-          action.properties.RecipientObjectId: '{{json_event.message.properties.RecipientObjectId}}'
-          action.properties.RemoteIPType: '{{json_event.message.properties.RemoteIPType}}'
-          action.properties.SenderDisplayName: '{{json_event.message.properties.SenderDisplayName}}'
-          action.properties.SenderObjectId: '{{json_event.message.properties.SenderObjectId}}'
-          action.properties.ServiceSource: '{{json_event.message.properties.ServiceSource}}'
-          action.properties.TargetAccountDisplayName: '{{json_event.message.properties.TargetAccountDisplayName}}'
-          action.properties.TargetAccountUpn: '{{json_event.message.properties.TargetAccountUpn}}'
-          action.properties.TargetDeviceName: '{{json_event.message.properties.TargetDeviceName}}'
-          action.properties.AccountSid: '{{json_event.message.properties.AccountSid}}'
-          action.properties.AccountUPN: '{{json_event.message.properties.AccountUpn}}'
-          microsoft.defender.activity.objects: '{{json_event.message.properties.ActivityObjects}}'
-          microsoft.defender.activity.type: '{{json_event.message.properties.ActivityType}}'
-          microsoft.defender.alert.id: '{{json_event.message.properties.AlertId}}'
-          microsoft.defender.alert.title: '{{json_event.message.properties.Title}}'
-          microsoft.defender.report.id: '{{json_event.message.properties.ReportId}}'
-          microsoft.defender.threat.detection: '{{json_event.message.properties.DetectionMethods}}'
-          microsoft.defender.threat.names: '{{json_event.message.properties.ThreatNames}}'
-          microsoft.defender.threat.types: '{{json_event.message.properties.ThreatTypes}}'
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.type: ["info"]
+          event.action: "{{json_event.message.properties.Action or json_event.message.properties.DeliveryAction}}"
+          agent.version: "{{json_event.message.properties.ClientVersion}}"
+          destination.port: "{{json_event.message.properties.RemotePort or json_event.message.properties.DestinationPort}}"
+          email.local_id: "{{json_event.message.properties.NetworkMessageId}}"
+          email.message_id: "{{json_event.message.properties.InternetMessageId}}"
+          email.subject: "{{json_event.message.properties.EmailSubject or json_event.message.properties.Subject}}"
+          file.directory: "{{json_event.message.properties.FolderPath}}"
+          file.hash.md5: "{{json_event.message.properties.MD5}}"
+          file.hash.sha1: "{{json_event.message.properties.SHA1}}"
+          file.hash.sha256: "{{json_event.message.properties.SHA256}}"
+          file.name: "{{json_event.message.properties.FileName}}"
+          file.size: "{{json_event.message.properties.FileSize}}"
+          host.architecture: "{{json_event.message.properties.OSArchitecture}}"
+          host.id: "{{json_event.message.properties.DeviceId}}"
+          host.name: "{{json_event.message.properties.DeviceName}}"
+          host.os.family: "{{json_event.message.properties.OSDistribution}}"
+          host.os.full: "{{json_event.message.properties.OSPlatform}}"
+          host.os.version: "{{json_event.message.properties.OSVersion}}"
+          host.type: "{{json_event.message.properties.DeviceType}}"
+          registry.data.type: "{{json_event.message.properties.RegistryValueType}}"
+          registry.key: "{{json_event.message.properties.RegistryKey}}"
+          registry.value: "{{json_event.message.properties.RegistryValueName}}"
+          service.name: "{{json_event.message.properties.ServiceSource}}"
+          service.type: "{{json_event.message.properties.DetectionSource}}"
+          source.geo.city_name: "{{json_event.message.properties.City}}"
+          source.geo.country_iso_code: "{{json_event.message.properties.CountryCode}}"
+          source.port: "{{json_event.message.properties.LocalPort or json_event.message.properties.RequestSourcePort}}"
+          url.domain: "{{json_event.message.properties.UrlDomain}}"
+          url.original: "{{json_event.message.properties.FileOriginUrl or json_event.message.properties.Url}}"
+          user.domain: "{{json_event.message.properties.AccountDomain or json_event.message.properties.RequestAccountDomain}}"
+          user.full_name: "{{json_event.message.properties.AccountDisplayName}}"
+          user.name: "{{json_event.message.properties.AccountName or json_event.message.properties.RequestAccountName}}"
+          user_agent.original: "{{json_event.message.properties.UserAgent}}"
+          action.outcome: "{{json_event.message.properties.FailureReason}}"
+          action.type: "{{json_event.message.properties.ActionType}}"
+          action.properties.Application: "{{json_event.message.properties.Application}}"
+          action.properties.ApplicationId: "{{json_event.message.properties.ApplicationId}}"
+          action.properties.DeliveryLocation: "{{json_event.message.properties.DeliveryLocation}}"
+          action.properties.DestinationDeviceName: "{{json_event.message.properties.DestinationDeviceName}}"
+          action.properties.FileOriginIP: "{{json_event.message.properties.FileOriginIP}}"
+          action.properties.FileOriginReferrerUrl: "{{json_event.message.properties.FileOriginReferrerUrl}}"
+          action.properties.FileOriginUrl: "{{json_event.message.properties.FileOriginUrl}}"
+          action.properties.ISP: "{{json_event.message.properties.ISP or json_event.message.properties.Isp}}"
+          action.properties.LocalIPType: "{{json_event.message.properties.LocalIPType}}"
+          action.properties.Location: "{{json_event.message.properties.Location}}"
+          action.properties.LogonId: "{{json_event.message.properties.LogonId}}"
+          action.properties.LogonType: "{{json_event.message.properties.LogonType}}"
+          action.properties.ObjectId: "{{json_event.message.properties.ObjectId}}"
+          action.properties.ObjectName: "{{json_event.message.properties.ObjectName}}"
+          action.properties.ObjectType: "{{json_event.message.properties.ObjectType}}"
+          action.properties.RecipientObjectId: "{{json_event.message.properties.RecipientObjectId}}"
+          action.properties.RemoteIPType: "{{json_event.message.properties.RemoteIPType}}"
+          action.properties.SenderDisplayName: "{{json_event.message.properties.SenderDisplayName}}"
+          action.properties.SenderObjectId: "{{json_event.message.properties.SenderObjectId}}"
+          action.properties.ServiceSource: "{{json_event.message.properties.ServiceSource}}"
+          action.properties.TargetAccountDisplayName: "{{json_event.message.properties.TargetAccountDisplayName}}"
+          action.properties.TargetAccountUpn: "{{json_event.message.properties.TargetAccountUpn}}"
+          action.properties.TargetDeviceName: "{{json_event.message.properties.TargetDeviceName}}"
+          action.properties.AccountSid: "{{json_event.message.properties.AccountSid}}"
+          action.properties.AccountUPN: "{{json_event.message.properties.AccountUpn}}"
+          microsoft.defender.activity.objects: "{{json_event.message.properties.ActivityObjects}}"
+          microsoft.defender.activity.type: "{{json_event.message.properties.ActivityType}}"
+          microsoft.defender.alert.id: "{{json_event.message.properties.AlertId}}"
+          microsoft.defender.alert.title: "{{json_event.message.properties.Title}}"
+          microsoft.defender.alert.severity: "{{json_event.message.properties.Severity}}"
+          microsoft.defender.report.id: "{{json_event.message.properties.ReportId}}"
+          microsoft.defender.threat.detection: "{{json_event.message.properties.DetectionMethods}}"
+          microsoft.defender.threat.names: "{{json_event.message.properties.ThreatNames}}"
+          microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
       - set:
-          source.ip: '{{json_event.message.properties.LocalIP}}'
-        filter: '{{json_event.message.properties.get("LocalIP", "-") != "-"}}'
+          source.ip: "{{json_event.message.properties.LocalIP}}"
+        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress}}'
       - set:
-          source.ip: '{{json_event.message.properties.IPAddress}}'
-        filter: '{{json_event.message.properties.get("IPAddress", "-") != "-"}}'
+          source.ip: "{{json_event.message.properties.IPAddress}}"
+        filter: '{{json_event.message.properties.get("IPAddress")  | is_ipaddress}}'
       - set:
-          source.ip: '{{json_event.message.properties.RequestSourceIP}}'
-        filter: '{{json_event.message.properties.get("RequestSourceIP", "-") != "-"}}'
+          source.ip: "{{json_event.message.properties.RequestSourceIP}}"
+        filter: '{{json_event.message.properties.get("RequestSourceIP")  | is_ipaddress}}'
       - set:
-          source.ip: '{{json_event.message.properties.PublicIP}}'
-        filter: '{{json_event.message.properties.get("PublicIP", "-") != "-"}}'
+          source.ip: "{{json_event.message.properties.PublicIP}}"
+        filter: '{{json_event.message.properties.get("PublicIP")  | is_ipaddress}}'
       - set:
-          source.ip: '{{json_event.message.properties.SenderIPv4}}'
-        filter: '{{json_event.message.properties.get("SenderIPv4", "-") != "-"}}'
+          source.ip: "{{json_event.message.properties.SenderIPv4}}"
+        filter: '{{json_event.message.properties.get("SenderIPv4")  | is_ipaddress}}'
       - set:
-          source.ip: '{{json_event.message.properties.SenderIPv6}}'
-        filter: '{{json_event.message.properties.get("SenderIPv6", "-") != "-"}}'
+          source.ip: "{{json_event.message.properties.SenderIPv6}}"
+        filter: '{{json_event.message.properties.get("SenderIPv6")  | is_ipaddress}}'
       - set:
-          destination.ip: '{{json_event.message.properties.RemoteIP}}'
-        filter: '{{json_event.message.properties.get("RemoteIP", "-") != "-"}}'
+          destination.ip: "{{json_event.message.properties.RemoteIP}}"
+        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress}}'
       - set:
-          destination.ip: '{{json_event.message.properties.DestinationIPAddress}}'
-        filter: '{{json_event.message.properties.get("DestinationIPAddress", "-") != "-"}}'
+          destination.ip: "{{json_event.message.properties.DestinationIPAddress}}"
+        filter: '{{json_event.message.properties.get("DestinationIPAddress")  | is_ipaddress}}'
       - set:
-          url.original: '{{json_event.message.properties.RemoteUrl}}'
+          url.original: "{{json_event.message.properties.RemoteUrl}}"
         filter: '{{json_event.message.properties.get("RemoteUrl", "").startswith("http")}}'
       - set:
           email.to.address: '["{{json_event.message.properties.RecipientEmailAddress}}"]'
@@ -216,246 +217,419 @@ stages:
           registry.data.strings: '["{{json_event.message.properties.RegistryValueData}}"]'
         filter: '{{json_event.message.properties.get("RegistryValueData") != None}}'
       - set:
-          url.domain: '{{json_event.message.properties.RemoteUrl}}'
-        filter: '{{json_event.message.properties.get("RemoteUrl") != None and not json_event.message.properties.startswith("http")}}'
+          url.domain: "{{json_event.message.properties.RemoteUrl}}"
+        filter: '{{json_event.message.properties.get("RemoteUrl") != None and not json_event.message.properties.get("RemoteUrl", "").startswith("http")}}'
       - set:
-          container.id: '{{json_event.message.properties.AppGuardContainerId}}'
-          container.runtime: 'Application Guard'
+          container.id: "{{json_event.message.properties.AppGuardContainerId}}"
+          container.runtime: "Application Guard"
         filter: '{{json_event.message.properties.get("AppGuardContainerId")}}'
       - set:
           user.roles: '["{{json_event.message.properties.AccountType}}"]'
         filter: '{{json_event.message.properties.get("AccountType")}}'
       - set:
-          process.args:  '{{json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:]}}'
-        filter: '{{json_event.message.properties.get("InitiatingProcessCommandLine") and json_event.message.properties.InitiatingProcessCommandLine.split(" ") | length > 0}}'
-      - set:
-          process.args:  '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
-        filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 0}}'
-      - set:
-          network.protocol: '{{json_event.message.properties.RequestProtocol or json_event.message.properties.Protocol}}'
+          network.protocol: "{{json_event.message.properties.RequestProtocol or json_event.message.properties.Protocol}}"
         filter: '{{json_event.message.properties.get("RequestProtocol") != None or (json_event.message.properties.get("Protocol") != None and json_event.message.properties.Protocol != "Negotiate")}}'
+      - set:
+          microsoft.defender.operation.properties: >
+            {
+              {%- for property in json_event.message.properties.RawEventData.OperationProperties -%}
+                {%- if property.Value != null -%}
+                  {%- if property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            }
+        filter: '{{json_event.message.properties.RawEventData.get("OperationProperties") != None}}'
+
+  set_process_events:
+    actions:
+      - set:
+          process.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
+          process.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
+          process.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
+          process.pid: "{{json_event.message.properties.ProcessId or json_event.message.properties.InitiatingProcessId}}"
+          process.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
+          process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
+          process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
+          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
+          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
+          process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
+          process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
+          process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
+          process.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
+          process.parent.pid: "{{json_event.message.properties.InitiatingProcessParentId}}"
+          process.parent.name: "{{json_event.message.properties.InitiatingProcessParentFileName | basename}}"
+          process.parent.start: "{{json_event.message.properties.InitiatingProcessParentCreationTime}}"
+          action.properties.InitiatingProcessAccountObjectId: "{{json_event.message.properties.InitiatingProcessAccountObjectId}}"
+          action.properties.InitiatingProcessFileSize: "{{json_event.message.properties.InitiatingProcessFileSize}}"
+          action.properties.InitiatingProcessIntegrityLevel: "{{json_event.message.properties.InitiatingProcessIntegrityLevel}}"
+          action.properties.InitiatingProcessLogonId: "{{json_event.message.properties.InitiatingProcessLogonId}}"
+          action.properties.InitiatingProcessTokenElevation: "{{json_event.message.properties.InitiatingProcessTokenElevation}}"
+          action.properties.ProcessTokenElevation: "{{json_event.message.properties.ProcessTokenElevation}}"
+          action.properties.InitiatingProcessCommandLine: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          action.properties.InitiatingProcessVersionInfoCompanyName: "{{json_event.message.properties.InitiatingProcessVersionInfoCompanyName}}"
+          action.properties.InitiatingProcessVersionInfoFileDescription: "{{json_event.message.properties.InitiatingProcessVersionInfoFileDescription}}"
+          action.properties.InitiatingProcessVersionInfoInternalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoInternalFileName}}"
+          action.properties.InitiatingProcessVersionInfoOriginalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoOriginalFileName}}"
+          action.properties.InitiatingProcessVersionInfoProductName: "{{json_event.message.properties.InitiatingProcessVersionInfoProductName}}"
+          action.properties.InitiatingProcessVersionInfoProductVersion: "{{json_event.message.properties.InitiatingProcessVersionInfoProductVersion}}"
+
+      - set:
+          process.args: '{{json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("InitiatingProcessCommandLine") and json_event.message.properties.InitiatingProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      - set:
+          process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
+  set_process_deviceprocess_events:
+    actions:
+      - set:
+          action.properties.InitiatingProcessParentFileName: "{{json_event.message.properties.InitiatingProcessParentFileName | basename}}"
+          process.parent.code_signature.status: "{{json_event.message.properties.InitiatingProcessSignatureStatus}}"
+          process.parent.code_signature.subject_name: "{{json_event.message.properties.InitiatingProcessSignerType}}"
+          process.parent.command_line: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          process.parent.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
+          process.parent.hash.md5: "{{json_event.message.InitiatingProcessMD5 or json_event.message.properties.InitiatingProcessMD5}}"
+          process.parent.hash.sha1: "{{json_event.message.InitiatingProcessSHA1 or json_event.message.properties.InitiatingProcessSHA1}}"
+          process.parent.hash.sha256: "{{json_event.message.InitiatingProcessSHA256 or json_event.message.properties.InitiatingProcessSHA256}}"
+          process.parent.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
+          process.parent.pid: "{{json_event.message.properties.InitiatingProcessId}}"
+          process.parent.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
+          process.parent.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
+          process.parent.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
+          process.parent.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
+          process.parent.user.email: "{{json_event.message.properties.InitiatingProcessAccountUpn}}"
+          process.parent.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
+          process.pid: "{{json_event.message.properties.ProcessId}}"
+          process.start: "{{json_event.message.properties.ProcessCreationTime}}"
+          process.name: "{{json_event.message.properties.FileName | basename}}"
+          process.command_line: "{{json_event.message.properties.ProcessCommandLine}}"
+          process.executable: "{{json_event.message.properties.FolderPath}}"
+          process.working_directory: "{{json_event.message.properties.FolderPath | dirname}}"
+          action.properties.ProcessTokenElevation: "{{json_event.message.properties.ProcessTokenElevation}}"
+          action.properties.ProcessIntegrityLevel: "{{json_event.message.properties.ProcessIntegrityLevel}}"
+          action.properties.ProcessVersionInfoCompanyName: "{{json_event.message.properties.ProcessVersionInfoCompanyName}}"
+          action.properties.ProcessVersionInfoFileDescription: "{{json_event.message.properties.ProcessVersionInfoFileDescription}}"
+          action.properties.ProcessVersionInfoInternalFileName: "{{json_event.message.properties.ProcessVersionInfoInternalFileName}}"
+          action.properties.ProcessVersionInfoOriginalFileName: "{{json_event.message.properties.ProcessVersionInfoOriginalFileName}}"
+          action.properties.ProcessVersionInfoProductName: "{{json_event.message.properties.ProcessVersionInfoProductName}}"
+          action.properties.ProcessVersionInfoProductVersion: "{{json_event.message.properties.ProcessVersionInfoProductVersion}}"
+          action.properties.InitiatingProcessAccountObjectId: "{{json_event.message.properties.InitiatingProcessAccountObjectId}}"
+          action.properties.InitiatingProcessFileSize: "{{json_event.message.properties.InitiatingProcessFileSize}}"
+          action.properties.InitiatingProcessIntegrityLevel: "{{json_event.message.properties.InitiatingProcessIntegrityLevel}}"
+          action.properties.InitiatingProcessLogonId: "{{json_event.message.properties.InitiatingProcessLogonId}}"
+          action.properties.InitiatingProcessTokenElevation: "{{json_event.message.properties.InitiatingProcessTokenElevation}}"
+          action.properties.InitiatingProcessCommandLine: "{{json_event.message.properties.InitiatingProcessCommandLine}}"
+          action.properties.InitiatingProcessVersionInfoCompanyName: "{{json_event.message.properties.InitiatingProcessVersionInfoCompanyName}}"
+          action.properties.InitiatingProcessVersionInfoFileDescription: "{{json_event.message.properties.InitiatingProcessVersionInfoFileDescription}}"
+          action.properties.InitiatingProcessVersionInfoInternalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoInternalFileName}}"
+          action.properties.InitiatingProcessVersionInfoOriginalFileName: "{{json_event.message.properties.InitiatingProcessVersionInfoOriginalFileName}}"
+          action.properties.InitiatingProcessVersionInfoProductName: "{{json_event.message.properties.InitiatingProcessVersionInfoProductName}}"
+          action.properties.InitiatingProcessVersionInfoProductVersion: "{{json_event.message.properties.InitiatingProcessVersionInfoProductVersion}}"
+
+      - set:
+          process.parent.args: '{{json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("InitiatingProcessCommandLine") and json_event.message.properties.InitiatingProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.InitiatingProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      - set:
+          process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
+        filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
   set_alert_evidence_fields:
     actions:
       - set:
-          event.dataset: 'alert_evidence'
-          event.kind: 'enrichment'
-          event.category: ['threat']
-          event.type: ['indicator']
-          user.id: '{{json_event.message.properties.AccounObjecttId}}'
-          microsoft.defender.entity.type: '{{json_event.message.properties.EntityType}}'
-          microsoft.defender.evidence.role: '{{json_event.message.properties.EvidenceRole}}'
-          microsoft.defender.evidence.direction: '{{json_event.message.properties.EvidenceDirection}}'
-          microsoft.defender.threat.family: '{{json_event.message.properties.ThreatFamily}}'
+          event.dataset: "alert_evidence"
+          event.kind: "enrichment"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+          user.id: "{{json_event.message.properties.AccountObjectId}}"
+          microsoft.defender.entity.type: "{{json_event.message.properties.EntityType}}"
+          microsoft.defender.evidence.role: "{{json_event.message.properties.EvidenceRole}}"
+          microsoft.defender.evidence.direction: "{{json_event.message.properties.EvidenceDirection}}"
+          microsoft.defender.threat.family: "{{json_event.message.properties.ThreatFamily}}"
+          microsoft.defender.threat.severity: "{{json_event.message.properties.Severity}}"
+          microsoft.defender.threat.detection_status: "{{parse_additional_fields.fields.DetectionStatus}}"
+          microsoft.defender.threat.suspicion_level: "{{parse_additional_fields.fields.SuspicionLevel}}"
+
+      - set:
+          email.to.address: ["{{parse_additional_fields.fields.Recipient}}"]
+        filter: "{{ parse_additional_fields.fields.Recipient != null }}"
+
+      - set:
+          source.ip: "{{parse_additional_fields.fields.SenderIp}}"
+          email.sender.address: "{{parse_additional_fields.fields.Sender}}"
+          email.message_id: "{{parse_additional_fields.fields.InternetMessageId.strip('>').strip('<')}}"
+
+          action.properties.AttachmentCount: "{{parse_additional_fields.fields.AttachmentCount}}"
+          action.properties.UrlCount: "{{parse_additional_fields.fields.UrlCount}}"
+
+          process.pid: "{{parse_additional_fields.fields.ProcessId}}"
+          process.name: "{{parse_additional_fields.fields.ImageFile.Name}}"
+          process.parent.pid: "{{parse_additional_fields.fields.ParentProcess.ProcessId}}"
+          process.parent.command_line: "{{parse_additional_fields.fields.ParentProcess.CommandLine}}"
+
   set_alert_info_fields:
     actions:
       - set:
-          event.dataset: 'alert_info'
-          event.kind: 'alert'
-          event.category: ['threat']
-          event.type: ['info']
-          threat.technique.name: '{{json_event.message.properties.AttackTechniques}}'
-          microsoft.defender.threat.category: '{{json_event.message.properties.Category}}'
-          microsoft.defender.threat.severity: '{{json_event.message.properties.Severity}}'
+          event.dataset: "alert_info"
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["info"]
+          threat.technique.name: "{{json_event.message.properties.AttackTechniques}}"
+          microsoft.defender.threat.category: "{{json_event.message.properties.Category}}"
+          microsoft.defender.threat.severity: "{{json_event.message.properties.Severity}}"
   set_cloud_app_events_fields:
     actions:
       - set:
-          event.dataset: 'cloud_app_events'
-          event.category: ['network']
-          action.properties.IsAdminOperation: '{{json_event.message.properties.IsAdminOperation}}'
-          action.properties.IsAnonymousProxy: '{{json_event.message.properties.IsAnonymousProxy}}'
-          action.properties.RawEventData: '{{json_event.message.properties.RawEventData}}'
-          action.properties.IsExternalUser: '{{json_event.message.properties.IsExternalUser}}'
-          action.properties.IsImpersonated: '{{json_event.message.properties.IsImpersonated}}'
-          action.properties.IPTags: '{{json_event.message.properties.IPTags}}'
-          action.properties.IPCategory: '{{json_event.message.properties.IPCategory}}'
-          action.properties.UserAgentTags: '{{json_event.message.properties.UserAgentTags}}'
+          event.category: ["network"]
+
+      - set:
+          event.category: ["intrusion_detection"]
+        filter: "{{json_event.message.properties.ActionType == 'AirInvestigationData'}}"
+
+      - set:
+          event.dataset: "cloud_app_events"
+          event.type: ["info"]
+
+          action.properties.IsAdminOperation: "{{json_event.message.properties.IsAdminOperation}}"
+          action.properties.IsAnonymousProxy: "{{json_event.message.properties.IsAnonymousProxy}}"
+          action.properties.RawEventData: "{{json_event.message.properties.RawEventData}}"
+          action.properties.IsExternalUser: "{{json_event.message.properties.IsExternalUser}}"
+          action.properties.IsImpersonated: "{{json_event.message.properties.IsImpersonated}}"
+          action.properties.IPTags: "{{json_event.message.properties.IPTags}}"
+          action.properties.IPCategory: "{{json_event.message.properties.IPCategory}}"
+          action.properties.UserAgentTags: "{{json_event.message.properties.UserAgentTags}}"
+
+          microsoft.defender.investigation.id: "{{json_event.message.properties.RawEventData.InvestigationId}}"
+          microsoft.defender.investigation.name: "{{json_event.message.properties.RawEventData.InvestigationName}}"
+          microsoft.defender.investigation.type: "{{json_event.message.properties.RawEventData.InvestigationType}}"
+          microsoft.defender.investigation.status: "{{json_event.message.properties.RawEventData.Status}}"
+
+          email.attachments: >
+            [
+            {%- for entity in parse_raw_event_data.data.Entities -%}
+              {%- for file in entity.Files -%}
+                {%- for file_hash in file.FileHashes -%}
+                  {%- if file_hash.Algorithm == 'SHA256' -%}
+                    {"file": {"name": "{{ file.Name }}", "hash": {"sha256": "{{ file_hash.Value }}"}}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            ]
+
   set_device_events_fields:
     actions:
       - set:
-          event.dataset: 'device_events'
-          event.category: ['host']
-          action.properties.RemoteDeviceName: '{{json_event.message.properties.RemoteDeviceName}}'
-          action.properties.ProcessTokenElevation: '{{json_event.message.properties.ProcessTokenElevation}}'
+          event.dataset: "device_events"
+          event.category: ["host"]
+          action.properties.RemoteDeviceName: "{{json_event.message.properties.RemoteDeviceName}}"
   set_device_file_certificate_info_fields:
     actions:
       - set:
-          event.dataset: 'device_file_certificate_info'
-          event.category: ['file']
-          file.x509.serial_number: '{{json_event.message.properties.CertificateSerialNumber}}'
-          file.x509.not_after: '{{json_event.message.properties.CertificateExpirationTime}}'
-          microsoft.defender.certificate.is_signed: '{{json_event.message.properties.IsSigned}}'
-          microsoft.defender.certificate.is_trusted: '{{json_event.message.properties.IsTrusted}}'
-          microsoft.defender.certificate.is_root_signer_microsort: '{{json_event.message.properties.IsRootSignerMicrosoft}}'
-          microsoft.defender.certificate.signature_type: '{{json_event.message.properties.SignatureType}}'
-          microsoft.defender.certificate.issuer: '{{json_event.message.properties.Issuer}}'
-          microsoft.defender.certificate.issuer.hash: '{{json_event.message.properties.IssuerHash}}'
-          microsoft.defender.certificate.signer: '{{json_event.message.properties.Signer}}'
-          microsoft.defender.certificate.signer.hash: '{{json_event.message.properties.SignerHash}}'
-          microsoft.defender.certificate.crl.urls: '{{json_event.message.properties.CrlDistributionPointUrls}}'
-          microsoft.defender.certificate.created_at: '{{json_event.message.properties.CertificateCreationTime}}'
-          microsoft.defender.certificate.counter_signed_at: '{{json_event.message.properties.CertificateCountersignatureTime}}'
+          event.dataset: "device_file_certificate_info"
+          event.category: ["file"]
+          file.x509.serial_number: "{{json_event.message.properties.CertificateSerialNumber}}"
+          file.x509.not_after: "{{json_event.message.properties.CertificateExpirationTime}}"
+          microsoft.defender.certificate.is_signed: "{{json_event.message.properties.IsSigned}}"
+          microsoft.defender.certificate.is_trusted: "{{json_event.message.properties.IsTrusted}}"
+          microsoft.defender.certificate.is_root_signer_microsort: "{{json_event.message.properties.IsRootSignerMicrosoft}}"
+          microsoft.defender.certificate.signature_type: "{{json_event.message.properties.SignatureType}}"
+          microsoft.defender.certificate.issuer.name: "{{json_event.message.properties.Issuer}}"
+          microsoft.defender.certificate.issuer.hash: "{{json_event.message.properties.IssuerHash}}"
+          microsoft.defender.certificate.signer.name: "{{json_event.message.properties.Signer}}"
+          microsoft.defender.certificate.signer.hash: "{{json_event.message.properties.SignerHash}}"
+          microsoft.defender.certificate.crl.urls: "{{json_event.message.properties.CrlDistributionPointUrls}}"
+          microsoft.defender.certificate.created_at: "{{json_event.message.properties.CertificateCreationTime}}"
+          microsoft.defender.certificate.counter_signed_at: "{{json_event.message.properties.CertificateCountersignatureTime}}"
   set_device_file_events_fields:
     actions:
       - set:
-          event.dataset: 'device_file_events'
-          event.category: ['file']
-          action.properties.PreviousFolderPath: '{{json_event.message.properties.PreviousFolderPath}}'
-          action.properties.PreviousFileName: '{{json_event.message.properties.PreviousFileName}}'
-          action.properties.RequestAccountSid: '{{json_event.message.properties.RequestAccountSid}}'
-          action.properties.ShareName: '{{json_event.message.properties.ShareName}}'
-          action.properties.SensitivityLabel: '{{json_event.message.properties.SensitivityLabel}}'
-          action.properties.SensitivitySubLabel: '{{json_event.message.properties.SensitivitySubLabel}}'
-          action.properties.IsAzureInfoProtectionApplied: '{{json_event.message.properties.IsAzureInfoProtectionApplied}}'
+          event.dataset: "device_file_events"
+          event.category: ["file"]
+          action.properties.PreviousFolderPath: "{{json_event.message.properties.PreviousFolderPath}}"
+          action.properties.PreviousFileName: "{{json_event.message.properties.PreviousFileName}}"
+          action.properties.RequestAccountSid: "{{json_event.message.properties.RequestAccountSid}}"
+          action.properties.ShareName: "{{json_event.message.properties.ShareName}}"
+          action.properties.SensitivityLabel: "{{json_event.message.properties.SensitivityLabel}}"
+          action.properties.SensitivitySubLabel: "{{json_event.message.properties.SensitivitySubLabel}}"
+          action.properties.IsAzureInfoProtectionApplied: "{{json_event.message.properties.IsAzureInfoProtectionApplied}}"
   set_device_image_load_events_fields:
     actions:
       - set:
-          event.dataset: 'device_image_load_events'
-          event.category: ['process']
+          event.dataset: "device_image_load_events"
+          event.category: ["process"]
   set_device_info_fields:
     actions:
       - set:
-          event.dataset: 'device_info_events'
-          event.category: ['host']
-          microsoft.defender.host.model: '{{json_event.message.properties.Model}}'
-          microsoft.defender.host.vendor: '{{json_event.message.properties.Vendor}}'
-          microsoft.defender.host.category: '{{json_event.message.properties.DeviceCategory}}'
-          microsoft.defender.host.subtype: '{{json_event.message.properties.DeviceSubType}}'
-          microsoft.defender.host.os.build: '{{json_event.message.properties.OSBuild}}'
-          microsoft.defender.host.os.version: '{{json_event.message.properties.OSVersionInfo}}'
-          action.properties.IsAzureADJoined: '{{json_event.message.properties.IsAzureADJoined}}'
-          action.properties.AadDeviceId: '{{json_event.message.properties.AadDeviceId}}'
-          action.properties.LoggedOnUsers: '{{json_event.message.properties.LoggedOnUsers}}'
-          action.properties.RegistryDeviceTag: '{{json_event.message.properties.RegistryDeviceTag}}'
-          action.properties.MachineGroup: '{{json_event.message.properties.MachineGroup}}'
-          action.properties.OnboardingStatus: '{{json_event.message.properties.OnboardingStatus}}'
-          action.properties.MergedDeviceIds: '{{json_event.message.properties.MergedDeviceIds}}'
-          action.properties.MergedToDeviceId: '{{json_event.message.properties.MergedToDeviceId}}'
-          action.properties.JoinType: '{{json_event.message.properties.JoinType}}'
+          event.dataset: "device_info_events"
+          event.category: ["host"]
+          microsoft.defender.host.model: "{{json_event.message.properties.Model}}"
+          microsoft.defender.host.vendor: "{{json_event.message.properties.Vendor}}"
+          microsoft.defender.host.category: "{{json_event.message.properties.DeviceCategory}}"
+          microsoft.defender.host.subtype: "{{json_event.message.properties.DeviceSubType}}"
+          microsoft.defender.host.os.build: "{{json_event.message.properties.OSBuild}}"
+          microsoft.defender.host.os.version: "{{json_event.message.properties.OSVersionInfo}}"
+          action.properties.IsAzureADJoined: "{{json_event.message.properties.IsAzureADJoined}}"
+          action.properties.AadDeviceId: "{{json_event.message.properties.AadDeviceId}}"
+          action.properties.LoggedOnUsers: "{{json_event.message.properties.LoggedOnUsers}}"
+          action.properties.RegistryDeviceTag: "{{json_event.message.properties.RegistryDeviceTag}}"
+          action.properties.MachineGroup: "{{json_event.message.properties.MachineGroup}}"
+          action.properties.OnboardingStatus: "{{json_event.message.properties.OnboardingStatus}}"
+          action.properties.MergedDeviceIds: "{{json_event.message.properties.MergedDeviceIds}}"
+          action.properties.MergedToDeviceId: "{{json_event.message.properties.MergedToDeviceId}}"
+          action.properties.JoinType: "{{json_event.message.properties.JoinType}}"
       - set:
-          user.name: '{{parse_device_info_user.users[0].UserName}}'
-          user.domain: '{{parse_device_info_user.users[0].DomainName}}'
-          user.id: '{{parse_device_info_user.users[0].Sid}}'
-        filter: '{{parse_device_info_user.users | length > 0}}'
+          user.name: "{{parse_device_info_user.users[0].UserName}}"
+          user.domain: "{{parse_device_info_user.users[0].DomainName}}"
+          user.id: "{{parse_device_info_user.users[0].Sid}}"
+        filter: "{{parse_device_info_user.users | length > 0}}"
   set_device_logon_events_fields:
     actions:
       - set:
-          event.dataset: 'device_logon_events'
-          event.category: ['authentication']
-          action.properties.RemoteIPType: '{{json_event.message.properties.RemoteIPType}}'
-          action.properties.IsLocalAdmin: '{{json_event.message.properties.IsLocalAdmin}}'
+          event.dataset: "device_logon_events"
+          event.category: ["authentication"]
+          action.properties.RemoteIPType: "{{json_event.message.properties.RemoteIPType}}"
+          action.properties.IsLocalAdmin: "{{json_event.message.properties.IsLocalAdmin}}"
   set_device_network_events_fields:
     actions:
       - set:
-          event.dataset: 'device_network_events'
-          event.category: ['network']
+          event.dataset: "device_network_events"
+          event.category: ["network"]
+          source.mac: '{{parse_additional_fields.fields.get("Source Mac")}}'
+          destination.mac: '{{parse_additional_fields.fields.get("Destination Mac")}}'
+  set_device_network_inbound_connection_fields:
+    actions:
+      - set:
+          source.mac: '{{parse_additional_fields.fields.get("Destination Mac")}}'
+          destination.mac: '{{parse_additional_fields.fields.get("Source Mac")}}'
+      - set:
+          source.port: "{{json_event.message.properties.RemotePort}}"
+        filter: '{{json_event.message.properties.get("RemotePort") != None}}'
+      - set:
+          source.ip: "{{json_event.message.properties.RemoteIP}}"
+        filter: '{{json_event.message.properties.get("RemoteIP")  | is_ipaddress}}'
+      - set:
+          destination.port: "{{json_event.message.properties.LocalPort}}"
+        filter: '{{json_event.message.properties.get("LocalPort") != None}}'
+      - set:
+          destination.ip: "{{json_event.message.properties.LocalIP}}"
+        filter: '{{json_event.message.properties.get("LocalIP")  | is_ipaddress}}'
   set_device_network_info_fields:
     actions:
       - set:
-          event.dataset: 'device_network_info'
-          event.category: ['host']
+          event.dataset: "device_network_info"
+          event.category: ["host"]
           host.mac: '["{{json_event.message.properties.MacAddress}}"]'
-          microsoft.defender.observer.interface.name: '{{json_event.message.properties.NetworkAdapterName}}'
-          microsoft.defender.observer.interface.type: '{{json_event.message.properties.NetworkAdapterType}}'
-          microsoft.defender.observer.interface.status: '{{json_event.message.properties.NetworkAdapterStatus}}'
-          microsoft.defender.observer.interface.dhcp.ipv4: '{{json_event.message.properties.IPv4Dhcp}}'
-          microsoft.defender.observer.interface.dhcp.ipv6: '{{json_event.message.properties.IPv6Dhcp}}'
-          microsoft.defender.observer.interface.dns: '{{json_event.message.properties.DnsAddresses}}'
-          microsoft.defender.observer.interface.gateways: '{{json_event.message.properties.DefaultGateways}}'
-          microsoft.defender.observer.interface.ips: '{{json_event.message.properties.IPAddresses}}'
-          microsoft.defender.observer.interface.networks: '{{json_event.message.properties.ConnectedNetworks}}'
-          microsoft.defender.network.tunnel.protocol: '{{json_event.message.properties.TunnelType}}'
+          microsoft.defender.observer.interface.name: "{{json_event.message.properties.NetworkAdapterName}}"
+          microsoft.defender.observer.interface.type: "{{json_event.message.properties.NetworkAdapterType}}"
+          microsoft.defender.observer.interface.status: "{{json_event.message.properties.NetworkAdapterStatus}}"
+          microsoft.defender.observer.interface.dhcp.ipv4: "{{json_event.message.properties.IPv4Dhcp}}"
+          microsoft.defender.observer.interface.dhcp.ipv6: "{{json_event.message.properties.IPv6Dhcp}}"
+          microsoft.defender.observer.interface.dns: "{{json_event.message.properties.DnsAddresses}}"
+          microsoft.defender.observer.interface.gateways: "{{json_event.message.properties.DefaultGateways}}"
+          microsoft.defender.observer.interface.ips: "{{json_event.message.properties.IPAddresses}}"
+          microsoft.defender.observer.interface.networks: "{{json_event.message.properties.ConnectedNetworks}}"
+          microsoft.defender.network.tunnel.protocol: "{{json_event.message.properties.TunnelType}}"
   set_device_process_events_fields:
     actions:
       - set:
-          event.dataset: 'device_process_events'
-          event.category: ['process']
-          process.code_signature.status: '{{json_event.message.properties.InitiatingProcessSignatureStatus}}'
-          process.code_signature.subject_name: '{{json_event.message.properties.InitiatingProcessSignerType}}'
-          action.properties.ProcessIntegrityLevel: '{{json_event.message.properties.ProcessIntegrityLevel}}'
-          action.properties.ProcessVersionInfoCompanyName: '{{json_event.message.properties.ProcessVersionInfoCompanyName}}'
-          action.properties.ProcessVersionInfoFileDescription: '{{json_event.message.properties.ProcessVersionInfoFileDescription}}'
-          action.properties.ProcessVersionInfoInternalFileName: '{{json_event.message.properties.ProcessVersionInfoInternalFileName}}'
-          action.properties.ProcessVersionInfoOriginalFileName: '{{json_event.message.properties.ProcessVersionInfoOriginalFileName}}'
-          action.properties.ProcessVersionInfoProductName: '{{json_event.message.properties.ProcessVersionInfoProductName}}'
-          action.properties.ProcessVersionInfoProductVersion: '{{json_event.message.properties.ProcessVersionInfoProductVersion}}'
+          event.dataset: "device_process_events"
+          event.category: ["process"]
   set_device_registry_events_fields:
     actions:
       - set:
-          event.dataset: 'device_registry_events'
-          event.category: ['process']
-          action.properties.PreviousRegistryKey: '{{json_event.message.properties.PreviousRegistryKey}}'
-          action.properties.PreviousRegistryValueData: '{{json_event.message.properties.PreviousRegistryValueData}}'
-          action.properties.PreviousRegistryValueName: '{{json_event.message.properties.PreviousRegistryValueName}}'
+          event.dataset: "device_registry_events"
+          event.category: ["process"]
+          action.properties.PreviousRegistryKey: "{{json_event.message.properties.PreviousRegistryKey}}"
+          action.properties.PreviousRegistryValueData: "{{json_event.message.properties.PreviousRegistryValueData}}"
+          action.properties.PreviousRegistryValueName: "{{json_event.message.properties.PreviousRegistryValueName}}"
   set_email_attachment_info_fields:
     actions:
       - set:
-          event.dataset: 'email_attachment_info'
-          event.category: ['email']
+          event.dataset: "email_attachment_info"
+          event.category: ["email"]
   set_email_events_fields:
     actions:
       - set:
-          event.dataset: 'email_events'
-          event.category: ['email']
-          rule.name: '{{json_event.message.properties.EmailActionPolicy}}'
-          rule.id: '{{json_event.message.properties.EmailActionPolicyGuid}}'
-          action.properties.SenderFromDomain: '{{json_event.message.properties.SenderFromDomain}}'
-          action.properties.EmailClusterId: '{{json_event.message.properties.EmailClusterId}}'
-          action.properties.EmailDirection: '{{json_event.message.properties.EmailDirection}}'
-          action.properties.DeliveryAction: '{{json_event.message.properties.DeliveryAction}}'
-          action.properties.ConfidenceLevel: '{{json_event.message.properties.ConfidenceLevel}}'
-          action.properties.EmailAction: '{{json_event.message.properties.EmailAction}}'
-          action.properties.AttachmentCount: '{{json_event.message.properties.AttachmentCount}}'
-          action.properties.UrlCount: '{{json_event.message.properties.UrlCount}}'
-          action.properties.EmailLanguage: '{{json_event.message.properties.EmailLanguage}}'
-          action.properties.Connectors: '{{json_event.message.properties.Connectors}}'
-          action.properties.OrgLevelAction: '{{json_event.message.properties.OrgLevelAction}}'
-          action.properties.OrgLevelPolicy: '{{json_event.message.properties.OrgLevelPolicy}}'
-          action.properties.UserLevelAction: '{{json_event.message.properties.UserLevelAction}}'
-          action.properties.UserLevelPolicy: '{{json_event.message.properties.UserLevelPolicy}}'
-          action.properties.AuthenticationDetails: '{{json_event.message.properties.AuthenticationDetails}}'
+          event.dataset: "email_events"
+          event.category: ["email"]
+          rule.name: "{{json_event.message.properties.EmailActionPolicy}}"
+          rule.id: "{{json_event.message.properties.EmailActionPolicyGuid}}"
+          action.properties.SenderFromDomain: "{{json_event.message.properties.SenderFromDomain}}"
+          action.properties.EmailClusterId: "{{json_event.message.properties.EmailClusterId}}"
+          action.properties.EmailDirection: "{{json_event.message.properties.EmailDirection}}"
+          action.properties.DeliveryAction: "{{json_event.message.properties.DeliveryAction}}"
+          action.properties.ConfidenceLevel: "{{json_event.message.properties.ConfidenceLevel}}"
+          action.properties.EmailAction: "{{json_event.message.properties.EmailAction}}"
+          action.properties.AttachmentCount: "{{json_event.message.properties.AttachmentCount}}"
+          action.properties.UrlCount: "{{json_event.message.properties.UrlCount}}"
+          action.properties.EmailLanguage: "{{json_event.message.properties.EmailLanguage}}"
+          action.properties.Connectors: "{{json_event.message.properties.Connectors}}"
+          action.properties.OrgLevelAction: "{{json_event.message.properties.OrgLevelAction}}"
+          action.properties.OrgLevelPolicy: "{{json_event.message.properties.OrgLevelPolicy}}"
+          action.properties.UserLevelAction: "{{json_event.message.properties.UserLevelAction}}"
+          action.properties.UserLevelPolicy: "{{json_event.message.properties.UserLevelPolicy}}"
+          action.properties.AuthenticationDetails: "{{json_event.message.properties.AuthenticationDetails}}"
       - translate:
         dictionary:
-          'Inbound': 'inbound'
-          'Outbound': 'outbound'
-          'Intra-org': 'internal'
+          "Inbound": "inbound"
+          "Outbound": "outbound"
+          "Intra-org": "internal"
         mapping:
           json_event.message.properties.EmailDirection: email.direction
       - translate:
         dictionary:
-          'Delivered': ['info', 'allowed']
+          "Delivered": ["info", "allowed"]
         mapping:
           json_event.message.properties.DeliveryAction: event.type
-        fallback: ['info', 'denied']
+        fallback: ["info", "denied"]
       - set:
-          event.category: ['email', 'connection']
+          event.category: ["email", "connection"]
         filter: '{{json_event.message.properties.get("DeliveryAction") != None}}'
   set_email_post_delivery_events_fields:
     actions:
       - set:
-          event.dataset: 'email_post_delivery_events'
-          event.category: ['email']
-          action.properties.ActionTrigger: '{{json_event.message.properties.ActionTrigger}}'
-          action.properties.ActionResult: '{{json_event.message.properties.ActionResult}}'
+          event.dataset: "email_post_delivery_events"
+          event.category: ["email"]
+          action.properties.ActionTrigger: "{{json_event.message.properties.ActionTrigger}}"
+          action.properties.ActionResult: "{{json_event.message.properties.ActionResult}}"
   set_email_url_info_fields:
     actions:
       - set:
-          event.dataset: 'email_url_info'
-          event.category: ['email']
+          event.dataset: "email_url_info"
+          event.category: ["email"]
   set_identity_directory_events_fields:
     actions:
       - set:
-          event.dataset: 'identity_directory_events'
-          event.category: ['iam']
+          event.dataset: "identity_directory_events"
+          event.category: ["iam"]
   set_identity_logon_events_fields:
     actions:
       - set:
-          event.dataset: 'identity_logon_events'
-          event.category: ['authentication']
+          event.dataset: "identity_logon_events"
+          event.category: ["authentication"]
   set_identity_query_events_fields:
     actions:
       - set:
-          event.dataset: 'identity_query_events'
-          event.category: ['iam']
-          action.properties.QueryType: '{{json_event.message.properties.QueryType}}'
-          action.properties.QueryTarget: '{{json_event.message.properties.QueryTarget}}'
-          action.properties.Query: '{{json_event.message.properties.Query}}'
+          event.dataset: "identity_query_events"
+          event.category: ["iam"]
+          action.properties.QueryType: "{{json_event.message.properties.QueryType}}"
+          action.properties.QueryTarget: "{{json_event.message.properties.QueryTarget}}"
+          action.properties.Query: "{{json_event.message.properties.Query}}"
+  set_url_click_events:
+    actions:
+      - set:
+          event.dataset: "url_click_events"
+          event.category: ["web"]
+          event.type: ["info"]
+  set_identity_info_fields:
+    actions:
+      - set:
+          event.dataset: "identity_info"
+          event.category: ["iam"]
+          event.type: ["user"]

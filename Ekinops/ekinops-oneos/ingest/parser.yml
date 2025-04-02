@@ -1,0 +1,122 @@
+name: ekinops-oneos
+pipeline:
+  - name: parse_message
+    external:
+      name: grok.match
+      properties:
+        pattern: "%{CONF_EVNTS}|%{LOG_IN}|%{LOG_OUT}|%{INTERFACE}|%{TRAFFIC}|%{OTHERS}"
+        custom_patterns:
+          PREFIX: "%{DATA:time} localhost : #%{WORD:log_info}#"
+          CONF_EVNTS: "%{PREFIX} %{DATA:conf_reason} by (%{DATA:origin}%{SPACE})?(user '%{WORD:user}' from %{DATA:data})? (on|at) %{GREEDYDATA:timestamp}"
+          LOG_IN: "%{PREFIX} %{DATA:outcome} for (%{DATA:origin}%{SPACE})user '%{WORD:user}' from (Source IP Address '%{DATA:ip}' Local Port '%{WORD:port}'|%{DATA:data}) at %{GREEDYDATA:timestamp}"
+          LOG_OUT: "%{PREFIX} Logged out user:%{DATA:log_user} from (a|the) %{WORD:origin} session (with client ip: %{DATA:ip}%{SPACE})?on %{GREEDYDATA:timestamp}"
+          INTERFACE: "%{PREFIX} IF: %{DATA:interface_name} is (%{DATA:data} |%{NOTSPACE})?%{WORD:reason}"
+          TRAFFIC: "%{PREFIX} list (?P<acl>ACL-WAN-IN|ACL-WAN-OUT) (?P<event_action>permitted|denied) (%{WORD:proto}|proto %{NUMBER:iana_number}) %{IP:src_ip}:%{NUMBER:src_port}-> %{IP:dst_ip}:%{NUMBER:dst_port} %{NUMBER} matches"
+          OTHERS: "%{PREFIX} (%{WORD:provider})? \\[%{WORD:name}\\] %{GREEDYDATA:msg}"
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_message.message.time}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+  - name: set_conf_fields
+    filter: "{{ parse_message.message.conf_reason != None }}"
+  - name: set_login_fields
+    filter: "{{ parse_message.message.outcome != None}}"
+  - name: set_logout_fields
+    filter: "{{ parse_message.message.log_user != None}}"
+  - name: set_interface_fields
+    filter: "{{ parse_message.message.interface_name != None}}"
+  - name: set_traffic_fields
+    filter: "{{ parse_message.message.acl != None}}"
+  - name: set_other_fields
+    filter: "{{ parse_message.message.msg != None }}"
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          observer.vendor: "Ekinops"
+          observer.product: "OneOS"
+
+          log.level: "{{parse_message.message.log_info}}"
+
+  set_conf_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          event.reason: "{{parse_message.message.conf_reason}}"
+
+          user.name: "{{parse_message.message.user}}"
+
+          ekinops.oneos.origin: "{{parse_message.message.origin}}"
+
+  set_login_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "{{parse_message.message.outcome}}"
+
+          user.name: "{{parse_message.message.user}}"
+          source.ip: "{{parse_message.message.ip}}"
+
+          ekinops.oneos.origin: "{{parse_message.message.origin}}"
+
+  set_logout_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          user.name: "{{parse_message.message.log_user}}"
+          source.ip: "{{parse_message.message.ip }}"
+
+          ekinops.oneos.origin: "{{parse_message.message.origin}}"
+
+  set_interface_fields:
+    actions:
+      - set:
+          event.category: ["host"]
+          event.type: ["change"]
+          event.action: "{{parse_message.message.reason}}"
+
+          observer.ingress.interface.name: "{{parse_message.message.interface_name}}"
+
+  set_traffic_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.action: "{{parse_message.message.event_action}}"
+
+      - set:
+          source.ip: "{{parse_message.message.src_ip}}"
+          source.port: "{{parse_message.message.src_port}}"
+
+          destination.ip: "{{parse_message.message.dst_ip}}"
+          destination.port: "{{parse_message.message.dst_port}}"
+
+          network.transport: "{{parse_message.message.proto}}"
+          network.iana_number: "{{parse_message.message.iana_number}}"
+          rule.name: "{{parse_message.message.acl}}"
+
+      - translate:
+        dictionary:
+          "denied": ["denied"]
+          "permitted": ["allowed"]
+        mapping:
+          parse_message.message.event_action: event.type
+
+  set_other_fields:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+          event.provider: "{{parse_message.message.provider}}"
+          event.reason: "{{parse_message.message.msg}}"

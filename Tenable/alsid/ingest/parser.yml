@@ -1,0 +1,133 @@
+name: Alsid
+pipeline:
+  - name: grok
+    external:
+      name: grok.match
+      description: "Associate documentation https://docs.tenable.com/identity-exposure/Content/Admin/11a-Alerts/AlertDetails.htm#Alert-Information"
+      properties:
+        input_field: "{{original.message.replace('\n', '')}}"
+        output_field: event
+        pattern: "(%{Pattern1}|%{Pattern2}|%{Pattern3})"
+        custom_patterns:
+          # MsgType=0 => EventType is IOE (security alert)
+          # \s* is used to specify one or more spaces
+          Pattern1: '\"0\" \"%{DATA:alertID}\" \"%{DATA:forestName}\" \"%{DATA:domainName}\" \"%{DATA:codeName}\" \"%{DATA:severityLevel}\"\s*\"%{DATA:ADobject}\"\ \"%{DATA:devianceID}\"\ \"%{DATA:profileID}\"\ \"%{DATA:reasonCodeName}\"\s*\"%{DATA:eventID}\"( \s*\"TrusteeCn\"=\"%{DATA:TrusteeCn}\")?( \s*\"AadConnectDbServer\"=\"%{DATA:AadConnectDbServer}\")?( \s*\"Action\"=\"%{DATA:Action}\")?( \s*\"ComputerCn\"=\"%{DATA:ComputerCn}\")?( \s*\"OperatingSystem\"=\"%{DATA:OperatingSystem}\")?( \s*\"OperatingSystemVersion\"=\"%{DATA:OperatingSystemVersion}\")?( \s*\"ExpiryDate\"=\"%{DATA:ExpiryDate}\")?( \s*\"CseGuid\"=\"%{DATA:CseGuid}\")?( \s*\"AttributeName\"=\"%{DATA:AttributeName}\")?( \s*\"GpoName\"=\"%{DATA:GpoName}\")?( \s*\"DisplayName\"=\"%{DATA:DisplayName}\")?( \s*\"DomainName\"=\"%{DATA:DomainName}\")?( \s*\"DistinguishedName\"=\"%{DATA:DistinguishedName}\")?( \s*\"DangerousAceList\"=\"\[%{DATA:DangerousAceList}]\")?( \s*\"TrustEnrollServiceAceOptionChecked\"=\"%{DATA:TrustEnrollServiceAceOptionChecked}\")?( \s*\"TrustEnrollServicesList\"=\"%{DATA:TrustEnrollServicesList}\")?( \s*\"ApproveCertifTestOptionChecked\"=\"%{DATA:ApproveCertifTestOptionChecked}\")?( \s*\"EnrollmentFlagDeviantAces\"=\"%{DATA:EnrollmentFlagDeviantAces}\")?( \s*\"EnrollmentFlagAttributeMisconfigured\"=\"%{DATA:EnrollmentFlagAttributeMisconfigured}\")?( \s*\"RaSignatureAttributeDeviantAces\"=\"%{DATA:RaSignatureAttributeDeviantAces}\")?( \s*\"RaSignatureAttributeMisconfigured\"=\"%{DATA:RaSignatureAttributeMisconfigured}\")?( \s*\"EkuAttributeDeviantAces\"=\"%{DATA:EkuAttributeDeviantAces}\")?( \s*\"EkuContainAuthAttribute\"=\"%{DATA:EkuContainAuthAttribute}\")?( \s*\"EkuContainAuthList\"=\"%{DATA:EkuContainAuthList}\")?( \s*\"SanConfigCsrOptionChecked\"=\"%{DATA:SanConfigCsrOptionChecked}\")?( \s*\"CertificateNameDeviantAces\"=\"%{DATA:CertificateNameDeviantAces}\")?( \s*\"SanConfigCsrMisconfigured\"=\"%{DATA:SanConfigCsrMisconfigured}\")?( \s*\"OuCn\"=\"%{DATA:OuCn}\")?( \s*\"Cn\"=\"%{DATA:Cn}\")?( \s*\"UserCn\"=\"%{DATA:UserCn}\")?( \s*\"UserDomain\"=\"%{DATA:UserDomain}\")?( \s*\"AccountCn\"=\"%{DATA:AccountCn}\")?( \s*\"GroupCn\"=\"%{DATA:GroupCn}\")?( \s*\"Cn\"=\"%{DATA:Cn}\")?( \s*\"PrivilegesPath\"=\"%{DATA:PrivilegesPath}\")?( \s*\"ParentContainer\"=\"%{DATA:ParentContainer}\")?'
+
+          # MsgType=1 => EventType is TF (trailflow)
+          Pattern2: "(\"1\"\ \"%{DATA:alertID}\"\ \"%{DATA:forestName}\"\ \"%{DATA:domainName}\"\ \"%{DATA:ADobject}\"\ \"%{DATA:eventID}\"\ \"%{DATA:eventType}\"\ %{DATA:attributeName}=\"%{DATA:attributeValue}\"$)"
+
+          Pattern3: '\"2\" \"%{DATA:alertID}\" \"%{DATA:forestName}\" \"%{DATA:domainName}\" \"%{DATA:ADobject}\" \"%{DATA:severityLevel}\" \"%{DATA:eventType}\" \"%{DATA:field1}\"\s*\"%{DATA:field2}\" \"%{DATA:field3}\"( \s*\"user\"=\"%{DATA:user}\")?(\s*\"source_hostname\"=\"%{DATA:source_hostname}\")?( \s*\"source_ip\"=\"%{DATA:source_ip}\")?( \s*\"source_hostname\"=\"%{DATA:source_hostname}\")?( \s*\"dc_name\"=\"%{DATA:dc_name}\")?( \s*\"dc_ip\"=\"%{DATA:dc_ip}\")?( \s*\"account_sid\"=\"%{DATA:account_sid}\")?( \s*\"account_cn\"=\"%{DATA:account_cn}\")?( \s*\"spoofed_account\"=\"%{DATA:spoofed_account}\")?( \s*\"targeted_dc_account\"=\"%{DATA:targeted_dc_account}\")?( \s*\"tool\"=\"%{DATA:tool}\")?( \s*\"password_renewal_duration\"=\"%{DATA:password_renewal_duration}\")?'
+
+  - name: action_properties
+  - name: event_type_alert
+    filter: "{{grok.event.Pattern1 | length >0 }}"
+  - name: event_type_trailflow
+    filter: "{{grok.event.Pattern2 | length >0 }}"
+  - name: event_type_3
+    filter: "{{grok.event.Pattern3 | length >0 }}"
+  - name: finalizer
+
+stages:
+  finalizer:
+    actions:
+      - set:
+          action.outcome: "success"
+        filter: "{{grok.event.outcome == null and final.action.name != null}}"
+
+  action_properties:
+    actions:
+      - set:
+          action.id: "{{grok.event.eventID}}"
+        filter: "{{grok.event.eventID > 0}}"
+
+      - set:
+          action.name: "{{grok.event.codeName}}"
+          action.outcome_reason: "{{grok.event.reasonCodeName}}"
+          action.properties.ADdevianceID: "{{grok.event.devianceID}}"
+          action.properties.ADdomainName: "{{grok.event.domainName}}"
+          action.properties.ADforestName: "{{grok.event.forestName}}"
+          action.properties.ADobject: "{{grok.event.ADobject}}"
+          action.properties.AadConnectDbServer: "{{grok.event.AadConnectDbServer}}"
+          action.properties.Action: "{{grok.event.Action}}"
+          action.properties.TrusteeCn: "{{grok.event.TrusteeCn}}"
+          action.properties.alertID: "{{grok.event.alertID}}"
+          action.properties.alertSeverityLevel: "{{grok.event.severityLevel}}"
+          action.properties.alsidAttributeName: "{{grok.event.attributeName}}"
+          action.properties.alsidAttributeValue: "{{grok.event.attributeValue}}"
+          action.properties.ComputerCn: "{{grok.event.ComputerCn}}"
+          action.properties.ExpiryDate: "{{grok.event.ExpiryDate}}"
+          action.properties.OperatingSystem: "{{grok.event.OperatingSystem}}"
+          action.properties.AttributeName: "{{grok.event.AttributeName}}"
+          action.properties.CseGuid: "{{grok.event.CseGuid}}"
+          action.properties.GpoName: "{{grok.event.GpoName}}"
+          action.properties.OperatingSystemVersion: "{{grok.event.OperatingSystemVersion}}"
+          action.properties.DistinguishedName: "{{grok.event.DistinguishedName}}"
+          action.properties.DisplayName: "{{grok.event.DisplayName}}"
+          action.properties.DomainName: "{{grok.event.DomainName}}"
+          action.properties.DangerousAceList: "{{grok.event.DangerousAceList}}"
+          action.properties.TrustEnrollServiceAceOptionChecked: "{{grok.event.TrustEnrollServiceAceOptionChecked}}"
+          action.properties.TrustEnrollServicesList: "{{grok.event.TrustEnrollServicesList}}"
+          action.properties.ApproveCertifTestOptionChecked: "{{grok.event.ApproveCertifTestOptionChecked}}"
+          action.properties.EnrollmentFlagDeviantAces: "{{grok.event.EnrollmentFlagDeviantAces}}"
+          action.properties.EnrollmentFlagAttributeMisconfigured: "{{grok.event.EnrollmentFlagAttributeMisconfigured}}"
+          action.properties.RaSignatureAttributeDeviantAces: "{{grok.event.RaSignatureAttributeDeviantAces}}"
+          action.properties.RaSignatureAttributeMisconfigured: "{{grok.event.RaSignatureAttributeMisconfigured}}"
+          action.properties.EkuAttributeDeviantAces: "{{grok.event.EkuAttributeDeviantAces}}"
+          action.properties.EkuContainAuthAttribute: "{{grok.event.EkuContainAuthAttribute}}"
+          action.properties.EkuContainAuthList: "{{grok.event.EkuContainAuthList}}"
+          action.properties.SanConfigCsrOptionChecked: "{{grok.event.SanConfigCsrOptionChecked}}"
+          action.properties.CertificateNameDeviantAces: "{{grok.event.CertificateNameDeviantAces}}"
+          action.properties.SanConfigCsrMisconfigured: "{{grok.event.SanConfigCsrMisconfigured}}"
+          action.properties.OuCn: "{{grok.event.OuCn}}"
+          action.properties.eventID: "{{grok.event.eventID}}"
+          action.properties.eventType: "{{grok.event.eventType}}"
+          action.properties.field1: "{{grok.event.field1}}"
+          action.properties.field2: "{{grok.event.field2}}"
+          action.properties.field3: "{{grok.event.field3}}"
+          action.properties.user: "{{grok.event.user}}"
+          action.properties.source_hostname: "{{grok.event.source_hostname}}"
+          action.properties.source_ip: "{{grok.event.source_ip}}"
+          action.properties.dc_name: "{{grok.event.dc_name}}"
+          action.properties.dc_ip: "{{grok.event.dc_ip}}"
+          action.properties.targeted_dc_account: "{{grok.event.targeted_dc_account}}"
+          action.properties.tool: "{{grok.event.tool}}"
+          action.properties.password_renewal_duration: "{{grok.event.password_renewal_duration}}"
+          action.properties.PrivilegesPath: "{{grok.event.PrivilegesPath}}"
+          action.properties.ParentContainer: "{{grok.event.ParentContainer}}"
+
+  event_type_alert:
+    actions:
+      - set:
+          event.kind: "alert"
+          action.type: "alert"
+          service.type: "ldap"
+          service.name: "active directory"
+          user.group.name: "{{grok.event.GroupCn}}"
+          user.domain: "{{grok.event.UserDomain}}"
+          user.name: "{{grok.event.Cn}}"
+
+      - set:
+          user.name: "{{grok.event.UserCn.split('(')[0].strip()}}"
+        filter: "{{grok.event.UserCn != None}}"
+
+      - set:
+          user.name: "{{grok.event.AccountCn.split('(')[0].strip()}}"
+        filter: "{{grok.event.AccountCn != None}}"
+
+  event_type_trailflow:
+    actions:
+      - set:
+          event.kind: "trailflow"
+          action.type: "trailflow"
+          service.type: "ldap"
+          service.name: "active directory"
+          action.name: "{{grok.event.eventType}}"
+
+  event_type_3:
+    actions:
+      - set:
+          event.kind: "alert"
+          action.type: "alert"
+          service.type: "ldap"
+          service.name: "active directory"
+          event.reason: "{{grok.event.reason}}"

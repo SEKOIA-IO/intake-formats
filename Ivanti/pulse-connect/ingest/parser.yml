@@ -8,17 +8,29 @@ pipeline:
   - name: field_extraction
   - name: msg_parsing
     external:
-      name: grok.match
+      name: grok.case_match
       properties:
-        input_field: '{{kv_event.message.msg}}'
+        raise_errors: false
+        input_field: "{{kv_event.message.msg}}"
         output_field: details
-        pattern: '(AUT31556: Unauthenticated request url %{URIPATHPARAM:url} %{GREEDYDATA}|%{GREEDYDATA})'
-      filter: "{{field_extraction.action.name == 'AUT31556'}}"
-  - name: url_extraction
+        pattern_key: "{{field_extraction.event.code}}"
+        patterns:
+          AUT31556: "AUT31556: Unauthenticated request url %{URIPATHPARAM:url} %{GREEDYDATA}"
+          AUT20920: "AUT20920: Connection from IP %{IP:src} not authenticated yet \\(URL=%{URIPATHPARAM:url}\\)"
+          AUT24604: "AUT24604: SSL negotiation failed while client at source IP '%{IP:src}' was trying to connect to '%{IP:dst}'. Reason: '%{DATA:reason}'"
+          AUT24804: "AUT24804: Host Checker policy '%{DATA:policy}' failed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}' reason '%{DATA:reason}'."
+          AUT24803: "AUT24803: Host Checker policy '%{DATA:policy}' passed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}'."
+          SYS20704: "SYS20704: %{DATA} SNMP trap to %{IP:dst}:%{NUMBER:dst_port}"
+          SYS31437: "SYS31437: Successful syslog connection to peer: '%{IP:src}'"
+          LIC30499: "LIC30499: Leased %{NUMBER} units of '%{DATA}' from %{IP:src} - reserved: %{NUMBER} maximum: %{NUMBER} incremental quantum: %{NUMBER}"
+        custom_patterns:
+          HOST_ADDRESS: "%{IP:host_ip}|%{HOSTNAME:host_name}"
+  - name: details_extraction
 stages:
   field_extraction:
     actions:
       - set:
+          "@timestamp": "{{kv_event.message.time | to_rfc3339}}"
           action.name: "{{kv_event.message.msg.split(':')[0]}}"
           event.code: "{{kv_event.message.msg.split(':')[0]}}"
           network.forwarded_ip: "{{kv_event.message.fw}}"
@@ -27,9 +39,53 @@ stages:
           user.domain: "{{kv_event.message.realm}}"
           user.roles: "{{kv_event.message.roles.split(',') if kv_event.message.roles}}"
           event.provider: "{{kv_event.message.proto}}"
-          source.ip: "{{kv_event.message.src}}"
           service.type: "{{kv_event.message.type}}"
-  url_extraction:
+          observer.ip: ["{{kv_event.message.fw}}"]
+          source.bytes: "{{kv_event.message.sent}}"
+          destination.bytes: "{{kv_event.message.rcvd}}"
+          destination.domain: "{{kv_event.message.dstname}}"
+          event.type: ["info"]
+          event.reason: "{{kv_event.message.msg.split(':')[1:] | join(':')}}"
+
+      - set:
+          source.ip: "{{kv_event.message.src}}"
+        filter: "{{kv_event.message.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{kv_event.message.dst}}"
+        filter: "{{kv_event.message.dst | is_ipaddress}}"
+
+      - translate:
+        dictionary:
+          "AUT24804": ["host"]
+          "AUT24803": ["host"]
+          "AUT23457": ["authentication"]
+        mapping:
+          event.code: event.category
+        fallback: ["network"]
+
+  details_extraction:
     actions:
       - set:
           url.path: "{{msg_parsing.details.url}}"
+          destination.port: "{{msg_parsing.details.dst_port}}"
+          event.reason: "{{msg_parsing.details.reason}}"
+          rule.name: "{{msg_parsing.details.policy}}"
+          user.name: "{{msg_parsing.details.user}}"
+          host.name: "{{msg_parsing.details.host_name}}"
+
+      - set:
+          source.ip: "{{msg_parsing.details.src}}"
+        filter: "{{msg_parsing.details.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{msg_parsing.details.dst}}"
+        filter: "{{msg_parsing.details.dst | is_ipaddress}}"
+
+      - set:
+          host.ip: ["{{msg_parsing.details.host_ip}}"]
+        filter: "{{msg_parsing.details.host_ip | is_ipaddress}}"
+
+      - set:
+          host.mac: ["{{msg_parsing.details.host_mac}}"]
+        filter: "{{msg_parsing.details.host_mac != null}}"

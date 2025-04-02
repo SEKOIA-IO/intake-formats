@@ -1,0 +1,50 @@
+name: checkpoint_harmony_mobile
+pipeline:
+  - name: parse_json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_event_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_json.message.event_timestamp}}"
+        output_field: datetime
+    filter: "{{parse_json.message.event_timestamp != None}}"
+
+  - name: parsed_backend_last_updated
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_json.message.backend_last_updated}}"
+        output_field: datetime
+    filter: "{{parse_json.message.backend_last_updated != None}}"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: network
+          event.type: ["info"]
+          event.reason: "{{parse_json.message.details}}"
+          host.os.type: "{{parse_json.message.device_model}}"
+          device.id: "{{parse_json.message.device_id}}"
+          log.level: "{{parse_json.message.severity}}"
+          checkpoint.harmony.attack_vector: "{{parse_json.message.attack_vector}}"
+          checkpoint.harmony.number: "{{parse_json.message.number}}"
+          checkpoint.harmony.threat_factors: "{{parse_json.message.threat_factors}}"
+          checkpoint.harmony.mdm_uuid: "{{parse_json.message.mdm_uuid}}"
+
+      - set:
+          "@timestamp": "{{parsed_backend_last_updated.datetime}}"
+        filter: "{{parsed_backend_last_updated.datetime != None}}"
+
+      - set:
+          "@timestamp": "{{parsed_event_timestamp.datetime}}"
+        filter: "{{parsed_event_timestamp.datetime != None}}"

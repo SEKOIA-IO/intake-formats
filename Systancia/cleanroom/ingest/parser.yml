@@ -1,0 +1,71 @@
+name: systancia-cleanroom
+pipeline:
+  - name: event
+    external:
+      name: grok.match
+      properties:
+        input_field: "original.message"
+        output_field: result
+        pattern: "%{FALLBACK}"
+        custom_patterns:
+          BASE_INFO: '(\s*(org:%{DATA:organization_name}),?)?(\s*(user:%{EMAILADDRESS:user_email}),?)(\s*(ip:%{IP:source_ip}))'
+          FALLBACK: "%{DATA:event_reason}%{BASE_INFO}"
+
+  - name: event_reason
+    filter: "{{event.result.get('event_reason') != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{event.result.event_reason}}"
+        output_field: result
+        pattern: "%{SESSION_SUCCESS}|%{SESSION_FAILURE}|%{PROCESS}"
+        custom_patterns:
+          PROCESS: "%{WORD:process_event} %{DATA} application%{GREEDYDATA}"
+          SESSION_FAILURE: "%{WORD:session_event} de la connexion au portail web%{GREEDYDATA}"
+          SESSION_SUCCESS: '%{WORD:session_event} (%{DATA})?(\s*(plugin utilisateur)|\s*(portail web))%{GREEDYDATA}'
+
+  - name: set_default_fields
+
+stages:
+  set_default_fields:
+    actions:
+      - set:
+          event.reason: "{{event.result.event_reason}}"
+          observer.vendor: "Systancia"
+          observer.product: "Systancia Cleanroom"
+          organization.name: "{{event.result.organization_name}}"
+          user.name: "{{event.result.user_email}}"
+          source.ip: "{{event.result.source_ip}}"
+          event.category: "session"
+          event.type: "end"
+          event.outcome: "success"
+
+      - set:
+          user.name: "{{event.result.user_email.split('@')[0]}}"
+          user.domain: "{{event.result.user_email.split('@')[1]}}"
+        filter: "{{event.result.user_email != None and '@' in event.result.user_email}}"
+
+      - set:
+          event.category: "process"
+          event.type: "start"
+          event.outcome: "success"
+        filter: "{{event_reason.result.get('process_event', '').lower() == 'lancement'}}"
+
+      - set:
+          event.category: "process"
+          event.type: "end"
+          event.outcome: "success"
+        filter: "{{event_reason.result.get('process_event', '').lower() == 'fermeture'}}"
+
+      - set:
+          event.category: "session"
+          event.type: "start"
+          event.outcome: "failure"
+        filter: "{{event_reason.result.get('session_event', '').lower() == 'echec'}}"
+
+      - set:
+          event.category: "session"
+          event.type: "start"
+          event.outcome: "success"
+        filter: "{{event_reason.result.get('session_event', '').lower() == 'connexion'}}"

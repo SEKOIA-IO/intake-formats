@@ -1,0 +1,65 @@
+name: datadome-protection
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+          observer.product: "Datadome protection"
+          observer.vendor: "Datadome"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.startDateTime.replace('UTC +', 'UTC+') | to_rfc3339}}"
+        filter: "{{parsed_event.message.startDateTime | length > 0}}"
+
+      - set:
+          event.start: "{{parsed_event.message.startDateTime.replace('UTC +', 'UTC+') | to_rfc3339}}"
+        filter: "{{parsed_event.message.startDateTime | length > 0}}"
+
+      - set:
+          event.end: "{{parsed_event.message.endDateTime.replace('UTC +', 'UTC+') | to_rfc3339}}"
+        filter: "{{parsed_event.message.endDateTime | length > 0}}"
+
+      - set:
+          event.duration: >
+            {%- set hour = 0 -%}
+            {%- set minute = 0 -%}
+            {%- set second = 0 -%}
+            {%- set duration = parsed_event.message.duration -%}
+            {%- if "hours" in duration -%}
+              {%- set hour = duration.split(" hours")[0] -%}
+              {%- set duration = duration.split(" hours")[1] -%}
+            {%- endif -%}
+            {%- if "minutes" in duration -%}
+              {%- set minute = duration.split(" minutes")[0] -%}
+              {%- set duration = duration.split(" minutes")[1] -%}
+            {%- endif -%}
+            {%- if "seconds" in duration -%}
+              {%- set second = duration.split(" seconds")[0] -%}
+            {%- endif -%}
+            {{(hour | int * 3600 + minute | int * 60 + second | int) * 1_000_000_000}}
+        filter: "{{parsed_event.message.duration | length > 0}}"
+
+      - set:
+          cloud.account.name: "{{parsed_event.message.accountName}}"
+          host.name: "{{parsed_event.message.endpointName}}"
+          threat.indicator.name: "{{parsed_event.message.threatName}}"
+
+          datadome.requests_count: "{{parsed_event.message.requestsCount.replace(',', '') | int}}"
+          datadome.peak_speed: "{{parsed_event.message.peakSpeed.replace(',', '') | int}}"
+          datadome.ip_count: "{{parsed_event.message.ipCount.replace(',', '') | int}}"
+          datadome.ua_count: "{{parsed_event.message.uaCount.replace(',', '') | int}}"
+          datadome.country_count: "{{parsed_event.message.countryCount.replace(',', '') | int}}"
+          datadome.url_count: "{{parsed_event.message.urlCount.replace(',', '') | int}}"

@@ -1,0 +1,102 @@
+name: mimecast-email-security
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parse_rejectioninfo
+    filter: '{{ "Url" in parse_event.message.rejectionInfo}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{parse_event.message.rejectionInfo.replace("[","").replace("]","")}}'
+        output_field: message
+        value_sep: ":"
+        item_sep: ","
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.provider: "Mimecast"
+          event.dataset: "{{parse_event.message.type or parse_event.message.eventType}}"
+          event.category: ["email"]
+          event.type: ["info"]
+
+      - set:
+          event.type: ["denied"]
+        filter: "{{parse_event.message.action in ('Blocked', 'Rej')}}"
+
+      - set:
+          "@timestamp": "{{parse_event.message.timestamp | to_rfc3339 }}"
+
+          mimecast.siem.processing_id: "{{parse_event.message.processingId}}"
+          mimecast.siem.aggregate_id: "{{parse_event.message.aggregateId}}"
+
+          event.action: "{{parse_event.message.action}}"
+          email.direction: "{{parse_event.message.direction}}"
+
+          source.ip: "{{parse_event.message.senderIp}}"
+
+          email.message_id: "{{parse_event.message.messageId.lstrip('<').rstrip('>')}}"
+          email.subject: "{{parse_event.message.subject}}"
+
+          mimecast.siem.rejection.code: "{{parse_event.message.rejectionCode}}"
+          mimecast.siem.rejection.info: "{{parse_event.message.rejectionInfo}}"
+          mimecast.siem.rejection.type: "{{parse_event.message.rejectionType}}"
+          mimecast.siem.virus_found: "{{parse_event.message.virusFound}}"
+
+          mimecast.siem.hold_reason: "{{parse_event.message.holdReason}}"
+          mimecast.siem.delivered: "{{parse_event.message.delivered}}"
+          mimecast.siem.delivery_errors: "{{parse_event.message.deliveryErrors}}"
+
+          mimecast.siem.scan_results: "{{parse_event.message.scanResults}}"
+
+          destination.ip: "{{parse_event.message.destinationIp}}"
+          url.original: "{{parse_event.message.url}}"
+
+      - set:
+          email.to.address: ["{{parse_event.message.recipients}}"]
+        filter: "{{parse_event.message.get('recipients') != None}}"
+
+      - set:
+          email.from.address:
+            [
+              "{{parse_event.message.senderEnvelope or parse_event.message.senderHeader}}",
+            ]
+        filter: "{{parse_event.message.get('senderEnvelope') != None or parse_event.message.get('senderHeader') != None}}"
+
+      - set:
+          email.attachments: >
+            [
+              {%- for item in parse_event.message.attachments.split(",") -%}
+                {"file": {"name": "{{ item.strip('" ') }}"}},
+              {%- endfor -%}
+            ]
+        filter: "{{parse_event.message.get('attachments') != None}}"
+
+      - set:
+          email.attachments: >
+            [
+                {
+                  "file":
+                  {
+                      "name": "{{ parse_event.message.fileName.strip('" ') }}",
+                      "hash": {
+                        "md5": "{{ parse_event.message.md5 }}",
+                        "sha1": "{{ parse_event.message.sha1 }}",
+                        "sha256": "{{ parse_event.message.sha256 }}"
+                      }
+                    }
+                  },
+            ]
+        filter: '{{parse_event.message.eventType in ["av", "attachment protect"]}}'
+
+      - set:
+          url.original: "{{ parse_rejectioninfo.message.Url }}"
+        filter: '{{ "Url" in parse_event.message.rejectionInfo}}'

@@ -1,0 +1,1195 @@
+name: Microsoft Windows
+ignored_values: ["-", "N/A"]
+pipeline:
+  - name: json
+    description: "Bypass wrong syslog configuration which adds : before the json message"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message.strip(':')}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{")}}'
+
+  - name: json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: event
+    filter: '{{original.message.startswith(":{") == False}}'
+
+  - name: parsed_message_kv
+    description: "Extract fields from Message field"
+    filter: "{{json.event.Message != null and '<?xml' not in json.event.Message}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.Message}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: \r\n
+
+  - name: parsed_hashes_kv
+    description: "Extract fields from hashes field"
+    filter: "{{json.event.Hashes != null or json.event.Hash != null}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.Hashes or json.event.Hash}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ","
+
+  - name: parsed_hashes_kv_2
+    description: "Extract fields from hashes field"
+    filter: "{{json.event.Hashes != null or json.event.Hash != null}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.Hashes or json.event.Hash}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: ";"
+
+  - name: parsed_message_xml
+    # issue #31452
+    filter: "{{json.event.Message != null and '<?xml' in json.event.Message}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: "{{json.event.Message.replace('<?xml', '#BEGIN#<?xml').split('#BEGIN#')[-1].split('>')[:-1]|join('>')}}>"
+        output_field: result
+
+  - name: parsed_task_content_xml
+    filter: "{{json.event.TaskContent != null and '<?xml' in json.event.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: "{{json.event.TaskContent.replace('<?xml', '#BEGIN#<?xml').split('#BEGIN#')[-1].split('>')[:-1]|join('>')}}>"
+        output_field: result
+
+  - name: parsed_task_content_xml
+    filter: "{{json.event.TaskContent != null and '&lt;?xml' in json.event.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        # The #BEGIN# pattern is used to keep the XML schema complete
+        input_field: '{{json.event.TaskContent.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&").replace("<?xml", "#BEGIN#<?xml").split("#BEGIN#")[-1].split(">")[:-1]|join(">")}}>'
+        output_field: result
+
+  - name: source_ip_ip_address
+    filter: "{{json.event.IpAddress != null}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.IpAddress}}"
+        output_field: event
+        pattern: "%{GREEDYDATA}%{IPV4:ip}%{GREEDYDATA}"
+
+  - name: source_ip_client_address
+    filter: "{{parsed_message_kv.result.get('Client Address') != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.result.get('Client Address')}}"
+        output_field: event
+        pattern: '%{IP:source_ip}(\:%{NUMBER:source_port})?'
+
+  - name: sysmon_15
+    description: issue 17164
+    filter: "{{parsed_message_kv.result.Contents != null and json.event.EventID == 15 }}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.result.Contents}}"
+        output_field: event
+        pattern: >-
+          %{GREEDYDATA}(\[%{DATA:Content}\]|-)%{SPACE}(ZoneId=%{NUMBER:ZoneId}%{SPACE})?(ReferrerUrl=%{DATA:ReferrerUrl}%{SPACE})?(HostUrl=%{DATA:HostUrl})?$|%{GREEDYDATA}
+
+  - name: parse_url
+    description: parse the URL field
+    filter: "{{ (json.event.url != null and json.event.url.startswith('http')) or (json.event.RemoteName != null and json.event.RemoteName.startswith('http'))}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.url or json.event.RemoteName}}"
+        output_field: event
+        pattern: >-
+          (%{URIPROTO:scheme}://)?(?:%{URIHOST:domain})?(?:%{URIPATHPARAM:path})
+
+  - name: patch_4103
+    filter: "{{json.event.ContextInfo != null and json.event.EventID == 4103}}"
+    external:
+      name: grok.match
+      description: #NEWLINE# is used because grok does not match multi-line fields and the KV stage does not support this field format.
+      properties:
+        raise_errors: false
+        input_field: '{{json.event.ContextInfo.replace(" "," ").replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: event
+        pattern: "%{CONTEXTINFO_FR}|%{CONTEXTINFO_EN}"
+        custom_patterns:
+          CONTEXTINFO_FR: "(%{SPACE}Gravit%{DATA} = %{DATA:Severity}#NEWLINE#%{SPACE}Nom d%{DATA}h%{DATA}te = %{DATA:HostName}#NEWLINE#%{SPACE}Version de l%{DATA}h%{DATA}te = %{DATA:HostVersion}#NEWLINE#%{SPACE}ID d%{DATA}h%{DATA}te = %{DATA:HostId}#NEWLINE#%{SPACE}Application h%{DATA}te = %{DATA:HostApplication}#NEWLINE#%{SPACE}Version du moteur = %{DATA:EnginVersion}#NEWLINE#%{SPACE}ID d%{DATA}instance d%{DATA}ex%{DATA}cution = %{DATA:RunspaceID}#NEWLINE#%{SPACE}ID de pipeline = %{DATA:PipelineID}#NEWLINE#%{SPACE}Nom de commande = %{DATA:CommandName}#NEWLINE#%{SPACE}Type de commande = %{DATA:CommantType}#NEWLINE#%{SPACE}Nom du script = %{DATA:ScriptName}#NEWLINE#%{SPACE}Chemin de la commande = %{DATA:CommandPath}#NEWLINE#%{SPACE}Num%{DATA}ro de s%{DATA}quence = %{DATA:SequenceNumber}#NEWLINE#%{SPACE}Utilisateur = %{DATA:User}#NEWLINE#%{SPACE}Utilisateur connect%{DATA} = %{DATA:ConnectedUser}#NEWLINE#%{SPACE}ID d%{DATA}interpr%{DATA}teur de commandes = %{DATA:ShellID}#NEWLINE#%{GREEDYDATA})"
+          CONTEXTINFO_EN: "(%{SPACE}Severity = %{DATA:Severity}#NEWLINE#%{SPACE}Host Name = %{DATA:HostName}#NEWLINE#%{SPACE}Host Version = %{DATA:HostVersion}#NEWLINE#%{SPACE}Host ID = %{DATA:HostID}#NEWLINE#%{SPACE}Host Application = %{DATA:HostApplication}#NEWLINE#%{SPACE}Engine Version = %{DATA:EnginVersion}#NEWLINE#%{SPACE}Runspace ID = %{DATA:RunspaceID}#NEWLINE#%{SPACE}Pipeline ID = %{DATA:PipelineID}#NEWLINE#%{SPACE}Command Name = %{DATA:CommandName}#NEWLINE#%{SPACE}Command Type = %{DATA:CommandType}#NEWLINE#%{SPACE}Script Name = %{DATA:ScriptName}#NEWLINE#%{SPACE}Command Path = %{DATA:CommandPath}#NEWLINE#%{SPACE}Sequence Number = %{DATA:SequenceNumber}#NEWLINE#%{SPACE}User = %{DATA:User}#NEWLINE#%{SPACE}Connected User = %{DATA:ConnectedUser}#NEWLINE#%{SPACE}Shell ID = %{DATA:ShellID}#NEWLINE#)"
+
+  - name: message_failure_reason
+    filter: "{{json.event.Message != null and 'Failure Reason' in json.event.Message}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: '{{json.event.Message.replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: result
+        pattern: >-
+          (%{GREEDYDATA}Failure Reason:\t\t%{DATA:FailureReason}#NEWLINE#\t%{GREEDYDATA})
+
+  - name: network_object
+    description: #NEWLINE# is used because grok does not match multi-line fields and the KV stage does not support this field format.
+    filter: "{{json.event.Message != null and 'Accesses' in json.event.Message}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: '{{json.event.Message.replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: event
+        pattern: >-
+          (%{GREEDYDATA}Accesses:%{DATA:Accesses}#NEWLINE#\t\t\t\t#NEWLINE#%{GREEDYDATA})
+
+  - name: delete_process_name
+  - name: main_stage
+  - name: set_action_properties
+  - name: process_executable
+  - name: process_parent_executable
+  - name: action_name
+  - name: set_file
+  - name: set_user
+  - name: process_ids
+  - name: set_source_fields
+  - name: action_outcome
+  - name: set_dll
+    filter: "{{ json.event.SourceName == 'Microsoft-Windows-Sysmon' and json.event.EventID == 7}}"
+  - name: hashes
+  - name: network_type
+  - name: set_url
+  - name: registry
+  - name: dns_fields
+  - name: action_target
+  - name: destination
+  - name: set_network_policy_fields
+    filter: "{{ json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [6272, 6273, 6274, 6275, 6276, 6277, 6278, 6279, 6280]}}"
+  - name: rule
+  - name: finalize
+
+stages:
+  delete_process_name:
+    description: "Delete the process.name field added by rsyslog. This stage is not covered by the tests since the unwanted field value is added by the rsyslog server."
+    actions:
+      - delete:
+          - process.name
+
+  destination:
+    actions:
+      - set:
+          destination.ip: "{{json.event.DestinationIp or json.event.DestAddress}}"
+          destination.port: "{{json.event.DestinationPort or json.event.DestPort}}"
+          destination.domain: "{{json.event.DestinationHostname or final.url.domain}}"
+          destination.address: "{{json.event.DestinationAddress or json.event.DestAddress or final.url.domain}}"
+
+  set_dll:
+    actions:
+      - set:
+          dll.path: "{{json.event.ImageLoaded}}"
+          dll.name: "{{json.event.OriginalFileName}}"
+
+      - set:
+          dll.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
+          dll.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
+          dll.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
+
+  set_file:
+    actions:
+      - set:
+          file.name: '{{(json.event.LocalName or json.event.TargetFilename).split("\\")[-1] }}'
+          file.path: "{{(json.event.LocalName or json.event.TargetFilename)}}"
+          file.owner: "{{json.event.jobOwner}}"
+          file.created: "{{json.event.CreationUtcTime | to_rfc3339}}"
+          file.size: "{{json.event.fileLength}}"
+      - set:
+          file.name: '{{json.event.name.split("\\")[-1]}}'
+          file.path: "{{json.event.name}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Bits-Client' and json.event.EventID in (59,60)}}"
+
+      - set:
+          file.name: '{{json.event.ObjectName.split("\\")[-1]}}'
+          file.path: "{{json.event.ObjectName}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID == 4663 and json.event.ObjectType in ['File', 'Process']}}"
+
+      - set:
+          file.name: '{{json.event.script.name.split("\\")[-1]}}'
+          file.path: "{{json.event.script.name }}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-PowerShell'}}"
+
+      - set:
+          file.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
+          file.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
+          file.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
+        filter: "{{json.event.EventID in (15,23,24,26,28) }}"
+
+      - set:
+          file.name: '{{json.event.Message.split(" ")[0].split("\\")[-1]}}'
+          file.path: "{{json.event.Message.split(' ')[0]}}"
+        filter: "{{json.event.EventID in (8002, 8005)}}"
+
+  finalize:
+    actions:
+      - set:
+          log.level: "{{final.log.level | lower }}" # to keep ?
+          process.command_line: '{{final.process.command_line | replace(''"'', '''')}}'
+          process.parent.command_line: '{{final.process.parent.command_line | replace(''"'', '''')}}'
+
+          process.pe.imphash: "{{final.process.pe.imphash | lower}}"
+          process.hash.md5: "{{final.process.hash.md5 | lower}}"
+          process.hash.sha1: "{{final.process.hash.sha1 | lower}}"
+          process.hash.sha256: "{{final.process.hash.sha256 | lower}}"
+
+          file.pe.imphash: "{{final.file.pe.imphash | lower}}"
+          file.hash.md5: "{{final.file.hash.md5 | lower}}"
+          file.hash.sha256: "{{final.file.hash.sha256 | lower}}"
+
+          dll.hash.imphash: "{{final.dll.pe.imphash | lower}}"
+          dll.pe.imphash: "{{final.dll.pe.imphash | lower}}"
+          dll.hash.md5: "{{final.dll.hash.md5 | lower}}"
+          dll.hash.sha256: "{{final.dll.hash.sha256 | lower}}"
+
+      - set:
+          process.parent.command_line: "{{final.process.parent.executable}}"
+        filter: "{{final.process.parent.command_line  | lower in final.process.parent.executable | lower }}"
+
+      - set:
+          source.size_in_char: "{{final.source.domain | length}}"
+        filter: "{{final.source.domain != null}}"
+
+      - set:
+          destination.size_in_char: "{{final.destination.domain | length}}"
+        filter: "{{final.destination.domain != null}}"
+
+      - set:
+          process.name: "{{final.process.executable | basename}}"
+        filter: "{{final.process.executable != null and final.process.name == null}}"
+
+      - set:
+          process.working_directory: "{{final.process.executable | dirname}}\\"
+        filter: "{{final.process.executable != null and final.process.working_directory == null}}"
+
+      - set:
+          process.parent.name: "{{final.process.parent.executable | basename}}"
+        filter: "{{final.process.parent.executable != null and final.process.parent.name == null}}"
+
+      - set:
+          process.parent.working_directory: "{{final.process.parent.executable | dirname }}\\"
+        filter: "{{final.process.parent.executable != null and final.process.parent.working_directory == null}}"
+
+      - set:
+          process.name: "powershell.exe"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-PowerShell'}}"
+
+      - set:
+          # see #14998
+          file.size: "-1"
+        filter: "{{json.event.fileLength == '18446744073709551615'}}"
+
+  main_stage:
+    actions:
+      - name: set
+        set:
+          "@timestamp": "{{json.event.UtcTime}}"
+          file.name: "{{json.event.name}}"
+          process.command_line: "{{json.event.CommandLine}}"
+          process.parent.command_line: "{{json.event.ParentCommandLine}}"
+          action.record_id: "{{json.event.RecordNumber}}"
+          action.type: "{{json.event.Channel}}"
+          destination.domain: "{{json.event.DestinationHostname}}"
+          destination.ip: "{{json.event.DestAddress or json.event.DestinationIp}}"
+          destination.port: "{{json.event.DestPort or json.event.DestinationPort}}"
+          event.code: "{{json.event.EventID}}"
+          action.id: "{{json.event.EventID}}"
+          event.provider: "{{json.event.SourceName}}"
+          event.reason: "{{json.event.Description or message_failure_reason.result.FailureReason}}"
+          file.created: "{{json.event.CreationUtcTime}}"
+          file.owner: "{{json.event.jobOwner}}"
+          log.hostname: "{{json.event.Hostname}}"
+          host.hostname: "{{json.event.Hostname}}"
+          log.level: "{{json.event.Severity}}"
+          network.transport: "{{json.event.Protocol}}"
+          os.family: "windows"
+          os.platform: "windows"
+          process.name: "{{process.executable}}"
+          process.executable: "{{json.event.Image}}"
+          process.parent.executable: "{{json.event.ParentImage or json.event.ParentProcessName}}"
+          process.parent.name: "{{process.parent.executable | basename}}"
+          process.ppid: "{{json.event.ParentProcessId}}"
+          process.thread.id: "{{json.event.ThreadID}}"
+          process.working_directory: "{{json.event.CurrentDirectory }}"
+          source.domain: "{{json.event.SourceHostname}}"
+          source.port: "{{json.event.SourcePort}}"
+          url.original: "{{json.event.url or json.event.RemoteName}}"
+          user.id: "{{json.event.SubjectUserSid or json.event.UserID}}"
+          user.target.name: "{{json.event.TargetUserName}}"
+          user.target.domain: "{{json.event.TargetDomainName}}"
+          user.target.id: "{{json.event.TargetUserSid}}"
+
+      - set:
+          package.name: "{{json.event.LmPackageName.split()|first}}"
+          package.description: "LAN Manager package"
+        filter: "{{json.event.LmPackageName not in [null, '-']}}"
+
+      - set:
+          package.version: "{{json.event.LmPackageName.split()|last}}"
+        filter: "{{json.event.LmPackageName != null and json.event.LmPackageName.split()|length > 1}}"
+
+      - set:
+          event.message: "{{json.event.Message}}"
+          # do not include Message containing a json document
+        filter: "{{json.event.Message.strip().startswith('{') == False}}"
+
+      - set:
+          process.name: "{{json.event.Application.split('\\\\')[-1]}}"
+        filter: "{{json.event.Application != null}}"
+
+  set_action_properties:
+    actions:
+      - set:
+          action.properties: "{{json.event}}"
+
+          action.properties.Accesses: "{{ network_object.event.Accesses.replace('#NEWLINE#', '\\r\\n').replace('#NEWLINE2#', '\\n') }}" # issue with this multi-line field
+
+          action.properties.Attributes: "{{json.event.Attributes}}"
+          action.properties.Requester: "{{json.event.Requester}}"
+
+          action.properties.MessEventType: "{{ parsed_message_kv.result.EventType.strip() }}"
+          action.properties.ParentImage: "{{ parsed_message_kv.result.ParentImage.strip()}}"
+          action.properties.StartFunction: "{{ parsed_message_kv.result.StartFunction.strip() }}"
+          action.properties.StartModule: "{{ parsed_message_kv.result.StartModule.strip()}}"
+          action.properties.FailureCode: "{{parsed_message_kv.result.get('Failure Code')}}"
+
+          action.properties.TaskContentNew_Args: "{{parsed_message_xml.result.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_message_xml.result.Task.Actions.Exec.Command}}"
+          action.properties.Image: "{{ (json.event.Image or parsed_message_kv.result.Image.strip()) }}"
+
+          action.properties.ContextInfo: '{{ json.event.ContextInfo.replace(" "," ") }}'
+          action.properties.DestinationPort: "{{json.event.DestinationPort or json.event.DestPort}}"
+          action.properties.ErrorCode: '{{ json.event.get("Error Code") or json.event.ErrorCode }}'
+          action.properties.ProcessName: '{{ json.event.ProcessName or json.event.get("Process Name") }}'
+          action.properties.CallingStationID: "{{ json.event.CallingStationID }}"
+
+          action.properties.ThreatName: '{{ json.event.get("Threat Name") }}'
+          action.properties.DetectionUser: '{{ json.event.get("Detection User") }}'
+
+          action.properties.Execution Name: '{{ json.event.get("Execution Name") }}'
+          action.properties.HealthAttestationServer: '{{ json.event.get("Health Attestation Server") }}'
+          action.properties.LastASSecurityIntelligenceAge: '{{ json.event.get("Last AS security intelligence age") }}'
+          action.properties.LastAVSecurityIntelligenceAge: '{{ json.event.get("Last AV security intelligence age") }}'
+          action.properties.LastFullScanAge: '{{ json.event.get("Last full scan age") }}'
+          action.properties.LastQuickScanAge: '{{ json.event.get("Last quick scan age") }}'
+          action.properties.New Value: '{{ json.event.get("New Value") }}'
+          action.properties.NewValue: '{{ json.event.get("NewValue") }}'
+          action.properties.Old Value: '{{ json.event.get("Old Value") }}'
+          action.properties.NewUAC: '{{ json.event.get("NewUacValue") }}'
+          action.properties.OldUAC: '{{ json.event.get("OldUacValue") }}'
+          action.properties.SentUpdateServer: '{{ json.event.get("Sent UpdateServer") }}'
+          action.properties.ServiceFileName: '{{ json.event.get("Service File Name") or json.event.ServiceFileName }}'
+          action.properties.StatusInformation: '{{ json.event.get("Status Information") }}'
+
+          action.properties.BytesTotal: "{{json.event.bytesTotal}}"
+          action.properties.ConfigurationFile: "{{ json.event.Configuration }}"
+
+          action.properties.FileVersion: "{{ json.event.FileVersion }}"
+          action.properties.Product: "{{ json.event.FileVersion }}"
+          action.properties.Description: "{{ json.event.Description }}"
+
+      - set:
+          action.properties.BytesTotal: "-1"
+        filter: "{{final.action != null and final.action.properties != null and final.action.properties.BytesTotal == '18446744073709551615'}}"
+
+      - set:
+          action.properties.Keywords: "{{ '%d' | format(final.action.properties.Keywords | int) }}"
+        filter: "{{final.action.properties.Keywords != null and final.action.properties.Keywords.startswith('0x') != true}}"
+
+      - set:
+          action.properties.TaskContent: "{{json.event.TaskContent}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.result.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.result.Task.Actions.Exec.Command}}"
+        filter: "{{json.event.EventID in [4698]}}"
+
+      # patch 4103
+      - set:
+          action.properties.HostApplication: "{{ patch_4103.event.HostApplication.replace('#NEWLINE#','\\r\\n').replace('#NEWLINE2#', '\\n')}}"
+          action.properties.HostName: "{{ patch_4103.event.HostName.replace('#NEWLINE#','\\r\\n').replace('#NEWLINE2#', '\\n') }}"
+        filter: "{{json.event.ContextInfo != null and json.event.EventID == 4103}}"
+
+      # sysmon_15
+      - set:
+          action.properties.Content: "{{ sysmon_15.event.Content}}"
+          action.properties.HostUrl: "{{ sysmon_15.event.HostUrl}}"
+          action.properties.ReferrerUrl: "{{ sysmon_15.event.ReferrerUrl}}"
+          action.properties.ZoneId: "{{ sysmon_15.event.ZoneId}}"
+        filter: "{{parsed_message_kv.result.Contents != null and json.event.EventID == 15 }}"
+
+      - set:
+          action.properties.ProxyServer: >
+            {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "ProxyServer" in component%}{{component["ProxyServer"].strip()}}{% endif %}{% endfor %}
+        filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          action.properties.AdditionalActionsID: "{{ json.event.get('Additional Actions ID') }}"
+          action.properties.AdditionalActionsString: "{{ json.event.get('Additional Actions String') }}"
+
+  action_target:
+    actions:
+      - set:
+          action.target: "network-traffic"
+        filter: "{{ final.source !=  null and final.destination != null and final.action != null }}"
+
+      - set:
+          action.target: "registry"
+        filter: "{{ final.registry != null and final.action != null }}"
+
+  dns_fields:
+    actions:
+      - set:
+          dns.question.name: "{{json.event.QueryName}}"
+          dns.response_code: "{{json.event.QueryStatus}}"
+
+      - set:
+          dns.type: "query"
+        filter: "{{json.event.QueryName != null}}"
+
+      - set:
+          dns.type: "answer"
+        filter: "{{json.event.QueryResults != null}}"
+
+      - set:
+          dns.answers: >
+            [
+            {% set DNS_MAPPING = {"12": "PTR", "15": "MX", "16": "TXT", "17": "RP", "18": "AFSDB", "1": "A", "249": "TKEY", "24": "SIG", "250": "TSIG", "256": "URI", "257": "CAA", "25": "KEY", "28": "AAAA", "29": "LOC", "2": "NS", "32768": "TA", "32769": "DLV", "33": "SRV", "35": "NAPTR", "36": "KX", "37": "CERT", "39": "DNAME", "42": "APL", "43": "DS", "44": "SSHFP", "45": "IPSECKEY", "46": "RRSIG", "47": "NSEC", "48": "DNSKEY", "49": "DHCID", "50": "NSEC3", "51": "NSEC3PARAM", "52": "TLSA", "53": "SMIMEA", "55": "HIP", "59": "CDS", "5": "CNAME", "60": "CDNSKEY", "61": "OPENPGPKEY", "62": "CSYNC", "6": "SOA"} %}
+
+            {% for query_result in json.event.QueryResults.split(";")  %}
+
+              {%if query_result.startswith('type:')%}
+                {'name': '{{query_result.split(' ')[-1]}}', 'type': '{{DNS_MAPPING.get(query_result.split(" ")[2])}}' },
+
+              {%elif query_result | is_ipv4%}
+                { 'name': '{{query_result}}', 'type': "A" },
+
+              {%elif query_result | is_ipv6%}
+                { 'name': '{{query_result}}', 'type': "AAAA" },
+
+              {%endif %}
+
+            {% endfor %}
+            ]
+        filter: "{{final.dns.type == 'answer'}}"
+
+      - set:
+          dns.size_in_char: "{{final.dns.question.name | length}}"
+
+  registry:
+    actions:
+      - set:
+          registry.value: "{{ json.event.Details}}"
+
+      - set:
+          registry.path: "{{ json.event.TargetObject}}"
+          registry.hive: '{{ json.event.TargetObject.split("\\")[0]}}'
+          registry.key: '{{ json.event.TargetObject.split("\\")[1:-1] | join("\\")}}'
+          registry.value: '{{ json.event.TargetObject.split("\\")[-1]}}'
+        filter: "{{json.event.TargetObject != null}}"
+
+      - set:
+          registry.data.type: "STRING"
+          registry.data.strings: ["{{json.event.Details | string}}"]
+        filter: '{{json.event.Details != null and json.event.Details.startswith("\\")}}'
+
+      - set:
+          registry.data.type: "{{json.event.Details.split(' ')[0]}}"
+          registry.data.strings: "[{{json.event.Details.split(' ')[-1] | replace('(', '')| replace(')', '') | int(base=16) | string}}]"
+
+        filter: "{{json.event.Details != null and json.event.Details.endswith(')')}}"
+
+      - translate:
+        dictionary:
+          DWORD: REG_DWORD
+          STRING: REG_SZ
+        fallback: RG_NONE
+        mapping:
+          final.registry.data.type: registry.data.type
+        filter: "{{final.registry.data.type != null}}"
+
+  set_url:
+    actions:
+      - set:
+          url.full: "{{final.url.original}}"
+          url.domain: "{{parse_url.event.domain}}"
+          url.scheme: "{{parse_url.event.scheme}}"
+          url.path: "{{parse_url.event.path}}"
+        filter: "{{final.url != null and final.url.original != null and final.url.original.startswith('http')}}"
+
+  network_type:
+    actions:
+      - set:
+          network.type: "ipv6"
+        filter: "{{json.event.SourceIsIpv6 == 'true'}}"
+      - set:
+          network.type: "ipv4"
+        filter: "{{json.event.SourceIsIpv6 == 'false'}}"
+
+  hashes:
+    actions:
+      - set:
+          process.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
+          process.hash.sha1: "{{parsed_hashes_kv.result.SHA1 or parsed_hashes_kv_2.result.SHA1}}"
+          process.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
+          process.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
+        filter: "{{json.event.EventID not in (7, 15, 23, 24, 26) }}"
+
+  process_ids:
+    actions:
+      - set:
+          process.pid: "{{json.event.ProcessID}}"
+
+      - set:
+          process.pid: "{{parsed_message_kv.result.ProcessId}}"
+        filter: "{{json.event.SourceName ==  'Microsoft-Windows-Sysmon' and json.event.EventID in [1,2,3,5,7,9,11,12,13,14,15,17,18,22,25,26]}}"
+
+      - set:
+          process.pid: "{{json.event.NewProcessId | int(base=16)}}"
+        filter: "{{(json.event.SourceName ==  'Microsoft-Windows-Security-Auditing' and json.event.SourceName != 'null' or json.event.ProcessName != 'null') and json.event.EventID in [4688, 4689] and json.event.NewProcessId != null}}"
+
+      - set:
+          process.parent.pid: "{{parsed_message_kv.result.get('Creator Process ID') | int(base=16)}}"
+        filter: "{{(json.event.SourceName ==  'Microsoft-Windows-Security-Auditing' and json.event.SourceName != 'null' or json.event.ProcessName != 'null') and json.event.EventID in [4688, 4689] and parsed_message_kv.result.get('Creator Process ID') != None}}"
+
+      - set:
+          process.pid: "{{parsed_message_kv.result.SourceProcessId}}"
+        filter: "{{json.event.SourceName ==  'Microsoft-Windows-Sysmon' and json.event.EventID in [8,10]}}"
+
+      - set:
+          process.id: "{{final.process.pid}}"
+          process.thread.id: "{{json.event.ThreadID}}"
+
+  set_user:
+    actions:
+      - set:
+          user.name: "{{json.event.User or json.event.AccountName or json.event.Requester}}"
+
+      - set:
+          user.domain: '{{final.user.name.split("\\")[0] }}'
+          user.name: '{{final.user.name.split("\\")[1] }}'
+        filter: '{{final.user.name != null and "\\" in final.user.name }}'
+
+      - set:
+          user.domain: "{{json.event.Domain or json.event.Hostname}}"
+        filter: "{{final.user.name != null and final.user.domain == null}}"
+
+      - set:
+          user.name: "{{json.event.SubjectUserName}}"
+          user.domain: "{{json.event.SubjectDomainName}}"
+        filter: "{{final.user == null or final.user.name == null }}"
+
+      - set:
+          user.name: "{{parsed_message_kv.result.get('User Name')}}"
+          user.domain: "{{parsed_message_kv.result.get('Domain')}}"
+        filter: "{{final.user == null or final.user.name == null }}"
+
+      - set:
+          user_agent.original: >
+            {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "UserAgentString" in component%}{{component["UserAgentString"].strip()}}{% endif %}{% endfor %}
+
+        filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+  action_name:
+    actions:
+      - translate:
+        dictionary:
+          1: Process creation
+          2: A process changed a file creation time
+          3: Network connection
+          4: Sysmon service state changed
+          5: Process terminated
+          6: Driver loaded
+          7: Image loaded
+          8: CreateRemoteThread
+          9: RawAccessRead
+          10: ProcessAccess
+          11: FileCreate
+          12: RegistryEvent (Object create and delete)
+          13: RegistryEvent (Value Set)
+          14: RegistryEvent (Key and Value Rename)
+          15: FileCreateStreamHash
+          16: Sysmon config state changed
+          17: Pipe created
+          18: Pipe connected
+          19: WmiEventFilter activity detected
+          20: WmiEventConsumer activity detected
+          21: WmiEventConsumerToFilter activity detected
+          22: DNS query
+          25: Process Tampering
+          225: Error
+        mapping:
+          final.event.code: action.name
+        filter: "{{json.event.Channel == 'Microsoft-Windows-Sysmon/Operational'}}"
+
+      - translate:
+        dictionary:
+          3: The BITS service created a new job
+          4: The transfer job has been completed
+          59: BITS started the BITS Transfer job
+          60: BITS has stopped transferring the BITS Transfer job
+          306: The BITS service loaded the job list from disk
+          310: The initialization of the peer helper modules failed
+        mapping:
+          final.event.code: action.name
+        filter: "{{json.event.Channel == 'Microsoft-Windows-Bits-Client/Operational'}}"
+
+      - translate:
+        dictionary:
+          104: System log files was cleared
+          1100: The event logging service has shut down
+          1101: Audit events have been dropped by the transport.
+          1102: The audit log was cleared
+          1104: The security Log is now full
+          1105: Event log automatic backup
+          1108: The event logging service encountered an error
+          1116: The antimalware platform detected malware or other potentially unwanted software.
+          1120: Microsoft Defender Antivirus deduced the hashes for a threat resource.
+          4104: Creating Scriptblock text
+          4608: Windows is starting up
+          4609: Windows is shutting down
+          4610: An authentication package has been loaded by the Local Security Authority
+          4611: A trusted logon process has been registered with the Local Security Authority
+          4612: Internal resources allocated for the queuing of audit messages have been exhausted, leading to the loss of some audits.
+          4614: A notification package has been loaded by the Security Account Manager.
+          4615: Invalid use of LPC port
+          4616: The system time was changed.
+          4618: A monitored security event pattern has occurred
+          4621: Administrator recovered system from CrashOnAuditFail
+          4622: A security package has been loaded by the Local Security Authority.
+          4624: An account was successfully logged on
+          4625: An account failed to log on
+          4626: User/Device claims information
+          4627: Group membership information.
+          4634: An account was logged off
+          4646: IKE DoS-prevention mode started
+          4647: User initiated logoff
+          4648: A logon was attempted using explicit credentials
+          4649: A replay attack was detected
+          4650: An IPsec Main Mode security association was established
+          4651: An IPsec Main Mode security association was established
+          4652: An IPsec Main Mode negotiation failed
+          4653: An IPsec Main Mode negotiation failed
+          4654: An IPsec Quick Mode negotiation failed
+          4655: An IPsec Main Mode security association ended
+          4656: A handle to an object was requested
+          4657: A registry value was modified
+          4658: The handle to an object was closed
+          4659: A handle to an object was requested with intent to delete
+          4660: An object was deleted
+          4661: A handle to an object was requested
+          4662: An operation was performed on an object
+          4663: An attempt was made to access an object
+          4664: An attempt was made to create a hard link
+          4665: An attempt was made to create an application client context.
+          4666: An application attempted an operation
+          4667: An application client context was deleted
+          4668: An application was initialized
+          4670: Permissions on an object were changed
+          4671: An application attempted to access a blocked ordinal through the TBS
+          4672: Special privileges assigned to new logon
+          4673: A privileged service was called
+          4674: An operation was attempted on a privileged object
+          4675: SIDs were filtered
+          4688: A new process has been created
+          4689: A process has exited
+          4690: An attempt was made to duplicate a handle to an object
+          4691: Indirect access to an object was requested
+          4692: Backup of data protection master key was attempted
+          4693: Recovery of data protection master key was attempted
+          4694: Protection of auditable protected data was attempted
+          4695: Unprotection of auditable protected data was attempted
+          4696: A primary token was assigned to process
+          4697: A service was installed in the system
+          4698: A scheduled task was created
+          4699: A scheduled task was deleted
+          4700: A scheduled task was enabled
+          4701: A scheduled task was disabled
+          4702: A scheduled task was updated
+          4703: A token right was adjusted
+          4704: A user right was assigned
+          4705: A user right was removed
+          4706: A new trust was created to a domain
+          4707: A trust to a domain was removed
+          4709: IPsec Services was started
+          4710: IPsec Services was disabled
+          4711: PAStore Engine (1%)
+          4712: IPsec Services encountered a potentially serious failure
+          4713: Kerberos policy was changed
+          4714: Encrypted data recovery policy was changed
+          4715: The audit policy (SACL) on an object was changed
+          4716: Trusted domain information was modified
+          4717: System security access was granted to an account
+          4718: System security access was removed from an account
+          4719: System audit policy was changed
+          4720: A user account was created
+          4722: A user account was enabled
+          4723: An attempt was made to change an account's password
+          4724: An attempt was made to reset an accounts password
+          4725: A user account was disabled
+          4726: A user account was deleted
+          4727: A security-enabled global group was created
+          4728: A member was added to a security-enabled global group
+          4729: A member was removed from a security-enabled global group
+          4730: A security-enabled global group was deleted
+          4731: A security-enabled local group was created
+          4732: A member was added to a security-enabled local group
+          4733: A member was removed from a security-enabled local group
+          4734: A security-enabled local group was deleted
+          4735: A security-enabled local group was changed
+          4737: A security-enabled global group was changed
+          4738: A user account was changed
+          4739: Domain Policy was changed
+          4740: A user account was locked out
+          4741: A computer account was created
+          4742: A computer account was changed
+          4743: A computer account was deleted
+          4744: A security-disabled local group was created
+          4745: A security-disabled local group was changed
+          4746: A member was added to a security-disabled local group
+          4747: A member was removed from a security-disabled local group
+          4748: A security-disabled local group was deleted
+          4749: A security-disabled global group was created
+          4750: A security-disabled global group was changed
+          4751: A member was added to a security-disabled global group
+          4752: A member was removed from a security-disabled global group
+          4753: A security-disabled global group was deleted
+          4754: A security-enabled universal group was created
+          4755: A security-enabled universal group was changed
+          4756: A member was added to a security-enabled universal group
+          4757: A member was removed from a security-enabled universal group
+          4758: A security-enabled universal group was deleted
+          4759: A security-disabled universal group was created
+          4760: A security-disabled universal group was changed
+          4761: A member was added to a security-disabled universal group
+          4762: A member was removed from a security-disabled universal group
+          4763: A security-disabled universal group was deleted
+          4764: A groups type was changed
+          4765: SID History was added to an account
+          4766: An attempt to add SID History to an account failed
+          4767: A user account was unlocked
+          4768: A Kerberos authentication ticket (TGT) was requested
+          4769: A Kerberos service ticket was requested
+          4770: A Kerberos service ticket was renewed
+          4771: Kerberos pre-authentication failed
+          4772: A Kerberos authentication ticket request failed
+          4773: A Kerberos service ticket request failed
+          4774: An account was mapped for logon
+          4775: An account could not be mapped for logon
+          4776: The domain controller attempted to validate the credentials for an account
+          4777: The domain controller failed to validate the credentials for an account
+          4778: A session was reconnected to a Window Station
+          4779: A session was disconnected from a Window Station
+          4780: The ACL was set on accounts which are members of administrators groups
+          4781: The name of an account was changed
+          4782: The password hash an account was accessed
+          4783: A basic application group was created
+          4784: A basic application group was changed
+          4785: A member was added to a basic application group
+          4786: A member was removed from a basic application group
+          4787: A non-member was added to a basic application group
+          4788: A non-member was removed from a basic application group..
+          4789: A basic application group was deleted
+          4790: An LDAP query group was created
+          4791: A basic application group was changed
+          4792: An LDAP query group was deleted
+          4793: The Password Policy Checking API was called
+          4794: An attempt was made to set the Directory Services Restore Mode administrator password
+          4797: An attempt was made to query the existence of a blank password for an account
+          4798: A user's local group membership was enumerated.
+          4799: A security-enabled local group membership was enumerated
+          4800: The workstation was locked
+          4801: The workstation was unlocked
+          4802: The screen saver was invoked
+          4803: The screen saver was dismissed
+          4816: RPC detected an integrity violation while decrypting an incoming message
+          4817: Auditing settings on object were changed.
+          4818: Proposed Central Access Policy does not grant the same access permissions as the current Central Access Policy
+          4819: Central Access Policies on the machine have been changed
+          4820: A Kerberos Ticket-granting-ticket (TGT) was denied because the device does not meet the access control restrictions
+          4821: A Kerberos service ticket was denied because the user, device, or both does not meet the access control restrictions
+          4822: NTLM authentication failed because the account was a member of the Protected User group
+          4823: NTLM authentication failed because access control restrictions are required
+          4824: Kerberos preauthentication by using DES or RC4 failed because the account was a member of the Protected User group
+          4825: A user was denied the access to Remote Desktop. By default, users are allowed to connect only if they are members of the Remote Desktop Users group or Administrators group
+          4826: Boot Configuration Data loaded
+          4830: SID History was removed from an account
+          4864: A namespace collision was detected
+          4865: A trusted forest information entry was added
+          4866: A trusted forest information entry was removed
+          4867: A trusted forest information entry was modified
+          4868: The certificate manager denied a pending certificate request
+          4869: Certificate Services received a resubmitted certificate request
+          4870: Certificate Services revoked a certificate
+          4871: Certificate Services received a request to publish the certificate revocation list (CRL)
+          4872: Certificate Services published the certificate revocation list (CRL)
+          4873: A certificate request extension changed
+          4874: One or more certificate request attributes changed.
+          4875: Certificate Services received a request to shut down
+          4876: Certificate Services backup started
+          4877: Certificate Services backup completed
+          4878: Certificate Services restore started
+          4879: Certificate Services restore completed
+          4880: Certificate Services started
+          4881: Certificate Services stopped
+          4882: The security permissions for Certificate Services changed
+          4883: Certificate Services retrieved an archived key
+          4884: Certificate Services imported a certificate into its database
+          4885: The audit filter for Certificate Services changed
+          4886: Certificate Services received a certificate request
+          4887: Certificate Services approved a certificate request and issued a certificate
+          4888: Certificate Services denied a certificate request
+          4889: Certificate Services set the status of a certificate request to pending
+          4890: The certificate manager settings for Certificate Services changed.
+          4891: A configuration entry changed in Certificate Services
+          4892: A property of Certificate Services changed
+          4893: Certificate Services archived a key
+          4894: Certificate Services imported and archived a key
+          4895: Certificate Services published the CA certificate to Active Directory Domain Services
+          4896: One or more rows have been deleted from the certificate database
+          4897: Role separation enabled
+          4898: Certificate Services loaded a template
+          4899: A Certificate Services template was updated
+          4900: Certificate Services template security was updated
+          4902: The Per-user audit policy table was created
+          4904: An attempt was made to register a security event source
+          4905: An attempt was made to unregister a security event source
+          4906: The CrashOnAuditFail value has changed
+          4907: Auditing settings on object were changed
+          4908: Special Groups Logon table modified
+          4909: The local policy settings for the TBS were changed
+          4910: The group policy settings for the TBS were changed
+          4911: Resource attributes of the object were changed
+          4912: Per User Audit Policy was changed
+          4913: Central Access Policy on the object was changed
+          4928: An Active Directory replica source naming context was established
+          4929: An Active Directory replica source naming context was removed
+          4930: An Active Directory replica source naming context was modified
+          4931: An Active Directory replica destination naming context was modified
+          4932: Synchronization of a replica of an Active Directory naming context has begun
+          4933: Synchronization of a replica of an Active Directory naming context has ended
+          4934: Attributes of an Active Directory object were replicated
+          4935: Replication failure begins
+          4936: Replication failure ends
+          4937: A lingering object was removed from a replica
+          4944: The following policy was active when the Windows Firewall started
+          4945: A rule was listed when the Windows Firewall started
+          4946: A change has been made to Windows Firewall exception list. A rule was added
+          4947: A change has been made to Windows Firewall exception list. A rule was modified
+          4948: A change has been made to Windows Firewall exception list. A rule was deleted
+          4949: Windows Firewall settings were restored to the default values
+          4950: A Windows Firewall setting has changed
+          4951: A rule has been ignored because its major version number was not recognized by Windows Firewall
+          4952: Parts of a rule have been ignored because its minor version number was not recognized by Windows Firewall
+          4953: A rule has been ignored by Windows Firewall because it could not parse the rule
+          4954: Windows Firewall Group Policy settings has changed. The new settings have been applied
+          4956: Windows Firewall has changed the active profile
+          4957: Windows Firewall did not apply the following rule
+          4958: Windows Firewall did not apply the following rule because the rule referred to items not configured on this computer
+          4960: IPsec dropped an inbound packet that failed an integrity check
+          4961: IPsec dropped an inbound packet that failed a replay check
+          4962: IPsec dropped an inbound packet that failed a replay check
+          4963: IPsec dropped an inbound clear text packet that should have been secured
+          4964: Special groups have been assigned to a new logon
+          4965: IPsec received a packet from a remote computer with an incorrect Security Parameter Index (SPI).
+          4976: During Main Mode negotiation, IPsec received an invalid negotiation packet.
+          4977: During Quick Mode negotiation, IPsec received an invalid negotiation packet.
+          4978: During Extended Mode negotiation, IPsec received an invalid negotiation packet.
+          4979: IPsec Main Mode and Extended Mode security associations were established.
+          4980: IPsec Main Mode and Extended Mode security associations were established
+          4981: IPsec Main Mode and Extended Mode security associations were established
+          4982: IPsec Main Mode and Extended Mode security associations were established
+          4983: An IPsec Extended Mode negotiation failed
+          4984: An IPsec Extended Mode negotiation failed
+          4985: The state of a transaction has changed
+          5024: The Windows Firewall Service has started successfully
+          5025: The Windows Firewall Service has been stopped
+          5027: The Windows Firewall Service was unable to retrieve the security policy from the local storage
+          5028: The Windows Firewall Service was unable to parse the new security policy.
+          5029: The Windows Firewall Service failed to initialize the driver
+          5030: The Windows Firewall Service failed to start
+          5031: The Windows Firewall Service blocked an application from accepting incoming connections on the network.
+          5032: Windows Firewall was unable to notify the user that it blocked an application from accepting incoming connections on the network
+          5033: The Windows Firewall Driver has started successfully
+          5034: The Windows Firewall Driver has been stopped
+          5035: The Windows Firewall Driver failed to start
+          5037: The Windows Firewall Driver detected critical runtime error. Terminating
+          5038: Code integrity determined that the image hash of a file is not valid
+          5039: A registry key was virtualized.
+          5040: A change has been made to IPsec settings. An Authentication Set was added.
+          5041: A change has been made to IPsec settings. An Authentication Set was modified
+          5042: A change has been made to IPsec settings. An Authentication Set was deleted
+          5043: A change has been made to IPsec settings. A Connection Security Rule was added
+          5044: A change has been made to IPsec settings. A Connection Security Rule was modified
+          5045: A change has been made to IPsec settings. A Connection Security Rule was deleted
+          5046: A change has been made to IPsec settings. A Crypto Set was added
+          5047: A change has been made to IPsec settings. A Crypto Set was modified
+          5048: A change has been made to IPsec settings. A Crypto Set was deleted
+          5049: An IPsec Security Association was deleted
+          5050: An attempt to programmatically disable the Windows Firewall using a call to INetFwProfile.FirewallEnabled(FALSE
+          5051: A file was virtualized
+          5056: A cryptographic self test was performed
+          5057: A cryptographic primitive operation failed
+          5058: Key file operation
+          5059: Key migration operation
+          5060: Verification operation failed
+          5061: Cryptographic operation
+          5062: A kernel-mode cryptographic self test was performed
+          5063: A cryptographic provider operation was attempted
+          5064: A cryptographic context operation was attempted
+          5065: A cryptographic context modification was attempted
+          5066: A cryptographic function operation was attempted
+          5067: A cryptographic function modification was attempted
+          5068: A cryptographic function provider operation was attempted
+          5069: A cryptographic function property operation was attempted
+          5070: A cryptographic function property operation was attempted
+          5071: Key access denied by Microsoft key distribution service
+          5120: OCSP Responder Service Started
+          5121: OCSP Responder Service Stopped
+          5122: A Configuration entry changed in the OCSP Responder Service
+          5123: A configuration entry changed in the OCSP Responder Service
+          5124: A security setting was updated on OCSP Responder Service
+          5125: A request was submitted to OCSP Responder Service
+          5126: Signing Certificate was automatically updated by the OCSP Responder Service
+          5127: The OCSP Revocation Provider successfully updated the revocation information
+          5136: A directory service object was modified
+          5137: A directory service object was created
+          5138: A directory service object was undeleted
+          5139: A directory service object was moved
+          5140: A network share object was accessed
+          5141: A directory service object was deleted
+          5142: A network share object was added.
+          5143: A network share object was modified
+          5144: A network share object was deleted.
+          5145: A network share object was checked to see whether client can be granted desired access
+          5146: The Windows Filtering Platform has blocked a packet
+          5147: A more restrictive Windows Filtering Platform filter has blocked a packet
+          5148: The Windows Filtering Platform has detected a DoS attack and entered a defensive mode; packets associated with this attack will be discarded.
+          5149: The DoS attack has subsided and normal processing is being resumed.
+          5150: The Windows Filtering Platform has blocked a packet.
+          5151: A more restrictive Windows Filtering Platform filter has blocked a packet.
+          5152: The Windows Filtering Platform blocked a packet
+          5153: A more restrictive Windows Filtering Platform filter has blocked a packet
+          5154: The Windows Filtering Platform has permitted an application or service to listen on a port for incoming connections
+          5155: The Windows Filtering Platform has blocked an application or service from listening on a port for incoming connections
+          5156: The Windows Filtering Platform has allowed a connection
+          5157: The Windows Filtering Platform has blocked a connection
+          5158: The Windows Filtering Platform has permitted a bind to a local port
+          5159: The Windows Filtering Platform has blocked a bind to a local port
+          5168: Spn check for SMB/SMB2 fails.
+          5169: A directory service object was modified
+          5170: A directory service object was modified during a background cleanup task
+          5376: Credential Manager credentials were backed up
+          5377: Credential Manager credentials were restored from a backup
+          5378: The requested credentials delegation was disallowed by policy
+          5379: Credential Manager credentials were read
+          5380: Vault Find Credential
+          5381: Vault credentials were read
+          5382: Vault credentials were read
+          5440: The following callout was present when the Windows Filtering Platform Base Filtering Engine started
+          5441: The following filter was present when the Windows Filtering Platform Base Filtering Engine started
+          5442: The following provider was present when the Windows Filtering Platform Base Filtering Engine started
+          5443: The following provider context was present when the Windows Filtering Platform Base Filtering Engine started
+          5444: The following sub-layer was present when the Windows Filtering Platform Base Filtering Engine started
+          5446: A Windows Filtering Platform callout has been changed
+          5447: A Windows Filtering Platform filter has been changed
+          5448: A Windows Filtering Platform provider has been changed
+          5449: A Windows Filtering Platform provider context has been changed
+          5450: A Windows Filtering Platform sub-layer has been changed
+          5451: An IPsec Quick Mode security association was established
+          5452: An IPsec Quick Mode security association ended
+          5453: An IPsec negotiation with a remote computer failed because the IKE and AuthIP IPsec Keying Modules (IKEEXT) service is not started
+          5456: PAStore Engine applied Active Directory storage IPsec policy on the computer
+          5457: PAStore Engine failed to apply Active Directory storage IPsec policy on the computer
+          5458: PAStore Engine applied locally cached copy of Active Directory storage IPsec policy on the computer
+          5459: PAStore Engine failed to apply locally cached copy of Active Directory storage IPsec policy on the computer
+          5460: PAStore Engine applied local registry storage IPsec policy on the computer
+          5461: PAStore Engine failed to apply local registry storage IPsec policy on the computer
+          5462: PAStore Engine failed to apply some rules of the active IPsec policy on the computer
+          5463: PAStore Engine polled for changes to the active IPsec policy and detected no changes
+          5464: PAStore Engine polled for changes to the active IPsec policy, detected changes, and applied them to IPsec Services
+          5465: PAStore Engine received a control for forced reloading of IPsec policy and processed the control successfully
+          5466: PAStore Engine polled for changes to the Active Directory IPsec policy, determined that Active Directory cannot be reached, and will use the cached copy of the Active Directory IPsec policy instead
+          5467: PAStore Engine polled for changes to the Active Directory IPsec policy, determined that Active Directory can be reached, and found no changes to the policy
+          5468: PAStore Engine polled for changes to the Active Directory IPsec policy, determined that Active Directory can be reached, found changes to the policy, and applied those changes
+          5471: PAStore Engine loaded local storage IPsec policy on the computer
+          5472: PAStore Engine failed to load local storage IPsec policy on the computer
+          5473: PAStore Engine loaded directory storage IPsec policy on the computer
+          5474: PAStore Engine failed to load directory storage IPsec policy on the computer
+          5477: PAStore Engine failed to add quick mode filter
+          5478: IPsec Services has started successfully
+          5479: IPsec Services has been shut down successfully
+          5480: IPsec Services failed to get the complete list of network interfaces on the computer
+          5483: IPsec Services failed to initialize RPC server. IPsec Services could not be started
+          5484: IPsec Services has experienced a critical failure and has been shut down
+          5485: IPsec Services failed to process some IPsec filters on a plug-and-play event for network interfaces
+          5632: A request was made to authenticate to a wireless network
+          5633: A request was made to authenticate to a wired network
+          5712: A Remote Procedure Call (RPC) was attempted
+          5888: An object in the COM+ Catalog was modified
+          5889: An object was deleted from the COM+ Catalog
+          5890: An object was added to the COM+ Catalog
+          6144: Security policy in the group policy objects has been applied successfully
+          6145: One or more errors occured while processing security policy in the group policy objects
+          6272: Network Policy Server granted access to a user
+          6273: Network Policy Server denied access to a user
+          6274: Network Policy Server discarded the request for a user
+          6275: Network Policy Server discarded the accounting request for a user
+          6276: Network Policy Server quarantined a user
+          6277: Network Policy Server granted access to a user but put it on probation because the host did not meet the defined health policy
+          6278: Network Policy Server granted full access to a user because the host met the defined health policy
+          6279: Network Policy Server locked the user account due to repeated failed authentication attempts
+          6280: Network Policy Server unlocked the user account
+          6281: Code Integrity determined that the page hashes of an image file are not valid...
+          6400: BranchCache Received an incorrectly formatted response while discovering availability of content.
+          6401: BranchCache Received invalid data from a peer. Data discarded.
+          6402: BranchCache. The message to the hosted cache offering it data is incorrectly formatted.
+          6403: BranchCache. The hosted cache sent an incorrectly formatted response to the client's message to offer it data.
+          6404: BranchCache. Hosted cache could not be authenticated using the provisioned SSL certificate.
+          6405: BranchCache. %2 instance(s) of event id %1 occurred.
+          6406: 1 registered to Windows Firewall to control filtering for the following.
+          6407: 1
+          6408: Registered product %1 failed and Windows Firewall is now controlling the filtering for %2.
+          6409: BranchCache. A service connection point object could not be parsed
+          6410: Code integrity determined that a file does not meet the security requirements to load into a process. This could be due to the use of shared sections or other issues
+          6416: A new external device was recognized by the system.
+          6417: The FIPS mode crypto selftests succeeded
+          6418: The FIPS mode crypto selftests failed
+          6419: A request was made to disable a device
+          6420: A device was disabled
+          6421: A request was made to enable a device
+          6422: A device was enabled
+          6423: The installation of this device is forbidden by system policy
+          6424: The installation of this device was allowed, after having previously been forbidden by policy
+          7036: Service Control Manager started a running
+          7045: A new service was installed in the system
+          8191: Highest System-Defined Audit Message Value
+          8222: Shadow copy has been created
+          20001: New hardware is connected to the your computer.
+        mapping:
+          final.event.code: action.name
+        filter: "{{json.event.Channel in ['Application', 'System', 'Security', 'Microsoft-Windows-PowerShell/Operational', 'Microsoft-Windows-Windows Defender/Operational']}}"
+
+  process_parent_executable:
+    actions:
+      - set:
+          process.parent.executable: "{{ json.event.ParentImage or json.event.ParentProcessName }}"
+
+  process_executable:
+    actions:
+      - set:
+          process.executable: "{{json.event.NewProcessName }}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and final.event.code in ['4688', '4689']}}"
+
+      - set:
+          process.executable: "{{json.event.ProcessName }}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and final.event.code in ['4656', '4657', '4658', '4663', '4670', '4674']}}"
+
+      - set:
+          process.executable: "{{json.event.ImageLoaded }}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Sysmon' and final.event.code in ['6']}}"
+
+      - set:
+          process.executable: "{{json.event.SourceImage }}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Sysmon' and final.event.code in ['10', '8']}}"
+
+      # does the following override the previous fields ?
+      - set:
+          process.executable: "{{json.event.ProcessName }}"
+
+  action_outcome:
+    actions:
+      - set:
+          action.outcome: "success"
+        filter: "{{json.event.EventType == 'AUDIT_SUCCESS' }}"
+      - set:
+          action.outcome: "failure"
+        filter: "{{json.event.EventType == 'AUDIT_FAILURE' }}"
+
+  set_source_fields:
+    actions:
+      - set:
+          source.ip: "{{json.event.SourceIp or json.event.SourceAddress}}"
+        filter: "{{json.event.SourceIp | is_ipaddress or json.event.SourceAddress | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json.event.Message.split('Client IP: ')[-1].strip('.')}}"
+        filter: "{{json.event.EventID == 56 and json.event.Message != null }}"
+
+      - set:
+          source.ip: "{{source_ip_client_address.event.source_ip}}"
+        filter: "{{final.source == null or final.source.ip == null }}"
+
+      - set:
+          source.ip: >
+            {% for     component in     parsed_message_xml.result.AuditBase.ContextComponents.Component   %}
+            {%if "IpAddress" in component%}
+            {{component["IpAddress"].split(',')[0]}}
+            {% endif %}
+            {% endfor %}
+        filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          source.ip: "{{source_ip_ip_address.event.ip}}"
+        filter: "{{source_ip_ip_address.event.ip | is_ipaddress}}"
+
+      - set:
+          source.address: "{{json.event.SourceIp}}"
+        filter: "{{json.event.SourceIp | is_ipaddress}}"
+
+      - set:
+          source.address: "{{json.event.IpAddress}}"
+        filter: "{{json.event.IpAddress | is_ipaddress}}"
+
+      - set:
+          source.address: "{{source.ip}}"
+        filter: "{{json.event.IpAddress | is_ipaddress and final.source.ip != null }}"
+
+      - set:
+          source.address: "{{json.event.SourceHostname}}"
+        filter: "{{json.event.SourceHostname | is_ipaddress}}"
+
+      - set:
+          source.address: "{{json_event.message.SourceAddr}}"
+        filter: "{{json.event.SourceAddr | is_ipaddress}}"
+
+  set_network_policy_fields:
+    actions:
+      - set:
+          source.ip: "{{ json.event.CallingStationID }}"
+        filter: "{{json.event.CallingStationID | is_ipaddress}}"
+      - set:
+          source.mac: "{{ json.event.CallingStationID }}"
+        filter: "{{ final.source.ip == null }}"
+      - set:
+          destination.domain: "{{ json.event.AuthenticationServer }}"
+
+  rule:
+    actions:
+      - set:
+          rule.name: "{{json.event.RuleName}}"

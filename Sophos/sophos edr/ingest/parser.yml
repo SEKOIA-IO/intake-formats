@@ -1,141 +1,149 @@
 name: sophos-edr
 pipeline:
--   external:
-        name: json.parse-json
-        properties:
-            input_field: '{{original.message}}'
-            output_field: message
+  - external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
     name: parse_json
--   external:
-        name: grok.match
-        properties:
-            input_field: '{{parse_json.message.name}}'
-            output_field: message
-            pattern: 'Access was blocked to "%{URL:url}" because of "%{WORD:rulename}".'
-            custom_patterns:
-              URL: '(?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})'
+  - external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parse_json.message.name}}"
+        output_field: message
+        pattern: 'Access was blocked to "%{URL:url}" because of "%{WORD:rulename}".'
+        custom_patterns:
+          URL: "(?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})"
     filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
     name: parse_webfiltering
--   external:
-        name: grok.match
-        properties:
-            input_field: '{{parse_json.message.name}}'
-            output_field: message
-            pattern: 'Controlled application %{WORD}: %{GREEDYDATA:process_title}'
+  - external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parse_json.message.name}}"
+        output_field: message
+        pattern: "Controlled application %{WORD}: %{GREEDYDATA:process_title}"
     filter: '{{parse_json.message.group == "APPLICATION_CONTROL"}}'
     name: parse_application_control
--   external:
-        name: grok.match
-        properties:
-            input_field: '{{parse_json.message.name}}'
-            output_field: message
-            pattern: '%{REMOVABLE_STORAGE}|%{STORAGE}'
-            custom_patterns:
-              STORAGE: 'An \u2033%{GREEDYDATA:action}\u2033 action was taken.  Username: %{GREEDYDATA}  Rule names: \u2032%{GREEDYDATA:rule_name}\u2032  User action: %{GREEDYDATA}  Application Name: %{GREEDYDATA}  Data Control action: %{WORD}  File type: %{GREEDYDATA}  File size: %{NUMBER:file_size}  Source path: %{GREEDYDATA:file_path}'
-              REMOVABLE_STORAGE: '%{STORAGE}  Destination path: %{GREEDYDATA:destination_path}  Destination type: %{GREEDYDATA:destination_type}'
+  - external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parse_json.message.name}}"
+        output_field: message
+        pattern: "%{REMOVABLE_STORAGE}|%{STORAGE}"
+        custom_patterns:
+          STORAGE: "An ″%{GREEDYDATA:action}″ action was taken.  Username: %{GREEDYDATA}  Rule names: ′%{GREEDYDATA:rule_name}′  User action: %{GREEDYDATA}  Application Name: %{GREEDYDATA}  Data Control action: %{WORD}  File type: %{GREEDYDATA}  File size: %{NUMBER:file_size}  Source path: %{GREEDYDATA:file_path}"
+          REMOVABLE_STORAGE: "%{STORAGE}  Destination path: %{GREEDYDATA:destination_path}  Destination type: %{GREEDYDATA:destination_type}"
     filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
     name: parse_dlp
--   external:
-        name: grok.match
-        properties:
-            input_field: '{{parse_json.message.name}}'
-            output_field: message
-            pattern: "PUA %{GREEDYDATA:action}: '%{GREEDYDATA:threat}' at '%{GREEDYDATA:file_path}'"
+  - external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parse_json.message.name}}"
+        output_field: message
+        pattern: "PUA %{GREEDYDATA:action}: '%{GREEDYDATA:threat}' at '%{GREEDYDATA:file_path}'"
     filter: '{{parse_json.message.group == "PUA"}}'
     name: parse_pua
--   external:
-        name: grok.match
-        properties:
-            input_field: '{{parse_json.message.name}}'
-            output_field: message
-            pattern: "'%{GREEDYDATA:threat}' exploit prevented in %{GREEDYDATA:category}"
+  - external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parse_json.message.name}}"
+        output_field: message
+        pattern: "'%{GREEDYDATA:threat}' exploit prevented in %{GREEDYDATA:category}"
     filter: '{{parse_json.message.group == "RUNTIME_DETECTIONS"}}'
     name: parse_exploit_prevention
--   external:
+  - external:
       name: date.parse
       properties:
         input_field: parse_json.message.rt
         output_field: date
     name: parse_date
--   name: set_ecs_fields
--   name: set_sophos_fields
+  - name: set_ecs_fields
+  - name: set_sophos_fields
 
 stages:
   set_ecs_fields:
     actions:
-    - set:
-        '@timestamp': '{{parse_date.date}}'
-        event.end: '{{parse_json.message.end}}'
-        event.kind: 'event'
-        event.reason: '{{parse_json.message.name}}'
-        event.code: '{{parse_json.message.type}}'
-        event.category: ['file']
-        event.type: ['info']
-        user.id: '{{parse_json.message.duid}}'
-        host.hostname: '{{parse_json.message.dhost}}'
-        host.name: '{{parse_json.message.dhost}}'
-        observer.ip: '{{parse_json.message.source_info.ip}}'
-        log.level: '{{parse_json.message.severity}}'
-    - set:
-        user.name: '{{parse_json.message.suser.split("\\") | last}}'
-        user.domain: '{{parse_json.message.suser.split("\\")[0:-1] | join("\\")}}'
-      filter: '{{parse_json.message.suser != null and parse_json.message.suser != "n/a"}}'
-    - set:
-        rule.name: '{{parse_webfiltering.message.rulename}}'
-        url.original: '{{parse_webfiltering.message.url}}'
-      filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
-    - set:
-        process.title: '{{parse_application_control.message.process_title}}'
-      filter: '{{parse_json.message.group == "APPLICATION_CONTROL"}}'
-    - set:
-        file.path: '{{parse_dlp.message.file_path}}'
-        file.size: '{{parse_dlp.message.file_size}}'
-        event.action: '{{parse_dlp.message.action}}'
-        rule.name: '{{parse_dlp.message.rule_name}}'
-      filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
-    - set:
-        file.path: '{{parse_pua.message.file_path}}'
-        event.action: '{{parse_pua.message.action}}'
-        rule.name: '{{parse_pua.message.threat}}'
-      filter: '{{parse_json.message.group == "PUA"}}'
-    - translate:
-      dictionary:
-        'Event::Endpoint::Registered': ['host']
-        'Event::Endpoint::SavScanComplete': ['file', 'process']
-        'Event::Endpoint::CorePuaClean': ['file']
-        'Event::Endpoint::CorePuaDetection': ['file']
-      mapping:
-        event.code: event.category
-    - translate:
-      dictionary:
-        'Event::Endpoint::UserAutoCreated': ['creation']
-        'Event::Endpoint::WebFilteringBlocked': ['denied']
-        'Event::Endpoint::DataLossPreventionAutomaticallyAllowed': ['allowed']
-        'Event::Endpoint::Application::Blocked': ['denied']
-        'Event::Endpoint::CorePuaClean': ['deletion']
-      mapping:
-        event.code: event.type
-      fallback: ['info']
-    - set:
-        event.category: ['file', 'process']
-      filter: '{{parse_json.message.group == "DENC" or parse_json.message.group == "UPDATING"}}'
-    - set:
-        event.category: ['iam']
-      filter: '{{parse_json.message.group == "PROTECTION"}}'
-    - set:
-        event.category: ['network']
-      filter: '{{parse_json.message.group == "WEB"}}'
+      - set:
+          "@timestamp": "{{parse_date.date}}"
+          event.end: "{{parse_json.message.end}}"
+          event.reason: "{{parse_json.message.name}}"
+          event.code: "{{parse_json.message.type}}"
+          event.category: ["file"]
+          event.type: ["info"]
+          user.id: "{{parse_json.message.duid}}"
+          host.hostname: "{{parse_json.message.dhost}}"
+          host.name: "{{parse_json.message.dhost}}"
+          log.level: "{{parse_json.message.severity}}"
+      - set:
+          observer.ip: "{{parse_json.message.source_info.ip}}"
+        filter: "{{parse_json.message.source_info.ip | is_ipaddress}}"
+
+      - set:
+          user.name: '{{parse_json.message.suser.split("\\") | last}}'
+          user.domain: '{{parse_json.message.suser.split("\\")[0:-1] | join("\\")}}'
+        filter: '{{parse_json.message.suser != null and parse_json.message.suser != "n/a"}}'
+      - set:
+          rule.name: "{{parse_webfiltering.message.rulename}}"
+          url.original: "{{parse_webfiltering.message.url}}"
+        filter: '{{parse_json.message.type == "Event::Endpoint::WebFilteringBlocked"}}'
+      - set:
+          process.title: "{{parse_application_control.message.process_title}}"
+        filter: '{{parse_json.message.group == "APPLICATION_CONTROL"}}'
+      - set:
+          file.path: "{{parse_dlp.message.file_path}}"
+          file.size: "{{parse_dlp.message.file_size}}"
+          event.action: "{{parse_dlp.message.action}}"
+          rule.name: "{{parse_dlp.message.rule_name}}"
+        filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
+      - set:
+          file.path: "{{parse_pua.message.file_path}}"
+          file.hash.sha256: "{{parse_json.message.appSha256}}"
+          event.action: "{{parse_pua.message.action}}"
+          rule.name: "{{parse_pua.message.threat}}"
+        filter: '{{parse_json.message.group == "PUA"}}'
+      - translate:
+        dictionary:
+          "Event::Endpoint::Registered": ["host"]
+          "Event::Endpoint::SavScanComplete": ["file", "process"]
+          "Event::Endpoint::CorePuaClean": ["file"]
+          "Event::Endpoint::CorePuaDetection": ["file"]
+        mapping:
+          event.code: event.category
+      - translate:
+        dictionary:
+          "Event::Endpoint::UserAutoCreated": ["creation"]
+          "Event::Endpoint::WebFilteringBlocked": ["denied"]
+          "Event::Endpoint::DataLossPreventionAutomaticallyAllowed": ["allowed"]
+          "Event::Endpoint::Application::Blocked": ["denied"]
+          "Event::Endpoint::CorePuaClean": ["deletion"]
+        mapping:
+          event.code: event.type
+        fallback: ["info"]
+      - set:
+          event.category: ["file", "process"]
+        filter: '{{parse_json.message.group == "DENC" or parse_json.message.group == "UPDATING"}}'
+      - set:
+          event.category: ["iam"]
+        filter: '{{parse_json.message.group == "PROTECTION"}}'
+      - set:
+          event.category: ["network"]
+        filter: '{{parse_json.message.group == "WEB"}}'
   set_sophos_fields:
     actions:
-    - set:
-        sophos.endpoint.type: '{{parse_json.message.endpoint_type}}'
-        sophos.endpoint.id: '{{parse_json.message.endpoint_id}}'
-        sophos.customer.id: '{{parse_json.message.customer_id}}'
-        sophos.event.group: '{{parse_json.message.group}}'
-    - set:
-        sophos.threat.name: '{{parse_exploit_prevention.message.threat}}'
-      filter: '{{parse_json.message.group == "RUNTIME_DETECTIONS"}}'
-    - set:
-        sophos.destination.type: '{{parse_dlp.message.destination_type}}'
-        sophos.destination.file.path: '{{parse_dlp.message.destination_path}}'
-      filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'
+      - set:
+          sophos.endpoint.type: "{{parse_json.message.endpoint_type}}"
+          sophos.endpoint.id: "{{parse_json.message.endpoint_id}}"
+          sophos.customer.id: "{{parse_json.message.customer_id}}"
+          sophos.event.group: "{{parse_json.message.group}}"
+      - set:
+          sophos.threat.name: "{{parse_exploit_prevention.message.threat}}"
+        filter: '{{parse_json.message.group == "RUNTIME_DETECTIONS"}}'
+      - set:
+          sophos.destination.type: "{{parse_dlp.message.destination_type}}"
+          sophos.destination.file.path: "{{parse_dlp.message.destination_path}}"
+        filter: '{{parse_json.message.group == "DATA_LOSS_PREVENTION"}}'

@@ -1,0 +1,118 @@
+name: trellix-network-security
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_start_date
+    filter: "{{parsed_event.message.start != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.start}}"
+        output_field: date
+
+  - name: parse_end_date
+    filter: "{{parsed_event.message.end != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.end}}"
+        output_field: date
+
+  - name: parse_receipt_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: date
+
+  - name: set_timestamp
+  - name: set_default_fields
+  - name: set_category
+  - name: set_source_destination_fields
+
+stages:
+  set_source_destination_fields:
+    actions:
+      - set:
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          destination.mac: "{{parsed_event.message.dmac}}"
+
+          source.port: "{{parsed_event.message.spt}}"
+          source.ip: "{{parsed_event.message.src}}"
+          source.domain: "{{parsed_event.message.shost}}"
+          source.mac: "{{parsed_event.message.smac}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.get('Victim IP')}}"
+        filter: "{{parsed_event.message.get('Victim IP') != None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.get('Attacker IP')}}"
+        filter: "{{parsed_event.message.get('Attacker IP') != None}}"
+
+  set_category:
+    actions:
+      - set:
+          event.type: ["info"]
+
+      - translate:
+        dictionary:
+          "malware-object": '["malware"]'
+          "riskware-object": '["malware"]'
+          "domain-match": '["network"]'
+        mapping:
+          parsed_event.message.Name: event.category
+        fallback: '["intrusion_detection"]'
+
+  set_timestamp:
+    actions:
+      - set:
+          "@timestamp": "{{parse_start_date.date}}"
+
+      - set:
+          "@timestamp": "{{parse_receipt_time.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time != null}}"
+
+      - set:
+          "@timestamp": "{{parse_end_date.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time == null and parse_end_date != null}}"
+
+  set_default_fields:
+    actions:
+      - set:
+          event.dataset: "{{parsed_event.message.Name}}"
+          event.severity: "{{parsed_event.message.Severity}}"
+          event.start: "{{parse_start_date.date}}"
+          event.end: "{{parse_end_date.date}}"
+          event.action: "{{parsed_event.message.act}}"
+          event.reason: "{{parsed_event.message.msg}}"
+          event.url: "{{parsed_event.message.link}}"
+
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          observer.ip: ["{{parsed_event.message.dvc}}"]
+          observer.hostname: "{{parsed_event.message.dvchost}}"
+          observer.mac: ["{{parsed_event.message.dvcmac}}"]
+
+          network.transport: "{{parsed_event.message.proto}}"
+          url.original: "{{parsed_event.message.request}}"
+          http.request.method: "{{parsed_event.message.requestMethod}}"
+          user_agent.original: "{{parsed_event.message.requestClientApplication}}"
+
+          file.path: "{{parsed_event.message.filePath}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.hash.sha256: "{{parsed_event.message.sha256sum}}"
+          file.hash.md5: "{{parsed_event.message.fileHash}}"
+          file.size: "{{parsed_event.message.fsize}}"
+          file.extension: "{{parsed_event.message.fileType}}"
+
+          process.parent.title: "{{parsed_event.message.sproc}}"
+
+          trellix.nx.sname: "{{parsed_event.message.sname}}"
+          trellix.nx.cnc_port: "{{parsed_event.message.cncPort}}"
+          trellix.nx.cnc_host: "{{parsed_event.message.cncHost}}"
+#         "{{parsed_event.message.get('Attacker IP')}}"

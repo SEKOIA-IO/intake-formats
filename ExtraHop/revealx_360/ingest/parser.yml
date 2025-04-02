@@ -1,0 +1,40 @@
+name: revealx_360
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+          observer.vendor: "Extrahop"
+          observer.product: "Reveal(x) 360"
+
+      - set:
+          "@timestamp": "{{ parse_event.message.mod_time | to_rfc3339 }}"
+          event.reason: "{{ parse_event.message.description }}"
+          event.code: "{{ parse_event.message.type }}"
+          event.risk_score_norm: "{{ parse_event.message.risk_score_norm }}"
+          event.risk_score: "{{ parse_event.message.risk_score }}"
+          event.start: "{{ parse_event.message.start_time | to_rfc3339 }}"
+
+          extrahop.revealx360.categories: "{{ parse_event.message.categories }}"
+          extrahop.revealx360.id: "{{ parse_event.message.id }}"
+          extrahop.revealx360.title: "{{ parse_event.message.title }}"
+
+          tls.version: "{{ parse_event.message.properties.version.lstrip('TLSv') }}"
+          tls.cipher: "{{ parse_event.message.properties.cipher_suite }}"
+
+          host.name: "{% for item in parse_event.message.participants %}{% if item.role == 'offender' %}{{ item.hostname }}{% endif %}{% endfor %}"
+          host.ip: "{% for item in parse_event.message.participants %}{% if item.role == 'offender' and item.object_value | is_ipaddress %}['{{ item.object_value }}']{% endif %}{% endfor %}"
+          host.id: "{% for item in parse_event.message.participants %}{% if item.role == 'offender' %}{{ item.object_id }}{% endif %}{% endfor %}"

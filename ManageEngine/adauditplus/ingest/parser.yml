@@ -1,0 +1,90 @@
+name: adauditplus
+pipeline:
+  - name: parse_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parse_event.message.rt }}"
+        output_field: datetime
+        format: timestamp
+
+  - name: set_timestamp
+  - name: categorize_event
+  - name: set_cef_header_fields
+  - name: set_cef_extension_fields
+
+stages:
+  set_timestamp:
+    actions:
+      - set:
+          "@timestamp": "{{ parse_timestamp.datetime }}"
+
+  categorize_event:
+    actions:
+      - set:
+          event.kind: "alert"
+        filter: "{{ parse_event.message.Name == 'ADAPAlerts' }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{ parse_event.message.Name in ('LogonReports', 'LocalLogonLogoffReports', 'AzureADLogonReports', 'ADFSReports') }}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
+        filter: "{{ parse_event.message.Name in ('GroupMgmtReports', 'UserMgmtReports', 'AzureADAccountMgmtReports', 'GPOMgmtReports', 'OUMgmtReports', 'PolicyChangeReports', 'NPSAuditReports', 'ADAPTechnicianAudit') }}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{ parse_event.message.Name in ('ADObjectsAuditReports', 'DNSAuditReports', 'ComputerMgmtReports', 'ServerAuditReports') }}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: "{{ parse_event.message.Name in ('LDAPReports') }}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{ parse_event.message.Name in ('FileAuditReports', 'FIMAuditReports') }}"
+
+  set_cef_header_fields:
+    actions:
+      - set:
+          observer.vendor: "{{ parse_event.message.DeviceVendor }}"
+          observer.product: "{{ parse_event.message.DeviceProduct }}"
+          observer.version: "{{ parse_event.message.DeviceVersion }}"
+          event.module: "{{ parse_event.message.DeviceEventClassID }}"
+          event.severity: "{{ parse_event.message.Severity }}"
+          event.dataset: "{{ parse_event.message.Name }}"
+
+  set_cef_extension_fields:
+    actions:
+      - set:
+          source.ip: "{{ parse_event.message.cs2 }}"
+          source.address: "{{ parse_event.message.shost }}"
+          user.name: "{{ parse_event.message.suser }}"
+          user.id: "{{ parse_event.message.suid.strip('%{').strip('}') }}"
+          event.reason: "{{ parse_event.message.msg }}"
+
+          file.name: "{{ parse_event.message.fileName }}"
+          file.path: "{{ parse_event.message.fileLocation }}"
+
+          observer.hostname: "{{ parse_event.message.cs3 }}"
+          action.outcome: "{{ parse_event.message.outcome }}"
+
+      - set:
+          user.target.name: "{{ parse_event.message.duser }}"
+          user.target.id: "{{ parse_event.message.duid.strip('%{').strip('}') }}"
+        filter: "{{ parse_event.message.Name != 'GroupMgmtReports' }}"
+
+      - set:
+          user.target.group.name: "{{ parse_event.message.duser }}"
+          user.target.group.id: "{{ parse_event.message.duid.strip('%{').strip('}') }}"
+        filter: "{{ parse_event.message.Name == 'GroupMgmtReports' }}"

@@ -1,96 +1,122 @@
 name: wallix-bastion
+ignored_values: ["-"]
 pipeline:
   - name: parsed_event
+    filter: '{{not original.message.startswith("pam_unix(")}}'
     external:
       name: kv.parse-kv
+      properties:
+        input_field: "{{original.message.replace(' ; ', ' ')}}"
+
+  - name: parse_pam_unix_fields
+    filter: '{{original.message.startswith("pam_unix(")}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: 'pam_unix\((cron|sudo):session\): %{EVENT_REASON:event_reason} for user %{WORD:user_name}.*'
+        custom_patterns:
+          EVENT_REASON: "session (opened|closed)"
 
   - name: set_extracted_fields
   - name: set_ecs_fields
   - name: set_provider
   - name: set_auditd
   - name: set_ip_fields
+  - name: set_pam_unix_fields
+    filter: '{{original.message.startswith("pam_unix(")}}'
 
 stages:
   set_ecs_fields:
     actions:
-      - set:
-          event.kind: 'event'
-
       - translate:
         dictionary:
-          'sessionlog': 'authentication'
-          'Backup/Restore': 'database'
+          "sessionlog": ["authentication"]
+          "Backup/Restore": ["database"]
         mapping:
           parsed_event.message.type: event.category
 
       - translate:
         dictionary:
-          'authentify': 'authentication'
+          "authentify": ["authentication"]
         mapping:
           parsed_event.message.action: event.category
 
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+          event.dataset: "session_integrity"
+        filter: '{{"session_uid" in parsed_event.message}}'
+
       - translate:
         dictionary:
-          'add': [ 'creation' ]
-          'edit': [ 'change' ]
-          'delete': [ 'deletion' ]
-          'list': [ 'access' ]
+          "failed": "failure"
+        mapping:
+          parsed_event.message.status: event.outcome
+        filter: '{{"session_uid" in parsed_event.message}}'
+
+      - translate:
+        dictionary:
+          "add": ["creation"]
+          "edit": ["change"]
+          "delete": ["deletion"]
+          "list": ["access"]
         mapping:
           parsed_event.message.action: event.type
 
-
       - translate:
         dictionary:
-          'failure': [ 'denied' ]
+          "failure": ["denied"]
         mapping:
           parsed_event.message.status: event.type
         filter: '{{parsed_event.message.action == "authentify"}}'
 
       - set:
-          event.type: ['end']
+          event.type: ["end"]
         filter: '{{parsed_event.message.infos.startswith("\"Closed")}}'
 
   set_extracted_fields:
     actions:
       - set:
-          wallix: '{{ parsed_event.message}}'
-          event.action: '{{ parsed_event.message.type}}'
-          user.name: '{{ parsed_event.message.user}}'
-          service.name: '{{ parsed_event.message.service}}'
-          source.port: '{{parsed_event.message.src_port}}'
-          event.reason: '{{ parsed_event.message.infos }}'
+          wallix: "{{ parsed_event.message}}"
+          event.action: "{{ parsed_event.message.type}}"
+          user.name: "{{ parsed_event.message.user}}"
+          service.name: "{{ parsed_event.message.service}}"
+          source.port: "{{parsed_event.message.src_port}}"
+          event.reason: "{{ parsed_event.message.infos }}"
+          process.working_directory: "{{ parsed_event.message.PWD }}"
 
   set_auditd:
     actions:
       - set:
-          user.name: '{{parsed_event.message.USER}}'
-          process.command_line: '{{parsed_event.message.COMMAND}}'
+          user.name: "{{parsed_event.message.USER}}"
+          process.command_line: "{{parsed_event.message.COMMAND}}"
 
   set_provider:
     actions:
       - set:
-          event.provider: 'wabengine'
+          event.provider: "wabengine"
         filter: '{{original.message.startswith("[wabaudit]")}}'
       - set:
-          event.provider: 'sshproxy'
+          event.provider: "sshproxy"
         filter: '{{original.message.startswith("[sshproxy]") or original.message.startswith("[SSH Session]") }}'
       - set:
-          event.provider: 'SSH Session'
+          event.provider: "SSH Session"
         filter: '{{original.message.startswith("[SSH Session]")}}'
       - set:
-          event.provider: 'cron'
+          event.provider: "cron"
         filter: '{{original.message.startswith("pam_unix(cron")}}'
       - set:
-          event.provider: 'sudo'
+          event.provider: "sudo"
         filter: '{{original.message.startswith("pam_unix(sudo")}}'
       - set:
-          event.provider: 'sudo'
+          event.provider: "sudo"
         filter: '{{original.message.startswith("root")}}'
       - set:
-          event.provider: 'sshd'
+          event.provider: "sshd"
         filter: '{{original.message.startswith("rexec")}}'
       - set:
-          event.provider: 'sshd'
+          event.provider: "sshd"
         filter: '{{original.message.startswith("rexec")}}'
 
   # We use a custom stage for IP fields
@@ -98,17 +124,23 @@ stages:
   set_ip_fields:
     actions:
       - set:
-          host.ip: '{{parsed_event.message.device}}'
-        filter: '{{ parsed_event.message.device | re_match("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$") }}'
+          host.ip: "{{parsed_event.message.device}}"
+        filter: "{{parsed_event.message.device| is_ipaddress}}"
 
       - set:
-          destination.ip: '{{ parsed_event.message.target_ip }}'
-        filter: '{{parsed_event.message.target_ip | re_match("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$")}}'
+          destination.ip: "{{ parsed_event.message.target_ip }}"
+        filter: "{{ parsed_event.message.target_ip| is_ipaddress }}"
 
       - set:
-          source.ip: '{{ parsed_event.message.client_ip }}'
-        filter: '{{parsed_event.message.client_ip | re_match("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$")}}'
+          source.ip: "{{ parsed_event.message.client_ip }}"
+        filter: "{{ parsed_event.message.client_ip| is_ipaddress }}"
 
       - set:
-          source.ip: '{{ parsed_event.message.src_ip }}'
-        filter: '{{parsed_event.message.src_ip | re_match("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$")}}'
+          source.ip: "{{ parsed_event.message.src_ip }}"
+        filter: "{{ parsed_event.message.src_ip| is_ipaddress }}"
+
+  set_pam_unix_fields:
+    actions:
+      - set:
+          user.name: "{{ parse_pam_unix_fields.message.user_name }}"
+          event.reason: "{{ parse_pam_unix_fields.message.event_reason }}"

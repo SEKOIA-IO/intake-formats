@@ -1,0 +1,101 @@
+name: wiz-audit-logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.timestamp}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+  - name: set_categorization_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Wiz"
+          event.dataset: "Audit Logs"
+
+          event.message: "{{json_event.message.actionParameters.error}}"
+          event.action: "{{json_event.message.action}}"
+
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          user.email: "{{json_event.message.actionParameters.userEmail}}"
+
+          user_agent.original: "{{json_event.message.userAgent}}"
+          source.ip: "{{json_event.message.sourceIP}}"
+
+          wiz.audit.status: "{{json_event.message.status}}"
+          wiz.audit.scopes: "{{json_event.message.actionParameters.scopes}}"
+          wiz.audit.products: "{{json_event.message.actionParameters.products}}"
+          wiz.audit.groups: "{{json_event.message.actionParameters.groups}}"
+          wiz.audit.role: "{{json_event.message.actionParameters.role}}"
+
+      - set:
+          user.id: "{{json_event.message.user.id}}"
+          user.name: "{{json_event.message.user.name}}"
+        filter: "{{json_event.message.get('user') != None}}"
+
+      - set:
+          user.id: "{{json_event.message.serviceAccount.id}}"
+          user.name: "{{json_event.message.serviceAccount.name}}"
+        filter: "{{json_event.message.get('user') == None}}"
+
+      - translate:
+        dictionary:
+          SUCCESS: "success"
+          FAILED: "failure"
+        mapping:
+          json_event.message.status: event.outcome
+
+  set_categorization_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+        filter: "{{json_event.message.action.lower() in ['createsamlidentityprovider', 'createsamluser', 'createserviceaccount', 'createuser', 'createuserrole', 'deletesamlidentityprovider', 'deleteserviceaccount', 'deleteuser', 'deleteuserrole', 'duplicateuserrole', 'migrateusers', 'modifysamlidentityprovidergroupmappings', 'modifysamlidentityproviderportalviewgroupmappings', 'resetuserpassword', 'updatesamlidentityprovider', 'updateserviceaccount', 'updateuser', 'updateuserrole']}}"
+
+      - set:
+          event.type: ["creation"]
+        filter: "{{json_event.message.action.lower().startswith('create')}}"
+
+      - set:
+          event.type: ["change"]
+        filter: "{{json_event.message.action.lower().startswith('update')}}"
+
+      - set:
+          event.type: ["deletion"]
+        filter: "{{json_event.message.action.lower().startswith('delete')}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{json_event.message.action.lower() in ['login', 'devicelogin']}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{json_event.message.action.lower() in ['revokesessions', 'revokeusersessions']}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+        filter: "{{json_event.message.action.lower() in ['tokenrefresh', 'tokendevicerefresh']}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["start"]
+        filter: "{{json_event.message.action.lower() in ['report', 'rerunreport']}}"

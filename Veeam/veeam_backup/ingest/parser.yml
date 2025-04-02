@@ -1,0 +1,81 @@
+name: veeam_backup
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{original.message[1:-1]}}"
+        value_sep: "="
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.DateTime}}"
+        output_field: datetime
+        format: "%m/%d/%Y %H:%M:%S"
+  - name: parsed_user
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.UserName}}"
+        output_field: user
+        pattern: '%{GREEDYDATA:domain}\\%{GREEDYDATA:name}'
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          agent.name: "{{parsed_event.message.ComponentDisplayName}}"
+          event.category: >
+            {%- if "malware" in parsed_event.message.Description|lower -%}
+              ["malware"]
+            {%- elif parsed_event.message.get('OibID') != None and "started" not in parsed_event.message.Description|lower and "finished" not in parsed_event.message.Description|lower -%}
+              ["file"]
+            {%- elif "created" in parsed_event.message.Description|lower or "added" in parsed_event.message.Description|lower or "deleted" in parsed_event.message.Description|lower or "removed" in parsed_event.message.Description|lower or "changed" in parsed_event.message.Description|lower or "updated" in parsed_event.message.Description|lower -%}
+              ["configuration"]
+            {%- else -%}
+              ["process"]
+            {%- endif -%}
+          event.reason: "{{parsed_event.message.Description}}"
+          event.type: >
+            {%- if "malware" in parsed_event.message.Description|lower -%}
+              ["info"]
+            {%- elif "started" in parsed_event.message.Description|lower -%}
+              ["start"]
+            {%- elif "finished" in parsed_event.message.Description|lower -%}
+              ["end"]
+            {%- elif "created" in parsed_event.message.Description|lower or "added" in parsed_event.message.Description|lower -%}
+              ["creation"]
+            {%- elif "deleted" in parsed_event.message.Description|lower or "removed" in parsed_event.message.Description|lower -%}
+              ["deletion"]
+            {%- elif "changed" in parsed_event.message.Description|lower or "updated" in parsed_event.message.Description|lower -%}
+              ["change"]
+            {%- else -%}
+              ["info"]
+            {%- endif -%}
+          observer.name: "{{parsed_event.message.ServerName}}"
+          observer.product: "Veeam Backup & Replication"
+          observer.vendor: "Veeam"
+          user.domain: "{{parsed_user.user.domain}}"
+          user.name: "{{parsed_user.user.name}}"
+          veeam.credentials.id: "{{parsed_event.message.CredentialsId}}"
+          veeam.instance.id: "{{parsed_event.message.instanceId}}"
+          veeam.job.id: "{{parsed_event.message.JobID}}"
+          veeam.job.name: "{{parsed_event.message.JobName}}"
+          veeam.job.type: "{{parsed_event.message.JobType}}"
+          veeam.protection.group.id: "{{parsed_event.message.ProtectionGroupID}}"
+          veeam.protection.group.name: "{{parsed_event.message.ProtectionGroupName}}"
+          veeam.vm.ref: "{{parsed_event.message.VmRef}}"
+      - set:
+          host.ip:
+            ["{{parsed_event.message.HostName or parsed_event.message.VmName}}"]
+        filter: "{{(parsed_event.message.HostName or parsed_event.message.VmName)|is_ipaddress}}"
+      - set:
+          host.name: "{{parsed_event.message.HostName}}"
+        filter: "{{parsed_event.message.HostName|is_ipaddress==False}}"
+      - set:
+          host.name: "{{parsed_event.message.VmName}}"
+        filter: "{{parsed_event.message.VmName|is_ipaddress==False}}"

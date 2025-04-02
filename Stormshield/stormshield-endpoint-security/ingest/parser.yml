@@ -1,0 +1,390 @@
+name: stormshield-endpoint-security
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.Timestamp}}"
+        output_field: date
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.date}}"
+          event.severity: "{{json_event.message.Severity}}"
+          event.code: "{{json_event.message.TypeComputedMap}}"
+          event.action: "{{json_event.message.SpecificData.OperationComputedMap}}"
+          event.provider: "{{json_event.message.SpecificData.ProviderName}}"
+
+          rule.uuid: "{{json_event.message.SpecificData.Action.RuleGuid[1:-1]}}"
+          rule.ruleset: "{{json_event.message.SpecificData.PolicyName}}"
+
+          source.ip: "{{json_event.message.SpecificData.LocalAddress}}"
+          source.port: "{{json_event.message.SpecificData.LocalPort}}"
+          destination.ip: "{{json_event.message.SpecificData.RemoteAddress}}"
+          destination.port: "{{json_event.message.SpecificData.RemotePort}}"
+          destination.mac: "{{json_event.message.SpecificData.RemoteMacAddress}}"
+
+          network.transport: "{{json_event.message.SpecificData.ProtocolComputedMap | lower}}"
+          network.type: "{{json_event.message.SpecificData.AddressFamilyComputedMap | lower}}"
+          user.name: "{{json_event.message.SpecificData.UserNameLookup}}"
+          user.domain: "{{json_event.message.SpecificData.UserDomainLookup}}"
+          user.id: "{{json_event.message.SpecificData.User}}"
+
+          process.parent.pid: "{{json_event.message.SpecificData.ParentProcess.PID}}"
+          process.pid: "{{json_event.message.SpecificData.SourceProcess.PID}}"
+          process.start: "{{json_event.message.SpecificData.SourceProcess.ProcessStartTime}}"
+          process.executable: "{{json_event.message.SpecificData.SourceProcess.ProcessImageName}}"
+          process.name: "{{json_event.message.SpecificData.SourceProcess.ProcessImageName | basename}}"
+          process.command_line: "{{json_event.message.SpecificData.SourceProcess.ProcessCommandLine}}"
+          process.hash.sha1: "{{json_event.message.SpecificData.SourceProcess.HashSha1}}"
+          process.hash.md5: "{{json_event.message.SpecificData.SourceProcess.HashMd5}}"
+          process.hash.sha256: "{{json_event.message.SpecificData.SourceProcess.HashSha256}}"
+          process.user.id: "{{json_event.message.SpecificData.SourceProcess.User}}"
+          stormshield.ses.process.user.domain: "{{json_event.message.SpecificData.SourceProcess.UserDomainLookup}}"
+          process.user.name: "{{json_event.message.SpecificData.SourceProcess.UserNameLookup}}"
+          process.parent.start: "{{json_event.message.SpecificData.ParentProcess.ProcessStartTime}}"
+          process.parent.executable: "{{json_event.message.SpecificData.ParentProcess.ProcessImageName}}"
+          process.parent.name: "{{json_event.message.SpecificData.ParentProcess.ProcessImageName | basename}}"
+          process.parent.command_line: "{{json_event.message.SpecificData.ParentProcess.ProcessCommandLine}}"
+          process.parent.hash.sha1: "{{json_event.message.SpecificData.ParentProcess.HashSha1}}"
+          process.parent.hash.md5: "{{json_event.message.SpecificData.ParentProcess.HashMd5}}"
+          process.parent.hash.sha256: "{{json_event.message.SpecificData.ParentProcess.HashSha256}}"
+          process.parent.user.id: "{{json_event.message.SpecificData.ParentProcess.User}}"
+          stormshield.ses.process.parent.user.domain: "{{json_event.message.SpecificData.ParentProcess.UserDomainLookup}}"
+          process.parent.user.name: "{{json_event.message.SpecificData.ParentProcess.UserNameLookup}}"
+
+          file.owner: "{{json_event.message.SpecificData.FileOwnerNameLookup}}"
+          url.original: "{{json_event.message.SpecificData.DownloadUrl}}"
+          stormshield.ses.type: "{{json_event.message.Type}}"
+          stormshield.ses.action.blocked: "{{json_event.message.SpecificData.Action.Blocked}}"
+          stormshield.ses.action.user_decision: "{{json_event.message.SpecificData.Action.UserDecision}}"
+          stormshield.ses.source_process.killed: "{{json_event.message.SpecificData.Action.SourceProcessKilled}}"
+          stormshield.ses.process.target.executable: "{{json_event.message.SpecificData.TargetProcess.ProcessImageName}}"
+          stormshield.ses.process.target.name: "{{json_event.message.SpecificData.TargetProcess.ProcessImageName | basename}}"
+          stormshield.ses.process.target.command_line: "{{json_event.message.SpecificData.TargetProcess.ProcessCommandLine}}"
+          stormshield.ses.process.target.pid: "{{json_event.message.SpecificData.TargetProcess.PID}}"
+          action.properties.TargetImage: "{{json_event.message.SpecificData.TargetProcess.ProcessImageName}}"
+          action.properties.TargetCommandLine: "{{json_event.message.SpecificData.TargetProcess.ProcessCommandLine}}"
+
+      - set:
+          file.path: "{{json_event.message.SpecificData.FullPath}}"
+        filter: "{{json_event.message.Type == 20100}}"
+
+      - set:
+          file.path: "{{json_event.message.SpecificData.ObjectFullPath}}"
+        filter: "{{json_event.message.Type == 20097}}"
+
+      - set:
+          process.pid: "{{json_event.message.SpecificData.CreatedProcess.PID}}"
+          process.start: "{{json_event.message.SpecificData.CreatedProcess.ProcessStartTime}}"
+          process.executable: "{{json_event.message.SpecificData.CreatedProcess.ProcessImageName}}"
+          process.name: "{{json_event.message.SpecificData.CreatedProcess.ProcessImageName | basename}}"
+          process.command_line: "{{json_event.message.SpecificData.CreatedProcess.ProcessCommandLine}}"
+          process.hash.sha1: "{{json_event.message.SpecificData.CreatedProcess.HashSha1}}"
+          process.hash.md5: "{{json_event.message.SpecificData.CreatedProcess.HashMd5}}"
+          process.hash.sha256: "{{json_event.message.SpecificData.CreatedProcess.HashSha256}}"
+          process.user.id: "{{json_event.message.SpecificData.CreatedProcess.User}}"
+          stormshield.ses.process.user.domain: "{{json_event.message.SpecificData.CreatedProcess.UserDomainLookup}}"
+          process.user.name: "{{json_event.message.SpecificData.CreatedProcess.UserNameLookup}}"
+        filter: "{{json_event.message.Type == 11}}"
+
+      - set:
+          action.properties.TargetImage: "{{json_event.message.SpecificData.CreatedProcess.ProcessImageName}}"
+          action.properties.TargetCommandLine: "{{json_event.message.SpecificData.CreatedProcess.ProcessCommandLine}}"
+          stormshield.ses.process.target.executable: "{{json_event.message.SpecificData.CreatedProcess.ProcessImageName}}"
+          stormshield.ses.process.target.command_line: "{{json_event.message.SpecificData.CreatedProcess.ProcessCommandLine}}"
+          stormshield.ses.process.target.pid: "{{json_event.message.SpecificData.CreatedProcess.PID}}"
+        filter: "{{json_event.message.Type == 20082}}"
+
+      - set:
+          process.executable: "{{json_event.message.SpecificData.ScriptName}}"
+          process.name: "{{json_event.message.SpecificData.ScriptName}}"
+          file.path: "{{json_event.message.SpecificData.ScriptOutputFilePath}}"
+        filter: "{{json_event.message.Type == 20094}}"
+
+      - set:
+          file.path: "{{json_event.message.SpecificData.FileDetails.FileFullPath}}"
+          file.owner: "{{json_event.message.SpecificData.FileDetails.OwnerNameLookup}}"
+          file.hash.md5: "{{json_event.message.SpecificData.FileDetails.HashMd5}}"
+          file.hash.sha1: "{{json_event.message.SpecificData.FileDetails.HashSha1}}"
+          file.hash.sha256: "{{json_event.message.SpecificData.FileDetails.HashSha256}}"
+          file.hash.ssdeep: "{{json_event.message.SpecificData.FileDetails.HashSSDeep}}"
+        filter: "{{json_event.message.Type == 20105}}"
+
+      - set:
+          file.hash.md5: "{{json_event.message.SpecificData.SourceProcessImageFileDetails.HashMd5}}"
+          file.hash.sha1: "{{json_event.message.SpecificData.SourceProcessImageFileDetails.HashSha1}}"
+          file.hash.sha256: "{{json_event.message.SpecificData.SourceProcessImageFileDetails.HashSha256}}"
+          file.hash.ssdeep: "{{json_event.message.SpecificData.SourceProcessImageFileDetails.HashSSDeep}}"
+        filter: "{{json_event.message.Type == 20106}}"
+
+      - set:
+          stormshield.ses.incident.id: "{{json_event.message.AdditionalData.IncidentGuid}}"
+          stormshield.ses.level: "{{json_event.message.AdditionalData.SeverityName}}"
+          stormshield.ses.categoryname: "{{json_event.message.AdditionalData.CategoryName}}"
+          rule.ruleset: "{{json_event.message.AdditionalData.PolicyName}}"
+          event.reason: "{{json_event.message.AdditionalData.Message}}"
+        filter: "{{json_event.message.AdditionalData != None}}"
+
+      - set:
+          registry.path: "{{json_event.message.SpecificData.Path}}"
+          registry.hive: "{{json_event.message.SpecificData.Path.split('\\\\', 1)[0]}}"
+          registry.key: "{{json_event.message.SpecificData.Path.split('\\\\', 1)[1]}}"
+        filter: "{{json_event.message.TypeComputedMap.startswith('Registry')}}"
+
+      - set:
+          registry.path: "{{json_event.message.SpecificData.TargetResourcePath}}"
+          registry.hive: "{{json_event.message.SpecificData.TargetResourcePath.split('\\\\', 1)[0]}}"
+          registry.key: "{{json_event.message.SpecificData.TargetResourcePath.split('\\\\', 1)[1]}}"
+        filter: "{{json_event.message.Type in [20091, 20092, 20093]}}"
+
+      - set:
+          registry.value: "{{json_event.message.SpecificData.ValueName}}"
+          registry.data.type: "{{json_event.message.SpecificData.ValueDataTypeComputedMap}}"
+          registry.data.bytes: "{{json_event.message.SpecificData.ValueData}}"
+          agent.id: "{{json_event.message.AdditionalData.AgentGUID}}"
+          host.name: "{{json_event.message.AdditionalData.AgentName}}"
+          host.ip: "{{json_event.message.AdditionalData.AgentAddresses}}"
+        filter: "{{json_event.message.Type in [113]}}"
+
+      - set:
+          registry.value: "{{json_event.message.SpecificData.ValueName}}"
+          registry.data.type: "{{json_event.message.SpecificData.ValueDataTypeComputedMap}}"
+          registry.data.strings:
+            ["{{json_event.message.SpecificData.ValueData}}"]
+        filter: "{{json_event.message.Type in [115]}}"
+
+      - set:
+          event.provider: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.Provider.Name}}"
+          event.code: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.EventID}}"
+          process.pid: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.Execution.ProcessID}}"
+          process.thread.id: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.Execution.ThreadID}}"
+          action.id: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.EventID}}"
+          action.record_id: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.EventRecordID}}"
+          action.properties.Opcode: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.OpCode}}"
+          action.properties.Task: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.System.Task}}"
+          action.properties.ProductName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Product Name')}}"
+          action.properties.ProductVersion: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Product Version')}}"
+          action.properties.DetectionId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Detection ID')}}"
+          action.properties.DetectionTime: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Detection Time')}}"
+          action.properties.ThreatId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Threat ID')}}"
+          action.properties.ThreatName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Threat Name')}}"
+          action.properties.SeverityId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Severity ID')}}"
+          action.properties.SeverityName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Severity Name')}}"
+          action.properties.CategoryId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Category ID')}}"
+          action.properties.CategoryName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Category Name')}}"
+          action.properties.Fwlink: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('FWLink')}}"
+          action.properties.StatusCode: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Status Code')}}"
+          action.properties.State: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('State')}}"
+          action.properties.SourceId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Source ID')}}"
+          action.properties.SourceName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Source Name')}}"
+          action.properties.ProcessName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Process Name')}}"
+          action.properties.DetectionUser: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Detection User')}}"
+          action.properties.Path: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Path')}}"
+          action.properties.OriginId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Origin ID')}}"
+          action.properties.OriginName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Origin Name')}}"
+          action.properties.ExecutionId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Execution ID')}}"
+          action.properties.ExecutionName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Execution Name')}}"
+          action.properties.TypeId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Type ID')}}"
+          action.properties.TypeName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Type Name')}}"
+          action.properties.PreExecutionStatus: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Pre Execution Status')}}"
+          action.properties.ActionId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Action ID')}}"
+          action.properties.ActionName: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Action Name')}}"
+          action.properties.ErrorCode: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Error Code')}}"
+          action.properties.ErrorDescription: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Error Description')}}"
+          action.properties.PostCleanStatus: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Post Clean Status')}}"
+          action.properties.AdditionalActionsId: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Additional Actions ID')}}"
+          action.properties.AdditionalActionsString: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Additional Actions String')}}"
+          action.properties.RemediationUser: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Remediation User')}}"
+          action.properties.SecurityIntelligenceVersion: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Security intelligence Version')}}"
+          action.properties.EngineVersion: "{{json_event.message.SpecificData.ExtraData.__EvtXml.Event.EventData.get('Engine Version')}}"
+        filter: "{{json_event.message.Type == 20048}}"
+
+      - set:
+          vulnerability.id: "{{json_event.message.AdditionalData.AttackCVEId}}"
+          threat.tactic.id: "{{json_event.message.AdditionalData.AttackMitreTacticId}}"
+          threat.tactic.name: "{{json_event.message.AdditionalData.AttackMitreTacticName}}"
+          threat.technique.id: "{{json_event.message.AdditionalData.AttackMitreTechnicId}}"
+          threat.technique.name: "{{json_event.message.AdditionalData.AttackMitreTechnicName}}"
+
+      - translate:
+        dictionary:
+          301: "floppy"
+          302: "cdrom"
+          303: "serial"
+          305: "usb"
+          325: "usb"
+          326: "usb"
+          327: "usb"
+        mapping:
+          json_event.message.Type: stormshield.ses.device.type
+
+      - set:
+          file.path: "{{json_event.message.SpecificData.Path}}"
+        filter: "{{json_event.message.TypeComputedMap.startswith('File') or json_event.message.TypeComputedMap in ['RawVolumeAccess', 'DriverLoading']}}"
+
+      - translate:
+        dictionary:
+          7: ["process"]
+          11: ["process"]
+          39: ["file"]
+          40: ["network"]
+          41: ["network"]
+          42: ["network"]
+          43: ["malware"]
+          44: ["malware"]
+          45: ["malware"]
+          46: ["malware"]
+          47: ["malware"]
+          50: ["malware"]
+          51: ["process"]
+          53: ["malware"]
+          54: ["process"]
+          55: ["process"]
+          56: ["process"]
+          57: ["malware"]
+          58: ["malware"]
+          59: ["malware"]
+          103: ["registry"]
+          104: ["registry"]
+          109: ["registry"]
+          112: ["registry"]
+          113: ["registry"]
+          114: ["registry"]
+          115: ["registry"]
+          116: ["registry"]
+          173: ["file"]
+          174: ["file"]
+          175: ["file"]
+          176: ["file"]
+          177: ["file"]
+          301: ["driver"]
+          302: ["driver"]
+          303: ["driver"]
+          305: ["driver"]
+          325: ["driver"]
+          326: ["driver"]
+          327: ["driver"]
+          361: ["network"]
+          400: ["network"]
+          401: ["network"]
+          1006: ["network"]
+          1007: ["network"]
+          1008: ["network"]
+          1009: ["network"]
+          1011: ["network"]
+          20003: ["configuration"]
+          20010: ["process"]
+          20054: ["malware"]
+          20055: ["malware"]
+          20056: ["malware"]
+          20057: ["malware"]
+          20060: ["malware"]
+          20061: ["malware"]
+          20068: ["malware"]
+          20082: ["malware"]
+          20089: ["file"]
+          20090: ["process"]
+          20091: ["registry"]
+          20092: ["registry"]
+          20093: ["registry"]
+          20094: ["malware"]
+          20095: ["file"]
+          20097: ["malware"]
+          20098: ["malware"]
+          20099: ["malware"]
+          20100: ["malware"]
+          20101: ["malware"]
+          20105: ["malware"]
+          20106: ["malware"]
+        mapping:
+          json_event.message.Type: event.category
+
+      - translate:
+        dictionary:
+          7: ["access"]
+          11: ["start"]
+          39: ["access"]
+          40: ["info"]
+          41: ["access"]
+          42: ["start"]
+          43: ["info"]
+          44: ["info"]
+          45: ["info"]
+          46: ["info"]
+          47: ["info"]
+          50: ["info"]
+          51: ["info"]
+          53: ["info"]
+          54: ["info"]
+          55: ["info"]
+          56: ["end"]
+          57: ["info"]
+          58: ["info"]
+          59: ["info"]
+          103: ["creation"]
+          104: ["access"]
+          109: ["change"]
+          112: ["deletion"]
+          113: ["creation"]
+          114: ["access"]
+          115: ["change"]
+          116: ["deletion"]
+          173: ["creation"]
+          174: ["info"]
+          175: ["access"]
+          176: ["change"]
+          177: ["deletion"]
+          301: ["info"]
+          302: ["info"]
+          303: ["info"]
+          305: ["info"]
+          325: ["info"]
+          326: ["info"]
+          327: ["info"]
+          361: ["connection"]
+          400: ["connection"]
+          401: ["info"]
+          1006: ["start"]
+          1007: ["end"]
+          1008: ["end"]
+          1009: ["end"]
+          1011: ["denied"]
+          20003: ["change"]
+          20010: ["start"]
+          20054: ["info"]
+          20055: ["info"]
+          20056: ["info"]
+          20057: ["info"]
+          20060: ["info"]
+          20061: ["info"]
+          20068: ["info"]
+          20082: ["info"]
+          20089: ["deletion"]
+          20090: ["end"]
+          20091: ["deletion"]
+          20092: ["deletion"]
+          20093: ["change"]
+          20094: ["info"]
+          20095: ["info"]
+          20097: ["info"]
+          20098: ["info"]
+          20099: ["info"]
+          20100: ["info"]
+          20101: ["info"]
+          20105: ["info"]
+          20106: ["info"]
+        mapping:
+          json_event.message.Type: event.type
+
+      - set:
+          event.type: ["denied"]
+        filter: "{{json_event.message.Type == 42 and json_event.message.SpecificData.Action.Blocked}}"

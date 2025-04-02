@@ -4,6 +4,8 @@ pipeline:
     external:
       name: json.parse-json
   - name: main_stage
+  - name: authentication_related_fields
+    filter: '{{ "authentication" in json_event.message.event.category }}'
 
 stages:
   main_stage:
@@ -29,7 +31,6 @@ stages:
           ecs: "{{json_event.message.ecs}}"
           error: "{{json_event.message.error}}"
           error.message: "{{json_event.message.auditd.warnings}}"
-          event: "{{json_event.message.event}}"
           fields: "{{json_event.message.fields}}"
           file: "{{json_event.message.file}}"
           geoip: "{{json_event.message.geoip}}"
@@ -64,7 +65,7 @@ stages:
           system: "{{json_event.message.system}}"
           threat: "{{json_event.message.threat}}"
           timeseries: "{{json_event.message.timeseries}}"
-          '@timestamp': "{{json_event.message['@timestamp']}}"
+          "@timestamp": "{{json_event.message['@timestamp']}}"
           tls: "{{json_event.message.tls}}"
           trace: "{{json_event.message.trace}}"
           transaction: "{{json_event.message.transaction}}"
@@ -75,14 +76,65 @@ stages:
           vulnerability: "{{json_event.message.vulnerability}}"
           x509: "{{json_event.message.x509}}"
 
-     # delete this `set` once #34514 is fixed
       - set:
-            event.kind: "{{json_event.message.event.kind}}"
-            event.module: "{{json_event.message.event.module}}"
-            event.category: "{{json_event.message.event.category}}"
-            event.type: "{{json_event.message.event.type}}"
-            event.action: "{{json_event.message.event.action}}"
+          event.kind: "{{json_event.message.event.kind}}"
+          event.module: "{{json_event.message.event.module}}"
+          event.category: "{{json_event.message.event.category}}"
+          event.type: "{{json_event.message.event.type}}"
+          event.action: "{{json_event.message.event.action}}"
 
       - set:
           process.command_line: "{{json_event.message.process.args | join(' ')}}"
         filter: "{{json_event.message.process.command_line == null and json_event.message.process.name != 'postgres'}}"
+
+      - set:
+          process.name: "{{json_event.message.auditd.summary.how | basename}}"
+        filter: "{{ json_event.message.process.name == null }}"
+
+  authentication_related_fields:
+    actions:
+      # the host is a server
+      - set:
+          client.ip: "{{json_event.message.source.ip}}"
+          client.geo.country_iso_code: "{{json_event.message.source.geo.country_iso_code}}"
+          sekoiaio.authentication.process.name: "{{final.process.name}}"
+          server: "{{json_event.message.host}}"
+          sekoiaio.server: "{{json_event.message.host}}"
+
+      - set:
+          sekoiaio.server.os.type: "linux"
+          host.os.type: "linux"
+        filter: "{{ json_event.message.host.os == null or json_event.message.host.os.type == null }}"
+
+      - set:
+          client: "{{final.host}}"
+          sekoiaio.client: "{{final.host}}"
+        filter: "{{ json_event.message.source == null  or json_event.message.source.ip == null }}"
+
+      - set:
+          action.outcome: "failure"
+        filter: '{{ "authentication_failure" in json_event.message.event.type }}'
+
+      - set:
+          action.outcome: "success"
+        filter: '{{ "authentication_success" in json_event.message.event.type }}'
+
+      - set:
+          user.target.name: "{{json_event.message.audit.summary.actor.secondary}}"
+        filter: '{{ "start" in json_event.message.event.type and event.action == "loggin-in" }}'
+      - set:
+          user.target.name: "{{json_event.message.user.name}}"
+        filter: '{{ "start" in json_event.message.event.type and event.action == "user_login" }}'
+
+      - set:
+          user.target.name: "{{json_event.message.user.effective.name}}"
+          client: "{{json_event.message.host}}"
+        filter: '{{ "start" in json_event.message.event.type and event.action == "changed-login-id-to" }}'
+
+      - translate:
+        dictionary:
+          success: "success"
+          fail: "failure"
+        mapping:
+          json_event.message.auditd.result: action.outcome
+        filter: '{{ json_event.message.auditd.result in ["success", "fail"]}}'

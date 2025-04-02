@@ -1,0 +1,80 @@
+name: cloud-security
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: grok_extract
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.alertInfo.description}}"
+        output_field: message
+        pattern: "%{HEADER}?\\s*(%{FIRST_USER}|%{AWS_ACCOUNT}|%{FIRST_SERVICE}|%{SIGHTING_USER})\\s*"
+        custom_patterns:
+          HEADER: "\\s*For account:\\s*%{USER:account_name}\\s*(\\(%{DATA:company_name}\\)\\s*)?:\\s*"
+          SIGHTING_USER: "%{GREEDYDATA} %{INT:occurence} times\\s*by user\\s*%{USER:user_name}(\\:(%{EMAILADDRESS:user_email}|%{UUID:user_id}|%{DATA}))?\\s*"
+          FIRST_USER: "((A )?(U|u)ser)?\\s*\\(?%{EMAILADDRESS:user_email}\\)?\\s*%{GREEDYDATA}first time%{GREEDYDATA}"
+          FIRST_SERVICE: "%{GREEDYDATA}A new service %{NOTSPACE:service_name}%{GREEDYDATA}\\(by user\\s*(%{EMAILADDRESS:user_email}|%{USER:user_name}|%{UUID:user_id})\\)\\s*"
+          AWS_ACCOUNT: "\\s*(%{USER:user_name}/%{USER:account_name}:)?(%{EMAILADDRESS:user_email}|%{USER:user_name}|%{UUID:user_id})%{GREEDYDATA}(from an IP address  %{IP:source_ip}%{GREEDYDATA}|%GREEDYDATA})(first time|%{INT:occurence} times)%{GREEDYDATA}"
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.startTime}}"
+          event.category: >
+            {%- if json_event.message.derivedFields.category == 'Composite' -%}
+              ["intrusion_detection"]
+            {%- elif json_event.message.derivedFields.sub_category == 'File' -%}
+              ["file"]
+            {%- elif json_event.message.derivedFields.sub_category == 'Registry' -%}
+              ["registry"]
+            {%- elif json_event.message.derivedFields.sub_category == 'Threat Intel' -%}
+              ["network"]
+            {%- else -%}
+              ["configuration"]
+            {%- endif -%}
+          event.code: "{{json_event.message.alertType}}"
+          event.end: "{{json_event.message.endTime}}"
+          event.kind: "alert"
+          event.reason: "{{json_event.message.alertName}}"
+          event.start: "{{json_event.message.startTime}}"
+          event.type: >
+            {%- if json_event.message.derivedFields.sub_category == 'Registry' -%}
+              {%- if "New" in json_event.message.alertType -%}
+                ["creation"]
+              {%- elif "Changed" in json_event.message.alertType -%}
+                ["change"]
+              {%- else -%}
+                ["access"]
+              {%- endif -%}
+            {%- else -%}
+              ["info"]
+            {%- endif -%}
+          lacework.cloud_security.alert.id: "{{json_event.message.alertId}}"
+          lacework.cloud_security.alert.info.description: "{{json_event.message.alertInfo.description}}"
+          lacework.cloud_security.alert.info.subject: "{{json_event.message.alertInfo.subject}}"
+          lacework.cloud_security.alert.severity: "{{json_event.message.severity}}"
+          lacework.cloud_security.alert.status: "{{json_event.message.status}}"
+          observer.product: "Lacework Cloud Security"
+          observer.vendor: "Lacework"
+          rule.name: "{{json_event.message.entityMap.RulesTriggered}}"
+          user.name: "{{json_event.message.entityMap.CT_User}}"
+      - set:
+          source.ip: "{{json_event.message.entityMap.SourceIpAddress}}"
+        filter: "{{json_event.message.entityMap.SourceIpAddress|is_ipaddress}}"
+      - set:
+          lacework.cloud_security.account.name: "{{grok_extract.message.account_name}}"
+          lacework.cloud_security.alert.sight: "{{grok_extract.message.occurence or 1}}"
+          lacework.cloud_security.company.name: "{{grok_extract.message.company_name}}"
+          service.name: "{{grok_extract.message.service_name}}"
+          source.ip: "{{grok_extract.message.source_ip}}"
+          user.email: "{{grok_extract.message.user_email}}"
+          user.id: "{{grok_extract.message.user_id}}"
+        filter: "{{json_event.message.alertInfo.description in json_event.message.alertInfo.subject}}"
+
+      - set:
+          user.name: "{{grok_extract.message.user_name}}"
+        filter: "{{json_event.message.alertInfo.description in json_event.message.alertInfo.subject and grok_extract.message.user_name|lower != 'unknown'}}"

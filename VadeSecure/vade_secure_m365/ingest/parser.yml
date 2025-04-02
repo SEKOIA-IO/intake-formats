@@ -1,96 +1,142 @@
 name: vadesecure-m365
+ignored_values: ["none"]
 pipeline:
--   external:
-        name: json.parse-json
-        properties:
-            input_field: '{{original.message}}'
-            output_field: message
+  - external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
     name: parse_json
--   name: categorization
--   name: generic_email
-    filter: '{{parse_json.message.from != null}}'
--   name: custom_vade
--   name: vade_email
-    filter: '{{parse_json.message.from != null}}'
--   name: vade_campaign
-    filter: '{{parse_json.message.from == null}}'
+  - name: categorization
+  - name: generic_email
+    filter: "{{parse_json.message.from != null}}"
+  - name: custom_vade
+  - name: vade_email
+    filter: "{{parse_json.message.from != null}}"
+  - name: vade_campaign
+    filter: "{{parse_json.message.from == null}}"
 stages:
-    categorization:
-        actions:
-        -   name: set
-            set:
-                event.category: email
-                event.kind: event
-                event.type: info
-                event.action: "{{parse_json.message.action | lower()}}"
-        -   filter: '{{parse_json.message.action=="MOVE"}}'
-            name: set
-            set:
-                event.type: change
-        -   filter: '{{parse_json.message.action=="DELETE"}}'
-            name: set
-            set:
-                event.type: deletion
-        -   filter: '{{parse_json.message.action=="STRIP_ATTACHMENT"}}'
-            name: set
-            set:
-                event.action: dropped
-                event.type: denied
-    custom_vade:
-        actions:
-        -   name: set
-            set:
-                event.reason: '{{parse_json.message.reason}}'
-    vade_email:
-        actions:
-        -   name: set
-            set:
-                vadesecure.folder: '{{parse_json.message.folder}}'
-                vadesecure.from_header: '{{parse_json.message.from_header}}'
-                vadesecure.to_header: '{{parse_json.message.to_header}}'
-                vadesecure.status: '{{parse_json.message.status}}'
-                vadesecure.substatus: '{{parse_json.message.substatus}}'
-                vadesecure.attachments: >
-                  [
-                    {% for attachment in parse_json.message.attachments %}
-                    {
-                      {% if attachment.filename != null %}"filename": "{{attachment.filename}}",{% endif %}
-                      {% if attachment.id != null %}"id": "{{attachment.id}}",{% endif %}
-                    },
-                    {% endfor %}
-                  ]
-    vade_campaign:
-        actions:
-        -   name: set
-            set:
-                vadesecure.campaign.actions: '{{parse_json.message.actions}}'
-                vadesecure.campaign.id: '{{parse_json.message.id}}'
-                vadesecure.campaign.nb_messages_remediated: '{{parse_json.message.nb_messages_remediated}}'
-                vadesecure.campaign.nb_messages_remediated_read: '{{parse_json.message.nb_messages_remediated_read}}'
-                vadesecure.campaign.nb_messages_remediated_unread: '{{parse_json.message.nb_messages_remediated_unread}}'
-        -   name: set
-            set:
-                vadesecure.status: '{{parse_json.message.status.status}}'
-                vadesecure.substatus: '{{parse_json.message.status.substatus}}'
-    generic_email:
-        actions:
-        -   name: set
-            set:
-                email.local_id: '{{parse_json.message.id}}'
-                email.message_id: '{{parse_json.message.message_id}}'
-                email.to.address: '{{parse_json.message.to}}'
-                source.ip: '{{parse_json.message.sender_ip}}'
-                email.from.address: '{{parse_json.message.from}}'
-                email.subject: '{{parse_json.message.subject}}'
-                email.attachments: >
-                  [
-                    {% for attachment in parse_json.message.attachments %}
-                    {
-                      "file": {
-                        {% if attachment.filename != null %}"name": "{{attachment.filename}}",{% endif %}
-                        {% if attachment.size != null %}"size": {{attachment.size}},{% endif %}
-                        {% if attachment.extension != null %}"extension": "{{attachment.extension}}",{% endif %}
-                      }
-                    },
-                    {% endfor %}
-                  ]
+  categorization:
+    actions:
+      - set:
+          event.action: "{{parse_json.message.actions.0.action | lower()}}"
+        filter: "{{parse_json.message.actions != null}}"
+
+      - set:
+          event.action: "{{parse_json.message.action | lower()}}"
+        filter: "{{parse_json.message.actions == null}}"
+
+      - name: set
+        set:
+          event.category: ["email"]
+          event.type: ["info"]
+
+      - filter: '{{parse_json.message.action == "MOVE"}}'
+        name: set
+        set:
+          event.type: ["change"]
+
+      - filter: '{{parse_json.message.action=="DELETE"}}'
+        name: set
+        set:
+          event.type: ["deletion"]
+
+      - filter: '{{parse_json.message.action=="STRIP_ATTACHMENT"}}'
+        name: set
+        set:
+          event.action: dropped
+          event.type: ["denied"]
+
+  custom_vade:
+    actions:
+      - name: set
+        set:
+          event.reason: "{{parse_json.message.reason}}"
+  vade_email:
+    actions:
+      - name: set
+        set:
+          vadesecure.auth_results_details: "{{parse_json.message.auth_results_details}}"
+          vadesecure.folder: "{{parse_json.message.folder}}"
+          vadesecure.from_header: "{{parse_json.message.from_header}}"
+          vadesecure.to_header: "{{parse_json.message.to_header}}"
+          vadesecure.status: "{{parse_json.message.status}}"
+          vadesecure.substatus: "{{parse_json.message.substatus}}"
+          vadesecure.whitelist: "{{parse_json.message.whitelisted}}"
+          vadesecure.overdict: "{{parse_json.message.overdict}}"
+          vadesecure.attachments: >
+            [
+              {% for attachment in parse_json.message.attachments %}
+              {
+                {% if attachment.filename != null %}"filename": "{{attachment.filename}}",{% endif %}
+                {% if attachment.id != null %}"id": "{{attachment.id}}",{% endif %}
+              },
+              {% endfor %}
+            ]
+      - set:
+          vadesecure.last_report: "{{parse_json.message.last_report}}"
+          vadesecure.last_report_date: "{{parse_json.message.last_report_date}}"
+
+      - set:
+          vadesecure.urls: "{{parse_json.message.urls | map(attribute='url') | list}}"
+        filter: "{{ parse_json.message.urls | length > 0}}"
+
+  vade_campaign:
+    actions:
+      - name: set
+        set:
+          vadesecure.campaign.actions: "{{parse_json.message.actions}}"
+          vadesecure.campaign.id: "{{parse_json.message.id}}"
+          vadesecure.campaign.nb_messages_remediated: "{{parse_json.message.nb_messages_remediated}}"
+          vadesecure.campaign.nb_messages_remediated_read: "{{parse_json.message.nb_messages_remediated_read}}"
+          vadesecure.campaign.nb_messages_remediated_unread: "{{parse_json.message.nb_messages_remediated_unread}}"
+      - name: set
+        set:
+          vadesecure.status: "{{parse_json.message.status.status}}"
+          vadesecure.substatus: "{{parse_json.message.status.substatus}}"
+
+      - set:
+          vadesecure.campaign.actions_labels: >
+            [
+              {%- for item in parse_json.message.actions -%}"{{ item.action }}",{%- endfor -%}
+            ]
+        filter: "{{parse_json.message.actions != null }}"
+
+  generic_email:
+    actions:
+      - name: set
+        set:
+          email.local_id: "{{parse_json.message.id}}"
+          email.message_id: "{{parse_json.message.message_id}}"
+          email.to.address: "{{parse_json.message.to}}"
+
+          email.from.address: "{{parse_json.message.from}}"
+          email.subject: "{{parse_json.message.subject}}"
+          email.attachments: >
+            [
+              {% for attachment in parse_json.message.attachments %}
+              {
+                "file": {
+                  {% if attachment.filename != null %}"name": "{{attachment.filename}}",{% endif %}
+                  {% if attachment.size != null %}"size": {{attachment.size}},{% endif %}
+                  {% if attachment.extension != null %}"extension": "{{attachment.extension}}",{% endif %}
+                  {% if attachment.hashes != null %}
+                    "hash": {
+                      {% if attachment.hashes.md5 != null %}"md5": "{{attachment.hashes.md5}}",{% endif %}
+                      {% if attachment.hashes.sha1 != null %}"sha1": "{{attachment.hashes.sha1}}",{% endif %}
+                      {% if attachment.hashes.sha256 != null %}"sha256": "{{attachment.hashes.sha256}}",{% endif %}
+                      {% if attachment.hashes.sha512 != null %}"sha512": "{{attachment.hashes.sha512}}",{% endif %}
+                    }
+                  {% endif %}
+                }
+              },
+              {% endfor %}
+            ]
+
+      - set:
+          source.ip: "{{parse_json.message.sender_ip}}"
+        filter: "{{parse_json.message.sender_ip| is_ipaddress}}"
+
+      - set:
+          email.reply_to.address: "{{parse_json.message.reply_to_header}}"
+        filter: "{{parse_json.message.reply_to_header != ''}}"

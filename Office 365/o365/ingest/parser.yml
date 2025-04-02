@@ -3,146 +3,558 @@ pipeline:
   - name: json_event
     external:
       name: json.parse-json
-  - name: parse_email
-    external:
-      name: grok.match
-      properties:
-        input_field: '{{json_event.message.UserId}}'
-        output_field: message
-        pattern: '%{EMAILADDRESS:email}'
   - name: parse_data
-    filter: '{{json_event.message.RecordType == 64}}'
+    filter: "{{json_event.message.RecordType in (40, 64) and json_event.message.Data | length > 0}}"
     external:
       name: json.parse-json
       properties:
-        input_field: '{{json_event.message.Data}}'
+        input_field: "{{json_event.message.Data}}"
         output_field: ParsedData
   - name: parse_client_ip
     external:
       name: grok.match
       properties:
-        input_field: '{{json_event.message.ClientIP}}'
+        raise_errors: false
+        input_field: "{{json_event.message.ClientIP}}"
         output_field: result
-        pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?'
+        pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?|\[%{IP:ip}\](:%{INT:port})?'
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+  - name: parse_client_ip_address
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.ClientIPAddress}}"
+        output_field: result
+        pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
+    filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
+
   - name: set_common_fields
   - name: set_office365_fields
-  - name: parse_exchange
-    filter: '{{json_event.message.RecordType == 2}}'
+  - name: parse_exchange_admin
+    filter: "{{json_event.message.RecordType == 1}}"
+  - name: parse_exchange_item
+    filter: "{{json_event.message.RecordType == 2}}"
+  - name: parse_exchange_item_group
+    filter: "{{json_event.message.RecordType == 3}}"
+  - name: parse_share_point
+    filter: "{{json_event.message.RecordType == 4}}"
+  - name: parse_exchange_item_aggregated
+    filter: "{{json_event.message.RecordType == 50}}"
   - name: parse_network_traffic
-    filter: '{{json_event.message.RecordType in [15, 25]}}'
+    filter: "{{json_event.message.RecordType in [15, 25]}}"
   - name: parse_azure_active_directory_operation
-    filter: '{{json_event.message.RecordType in [8, 15]}}'
+    filter: "{{json_event.message.RecordType in [8, 15]}}"
   - name: parse_sharepoint_file_operation
-    filter: '{{json_event.message.RecordType == 6}}'
+    filter: "{{json_event.message.RecordType in [6, 14]}}"
   - name: parse_team
-    filter: '{{json_event.message.RecordType == 25}}'
+    filter: "{{json_event.message.RecordType == 25}}"
   - name: parse_microsoft_defender_email
-    filter: '{{json_event.message.RecordType in [28, 41, 47]}}'
+    filter: "{{json_event.message.RecordType in [28, 41, 47]}}"
   - name: parse_yammer
-    filter: '{{json_event.message.RecordType == 22}}'
+    filter: "{{json_event.message.RecordType == 22}}"
   - name: parse_automated_investigation_and_response
-    filter: '{{json_event.message.RecordType == 64}}'
+    filter: "{{json_event.message.RecordType == 64}}"
+  - name: parse_mcas_alerts
+    filter: "{{json_event.message.RecordType == 98}}"
+  - name: parse_security_compliance_alerts
+    filter: "{{json_event.message.RecordType == 40}}"
+  - name: parse_form_app
+    filter: "{{json_event.message.RecordType == 66}}"
+  - name: parse_browser
+    filter: "{{json_event.message.RecordType == 36}}"
+  - name: parse_power_bi
+    filter: "{{json_event.message.RecordType == 20}}"
+  - name: parse_threat_intelligence_url
+    filter: "{{json_event.message.RecordType == 41}}"
 
 stages:
   set_common_fields:
     actions:
       - set:
-          '@timestamp': '{{json_event.message.CreationTime}}'
-          service.name: '{{json_event.message.Workload}}'
-          event.action: '{{json_event.message.Operation}}'
-          event.kind: 'event'
-          event.code: '{{json_event.message.RecordType | string}}'
-          event.reason: '{{json_event.message.ActionName}}'
-          user.name: '{{json_event.message.UserId}}'
-          user.id: '{{json_event.message.UserKey}}'
-          user.email: '{{parse_email.message.email}}'
-          organization.id: '{{json_event.message.OrganizationId}}'
-          action.id: '{{json_event.message.RecordType}}'
-          action.name: '{{json_event.message.Operation}}'
+          "@timestamp": "{{json_event.message.CreationTime}}"
+          service.name: "{{json_event.message.Workload}}"
+          event.code: "{{json_event.message.RecordType | string}}"
+          event.reason: "{{json_event.message.ActionName}}"
+          organization.id: "{{json_event.message.OrganizationId}}"
+          action.id: "{{json_event.message.RecordType}}"
+          user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
+
       - set:
-          source.ip: '{{parse_client_ip.result.ip}}'
-          source.port: '{{parse_client_ip.result.port}}'
-        filter: '{{json_event.message.get("ClientIP") != None and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+          user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
+          user.id: "{{json_event.message.UserKey}}"
+        filter: "{{json_event.message.RecordType not in [40]}}"
+
       - set:
-          action.target: 'user'
+          event.action: "{{json_event.message.Operation.rstrip('.')}}"
+          action.name: "{{json_event.message.Operation.rstrip('.')}}"
+        filter: "{{json_event.message.Operation != null}}"
+
+      - set:
+          source.ip: "{{parse_client_ip.result.ip}}"
+          source.port: "{{parse_client_ip.result.port}}"
+        filter: "{{parse_client_ip.result.ip | is_ipaddress}}"
+
+      - set:
+          user.email: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
+        filter: '{{"@" in json_event.message.UserId}}'
+
+      - set:
+          office365.user_type.is_external: "true"
+        filter: "{{'urn:spo:guest#' in json_event.message.UserId}}"
+
+      - set:
+          source.ip: "{{parse_client_ip_address.result.ip}}"
+          source.port: "{{parse_client_ip_address.result.port}}"
+        filter: "{{(parse_client_ip_address.result.ip | is_ipaddress) and json_event.message.ClientIP == null}}"
+
+      - set:
+          action.target: "user"
         filter: '{{json_event.message.get("UserId") != None}}'
       - translate:
         dictionary:
-          'Succeeded': 'success'
-          'critical': 'failure'
+          "Succeeded": "success"
+          "critical": "failure"
         mapping:
           json_event.message.ResultStatus: action.outcome
-        fallback: 'success'
+        fallback: "success"
 
   set_office365_fields:
     actions:
       - set:
-          office365.record_type: '{{json_event.message.RecordType}}'
-          office365.result_status: '{{json_event.message.ResultStatus}}'
-          office365.user_type.code: '{{json_event.message.UserType}}'
-          office365.scope.code: '{{json_event.message.Scope}}'
-          office365.audit.object_id: '{{json_event.message.ObjectId}}'
-          office365.virus_info: '{{json_event.message.VirusInfo}}'
-          office365.virus_vendor: '{{json_event.message.VirusVendor}}'
+          office365.record_type: "{{json_event.message.RecordType}}"
+          office365.result_status: "{{json_event.message.ResultStatus}}"
+          office365.user_type.code: "{{json_event.message.UserType}}"
+          office365.scope.code: "{{json_event.message.Scope}}"
+          office365.audit.object_id: "{{json_event.message.ObjectId}}"
+          office365.virus_info: "{{json_event.message.VirusInfo}}"
+          office365.virus_vendor: "{{json_event.message.VirusVendor}}"
+      - set:
+          office365.operation.properties: >
+            {
+              {%- for property in json_event.message.OperationProperties -%}
+                {%- if property.Value != null -%}
+                  {%- if property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            }
+        filter: '{{json_event.message.get("OperationProperties") != None}}'
+
       - translate:
         dictionary:
-          0: 'Regular'
-          1: 'Reserved'
-          2: 'Admin'
-          3: 'DcAdmin'
-          4: 'System'
-          5: 'Application'
-          6: 'ServicePrincipal'
-          7: 'CustomPolicy'
-          8: 'SystemPolicy'
+          0: "Regular"
+          1: "Reserved"
+          2: "Admin"
+          3: "DcAdmin"
+          4: "System"
+          5: "Application"
+          6: "ServicePrincipal"
+          7: "CustomPolicy"
+          8: "SystemPolicy"
         mapping:
           office365.user_type.code: office365.user_type.name
       - translate:
         dictionary:
-          0: 'Online'
-          1: 'Onprem'
+          0: "Online"
+          1: "Onprem"
         mapping:
           office365.scope.code: office365.scope.name
-        filter: '{{json_event.message.Scope != null}}'
+        filter: "{{json_event.message.Scope != null}}"
       - set:
-          office365.context.aad_session_id: '{{json_event.message.AppAccessContext.AADSessionId}}'
-          office365.context.api_id: '{{json_event.message.AppAccessContext.APIId}}'
-          office365.context.client.id: '{{json_event.message.AppAccessContext.ClientAppId}}'
-          office365.context.client.name: '{{json_event.message.AppAccessContext.ClientAppName}}'
-          office365.context.correlation.id: '{{json_event.message.AppAccessContext.CorrelationId}}'
+          office365.context.aad_session_id: "{{json_event.message.AppAccessContext.AADSessionId}}"
+          office365.context.api_id: "{{json_event.message.AppAccessContext.APIId}}"
+          office365.context.client.id: "{{json_event.message.AppAccessContext.ClientAppId}}"
+          office365.context.client.name: "{{json_event.message.AppAccessContext.ClientAppName}}"
+          office365.context.correlation.id: "{{json_event.message.AppAccessContext.CorrelationId}}"
         filter: '{{json_event.message.get("AppAccessContext") != None}}'
 
-  parse_exchange:
+      - translate:
+        dictionary:
+          "00b41c95-dab0-4487-9791-b9d2c32c80f2": "Office 365 Management"
+          "04b07795-8ddb-461a-bbee-02f9e1bf7b46": "Microsoft Azure CLI"
+          "1950a258-227b-4e31-a9cf-717495945fc2": "Microsoft Azure PowerShell"
+          "1fec8e78-bce4-4aaf-ab1b-5451cc387264": "Microsoft Teams"
+          "26a7ee05-5602-4d76-a7ba-eae8b7b67941": "Windows Search"
+          "27922004-5251-4030-b22d-91ecd9a37ea4": "Outlook Mobile"
+          "4813382a-8fa7-425e-ab75-3b753aab3abb": "Microsoft Authenticator App"
+          "ab9b8c07-8f02-4f72-87fa-80105867a763": "OneDrive SyncEngine"
+          "d3590ed6-52b3-4102-aeff-aad2292ab01c": "Microsoft Office"
+          "872cd9fa-d31f-45e0-9eab-6e460a02d1f1": "Visual Studio"
+          "af124e86-4e96-495a-b70a-90f90ab96707": "OneDrive iOS App"
+          "2d7f3606-b07d-41d1-b9d2-0d0c9296a6e8": "Microsoft Bing Search for Microsoft Edge"
+          "844cca35-0656-46ce-b636-13f48b0eecbd": "Microsoft Stream Mobile Native"
+          "87749df4-7ccf-48f8-aa87-704bad0e0e16": "Microsoft Teams - Device Admin Agent"
+          "cf36b471-5b44-428c-9ce7-313bf84528de": "Microsoft Bing Search"
+          "0ec893e0-5785-4de6-99da-4ed124e5296c": "Office UWP PWA"
+          "22098786-6e16-43cc-a27d-191a01a1e3b5": "Microsoft To-Do client"
+          "4e291c71-d680-4d0e-9640-0a3358e31177": "PowerApps"
+          "57336123-6e14-4acc-8dcf-287b6088aa28": "Microsoft Whiteboard Client"
+          "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0": "Microsoft Flow"
+          "66375f6b-983f-4c2c-9701-d680650f588f": "Microsoft Planner"
+          "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223": "Microsoft Intune Company Portal"
+          "a40d7d7d-59aa-447e-a655-679a4107e548": "Accounts Control UI"
+          "a569458c-7f2b-45cb-bab9-b7dee514d112": "Yammer iPhone"
+          "b26aadf8-566f-4478-926f-589f601d9c74": "OneDrive"
+          "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12": "Microsoft Power BI"
+          "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0": "SharePoint"
+          "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34": "Microsoft Edge"
+          "eb539595-3fe1-474e-9c1d-feb3625d1be5": "Microsoft Tunnel"
+          "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d": "SharePoint Android"
+          "be1918be-3fe3-4be9-b32b-b542fc27f02e": "M365 Compliance Drive Client"
+          "cab96880-db5b-4e15-90a7-f3f1d62ffe39": "Microsoft Defender Platform"
+          "d7b530a4-7680-4c23-a8bf-c52c121d2e87": "Microsoft Edge Enterprise New Tab Page"
+          "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3": "Microsoft Defender for Mobile"
+          "e9b154d0-7658-433b-bb25-6b8e0a8a7c59": "Outlook Lite"
+        mapping:
+          office365.context.client.id: office365.context.client.name
+        filter: "{{json_event.message.get('AppAccessContext').get('ClientAppId') != None and json_event.message.get('AppAccessContext').get('ClientAppName') == None}}"
+
+  parse_exchange_admin:
     actions:
       - translate:
         dictionary:
-          'MailboxLogin': '["authentication"]'
+          "True": "success"
+          "False": "failure"
+        mapping:
+          json_event.message.ResultStatus: action.outcome
+      - set:
+          office365.exchange_admin.parameters: >
+            [
+              {%- for parameter in json_event.message.Parameters -%}
+                "{{ parameter.Name }}:{{ parameter.Value }}",
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.get("Parameters") != None}}'
+      - set:
+          office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
+      - set:
+          office365.context.client.id: "{{json_event.message.AppId}}"
+        filter: '{{json_event.message.get("ClientAppId") == ""}}'
+
+      - translate:
+        dictionary:
+          "00b41c95-dab0-4487-9791-b9d2c32c80f2": "Office 365 Management"
+          "04b07795-8ddb-461a-bbee-02f9e1bf7b46": "Microsoft Azure CLI"
+          "1950a258-227b-4e31-a9cf-717495945fc2": "Microsoft Azure PowerShell"
+          "1fec8e78-bce4-4aaf-ab1b-5451cc387264": "Microsoft Teams"
+          "26a7ee05-5602-4d76-a7ba-eae8b7b67941": "Windows Search"
+          "27922004-5251-4030-b22d-91ecd9a37ea4": "Outlook Mobile"
+          "4813382a-8fa7-425e-ab75-3b753aab3abb": "Microsoft Authenticator App"
+          "ab9b8c07-8f02-4f72-87fa-80105867a763": "OneDrive SyncEngine"
+          "d3590ed6-52b3-4102-aeff-aad2292ab01c": "Microsoft Office"
+          "872cd9fa-d31f-45e0-9eab-6e460a02d1f1": "Visual Studio"
+          "af124e86-4e96-495a-b70a-90f90ab96707": "OneDrive iOS App"
+          "2d7f3606-b07d-41d1-b9d2-0d0c9296a6e8": "Microsoft Bing Search for Microsoft Edge"
+          "844cca35-0656-46ce-b636-13f48b0eecbd": "Microsoft Stream Mobile Native"
+          "87749df4-7ccf-48f8-aa87-704bad0e0e16": "Microsoft Teams - Device Admin Agent"
+          "cf36b471-5b44-428c-9ce7-313bf84528de": "Microsoft Bing Search"
+          "0ec893e0-5785-4de6-99da-4ed124e5296c": "Office UWP PWA"
+          "22098786-6e16-43cc-a27d-191a01a1e3b5": "Microsoft To-Do client"
+          "4e291c71-d680-4d0e-9640-0a3358e31177": "PowerApps"
+          "57336123-6e14-4acc-8dcf-287b6088aa28": "Microsoft Whiteboard Client"
+          "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0": "Microsoft Flow"
+          "66375f6b-983f-4c2c-9701-d680650f588f": "Microsoft Planner"
+          "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223": "Microsoft Intune Company Portal"
+          "a40d7d7d-59aa-447e-a655-679a4107e548": "Accounts Control UI"
+          "a569458c-7f2b-45cb-bab9-b7dee514d112": "Yammer iPhone"
+          "b26aadf8-566f-4478-926f-589f601d9c74": "OneDrive"
+          "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12": "Microsoft Power BI"
+          "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0": "SharePoint"
+          "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34": "Microsoft Edge"
+          "eb539595-3fe1-474e-9c1d-feb3625d1be5": "Microsoft Tunnel"
+          "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d": "SharePoint Android"
+          "be1918be-3fe3-4be9-b32b-b542fc27f02e": "M365 Compliance Drive Client"
+          "cab96880-db5b-4e15-90a7-f3f1d62ffe39": "Microsoft Defender Platform"
+          "d7b530a4-7680-4c23-a8bf-c52c121d2e87": "Microsoft Edge Enterprise New Tab Page"
+          "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3": "Microsoft Defender for Mobile"
+          "e9b154d0-7658-433b-bb25-6b8e0a8a7c59": "Outlook Lite"
+        mapping:
+          office365.context.client.id: office365.context.client.name
+        filter: "{{json_event.message.get('ClientAppId') != None or json_event.message.get('AppId') != None}}"
+
+  parse_exchange_item:
+    actions:
+      - translate:
+        dictionary:
+          "MailboxLogin": '["authentication"]'
         mapping:
           event.action: event.category
         fallback: '["email", "file"]'
       - translate:
         dictionary:
-          'Create': '["info", "creation"]'
-          'Update': '["info", "change"]'
-          'HardDelete': '["info", "deletion"]'
-          'SoftDelete': '["info", "deletion"]'
-          'MoveToDeletedItems': '["info", "deletion"]'
-          'MailItemsAccessed': '["info"]'
-          'MailboxLogin': '["start"]'
+          "Create": '["info", "creation"]'
+          "Update": '["info", "change"]'
+          "HardDelete": '["info", "deletion"]'
+          "SoftDelete": '["info", "deletion"]'
+          "MoveToDeletedItems": '["info", "deletion"]'
+          "MailItemsAccessed": '["info"]'
+          "MailboxLogin": '["start"]'
         mapping:
           event.action: event.type
         fallback: '["info"]'
+      - set:
+          user.id: "{{json_event.message.LogonUserSid}}"
+          office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
+          office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
+      - translate:
+        dictionary:
+          "00b41c95-dab0-4487-9791-b9d2c32c80f2": "Office 365 Management"
+          "04b07795-8ddb-461a-bbee-02f9e1bf7b46": "Microsoft Azure CLI"
+          "1950a258-227b-4e31-a9cf-717495945fc2": "Microsoft Azure PowerShell"
+          "1fec8e78-bce4-4aaf-ab1b-5451cc387264": "Microsoft Teams"
+          "26a7ee05-5602-4d76-a7ba-eae8b7b67941": "Windows Search"
+          "27922004-5251-4030-b22d-91ecd9a37ea4": "Outlook Mobile"
+          "4813382a-8fa7-425e-ab75-3b753aab3abb": "Microsoft Authenticator App"
+          "ab9b8c07-8f02-4f72-87fa-80105867a763": "OneDrive SyncEngine"
+          "d3590ed6-52b3-4102-aeff-aad2292ab01c": "Microsoft Office"
+          "872cd9fa-d31f-45e0-9eab-6e460a02d1f1": "Visual Studio"
+          "af124e86-4e96-495a-b70a-90f90ab96707": "OneDrive iOS App"
+          "2d7f3606-b07d-41d1-b9d2-0d0c9296a6e8": "Microsoft Bing Search for Microsoft Edge"
+          "844cca35-0656-46ce-b636-13f48b0eecbd": "Microsoft Stream Mobile Native"
+          "87749df4-7ccf-48f8-aa87-704bad0e0e16": "Microsoft Teams - Device Admin Agent"
+          "cf36b471-5b44-428c-9ce7-313bf84528de": "Microsoft Bing Search"
+          "0ec893e0-5785-4de6-99da-4ed124e5296c": "Office UWP PWA"
+          "22098786-6e16-43cc-a27d-191a01a1e3b5": "Microsoft To-Do client"
+          "4e291c71-d680-4d0e-9640-0a3358e31177": "PowerApps"
+          "57336123-6e14-4acc-8dcf-287b6088aa28": "Microsoft Whiteboard Client"
+          "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0": "Microsoft Flow"
+          "66375f6b-983f-4c2c-9701-d680650f588f": "Microsoft Planner"
+          "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223": "Microsoft Intune Company Portal"
+          "a40d7d7d-59aa-447e-a655-679a4107e548": "Accounts Control UI"
+          "a569458c-7f2b-45cb-bab9-b7dee514d112": "Yammer iPhone"
+          "b26aadf8-566f-4478-926f-589f601d9c74": "OneDrive"
+          "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12": "Microsoft Power BI"
+          "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0": "SharePoint"
+          "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34": "Microsoft Edge"
+          "eb539595-3fe1-474e-9c1d-feb3625d1be5": "Microsoft Tunnel"
+          "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d": "SharePoint Android"
+          "be1918be-3fe3-4be9-b32b-b542fc27f02e": "M365 Compliance Drive Client"
+          "cab96880-db5b-4e15-90a7-f3f1d62ffe39": "Microsoft Defender Platform"
+          "d7b530a4-7680-4c23-a8bf-c52c121d2e87": "Microsoft Edge Enterprise New Tab Page"
+          "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3": "Microsoft Defender for Mobile"
+          "e9b154d0-7658-433b-bb25-6b8e0a8a7c59": "Outlook Lite"
+        mapping:
+          office365.context.client.id: office365.context.client.name
+        filter: "{{json_event.message.get('ClientAppId') != None }}"
+
+      - set:
+          email.subject: "{{json_event.message.Item.Subject}}"
+          email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
+        filter: '{{json_event.message.get("Item") != None}}'
+
+  parse_exchange_item_group:
+    actions:
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{final.event.action == 'MailboxLogin'}}"
+
+      - set:
+          process.name: "{{json_event.message.ClientProcessName}}"
+          office365.exchange.client_version: "{{json_event.message.ClientVersion}}"
+          office365.exchange.email.subjects: >
+            [
+              {%- if json_event.message.AffectedItems != None -%}
+                {%- for item in json_event.message.AffectedItems -%}
+                  "{{ item.Subject }}"
+                {%- endfor -%}
+              {%- endif -%}  
+            ]
+          office365.exchange.email.paths: >
+            [
+              {%- if json_event.message.AffectedItems != None -%}
+                {%- for item in json_event.message.AffectedItems -%}
+                  "{{ item.ParentFolder.Path }}"
+                {%- endfor -%}
+              {%- endif -%}  
+            ]
+
+          email.attachments: >
+            [
+              {%- if json_event.message.AffectedItems != None -%}
+                {%- for email in json_event.message.AffectedItems -%}
+                  {%- for file in email.Attachments.split("; ") -%}
+                    {"file":{ "name": "{{ file.split(" (")[0] }}", "size": "{{ file.split(" (")[1].strip('b)') }}" }},
+                  {%- endfor -%}
+                {%- endfor -%}
+              {%- endif -%}
+            ]
+      - set:
+          office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
+
+      - translate:
+        dictionary:
+          "00b41c95-dab0-4487-9791-b9d2c32c80f2": "Office 365 Management"
+          "04b07795-8ddb-461a-bbee-02f9e1bf7b46": "Microsoft Azure CLI"
+          "1950a258-227b-4e31-a9cf-717495945fc2": "Microsoft Azure PowerShell"
+          "1fec8e78-bce4-4aaf-ab1b-5451cc387264": "Microsoft Teams"
+          "26a7ee05-5602-4d76-a7ba-eae8b7b67941": "Windows Search"
+          "27922004-5251-4030-b22d-91ecd9a37ea4": "Outlook Mobile"
+          "4813382a-8fa7-425e-ab75-3b753aab3abb": "Microsoft Authenticator App"
+          "ab9b8c07-8f02-4f72-87fa-80105867a763": "OneDrive SyncEngine"
+          "d3590ed6-52b3-4102-aeff-aad2292ab01c": "Microsoft Office"
+          "872cd9fa-d31f-45e0-9eab-6e460a02d1f1": "Visual Studio"
+          "af124e86-4e96-495a-b70a-90f90ab96707": "OneDrive iOS App"
+          "2d7f3606-b07d-41d1-b9d2-0d0c9296a6e8": "Microsoft Bing Search for Microsoft Edge"
+          "844cca35-0656-46ce-b636-13f48b0eecbd": "Microsoft Stream Mobile Native"
+          "87749df4-7ccf-48f8-aa87-704bad0e0e16": "Microsoft Teams - Device Admin Agent"
+          "cf36b471-5b44-428c-9ce7-313bf84528de": "Microsoft Bing Search"
+          "0ec893e0-5785-4de6-99da-4ed124e5296c": "Office UWP PWA"
+          "22098786-6e16-43cc-a27d-191a01a1e3b5": "Microsoft To-Do client"
+          "4e291c71-d680-4d0e-9640-0a3358e31177": "PowerApps"
+          "57336123-6e14-4acc-8dcf-287b6088aa28": "Microsoft Whiteboard Client"
+          "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0": "Microsoft Flow"
+          "66375f6b-983f-4c2c-9701-d680650f588f": "Microsoft Planner"
+          "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223": "Microsoft Intune Company Portal"
+          "a40d7d7d-59aa-447e-a655-679a4107e548": "Accounts Control UI"
+          "a569458c-7f2b-45cb-bab9-b7dee514d112": "Yammer iPhone"
+          "b26aadf8-566f-4478-926f-589f601d9c74": "OneDrive"
+          "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12": "Microsoft Power BI"
+          "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0": "SharePoint"
+          "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34": "Microsoft Edge"
+          "eb539595-3fe1-474e-9c1d-feb3625d1be5": "Microsoft Tunnel"
+          "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d": "SharePoint Android"
+          "be1918be-3fe3-4be9-b32b-b542fc27f02e": "M365 Compliance Drive Client"
+          "cab96880-db5b-4e15-90a7-f3f1d62ffe39": "Microsoft Defender Platform"
+          "d7b530a4-7680-4c23-a8bf-c52c121d2e87": "Microsoft Edge Enterprise New Tab Page"
+          "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3": "Microsoft Defender for Mobile"
+          "e9b154d0-7658-433b-bb25-6b8e0a8a7c59": "Outlook Lite"
+        mapping:
+          office365.context.client.id: office365.context.client.name
+        filter: "{{json_event.message.get('ClientAppId') != None }}"
+  parse_share_point:
+    actions:
+      - set:
+          event.category: ["file"]
+          event.type: ["access"]
+
+          office365.audit.site: "{{json_event.message.Site}}"
+          office365.audit.event_source: "{{json_event.message.EventSource}}"
+          office365.audit.item_type: "{{json_event.message.ItemType}}"
+          office365.audit.platform: "{{json_event.message.Platform}}"
+
+          user_agent.original: "{{json_event.message.UserAgent}}"
+
+  parse_exchange_item_aggregated:
+    actions:
+      - set:
+          office365.context.aad_session_id: "{{json_event.message.SessionId}}"
+          office365.context.client.id: "{{json_event.message.ClientAppId}}"
+
+      - translate:
+        dictionary:
+          "00b41c95-dab0-4487-9791-b9d2c32c80f2": "Office 365 Management"
+          "04b07795-8ddb-461a-bbee-02f9e1bf7b46": "Microsoft Azure CLI"
+          "1950a258-227b-4e31-a9cf-717495945fc2": "Microsoft Azure PowerShell"
+          "1fec8e78-bce4-4aaf-ab1b-5451cc387264": "Microsoft Teams"
+          "26a7ee05-5602-4d76-a7ba-eae8b7b67941": "Windows Search"
+          "27922004-5251-4030-b22d-91ecd9a37ea4": "Outlook Mobile"
+          "4813382a-8fa7-425e-ab75-3b753aab3abb": "Microsoft Authenticator App"
+          "ab9b8c07-8f02-4f72-87fa-80105867a763": "OneDrive SyncEngine"
+          "d3590ed6-52b3-4102-aeff-aad2292ab01c": "Microsoft Office"
+          "872cd9fa-d31f-45e0-9eab-6e460a02d1f1": "Visual Studio"
+          "af124e86-4e96-495a-b70a-90f90ab96707": "OneDrive iOS App"
+          "2d7f3606-b07d-41d1-b9d2-0d0c9296a6e8": "Microsoft Bing Search for Microsoft Edge"
+          "844cca35-0656-46ce-b636-13f48b0eecbd": "Microsoft Stream Mobile Native"
+          "87749df4-7ccf-48f8-aa87-704bad0e0e16": "Microsoft Teams - Device Admin Agent"
+          "cf36b471-5b44-428c-9ce7-313bf84528de": "Microsoft Bing Search"
+          "0ec893e0-5785-4de6-99da-4ed124e5296c": "Office UWP PWA"
+          "22098786-6e16-43cc-a27d-191a01a1e3b5": "Microsoft To-Do client"
+          "4e291c71-d680-4d0e-9640-0a3358e31177": "PowerApps"
+          "57336123-6e14-4acc-8dcf-287b6088aa28": "Microsoft Whiteboard Client"
+          "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0": "Microsoft Flow"
+          "66375f6b-983f-4c2c-9701-d680650f588f": "Microsoft Planner"
+          "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223": "Microsoft Intune Company Portal"
+          "a40d7d7d-59aa-447e-a655-679a4107e548": "Accounts Control UI"
+          "a569458c-7f2b-45cb-bab9-b7dee514d112": "Yammer iPhone"
+          "b26aadf8-566f-4478-926f-589f601d9c74": "OneDrive"
+          "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12": "Microsoft Power BI"
+          "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0": "SharePoint"
+          "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34": "Microsoft Edge"
+          "eb539595-3fe1-474e-9c1d-feb3625d1be5": "Microsoft Tunnel"
+          "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d": "SharePoint Android"
+          "be1918be-3fe3-4be9-b32b-b542fc27f02e": "M365 Compliance Drive Client"
+          "cab96880-db5b-4e15-90a7-f3f1d62ffe39": "Microsoft Defender Platform"
+          "d7b530a4-7680-4c23-a8bf-c52c121d2e87": "Microsoft Edge Enterprise New Tab Page"
+          "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3": "Microsoft Defender for Mobile"
+          "e9b154d0-7658-433b-bb25-6b8e0a8a7c59": "Outlook Lite"
+        mapping:
+          office365.context.client.id: office365.context.client.name
+        filter: "{{json_event.message.get('ClientAppId') != None }}"
 
   parse_network_traffic:
     actions:
       - set:
-          action.target: 'network-traffic'
-          event.category: ['network']
-          event.type: ['info']
-          office365.logon_error: '{{json_event.message.LogonError}}'
-          office365.error_number: '{{json_event.message.ErrorNumber}}'
+          action.target: "network-traffic"
+          event.category: ["network"]
+          event.type: ["info"]
+          office365.logon_error: "{{json_event.message.LogonError}}"
+          office365.error_number: "{{json_event.message.ErrorNumber}}"
+          office365.context.client.id: "{{json_event.message.ApplicationId}}"
+
+      - translate:
+        dictionary:
+          "00b41c95-dab0-4487-9791-b9d2c32c80f2": "Office 365 Management"
+          "04b07795-8ddb-461a-bbee-02f9e1bf7b46": "Microsoft Azure CLI"
+          "1950a258-227b-4e31-a9cf-717495945fc2": "Microsoft Azure PowerShell"
+          "1fec8e78-bce4-4aaf-ab1b-5451cc387264": "Microsoft Teams"
+          "26a7ee05-5602-4d76-a7ba-eae8b7b67941": "Windows Search"
+          "27922004-5251-4030-b22d-91ecd9a37ea4": "Outlook Mobile"
+          "4813382a-8fa7-425e-ab75-3b753aab3abb": "Microsoft Authenticator App"
+          "ab9b8c07-8f02-4f72-87fa-80105867a763": "OneDrive SyncEngine"
+          "d3590ed6-52b3-4102-aeff-aad2292ab01c": "Microsoft Office"
+          "872cd9fa-d31f-45e0-9eab-6e460a02d1f1": "Visual Studio"
+          "af124e86-4e96-495a-b70a-90f90ab96707": "OneDrive iOS App"
+          "2d7f3606-b07d-41d1-b9d2-0d0c9296a6e8": "Microsoft Bing Search for Microsoft Edge"
+          "844cca35-0656-46ce-b636-13f48b0eecbd": "Microsoft Stream Mobile Native"
+          "87749df4-7ccf-48f8-aa87-704bad0e0e16": "Microsoft Teams - Device Admin Agent"
+          "cf36b471-5b44-428c-9ce7-313bf84528de": "Microsoft Bing Search"
+          "0ec893e0-5785-4de6-99da-4ed124e5296c": "Office UWP PWA"
+          "22098786-6e16-43cc-a27d-191a01a1e3b5": "Microsoft To-Do client"
+          "4e291c71-d680-4d0e-9640-0a3358e31177": "PowerApps"
+          "57336123-6e14-4acc-8dcf-287b6088aa28": "Microsoft Whiteboard Client"
+          "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0": "Microsoft Flow"
+          "66375f6b-983f-4c2c-9701-d680650f588f": "Microsoft Planner"
+          "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223": "Microsoft Intune Company Portal"
+          "a40d7d7d-59aa-447e-a655-679a4107e548": "Accounts Control UI"
+          "a569458c-7f2b-45cb-bab9-b7dee514d112": "Yammer iPhone"
+          "b26aadf8-566f-4478-926f-589f601d9c74": "OneDrive"
+          "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12": "Microsoft Power BI"
+          "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0": "SharePoint"
+          "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34": "Microsoft Edge"
+          "eb539595-3fe1-474e-9c1d-feb3625d1be5": "Microsoft Tunnel"
+          "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d": "SharePoint Android"
+          "be1918be-3fe3-4be9-b32b-b542fc27f02e": "M365 Compliance Drive Client"
+          "cab96880-db5b-4e15-90a7-f3f1d62ffe39": "Microsoft Defender Platform"
+          "d7b530a4-7680-4c23-a8bf-c52c121d2e87": "Microsoft Edge Enterprise New Tab Page"
+          "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3": "Microsoft Defender for Mobile"
+          "e9b154d0-7658-433b-bb25-6b8e0a8a7c59": "Outlook Lite"
+        mapping:
+          office365.context.client.id: office365.context.client.name
+        filter: "{{json_event.message.get('ApplicationId') != None }}"
+
+      - set:
+          host.os.full: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "OS" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          host.name: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "DisplayName" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.id: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "Id" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.is_compliant: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "IsCompliant" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.is_compliant_and_managed: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "IsCompliantAndManaged" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.trust_type: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "TrustType" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+          office365.device.browser_type: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "BrowserType" %}{% if deviceProperty.get("Value") != None and deviceProperty.Value != "<Null>"%}{{deviceProperty.Value}}{% endif %}{% endif %}{% endfor %}'
+        filter: '{{json_event.message.get("DeviceProperties") != None}}'
+
       - set:
           user_agent.original: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "UserAgent" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
           office365.auth.user_authentication_method: '{% for extendedProperty in json_event.message.ExtendedProperties %}{% if extendedProperty.Name == "UserAuthenticationMethod" %}{% if extendedProperty.get("Value") != None and extendedProperty.Value != "<Null>"%}{{extendedProperty.Value}}{% endif %}{% endif %}{% endfor %}'
@@ -155,13 +567,13 @@ stages:
     actions:
       - translate:
         dictionary:
-          'UserLoggedIn': '["authentication"]'
+          "UserLoggedIn": '["authentication"]'
         mapping:
           event.action: event.category
         fallback: '["iam"]'
       - translate:
         dictionary:
-          'UserLoggedIn': '["start"]'
+          "UserLoggedIn": '["start"]'
         mapping:
           event.action: event.type
         fallback: '["info"]'
@@ -170,18 +582,27 @@ stages:
           event.category: ["iam"]
           event.type: ["change"]
         filter: '{{json_event.message.Operation.startswith("Update")}}'
+      - set:
+          office365.context.correlation.id: "{{json_event.message.InterSystemsId}}"
+          office365.context.aad_session_id: '{% for deviceProperty in json_event.message.DeviceProperties %}{% if deviceProperty.Name == "SessionId" %}{{deviceProperty.Value}}{% endif %}{% endfor %}'
+
+      - set:
+          office365.context.modified_properties: "{{json_event.message.ModifiedProperties}}"
+        filter: "{{ json_event.message.get('ModifiedProperties', []) | length > 0 }}"
 
   parse_sharepoint_file_operation:
     actions:
       - set:
-          file.name: '{{json_event.message.SourceFileName}}'
-          file.directory: '{{json_event.message.SourceRelativeUrl}}'
-          event.category: ['file']
-          event.type: ['info']
-          user_agent.original: '{{json_event.message.UserAgent}}'
-          action.outcome: 'success'
-          url.full: '{{json_event.message.ObjectId}}'
-          url.original: '{{json_event.message.ObjectId}}'
+          file.name: "{{json_event.message.SourceFileName}}"
+          file.directory: "{{json_event.message.SourceRelativeUrl}}"
+          event.category: ["file"]
+          event.type: ["info"]
+          user_agent.original: "{{json_event.message.UserAgent}}"
+          file.size: "{{json_event.message.FileSizeBytes}}"
+          file.extension: "{{json_event.message.SourceFileExtension}}"
+          action.outcome: "success"
+          url.full: "{{json_event.message.ObjectId or json_event.message.SiteUrl}}"
+          url.original: "{{json_event.message.ObjectId}}"
           action.properties: >
             [
               {
@@ -195,18 +616,19 @@ stages:
   parse_team:
     actions:
       - set:
-          office365.teams.action: '{{json_event.message.Action}}'
-          office365.teams.communication.type: '{{json_event.message.CommunicationType}}'
-          office365.teams.channel.id: '{{json_event.message.ChannelGuid}}'
-          office365.teams.channel.name: '{{json_event.message.ChannelName}}'
-          office365.teams.channel.type: '{{json_event.message.ChannelType}}'
-          office365.teams.message.id: '{{json_event.message.MessageId}}'
-          office365.teams.message.version: '{{json_event.message.MessageVersion}}'
-          office365.teams.message.size: '{{json_event.message.MessageSizeInBytes}}'
-          office365.teams.message.urls: '{{json_event.message.MessageURLs}}'
-          office365.teams.team.id: '{{json_event.message.TeamGuid}}'
-          office365.teams.team.name: '{{json_event.message.TeamName}}'
-          office365.teams.invitee: '{{json_event.message.Invitee}}'
+          office365.teams.action: "{{json_event.message.Action}}"
+          office365.teams.communication.type: "{{json_event.message.CommunicationType}}"
+          office365.teams.channel.id: "{{json_event.message.ChannelGuid}}"
+          office365.teams.channel.name: "{{json_event.message.ChannelName}}"
+          office365.teams.channel.type: "{{json_event.message.ChannelType}}"
+          office365.teams.message.id: "{{json_event.message.MessageId}}"
+          office365.teams.message.version: "{{json_event.message.MessageVersion}}"
+          office365.teams.message.size: "{{json_event.message.MessageSizeInBytes}}"
+          office365.teams.message.urls: "{{json_event.message.MessageURLs}}"
+          office365.teams.team.id: "{{json_event.message.TeamGuid}}"
+          office365.teams.team.name: "{{json_event.message.TeamName}}"
+          office365.teams.invitee: "{{json_event.message.Invitee}}"
+          office365.teams.has_foreign_tenant_users: "{{json_event.message.ParticipantInfo.HasForeignTenantUsers}}"
       - set:
           office365.teams.team.members: >
             {%
@@ -217,36 +639,65 @@ stages:
               }
             %}[
               {%for member in json_event.message.Members %}
-              {"id": "{{member.UPN}}", "role": "{{mapping.get(member.Role)}}"},
+              {
+                "id": "{{member.UPN}}", 
+                {%if member.get('Role') != None %}"role": "{{mapping.get(member.Role)}}",{%endif%} 
+                {%if member.get('DisplayName') %}"name": "{{member.get('DisplayName')}}"{% endif %}
+              },
               {% endfor %}
             ]
         filter: '{{json_event.message.get("Members", []) != []}}'
 
+      - set:
+          # we can only put 1 of these URLs
+          url.original: "{{json_event.message.MessageURLs | first}}"
+
   parse_microsoft_defender_email:
     actions:
       - set:
-          email.local_id: '{{json_event.message.NetworkMessageId}}'
-          email.subject: '{{json_event.message.Subject}}'
-          email.delivery_timestamp: '{{json_event.message.MessageTime}}'
-          source.ip: '{{json_event.message.SenderIp}}'
-          event.url: '{{json_event.message.EventDeepLink}}'
-          rule.category: '{{json.event.message.Policy}}'
-          event.action: '{{json_event.message.DeliveryAction or json_event.message.PolicyAction}}'
-          action.name: '{{json_event.message.DeliveryAction or json_event.message.PolicyAction}}'
-          office365.defender.email.verdict.reason: '{{json_event.message.Verdict}}'
-          office365.defender.email.verdict.confidence: '{{json_event.message.PhishConfidenceLevel}}'
-          office365.defender.email.delivery.action: '{{json_event.message.DeliveryAction}}'
-          office365.defender.email.delivery.original_location: '{{json_event.message.OriginalDeliveryLocation}}'
-          office365.defender.email.delivery.latest_location: '{{json_event.message.LatestDeliveryLocation}}'
-          office365.defender.detection.type: '{{json_event.message.DetectionType}}'
-          office365.defender.detection.method: '{{json_event.message.DetectionMethod}}'
-          office365.defender.detection.technology: '{{json_event.message.ThreatsAndDetectionTech}}'
-          office365.defender.connectors: '{{json_event.message.Connectors}}'
-          office365.defender.additional_actions: '{{json_event.message.AdditionalActionsAndResults}}'
-          office365.defender.auth_details: '{{json_event.message.AuthDetails}}'
-          office365.defender.system_overrides: '{{json_event.message.SystemOverrides}}'
+          email.local_id: "{{json_event.message.NetworkMessageId}}"
+          email.subject: "{{json_event.message.Subject}}"
+          email.delivery_timestamp: "{{json_event.message.MessageTime}}"
+
       - set:
-          email.message_id: '{{json_event.message.InternetMessageId[1:-1]}}'
+          source.ip: "{{json_event.message.SenderIp}}"
+        filter: "{{json_event.message.SenderIp | is_ipaddress}}"
+
+      - set:
+          event.url: "{{json_event.message.EventDeepLink}}"
+          rule.category: "{{json.event.message.Policy}}"
+          office365.defender.email.verdict.reason: "{{json_event.message.Verdict}}"
+          office365.defender.email.verdict.confidence: "{{json_event.message.PhishConfidenceLevel}}"
+          office365.defender.email.delivery.action: "{{json_event.message.DeliveryAction}}"
+          office365.defender.email.delivery.original_location: "{{json_event.message.OriginalDeliveryLocation}}"
+          office365.defender.email.delivery.latest_location: "{{json_event.message.LatestDeliveryLocation}}"
+          office365.defender.detection.type: "{{json_event.message.DetectionType}}"
+          office365.defender.detection.method: "{{json_event.message.DetectionMethod}}"
+          office365.defender.detection.technology: "{{json_event.message.ThreatsAndDetectionTech}}"
+          office365.defender.connectors: "{{json_event.message.Connectors}}"
+          office365.defender.additional_actions: "{{json_event.message.AdditionalActionsAndResults}}"
+          office365.defender.auth_details: "{{json_event.message.AuthDetails}}"
+          office365.defender.system_overrides: "{{json_event.message.SystemOverrides}}"
+
+      - set:
+          event.action: "{{json_event.message.PolicyAction.rstrip('.')}}"
+          action.name: "{{json_event.message.PolicyAction.rstrip('.')}}"
+        filter: "{{json_event.message.PolicyAction != null}}"
+
+      - set:
+          event.action: "{{json_event.message.DeliveryAction.rstrip('.')}}"
+          action.name: "{{json_event.message.DeliveryAction.rstrip('.')}}"
+        filter: "{{json_event.message.DeliveryAction != null}}"
+
+      - set:
+          file.name: "{{json_event.message.FileData.FileName}}"
+          file.hash.sha256: "{{json_event.message.FileData.SHA256}}"
+          url.original: "{{json_event.message.FileData.FilePath}}"
+          office365.defender.malware_family: "{{json_event.message.FileData.MalwareFamily}}"
+        filter: '{{json_event.message.get("FileData") != None}}'
+
+      - set:
+          email.message_id: "{{json_event.message.InternetMessageId[1:-1]}}"
         filter: '{{json_event.message.get("InternetMessageId") != None}}'
       - set:
           email.reply_to.address: '["{{json_event.message.P1Sender}}"]'
@@ -255,7 +706,7 @@ stages:
           email.from.address: '["{{json_event.message.P2Sender}}"]'
         filter: '{{json_event.message.get("P2Sender") != None}}'
       - set:
-          email.to.address: '{{json_event.message.Recipients|string}}'
+          email.to.address: "{{json_event.message.Recipients|string}}"
         filter: '{{json_event.message.get("Recipients", []) != []}}'
       - set:
           email.attachments: >
@@ -293,26 +744,284 @@ stages:
   parse_yammer:
     actions:
       - set:
-          file.name: '{{json_event.message.FileName}}'
-          event.category: ['file']
+          file.name: "{{json_event.message.FileName}}"
+          event.category: ["file"]
+
+  parse_form_app:
+    actions:
+      - set:
+          office365.source.application: "{{json_event.message.SourceApp}}"
+          office365.form_name: "{{json_event.message.FormName}}"
+
+  parse_browser:
+    actions:
+      - set:
+          user_agent.name: "{{json_event.message.BrowserName}}"
+          user_agent.version: "{{json_event.message.BrowserVersion}}"
 
   parse_automated_investigation_and_response:
     actions:
       - set:
-          office365.investigation.id: '{{json_event.message.InvestigationId}}'
-          office365.investigation.name: '{{json_event.message.InvestigationName}}'
-          office365.investigation.type: '{{json_event.message.InvestigationType}}'
-          office365.investigation.status: '{{json_event.message.Status}}'
-          event.start: '{{json_event.message.StartTimeUtc}}'
-          event.end: '{{json_event.message.EndTimeUtc}}'
-          office365.investigation.alert.type: '{{parse_data.ParsedData.AlertType}}'
-          office365.investigation.alert.provider.name: '{{parse_data.ParsedData.ProviderName}}'
-          office365.investigation.alert.provider.status: '{{parse_data.ParsedData.Status}}'
-          office365.investigation.alert.severity: '{{parse_data.ParsedData.Severity}}'
-          office365.investigation.alert.is_incident: '{{parse_data.ParsedData.IsIncident}}'
-          office365.investigation.alert.correlation_key: '{{parse_data.ParsedData.CorrelationKey}}'
-          office365.investigation.alert.category: '{{parse_data.ParsedData.Category}}'
-          office365.investigation.alert.source_type: '{{parse_data.ParsedData.SourceAlertType}}'
-          host.name: '{{parse_data.ParsedData.MachineName}}'
+          office365.investigation.id: "{{json_event.message.InvestigationId}}"
+          office365.investigation.name: "{{json_event.message.InvestigationName}}"
+          office365.investigation.type: "{{json_event.message.InvestigationType}}"
+          office365.investigation.status: "{{json_event.message.Status}}"
+          office365.investigation.alert.type: "{{parse_data.ParsedData.AlertType}}"
+          office365.investigation.alert.provider.name: "{{parse_data.ParsedData.ProviderName}}"
+          office365.investigation.alert.provider.status: "{{parse_data.ParsedData.Status}}"
+          office365.investigation.alert.severity: "{{parse_data.ParsedData.Severity}}"
+          office365.investigation.alert.is_incident: "{{parse_data.ParsedData.IsIncident}}"
+          office365.investigation.alert.correlation_key: "{{parse_data.ParsedData.CorrelationKey}}"
+          office365.investigation.alert.category: "{{parse_data.ParsedData.Category}}"
+          office365.investigation.alert.source_type: "{{parse_data.ParsedData.SourceAlertType}}"
+          event.start: "{{json_event.message.StartTimeUtc}}"
+          event.end: "{{json_event.message.EndTimeUtc}}"
+          host.name: "{{parse_data.ParsedData.MachineName}}"
+          log.level: "{{parse_data.ParsedData.Severity}}"
+          rule.name: "{{parse_data.ParsedData.AlertDisplayName}}"
+
+      - set:
+          office365.investigation.alert.urls: >
+            {%- set urls = [] -%}
+            {%- for link in parse_data.ParsedData.ExtendedLinks -%}
+              {%- if link.Type == "webLink" -%}
+                {%- set urls = urls.append(link.Href) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{urls|unique|list or None}}
+        filter: '{{parse_data.ParsedData.ExtendedLinks|selectattr("Type", "equalto", "webLink") | list | length > 0}}'
+
       - set:
           event.kind: '{% if parse_data.ParsedData.IsIncident %}{{"alert"}}{% else %}{{"event"}}{% endif %}'
+
+      - set:
+          office365.investigation.emails: >
+            [
+              {% set total_entities = [] %}
+              {% for action in json_event.message.Actions | map("from_json") %}
+                {% for entity in action.Entities %}
+                  {% set total_entities = total_entities.append(entity) %}
+                {% endfor %}
+              {% endfor %}
+              {% for entity in parse_data.ParsedData.Entities %}
+                {% set total_entities = total_entities.append(entity) %}
+              {% endfor %}
+              {%- for entity in total_entities -%}
+                {
+                  {%- if entity.AntispamDirection != null -%}"direction": "{{entity.AntispamDirection}}",{%- endif -%}
+                  {%- if entity.NetworkMessageIds != null -%}"message_ids": {{entity.NetworkMessageIds}},{%- endif -%}
+                  {%- if entity.NetworkMessageId != null -%}"message_ids": ["{{entity.NetworkMessageId}}"],{%- endif -%}
+                  {%- if entity.Language != null -%}"language": "{{entity.Language}}",{%- endif -%}
+                  {%- if entity.DeliveryAction != null or entity.DeliveryLocation != null or entity.OriginalDeliveryLocation != null -%}
+                    "delivery": {
+                      {%- if entity.DeliveryAction!= null -%}"action": "{{entity.DeliveryAction}}",{%- endif -%}
+                      {%- if entity.DeliveryLocation != null -%}"location": "{{entity.DeliveryLocation}}",{%- endif -%}
+                      {%- if entity.OriginalDeliveryLocation -%}"original_location": "{{entity.OriginalDeliveryLocation}}",{%- endif -%}
+                    },
+                  {%- endif -%}
+                },
+              {%- endfor -%}
+            ]
+        filter: '{{(json_event.message.get("Actions") != None and json_event.message.Actions | map("from_json") | rejectattr("Entities") | list | length  !=  json_event.message.Actions | list | length) or parse_data.ParsedData.get("Entities", []) | length > 0}}'
+
+      # Filter step to remove duplicates from the list
+      - set:
+          office365.investigation.emails: >
+            [
+              {% set result = [] %}
+              {% for data in final.office365.investigation.emails %}
+                {% if data not in result and data != {} %}
+                  {% set result = result.append(data) %}
+                {% endif %}
+              {% endfor %}
+              {%- for data in result -%}
+                {{data}},
+              {%- endfor -%}
+            ]
+        filter: "{{final.office365.get('investigation', {}).get('emails', []) | length > 1}}"
+
+      - set:
+          office365.investigation.email.urls: >
+            {%- set urls = [] -%}
+              {%- for Property in parse_data.ParsedData.Entities -%}
+                {%- if Property.Urls -%}
+                  {%- set urls = urls.extend(Property.Urls) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {{urls|unique|list or None}}
+          url.original: "{{final.office365.investigation.email.urls | first}}"
+          office365.investigation.email.sender.ip: >
+            {%- set senders = [] -%}
+              {%- for Property in parse_data.ParsedData.Entities -%}
+                {%- if Property.SenderIP -%}
+                  {%- set senders = senders.append(Property.SenderIP) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {{senders|unique|list or None}}
+
+          office365.investigation.email.subjects: >
+            {%- set subjects = [] -%}
+              {%- for Property in parse_data.ParsedData.Entities -%}
+                {%- if Property.Subject -%}
+                  {%- set subjects = subjects.append(Property.Subject) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {{ subjects or None}}
+
+          office365.investigation.email.sender.domains: >
+            {%- set senders = [] -%}
+              {%- for Property in parse_data.ParsedData.Entities -%}
+                {%- if Property.P1SenderDomain -%}
+                  {%- set senders = senders.append(Property.P1SenderDomain) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {{senders|unique|list or None}}
+
+          office365.investigation.threats: >
+            {%- set threats = [] -%}
+            {%- for Property in parse_data.ParsedData.Entities -%}
+              {%- if Property.Threats -%}
+                {%- if Property.Threats is iterable -%}
+                  {%- set threats = threats.extend(Property.Threats) -%}
+                {%- else -%}
+                  {%- set threats = threats.append(Property.Threats | string) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ threats or None}}
+
+          office365.investigation.delivery.action: >
+            {%- set actions = [] -%}
+            {%- for Property in parse_data.ParsedData.Entities -%}
+              {%- if Property.DeliveryAction -%}
+                {%- set actions = actions.append(Property.DeliveryAction) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ actions or None}}
+
+          email.from.address: >
+            {%- set senders = [] -%}
+            {%- for Property in parse_data.ParsedData.Entities -%}
+              {%- if Property.Sender -%}
+                {%- set senders = senders.append(Property.Sender) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{senders|unique|list or None}}
+
+          email.to.address: >
+            {%- set receivers = [] -%}
+            {%- for Property in parse_data.ParsedData.Entities -%}
+              {%- if Property.Recipient != null -%}
+                {%- set receivers = receivers.append(Property.Recipient) -%}
+              {%- endif -%}
+              {%- if Property.MailboxPrimaryAddress != null-%}
+                {%- set receivers = receivers.append(Property.MailboxPrimaryAddress) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{receivers|unique|list or None}}
+          email.attachments: >-
+            {%- set attachments = [] -%}
+            {%- for Property in parse_data.ParsedData.Entities -%}
+              {%- for file in Property.Files -%}
+                {%- for file_hash in file.FileHashes -%}
+                  {%- if file_hash.Algorithm == 'SHA256' -%}
+                    {%- set attachments = attachments.append({"file": {"name": file.Name, "hash": {"sha256": file_hash.Value }}}) -%}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {{attachments or None}}
+        filter: "{{parse_data.ParsedData.Entities != None and parse_data.ParsedData.Entities | length > 0}}"
+
+  parse_mcas_alerts:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+      - set:
+          office365.alert.category: "{{json_event.message.AlertCategory}}"
+          office365.alert.display_name: "{{json_event.message.AlertDisplayName}}"
+          office365.alert.description: "{{json_event.message.AlertDescription}}"
+          office365.alert.severity: "{{json_event.message.AlertSeverity}}"
+          office365.alert.client_ips: "{{json_event.message.ClientIPs}}"
+
+  parse_security_compliance_alerts:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+      - set:
+          office365.alert.id: "{{json_event.message.AlertId}}"
+          office365.alert.category: "{{json_event.message.Category}}"
+          office365.alert.display_name: "{{json_event.message.Name}}"
+          office365.alert.severity: "{{json_event.message.Severity}}"
+
+          office365.alert.source: "{{json_event.message.Source}}"
+          office365.alert.status: "{{json_event.message.Status}}"
+          rule.id: "{{json_event.message.PolicyId}}"
+
+      - set:
+          source.user.email: "{{parse_data.ParsedData.f3u}}"
+        filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.trc}}"
+          user.name: "{{parse_data.ParsedData.trc.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.trc.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.trc != None and '@' in parse_data.ParsedData.trc}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.suid}}"
+          user.name: "{{parse_data.ParsedData.suid.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.suid.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.suid != None and '@' in parse_data.ParsedData.suid}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.f3u}}"
+          user.name: "{{parse_data.ParsedData.f3u.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.f3u.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.f3u != None and '@' in parse_data.ParsedData.f3u}}"
+
+      - set:
+          office365.alert.entity_type: "{{parse_data.ParsedData.etype}}"
+          email.message_id: "{{parse_data.ParsedData.imsgid[1:-1]}}"
+          email.cc.address: "{{parse_data.ParsedData.cc.split(',')}}"
+          email.subject: "{{parse_data.ParsedData.von or parse_data.ParsedData.ms}}"
+
+      - set:
+          email.from.address: "{{parse_data.ParsedData.mfrm.split(',')}}"
+        filter: "{{parse_data.ParsedData.mfrm != None}}"
+
+      - set:
+          email.from.address: "{{parse_data.ParsedData.tsd.split(',')}}"
+        filter: "{{parse_data.ParsedData.tsd != None}}"
+
+      - set:
+          email.to.address: "{{parse_data.ParsedData.to.split(',')}}"
+        filter: "{{parse_data.ParsedData.to != None}}"
+
+      - set:
+          email.to.address: "{{parse_data.ParsedData.trc.split(',')}}"
+        filter: "{{parse_data.ParsedData.trc != None}}"
+
+      - set:
+          url.original: "//{{parse_data.ParsedData.pud}}"
+        filter: "{{parse_data.ParsedData.pud[0] != None}}"
+
+      - set:
+          url.original: "{{json_event.message.ObjectId}}"
+        filter: "{{json_event.message.EntityType == 'MaliciousUrl'}}"
+
+  parse_power_bi:
+    actions:
+      - set:
+          user_agent.original: "{{json_event.message.UserAgent}}"
+
+  parse_threat_intelligence_url:
+    actions:
+      - set:
+          url.original: "{{json_event.message.Url}}"

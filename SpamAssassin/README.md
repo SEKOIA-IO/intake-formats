@@ -1,3 +1,3 @@
 # SpamAssassin
- 
+
 ## Description

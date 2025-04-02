@@ -1,0 +1,126 @@
+name: ibm-i
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parsed_header
+    external:
+      name: grok.match
+      properties:
+        input_field: original.message
+        output_field: message
+        pattern: '%{DATA}\|%{DATA}\|%{DATA}\|%{DATA}\|%{DATA}\|%{DATA:type}\|%{GREEDYDATA}'
+
+  - name: parsed_message
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: parsed_event.message.msg
+        output_field: message
+        pattern: "%{CPF1164}|%{CPI3E34}"
+        custom_patterns:
+          CPF1164: "%{CPF1164_1}|%{CPF1164_2}"
+          CPF1164_1: "%{DATA} exit code %{NUMBER:exit_code} ."
+          CPF1164_2: "%{DATA} code %{DATA} %{NUMBER:exit_code} ."
+          CPI3E34: "%{DATA} client %{IPV4:client_ip}, %{DATA} %{DATE:date}, %{TIME:time}."
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_message.message.date + ' ' + parsed_message.message.time}}"
+        output_field: datetime
+    filter: "{{parsed_message.message.get('date') != None and parsed_message.message.get('time') != None}}"
+
+  - name: parsed_rt
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: datetime
+        format: "%Y-%m-%d-%H.%M.%S.%f"
+        timezone: UTC
+    filter: "{{parsed_event.message.get('rt') != None}}"
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_rt.datetime}}"
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          process.exit_code: "{{parsed_message.message.exit_code}}"
+          event.reason: "{{parsed_event.message.msg or parsed_event.message.changedData}}"
+          user.name: "{{parsed_event.message.suser}}"
+          host.name: "{{parsed_event.message.shost}}"
+          source.ip: "{{parsed_event.message.src or parsed_message.message.client_ip}}"
+          source.port: "{{parsed_event.message.spt}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.name: "{{parsed_event.message.filePath | basename}}"
+          file.directory: "{{parsed_event.message.filePath | dirname}}"
+          ibm_i.objName: "{{parsed_event.message.objName}}"
+          ibm_i.cat: "{{parsed_event.message.cat}}"
+          ibm_i.pgmName: "{{parsed_event.message.pgmName}}"
+          event.dataset: "{{parsed_event.message.DeviceEventClassID}}"
+
+      - set:
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+        filter: "{{parsed_timestamp.datetime != None}}"
+
+      - set:
+          event.code: "{{parsed_event.message.reason}}"
+        filter: "{{parsed_event.message.DeviceEventClassID == 'QSYS-QHST'}}"
+
+      - set:
+          event.action: "{{parsed_event.message.act}}"
+        filter: "{{parsed_event.message.DeviceEventClassID == 'DB2MON'}}"
+
+      - set:
+          process.pid: "{{parsed_event.message.sproc.split('/')[0]}}"
+          process.name: "{{parsed_event.message.sproc.split('/')[1:] | join('/')}}"
+        filter: "{{parsed_event.message.get('sproc') != None}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["end"]
+        filter: "{{parsed_header.message.type in ['CPF1164', 'CPC1126', 'CPF0927']}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["start"]
+        filter: "{{parsed_header.message.type in ['CPF1124', 'T-CD']}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: "{{parsed_header.message.type in ['CPI3E34']}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+        filter: "{{parsed_header.message.type in ['TCP2617']}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+        filter: "{{parsed_header.message.type in ['T-AF']}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{parsed_header.message.type in ['IFS File Monitor Journal Entry Type B-WA']}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: "{{parsed_header.message.type in ['CPF0907']}}"
+
+      - set:
+          event.category: ["database"]
+          event.type: ["change"]
+        filter: "{{parsed_header.message.type in ['DB2 change monitoring (Journal Extract Tool)']}}"

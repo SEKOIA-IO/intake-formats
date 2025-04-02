@@ -1,0 +1,104 @@
+name: umbrella-proxy
+ignored_values: ["-", " "]
+pipeline:
+  - name: event
+    external:
+      name: dsv.parse-dsv
+      properties:
+        output_field: message
+        columnnames:
+          - datetime
+          - log_hostname
+          - source_nat_ip
+          - source_ip
+          - destination_ip
+          - mime_type
+          - outcome_reason
+          - http_request_url
+          - http_request_referrer
+          - user_agent_original
+          - http_response_status_code
+          - http_request_bytes
+          - http_response_bytes
+          - http_response_body_bytes
+          - sha256
+          - categories
+          - av_detections
+          - puas
+          - amp_disposition
+          - amp_malware_name
+          - amp_score
+          - policy_identity_type
+          - blocked_categories
+          - identities
+          - identity_types
+          - http_request_method
+          - dlp_status
+          - certificate_errors
+          - file_name
+          - ruleset_id
+          - rule_id
+          - destination_list_ids
+          - isolate_action
+          - file_action
+          - warn_status
+          - forwarding_method
+          - producer
+          - msp_organization_id
+          - geo_location_of_blocked_destination_countries
+          - application_ids
+          - hostname
+          - data_center
+          - egress
+          - server_name
+          - time_based_rule
+          - security_overridden
+          - detected_response_file_type
+          - warn_categories
+          - organization_id
+          - GREEDYDATA
+        delimiter: ","
+
+  - name: grok_url
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "event.message.http_request_url"
+        output_field: message
+        pattern: "(%{URIPROTO:url_scheme}://)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": '{{event.message.datetime.strip('' '').strip(''"'') | to_rfc3339 }}'
+          action.name: "request"
+          action.outcome: "success"
+          action.outcome_reason: "{{event.message.outcome_reason.split('.')[0] | lower}}"
+          action.target: "network-traffic"
+          destination.address: "{{grok_url.message.url_domain}}"
+          destination.domain: "{{grok_url.message.url_domain}}"
+          destination.ip: "{{event.message.destination_ip}}"
+          host.hostname: "{{event.message.hostname or event.message.log_hostname}}"
+          host.name: "{{event.message.hostname or event.message.log_hostname}}"
+          http.request.method: "{{event.message.http_request_method}}"
+          http.request.bytes: "{{event.message.http_request_bytes}}"
+          http.request.referrer: "{{event.message.http_request_referrer}}"
+          http.response.body.bytes: "{{event.message.http_response_body_bytes}}"
+          http.response.bytes: "{{event.message.http_response_bytes}}"
+          http.response.mime_type: "{{event.message.mime_type}}"
+          http.response.status_code: "{{event.message.http_response_status_code}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.nat.ip: "{{event.message.source_nat_ip}}"
+          url.full: "{{event.message.http_request_url}}"
+          url.original: "{{event.message.http_request_url}}"
+          url.path: "{{grok_url.message.url_path}}"
+          user_agent.original: "{{event.message.user_agent_original}}"
+
+          organization.id: "{{event.message.organization_id}}"
+
+          file.name: "{{event.message.file_name}}"
+          file.hash.sha256: "{{event.message.sha256}}"

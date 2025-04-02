@@ -1,0 +1,116 @@
+name: broadcom-edge-secure-web-gateway
+ignored_values: ["-"]
+pipeline:
+  - name: parsed_header
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{TIMESTAMP_ISO8601:timestamp}%{HOST_NAME:observer} %{WORD} - %{WORD:dataset} - %{GREEDYDATA:kvs}"
+        custom_patterns:
+          HOST_NAME: (?:[0-9A-Za-z][0-9A-Za-z-]{0,62})(?:\.(?:[0-9A-Za-z][0-9A-Za-z-]{0,62}))*\.?
+
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parsed_header.message.kvs}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.timestamp}}"
+        output_field: datetime
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.category: ["web"]
+          event.type: ["access"]
+          event.dataset: "{{parsed_header.message.dataset}}"
+          event.action: "{{parsed_event.message.get('s-action')}}"
+
+          observer.vendor: "Broadcom"
+          observer.product: "Edge Secure Web Gateway"
+          observer.type: "proxy"
+          observer.name: "{{parsed_header.message.observer}}"
+
+          "@timestamp": "{{parse_timestamp.datetime}}"
+
+          client.ip: "{{parsed_event.message.get('c-ip')}}"
+          client.user.name: "{{parsed_event.message.get('cs-username')}}"
+          client.bytes: "{{parsed_event.message.get('cs-bytes')}}"
+
+          server.ip: "{{parsed_event.message.get('s-ip')}}"
+          server.bytes: "{{parsed_event.message.get('sc-bytes')}}"
+
+          url.original: "{{parsed_event.message.get('cs-url')}}"
+          url.scheme: "{{parsed_event.message.get('cs-uri-scheme')}}"
+          url.domain: "{{parsed_event.message.get('cs-host')}}"
+          url.path: "{{parsed_event.message.get('cs-uri-path')}}"
+          url.port: "{{parsed_event.message.get('cs-uri-port')}}"
+          url.query: "{{parsed_event.message.get('cs-uri-query')}}"
+
+          user_agent.original: "{{parsed_event.message.get('cs-user-agent')}}"
+
+          http.request.method: "{{parsed_event.message.get('cs-method')}}"
+          http.response.status_code: "{{parsed_event.message.get('sc-status')}}"
+          http.response.mime_type: "{{parsed_event.message.get('rs-content-type')}}"
+          http.request.referrer: "{{parsed_event.message.get('cs-referer')}}"
+
+          host.os.full: "{{parsed_event.message.get('x-client-os')}}"
+
+          broadcom.categories: "{{parsed_event.message.get('cs-categories')}}"
+          broadcom.virus_id: "{{parsed_event.message.get('x-virus-id')}}"
+          broadcom.threat_risk.lvl: "{{parsed_event.message.get('cs-threat-risk')}}"
+          broadcom.threat_risk.dns_lvl: "{{parsed_event.message.get('x-dns-cs-threat-risk-level')}}"
+          broadcom.threat_risk.certificate_hostname: "{{parsed_event.message.get('x-rs-certificate-hostname-threat-risk')}}"
+          broadcom.data_leak_detected: "{{parsed_event.message.get('x-data-leak-detected')}}"
+          broadcom.file_reputation_score: "{{parsed_event.message.get('ear-cas-file-reputation-score')}}"
+
+          dns.question.name: "{{parsed_event.message.get('x-dns-cs-dns')}}"
+          dns.question.class: "{{parsed_event.message.get('x-dns-cs-qclass')}}"
+          dns.question.type: "{{parsed_event.message.get('x-dns-cs-qtype')}}"
+          dns.op_code: "{{parsed_event.message.get('x-dns-cs-opcode')}}"
+
+      # Map milliseconds to nanoseconds
+      - set:
+          event.duration: "{{parsed_event.message.get('time-taken', 0) | int * 1000000}}"
+        filter: "{{parsed_event.message.get('time-taken') != None and parsed_event.message.get('time-taken') | int != 0}}"
+
+      - set:
+          dns.answers: >
+            [
+              {% for record in parsed_event.message.get("x-dns-rs-a-records", "").split(",") %}
+                  {% if record != "" %}{"data": "{{record}}", "type": "A"},{% endif %}
+              {% endfor %}
+
+              {% for record in parsed_event.message.get("x-dns-rs-cname-records", "").split(",") %}
+                  {% if record != "" %}{"data": "{{record}}", "type": "CNAME"},{% endif %}
+              {% endfor %}
+
+              {% for record in parsed_event.message.get("x-dns-rs-ptr-records", "").split(",") %}
+                  {% if record != "" %}{"data": "{{record}}", "type": "PTR"},{% endif %}
+              {% endfor %}
+
+              {% for record in parsed_event.message.get("x-dns-rs-rcode", "").split(",") %}
+                  {% if record != "" %}{"data": "{{record}}", "type": "RCODE"},{% endif %}
+              {% endfor %}
+            ]
+        filter: '{{ parsed_event.message.get("x-dns-rs-a-records")
+          or parsed_event.message.get("x-dns-rs-cname-records")
+          or parsed_event.message.get("x-dns-rs-ptr-records")
+          or parsed_event.message.get("x-dns-rs-rcode")}}'
+
+      - set:
+          tls.server.x509.alternative_names:
+            ["{{parsed_event.message.get('x-rs-certificate-hostname')}}"]
+        filter: "{{parsed_event.message.get('x-rs-certificate-hostname') != '-'}}"

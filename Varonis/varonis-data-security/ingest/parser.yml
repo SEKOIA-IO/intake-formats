@@ -1,0 +1,148 @@
+name: varonis-data-security
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_start_date
+    filter: "{{parsed_event.message.start != null or parsed_event.message.startTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.start or parsed_event.message.startTime}}"
+        output_field: date
+
+  - name: parse_end_date
+    filter: "{{parsed_event.message.end != null or parsed_event.message.endTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.end or parsed_event.message.endTime}}"
+        output_field: date
+
+  # Parse 'rt' (as a timestamp or as a date)
+  - name: parse_receipt_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: date
+
+  - name: parse_email_delivery_date
+    filter: "{{parsed_event.message.deviceCustomDate1 != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.deviceCustomDate1}}"
+        output_field: date
+
+  - name: set_timestamp
+  - name: set_cef_header_fields
+  - name: set_cef_extension_fields
+
+stages:
+  set_timestamp:
+    actions:
+      # Default timestamp is the start or startTime field
+      - set:
+          "@timestamp": "{{parse_start_date.date}}"
+
+      # Second choice is the receipt time (rc) field
+      - set:
+          "@timestamp": "{{parse_receipt_time.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time != null}}"
+
+      # Last choice is the end or endTime field
+      - set:
+          "@timestamp": "{{parse_end_date.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time == null and parse_end_date != null}}"
+
+  set_cef_header_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: >
+            [
+              {% if parsed_event.message.cs1 != null %}"email"{% elif parsed_event.message.AlertCategory == "Intrusion" %}"intrusion_detection"{% else %}"network"{% endif %}
+            ]
+          event.type: ["info"]
+
+      - set:
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          rule.id: "{{parsed_event.message.DeviceEventClassID}}"
+
+  set_cef_extension_fields:
+    actions:
+      - set:
+          destination.ip: "{{parsed_event.message.DestinationDip}}"
+          destination.user.name: "{{parsed_event.message.AffectedObjectSAM}}"
+          destination.user.domain: "{{parsed_event.message.AffectedObjectDomain}}"
+
+          event.dataset: "{{parsed_event.message.cat}}"
+          event.action: "{{parsed_event.message.act}}"
+          event.end: "{{parse_end_date.date}}"
+
+          rule.name: "{{parsed_event.message.cn1}}"
+          rule.description: "{{parsed_event.message.DescriptionRule or parsed_event.message.cs2}}"
+
+          user.name: "{{parsed_event.message.duser.split('\\\\')[-1]}}"
+          host.name: "{{parsed_event.message.dhost}}"
+
+          file.path: "{{parsed_event.message.filePath}}"
+          file.name: "{{parsed_event.message.fname}}"
+
+          source.domain: "{{parsed_event.message.dvchost}}"
+          source.user.name: "{{parsed_event.message.ActingObjectSAM}}"
+          source.user.domain: "{{parsed_event.message.ActingObjectDomaineName}}"
+
+      - set:
+          rule.name: "{{parsed_event.message.cs2}}"
+        filter: "{{parsed_event.message.cs2Label == 'RuleName'}}"
+
+      - set:
+          rule.id: "{{parsed_event.message.cn1}}"
+        filter: "{{parsed_event.message.cn1Label == 'RuleID' and parsed_event.message.cn1 | int > 0}}"
+
+      - set:
+          event.severity: "{{parsed_event.message.Severity}}"
+        filter: "{{parsed_event.message.Severity | re_match('[0-9]|10')}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc | is_ipaddress}}"
+
+      - set:
+          event.reason: "{{parsed_event.message.msg}}"
+
+      - set:
+          event.url: "{{parsed_event.message.cs4}}"
+        filter: "{{parsed_event.message.cs4 != null}}"
+
+      - set:
+          user.domain: "{{parsed_event.message.duser.split('\\\\')[0]}}"
+        filter: "{{parsed_event.message.duser.split('\\\\') | length > 1}}"
+
+      - set:
+          email.attachments: >
+            [
+              {"file": {"name": "{{parsed_event.message.cs3}}", "mime_type": "{{parsed_event.message.fileType}}"}}
+            ]
+          email.delivery_timestamp: "{{parse_email_delivery_date.date}}"
+          email.to.address: "{{parsed_event.message.cs1}}"
+          email.from.address: "{{parsed_event.message.suser}}"
+        filter: "{{parse_email_delivery_date.date != null}}"
+
+      - set:
+          varonis.datalert.file.permissions_change: "{{parsed_event.message.cs6}}"
+          varonis.datalert.file.old_permission: "{{parsed_event.message.oldFilePermission}}"
+          varonis.datalert.file.permission: "{{parsed_event.message.filePermission}}"
+
+      - set:
+          varonis.datalert.outcome: "{{parsed_event.message.outcome}}"
+          varonis.datalert.num_events: "{{parsed_event.message.cnt}}"
+          varonis.datalert.id: "{{parsed_event.message.externalId}}"
+          varonis.datalert.destination.device: "{{parsed_event.message.DestinationDeviceName}}"
+          varonis.datalert.description: "{{parsed_event.message.DescriptionAlert}}"
+          varonis.datalert.rule.storyline: "{{parsed_event.message.RuleStoryline}}"

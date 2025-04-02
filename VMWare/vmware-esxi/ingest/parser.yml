@@ -1,0 +1,407 @@
+name: vmware-esxi
+pipeline:
+  - name: parsed_event
+    external:
+      # All patterns have been tested with the log messages.
+      # Each pattern have its own test in the test folder that have the
+      # - same name as pattern
+      # - the same name as group of patterns
+      name: grok.match
+      properties:
+        input_field: "original.message"
+        output_field: result
+        pattern: "%{EVENT_LOG_SSH_AUTH}|%{PROCESS_LOG_SSH_AUTH}|%{PROCESS_LOG_SSH_PASSWORD}|%{AUTH_CONNECTION_EVENT}|%{AUTH_CONNECTION_DISCONNECTED}|%{AUTH_CONNECTION_RECEIVE_DISCONNECTED}|%{AUTH_SESSION_EVENT}|%{PROCESS_LOG_AUTH_USER}|%{PROCESS_LOG_CHANGE_USER}|%{AUTH_PUBLIC_KEY}|%{NETWORK_SOURCE}|%{NETWORK_HOSTNAME}|%{PROCESS_COMMAND}|%{PROCESS_COMMAND_USER_WITH_PID}|%{PROCESS_COMMAND_USER_WITHOUT_PID}|%{PROCESS_LOG_LAUNCHING}|%{VARIOUS_FILE_ACTION}|%{VARIOUS_FILE_ACTION_FILENAME_ONLY}|%{VARIOUS_KEY_REASON}|%{VARIOUS_SERIAL_NUMBER}|%{VARIOUS_DEVICE_OUTCOME_REASON}|%{VARIOUS_REASON_1}|%{VARIOUS_REASON_2}|%{DEFAULT_EVENT_LOG}|%{DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO}|%{DEFAULT_PROCESS_LOG}|%{SSHD_INFO}|%{DIFFERENT_FORMATS}"
+        custom_patterns:
+          ## Freestyle patterns to be used for messages that contains connection event information
+          ## To identify auth event we can use `auth_action` field or `auth_category` described below
+          AUTH_CONNECTION_EVENT: '^(?:\s*)(?:Connection|connection) %{WORD:auth_action} by %{WORD} user %{WORD:username} (?:%{SSHD_CLIENT_ADDRESS:ip_address}) port %{NUMBER:port}%{GREEDYDATA}?'
+          AUTH_CONNECTION_DISCONNECTED: '^(?:\s*)%{DATA:auth_action} from user %{WORD:username} (?:%{SSHD_CLIENT_ADDRESS:ip_address}) port %{NUMBER:port}?'
+          AUTH_CONNECTION_RECEIVE_DISCONNECTED: '^(?:\s*)%{DATA} from (?:%{SSHD_CLIENT_ADDRESS:ip_address}) port %{NUMBER:port}\:%{NUMBER}\: %{WORD:auth_action} by %{WORD}?'
+
+          ## Freestyle patterns to be used for messages that contains session event information
+          ## To identify session event we can use `session_action` field
+          AUTH_SESSION_EVENT: '^(?:\s*)%{GREEDYDATA}\: (?P<session_category>session|Session) %{WORD:session_action} for user %{WORD:username}%{DATA}?'
+
+          ## Freestyle patterns to be used for messages that contains public key acception information
+          ## To identify public key event we can use `publickey_action` field
+          ## Additional fields: `hash_method` and `hash_key`
+          AUTH_PUBLIC_KEY: '^(?:\s*)%{WORD:publickey_action} (?P<publickey>publickey|Publickey) for %{WORD:username} from (?:%{SSHD_CLIENT_ADDRESS:ip_address}) port %{NUMBER:port}%{DATA}(?P<hash_method>SHA1|sha1|SHA256|sha256|SHA384|sha384|SHA512|sha512|MD5|md5|MURMUR3|murmur3|MURMUR3_128|murmur3_128|IPV4_NETWORK|ipv4_network|UUID|uuid|PUNCTUATION|punctuation):%{GREEDYDATA:hash_key}?'
+
+          ## Freestyle patterns to be used for messages that contains network source information
+          NETWORK_SOURCE: '^(?:\s*)(?P<network_action>Connection|connection) from (?:%{SSHD_CLIENT_ADDRESS:ip_address}) port %{NUMBER:port}%{DATA}?'
+
+          ## Freestyle patterns to be used for messages that contains network hostname information
+          NETWORK_HOSTNAME: '^(?:\s*)%{WORD:log_lvl} on %{DATA:network_category} to (?:%{SSHD_CLIENT_ADDRESS:ip_address}) port %{NUMBER:port}%{DATA}?'
+
+          ## Freestyle patterns to be used for messages that contains command and user
+          PROCESS_COMMAND: '^(?:\s*)(?P<process_category>Executing) %{GREEDYDATA:command}?'
+          PROCESS_COMMAND_USER_WITH_PID: '^(?:\s*)USER %{WORD:username} pid %{NUMBER:pid} (?P<process_category>cmd) %{GREEDYDATA:command}?'
+          PROCESS_COMMAND_USER_WITHOUT_PID: '^(?:\s*)User (?:.{1})%{WORD:username}(?:.{1}) running (?P<process_category>command) %{GREEDYDATA:command}?'
+
+          ## Freestyle patterns to work with filename
+          VARIOUS_FILE_ACTION: '^(?:\s*)%{WORD:file_action} (?P<filename>([\w\/]*?)([\w\.]*)\.(\w*))?'
+          VARIOUS_FILE_ACTION_FILENAME_ONLY: '^(?:\s*)%{DATA}(?P<file_category>fileName) = \"%{DATA:filename}\"((, %{WORD} = %{DATA})*(?:, uuid = \"%{UUID:file_uid}\")%{DATA}?(?:capacityInBytes = %{NUMBER:file_size}))?%{DATA}?'
+
+          ## Freestyle patterns to work with key and reason
+          VARIOUS_KEY_REASON: '^(?:\s*)%{DATA} key (?:ID|id|Id) %{DATA:key_id} to %{WORD:reason}?'
+
+          ## Freestyle patterns to get device, outcome and reason
+          VARIOUS_DEVICE_OUTCOME_REASON: '^(?:\s*)%{WORD:event_type} %{DATA:server_name}\[%{DATA:server_id}\] \[%{DATA}\] %{DATA} %{WORD:outcome} with %{GREEDYDATA:reason}?'
+
+          ## Freestyle patterns to get serial number
+          VARIOUS_SERIAL_NUMBER: '^(?:\s*)%{DATA}(?:serial|SERIAL|Serial) %{WORD} is %{NUMBER:serial_number}?'
+
+          ## Freestyle patterns to get reason
+          VARIOUS_REASON_1: '^(?:\s*)%{WORD:network_category} %{DATA} \(%{DATA} %{DATA} %{DATA} %{DATA} %{DATA} %{DATA} %{DATA} %{DATA}\) %{GREEDYDATA:message}?'
+          VARIOUS_REASON_2: '^(?:\s*)%{WORD}:%{NUMBER}\)%{WORD:network_category}: %{GREEDYDATA:message}?'
+
+          ## This is log pattern to work with ssh events. Based on `DEFAULT_EVENT_LOG`
+          ## Example of logs:
+          ###  [GenericCorrelator] 3087878318715us: [vob.user.ssh.session.opened] SSH session was opened for 'root@1.2.3.4'.
+          ###  vobd: [GenericCorrelator] 2216526905us: [vob.user.ssh.session.failed] SSH login has failed for 'root@1.2.3.4'.
+          ## Fields output:
+          #  "correlator_name": "GenericCorrelator"
+          #  "process": "vob.user.ssh.session.opened"
+          #  "ssh": "SSH"
+          #  "session": "session"
+          #  "reason": "opened"
+          #  "username": "root"
+          #  "ip_address": "1.2.3.4"
+          EVENT_LOG_SSH_AUTH: '^%{DATA}?(?:\s*)\[%{PROG:correlator_name}\] %{WORD}: \[%{PROG:event_action}\] (?P<ssh>SSH|ssh) ((?P<session_category>session)|login) (has|was) %{WORD:session_action} for (?:.{1})%{DATA:username}@(?:%{SSHD_CLIENT_ADDRESS:ip_address})%{GREEDYDATA}?'
+
+          PROCESS_HEADER: '^(%{WORD}: )?(?:\s*)(?:%{WORD:log_lvl}) %{PROCESS_WITH_PID}' # e.g. `error hostd[2099655]` or `hostd: error hostd[2099655]`
+          PROCESS_WITH_PID: '%{DATA:process}\[%{NUMBER:pid}\]' # e.g. `hostd[2099655]`
+          PROCESS_ORIGINATOR: '\[%{WORD}\@%{NUMBER}( sub=%{NOTSPACE:sub})?( opID=%{NOTSPACE:op_id})?( sid=%{NOTSPACE})?( user=%{USER:username}(\:%{NOTSPACE:user_domain})?)?%{DATA}?\]' # e.g. `[Originator@6876 sub=Vimsvc.ha-eventmgr]`
+          PROCESS_HEADER_WITH_ORIGINATOR: "%{PROCESS_HEADER} %{PROCESS_ORIGINATOR}" # e.g. `error hostd[2099655] [Originator@6876 sub=Vimsvc.ha-eventmgr]`
+
+          ## This is log pattern to work with ssh process. Based on `DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO`
+          ## Example of log:
+          ###  error hostd[2099655] [Originator@6876 sub=Vimsvc.ha-eventmgr] Event 974676 : SSH session was closed for 'root@1.2.3.4'.
+          ## Fields output:
+          # "log_lvl": "error"
+          # "process": "hostd"
+          # "pid": 2099655
+          # "ssh": "SSH"
+          # "session": "session"
+          # "reason": "closed"
+          # "username": "root"
+          # "ip_address": "1.2.3.4"
+          PROCESS_LOG_SSH_AUTH: "%{PROCESS_HEADER_WITH_ORIGINATOR} Event %{NUMBER} : (?P<ssh>SSH|ssh) (?P<session>session) was %{WORD:session_action} for (?:.{1})%{DATA:username}@(?:%{SSHD_CLIENT_ADDRESS:ip_address})%{GREEDYDATA}?"
+
+          ## This is log pattern to work with password auth process. Based on `DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO`
+          ## Example of log:
+          ###  info hostd[2099656] [Originator@6876 sub=Default opID=esxcli-76-ecbf] Accepted password for user root from 127.0.0.1
+          ## Fields output:
+          # "log_lvl": "info"
+          # "process": "hostd"
+          # "pid": 2099656
+          # "configuration_action": "Accepted"
+          # "configuration_category": "password"
+          # "username": "root"
+          # "ip_address": "127.0.0.1"
+          PROCESS_LOG_SSH_PASSWORD: "%{PROCESS_HEADER_WITH_ORIGINATOR} %{WORD:configuration_action} (?P<configuration_category>password) for user %{WORD:username} from (?:%{SSHD_CLIENT_ADDRESS:ip_address})%{GREEDYDATA}?"
+
+          ## This is log pattern to work with auth user process. Based on `DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO`
+          ## Example of log:
+          ###  info hostd[2099656] [Originator@6876 sub=Vimsvc opID=esxcli-a5-20ae] [Auth]: User root
+          ## Fields output:
+          # "log_lvl": "info"
+          # "process": "hostd"
+          # "pid": 2099656
+          # "auth": "Auth"
+          # "username": "root"
+          PROCESS_LOG_AUTH_USER: '%{PROCESS_HEADER_WITH_ORIGINATOR} \[%{WORD:auth_category}\]\: User %{WORD:username}?'
+
+          ## This is log pattern to work with change user process. Based on `DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO`
+          ## Example of log:
+          ### info hostd[2099656] [Originator@6876 sub=Vimsvc.ha-eventmgr opID=esxcli-76-ecbf] Event 975279 : User root@127.0.0.1 logged in as pyvmomi Python/3.8.13 (VMkernel; 7.0.3; x86_64)
+          ## Fields output:
+          # "log_lvl": "info"
+          # "process": "hostd"
+          # "pid": 2099656
+          # "source_username": "root"
+          # "ip_address": "127.0.0.1"
+          # "username": "pyvmomi"
+          # "user_agent": " Python/3.8.13 (VMkernel; 7.0.3; x86_64)"  <!NOTE: This field is optional>
+          PROCESS_LOG_CHANGE_USER: "%{PROCESS_HEADER_WITH_ORIGINATOR} %{WORD} %{NUMBER} : (?P<session_category>User) %{USERNAME:source_username}@(?:%{SSHD_CLIENT_ADDRESS:ip_address}) %{DATA} as %{WORD:username}%{GREEDYDATA:user_agent}?"
+
+          PROCESS_LOG_LAUNCHING: "%{PROCESS_HEADER_WITH_ORIGINATOR} Launching binary: %{GREEDYDATA:command}?"
+
+          ## This is default log message pattern that should be used to get log message from events
+          ## Example of log:
+          ### [iscsiCorrelator] 3087813295957us: [vob.iscsi.connection.stopped] iScsi connection 0 stopped for vmhba64:C0:T3
+          DEFAULT_EVENT_LOG: '^(?:\s*)\[%{PROG:correlator_name}\] %{WORD}: \[%{PROG:process}\] %{GREEDYDATA:message}?'
+
+          ## This is default log message pattern that should be used to get log message
+          ## Example of log:
+          ### info hostd[2099655] [Originator@6876 sub=Vimsvc.ha-eventmgr] <LOG_MSG>
+          DEFAULT_PROCESS_LOG: "%{PROCESS_HEADER_WITH_ORIGINATOR} %{GREEDYDATA:message}?"
+
+          DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO: '%{PROCESS_HEADER_WITH_ORIGINATOR} \[%{NOTSPACE:log_category}\] %{GREEDYDATA:message}?'
+
+          # More SSHD patterns: https://github.com/SEKOIA-IO/intake-formats/blob/main/OpenSSH/openssh/ingest/parser.yml
+          SSHD_CLIENT_ADDRESS: "%{IP:ip_address}|%{HOSTNAME:source_domain}"
+          SSHD_MESSAGE_INVALID_USER: invalid user
+          SSHD_MESSAGE_INVALID_USER2: Invalid
+          SSHD_MESSAGE_ILLEGAL_USER: illegal user
+          SSHD_MESSAGE_AUTHENTICATING_USER: authenticating user
+          SSHD_MESSAGE_NORMAL_USER: user
+          SSHD_MESSAGE_USER_QUALITY: "%{SSHD_MESSAGE_AUTHENTICATING_USER}|%{SSHD_MESSAGE_ILLEGAL_USER}|%{SSHD_MESSAGE_INVALID_USER}|(%{SSHD_MESSAGE_NORMAL_USER})?"
+          SSHD_MESSAGE_USER: "%{SSHD_MESSAGE_USER_QUALITY:tmp_userquality} %{USERNAME:username}"
+          SSHD_MESSAGE_DISCONNECTED: Disconnected from
+          SSHD_INFO_DISCONNECTED:
+            '%{SSHD_MESSAGE_DISCONNECTED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:port}( \[preauth\])?'
+          SSHD_MESSAGE_FAILED_PASSWORD: Failed password
+          SSHD_ERROR_INVALID_USER:
+            (%{SSHD_MESSAGE_FAILED_PASSWORD:sshd_message} for|%{SSHD_MESSAGE_INVALID_USER2:sshd_message})%{SPACE}%{SSHD_MESSAGE_USER}%{SPACE}from
+            %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:port})?(%{SPACE}ssh2)?
+          SSHD_PREFIX: '^(?:\s*)%{DATA:process}\[%{NUMBER:pid}\]\:\s'
+          SSHD_LOG: "%{SSHD_INFO_DISCONNECTED}|%{SSHD_ERROR_INVALID_USER}"
+          SSHD_INFO: "%{SSHD_PREFIX}%{SSHD_LOG}"
+
+          DIFFERENT_FORMATS: "%{PROCESSING_FILE}|%{PROCESSING_FILE_1}|%{REPORT_PATH}|%{VOLUME_STATE}|%{TERMINATING_PROCESS}|%{DIFFERENT_ENDPOINT}|%{SET_IPV6_COMPATIBILITY}|%{ATTEMPTING_CONNECTION}|%{FAILED_CONNECT}|%{FAILED_READ_BUFFER}|%{FAILED_SOCKET_SHUTDOWN}|%{FILE_LOCKER}|%{UTIL_FORK_EXEC}|%{PLUGIN_LOAD}|%{SLOW_REFRESH}|%{LAUNCHING_BINARY}|%{CONNECTION_FAILED}|%{NEW_PROXY_CLIENT}|%{CONNECTED_TO}|%{FULL_REPORT}|%{PUBLISH_REPORT}|%{ACTIVATION_FINISHED}|%{ADD_VM}|%{ACCEPT_USER_PASSWORD}|%{DIFFERENT_DEFAULT}"
+          ADDRESS_OR_DOMAIN: "%{IP:ip_address}|%{HOSTNAME:source_domain}"
+          DESTINATION_ADDRESS_OR_DOMAIN: "%{IP:destination_ip}|%{HOSTNAME:destination_domain}"
+          TCP_PARSE_SOURCE: "<TCP '%{IP:ip_address} : %{NUMBER:port}'>"
+          TCP_PARSE_DESTINATION: "<TCP '%{IP:destination_ip} : %{NUMBER:destination_port}'>"
+          PROCESSING_FILE: "%{PROCESS_ORIGINATOR} Processing (file|defaultMappingFile): %{DATA:filename}"
+          PROCESSING_FILE_1: "%{PROCESS_ORIGINATOR} File - %{DATA:event_outcome}, '%{DATA:filename}': %{DATA:message}"
+          REPORT_PATH: "%{PROCESS_ORIGINATOR} Report (?P<file_category>Path): %{DATA:filename}"
+          VOLUME_STATE: "(?P<message>Could not get state for NFS volume) %{DATA:volume_name}"
+          TERMINATING_PROCESS: "%{DATA} (?P<process_category>process) with PID %{NUMBER:pid}"
+
+          DIFFERENT_ENDPOINT: "%{RESOLVED_ENDPOINT}|%{ENDPOINT_ADDED}|%{OTHER_ENDPOINT}"
+          RESOLVED_ENDPOINT: "%{PROCESS_ORIGINATOR} (?P<message>Resolved endpoint) : %{DATA} _serverNamespace = %{DATA:uri} action = %{DATA:event_type} %{DATA} _port = %{NUMBER:destination_port}"
+          ENDPOINT_ADDED: "%{PROCESS_ORIGINATOR} (?P<message>(%{DATA} endpoint %{DATA})): %{DATA:uri}"
+          OTHER_ENDPOINT: "%{PROCESS_ORIGINATOR} %{DATA} _serverNamespace = %{DATA:uri} action = %{DATA:event_type} %{DATA} _port = %{NUMBER:destination_port}"
+
+          SET_IPV6_COMPATIBILITY: "%{PROCESS_ORIGINATOR} SetIPv6Capability: %{DATA:message}"
+          ATTEMPTING_CONNECTION: "%{PROCESS_ORIGINATOR} Attempting (?P<network_action>connection); <resolver %{DATA}, '%{ADDRESS_OR_DOMAIN}:%{NUMBER:port}', next:%{DATA}>, %{DATA:message}"
+          FAILED_CONNECT: "%{PROCESS_ORIGINATOR} (?P<network_action>Failed to connect); <%{DATA}, %{TCP_PARSE_SOURCE}, %{TCP_PARSE_DESTINATION}>, %{DATA:message}"
+          FAILED_READ_BUFFER: '%{PROCESS_ORIGINATOR} Failed to read buffer from stream; SSL\(<%{DATA}, %{TCP_PARSE_SOURCE}, %{TCP_PARSE_DESTINATION}>\) %{DATA:message}'
+          FAILED_SOCKET_SHUTDOWN: "%{PROCESS_ORIGINATOR} Failed to shutdown socket; <%{DATA}, %{TCP_PARSE_SOURCE}, %{TCP_PARSE_DESTINATION}>, %{DATA:message}"
+          FILE_LOCKER: "%{PROCESS_ORIGINATOR} (?P<_event_type>ConfigFileLocker): %{DATA:filename}.(?P<process_category>LOCK): (?P<message>stale lock detected for PID %{DATA:pid}: No such process)"
+
+          UTIL_FORK_EXEC: '%{PROCESS_ORIGINATOR} ((?P<_event_type>Util): )?ForkExec\(%{DATA:command}\) %{DATA:pid}'
+
+          PLUGIN_LOAD: "%{PROCESS_ORIGINATOR} (?P<_event_type>PluginLdr_Load): %{DATA:message} from '%{DATA:filename}'"
+          SLOW_REFRESH: "%{PROCESS_ORIGINATOR} (?P<_event_type>SlowRefresh): path %{DATA:volume_name} %{DATA:message}"
+          FULL_REPORT: "%{PROCESS_ORIGINATOR} (?P<_event_type>GenerateFullReport): report file %{DATA:filename} %{DATA:outcome}, size %{NUMBER:file_size} bytes."
+          PUBLISH_REPORT: "%{PROCESS_ORIGINATOR} (?P<_event_type>PublishReport): file %{DATA:filename} %{DATA:message}"
+          LAUNCHING_BINARY: "%{PROCESS_ORIGINATOR} (?P<_event_type>Launching binary): %{DATA:command}"
+          CONNECTION_FAILED: '%{PROCESS_ORIGINATOR} (?P<network_action>Connection to) %{DESTINATION_ADDRESS_OR_DOMAIN}:%{NUMBER:destination_port} (\(%{DATA:uri}\))? failed with error %{DATA:message}'
+          NEW_PROXY_CLIENT: "%{PROCESS_ORIGINATOR} (?P<network_action>(?P<_event_type>New proxy client)) <%{DATA}, %{TCP_PARSE_SOURCE}, %{TCP_PARSE_DESTINATION}>"
+          CONNECTED_TO: '%{PROCESS_ORIGINATOR} (?P<network_action>Connected) to %{DESTINATION_ADDRESS_OR_DOMAIN}:%{NUMBER:destination_port} (\(%{DATA:uri}\))? over <%{DATA}, %{TCP_PARSE_SOURCE}, %{TCP_PARSE_DESTINATION}>'
+          ACTIVATION_FINISHED: "%{PROCESS_ORIGINATOR} (?P<network_action>(?P<message>Activation finished)); <<%{DATA}, %{TCP_PARSE_SOURCE}, %{TCP_PARSE_DESTINATION}>, %{DATA}>"
+
+          ADD_VM: "%{PROCESS_ORIGINATOR} (?P<_event_type>AddVM): %{DATA:message}"
+          ACCEPT_USER_PASSWORD: "%{PROCESS_ORIGINATOR} (?P<message>Accepted password) for user %{DATA:username} from %{ADDRESS_OR_DOMAIN} %{DATA}"
+
+          DIFFERENT_DEFAULT: "%{PROCESS_ORIGINATOR} %{DATA:message}"
+
+  - name: set_common_fields
+  - name: set_additional_fields
+  - name: set_event_reason
+  - name: set_event_info
+  - name: set_event_outcome
+
+stages:
+  set_common_fields:
+    actions:
+      # Default fields with predefined values
+      - set:
+          observer.vendor: "VMware"
+          observer.product: "ESXi"
+
+  set_additional_fields:
+    actions:
+      # Fields by definition that we get from messages
+      - set:
+          user.domain: "{{parsed_event.result.user_domain}}"
+        filter: "{{not parsed_event.result.get('user_domain').startswith('<')}}"
+
+      - set:
+          event.action: "{{parsed_event.result.event_action}}"
+          user.name: "{{parsed_event.result.username}}"
+          destination.domain: "{{parsed_event.result.destination_domain}}"
+          destination.ip: "{{parsed_event.result.destination_ip}}"
+          destination.port: "{{parsed_event.result.destination_port}}"
+          source.domain: "{{parsed_event.result.source_domain}}"
+          source.ip: "{{parsed_event.result.ip_address}}"
+          source.port: "{{parsed_event.result.port}}"
+          source.user.name: "{{parsed_event.result.source_username}}"
+          user_agent.original: "{{parsed_event.result.user_agent | trim}}"
+          file.path: "{{parsed_event.result.filename | dirname}}"
+          file.name: "{{parsed_event.result.filename | basename}}"
+          file.uid: "{{parsed_event.result.file_uid}}"
+          file.size: "{{parsed_event.result.file_size}}"
+          url.original: "{{parsed_event.result.uri}}"
+          vmware.esxi.key.id: "{{parsed_event.result.key_id | trim}}"
+          vmware.esxi.event.serial_number: "{{parsed_event.result.serial_number}}"
+          vmware.esxi.volume.name: "{{parsed_event.result.volume_name}}"
+          vmware.esxi.event.type: "{{parsed_event.result._event_type}}"
+          host.name: "{{parsed_event.result.server_name}}"
+          process.name: "{{parsed_event.result.process}}"
+          vmware.esxi.operation.id: "{{parsed_event.result.op_id}}"
+          vmware.esxi.log.category: "{{parsed_event.result.auth_category or parsed_event.result.log_category}}"
+
+      - set:
+          log.level: "{{parsed_event.result.log_lvl or parsed_event.result.network_category | lower }}"
+        filter: "{{parsed_event.result.log_lvl != None or parsed_event.result.network_category != None}}"
+
+      # It is necessary to postprocess the command line because it might contain `'` at the beginning and/or at the end
+      - set:
+          process.command_line: '{{ parsed_event.result.command.strip("''") }}'
+        filter: "{{parsed_event.result.command != None}}"
+
+      # We should check not only for pid but also for process_category because some logs have pid but we don't want to set it in output
+      - set:
+          process.pid: "{{parsed_event.result.pid}}"
+        filter: >
+          {{
+            parsed_event.result.pid != None and
+            parsed_event.result.process_category != None
+          }}
+
+      - set:
+          error.code: >
+            {%- set words=[] -%}
+            {%- for word in parsed_event.result.message.split() -%}
+              {%- if word==word|upper() -%}
+                {%- set _ = words.append(word)-%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{words|first}}
+        filter: "{{parsed_event.result.message != None and parsed_event.result.log_lvl == 'error' or parsed_event.result.network_category == 'error'}}"
+
+  set_event_reason:
+    actions:
+      # Output should contain reason information if we have a filename, key_id, serial_number or outcome OR
+      # we should have message field nonempty
+      - set:
+          event.reason: "{{parsed_event.result.reason}}"
+        filter: >
+          {{
+            parsed_event.result.key_id != None or
+            parsed_event.result.serial_number != None or
+            parsed_event.result.outcome != None
+          }}
+
+      - set:
+          event.reason: "{{parsed_event.result.file_action}}"
+        filter: "{{parsed_event.result.file_action != None}}"
+
+      - set:
+          event.reason: "{{parsed_event.result.message}}"
+        filter: "{{parsed_event.message != None}}"
+
+  set_event_info:
+    # Event type is mapped based on this specification https://www.elastic.co/guide/en/ecs/8.7/ecs-allowed-values-event-type.html
+    # Event category is mapped based on this specification https://www.elastic.co/guide/en/ecs/8.7/ecs-allowed-values-event-type.html
+    # Cannot use translate definition, because event category should be defined based on different conditions
+    actions:
+      - set:
+          event.category: '["authentication"]'
+          event.type: >
+            {%- if parsed_event.result.auth_action | lower in ["disconnected", "closed"] -%}
+            {{ ["end"] }}
+            {%- else: -%}
+            {{ ["info"] }}
+            {%- endif -%}
+        filter: "{{ parsed_event.result.auth_action != None or parsed_event.result.auth_category != None }}"
+
+      - set:
+          event.category: '["session"]'
+          event.type: >
+            {%- if parsed_event.result.session_action | lower in ["closed"]: -%}
+            {{ ["end"] }}
+            {%- elif parsed_event.result.session_action | lower in ["opened", "failed"]: -%}
+            {{ ["start"] }}
+            {%- elif parsed_event.result.session_action | lower in ["start", "end"]: -%}
+            {{ [parsed_event.result.session_action | lower] }}
+            {%- else: -%}
+            {{ ["info"] }}
+            {%- endif -%}
+        filter: "{{ parsed_event.result.session_action != None or parsed_event.result.session_category != None }}"
+
+      - set:
+          event.category: '["network"]'
+          event.type: >
+            {%- if parsed_event.result.network_action | lower in ["access", "allowed", "connection", "denied", "end", "protocol", "start"]: -%}
+            {{ [ parsed_event.result.network_action | lower ] }}
+            {%- else: -%}
+            {{ ["info"] }}
+            {%- endif -%}
+        filter: "{{ parsed_event.result.network_action != None or parsed_event.result.network_category != None }}"
+
+      - set:
+          event.category: '["configuration"]'
+          event.type: >
+            {%- if parsed_event.result.configuration_action | lower in ["accepted"]: -%}
+            {{ [ "change" ] }}
+            {%- elif parsed_event.result.configuration_action | lower in ["access", "change", "creation", "deletion"]: -%}
+            {{ [ parsed_event.result.configuration_action | lower ] }}
+            {%- else: -%}
+            {{ ["info"] }}
+            {%- endif -%}
+        filter: "{{ parsed_event.result.configuration_action != None or parsed_event.result.configuration_category != None }}"
+
+      - set:
+          event.category: '["file"]'
+          event.type: >
+            {%- if parsed_event.result.configuration_action | lower in ["unlocked"]: -%}
+            {{ [ "change" ] }}
+            {%- elif parsed_event.result.file_action | lower in ["change", "creation", "deletion"]: -%}
+            {{ [ parsed_event.result.file_action | lower ] }}
+            {%- else: -%}
+            {{ ["info"] }}
+            {%- endif -%}
+
+        filter: "{{ parsed_event.result.file_action != None or parsed_event.result.file_category != None }}"
+
+      # Default event type and category
+      - set:
+          event.category: '["process"]'
+          event.type: '["info"]'
+        filter: >
+          {{ 
+            parsed_event.result.auth_category  == None and
+            parsed_event.result.auth_action == None and
+            parsed_event.result.network_category == None and
+            parsed_event.result.network_action == None and
+            parsed_event.result.configuration_category == None and
+            parsed_event.result.configuration_action == None and
+            parsed_event.result.file_action == None and
+            parsed_event.result.file_category == None and
+            parsed_event.result.session_category == None and
+            parsed_event.result.session_action == None
+          }}
+
+      # SSHD events
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: "{{parsed_event.result.sshd_message == 'Invalid'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{ parsed_event.result.sshd_message == 'Disconnected from' }}"
+
+  set_event_outcome:
+    actions:
+      - set:
+          event.outcome: "{{parsed_event.result.outcome}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ parsed_event.result.session_action == 'failed' }}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{ parsed_event.result.sshd_message == 'Disconnected from' }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ parsed_event.result.sshd_message == 'Invalid' }}"

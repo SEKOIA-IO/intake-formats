@@ -1,0 +1,322 @@
+name: cef
+ignored_values: ["-"]
+pipeline:
+  - name: checkpoint
+    filter: "{{original.message.startswith('CEF') == True or original.message.startswith('0|') == True}}"
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: '{{ original.message.replace("CEF:0||Check Point", "CEF:0|Check Point") }}'
+
+  - name: checkpoint
+    filter: "{{original.message.startswith('syslog') == True}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        # 1. remove the syslog[] encapsulation
+        # 2. replace the ';' separator by a custom one so that we do not split on ';' in a value
+        # 3. replace double `::` by a single `:` for fields like `ike_ids::`
+        input_field: '{{ original.message.replace(''syslog[action'', ''action'').replace(''"; '', ''"CUSTOM_SEPARATOR'').replace(''"CUSTOM_SEPARATOR]'', ''"CUSTOM_SEPARATOR'').replace(''::'', '':'') }}'
+        value_sep: ":"
+        item_sep: "CUSTOM_SEPARATOR"
+
+  - name: checkpoint
+    filter: "{{original.message.startswith('syslog') == False
+      and original.message.startswith('CEF') == False
+      and original.message.startswith('0|') == False}}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - _
+          - date
+          - time
+          - interface
+          - hostname
+          - action
+          - act
+          - dpt
+          - spt
+          - src
+          - dst
+          - proto
+        delimiter: " "
+
+  - name: main_stage
+  - name: set_ip
+  - name: finalizer
+
+stages:
+  set_ip:
+    # dedicated stage to filter IPs value before setting fields
+    actions:
+      # destination
+      - set:
+          destination.ip: "{{checkpoint.message.dst}}"
+        filter: "{{checkpoint.message.dst | is_ipaddress}}"
+      - set:
+          destination.nat.ip: "{{checkpoint.message.xlatedst}}"
+        filter: "{{checkpoint.message.xlatedst | is_ipaddress}}"
+      - set:
+          destination.nat.ip: "{{checkpoint.message.destinationTranslatedAddress}}"
+        filter: "{{checkpoint.message.destinationTranslatedAddress | is_ipaddress}}"
+
+      # source
+      - set:
+          source.nat.ip: "{{checkpoint.message.xlatesrc}}"
+        filter: "{{checkpoint.message.xlatesrc | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{checkpoint.message.sourceTranslatedAddress}}"
+        filter: "{{checkpoint.message.sourceTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{checkpoint.message.src}}"
+        filter: "{{checkpoint.message.src | is_ipaddress}}"
+
+      # forwarded ip
+      - set:
+          network.forwarded_ip: "{{checkpoint.message.proxy_src_ip}}"
+        filter: "{{checkpoint.message.proxy_src_ip | is_ipaddress}}"
+
+  finalizer:
+    actions:
+      - set:
+          destination.size_in_char: "{{final.destination.domain | length}}"
+        filter: "{{final.destination.domain != null}}"
+      - set:
+          source.size_in_char: "{{final.source.domain | length}}"
+        filter: "{{final.source.domain != null }}"
+
+      - set:
+          action.target: network-traffic
+        filter: "{{final.network.transport != null  and (final.source | length > 0 or final.destination | length > 0)}}"
+
+      - set:
+          action.outcome: success
+        filter: "{{final.action.outcome == null  and final.action.name != null}}"
+
+      - translate:
+        dictionary:
+          "0": "inbound"
+          "1": "outbound"
+        mapping:
+          checkpoint.message.deviceDirection: network.direction
+        filter: "{{final.network.direction == null }}"
+
+  main_stage:
+    actions:
+      - set:
+          action.name: "{{checkpoint.message.act | lower  or checkpoint.message.action | lower }}"
+          action.outcome_reason: "{{checkpoint.message.msg}}"
+          action.properties.__policy_id_tag: "{{checkpoint.message.get('__policy_id_tag')}}"
+          action.properties.community: "{{checkpoint.message.community}}"
+          action.properties.destination_key_id: "{{checkpoint.message.dstkeyid}}"
+          action.properties.encryption_methods: "{{checkpoint.message.methods}}"
+          action.properties.encryption_scheme: "{{checkpoint.message.scheme}}"
+          action.properties.flags: "{{checkpoint.message.flags}}"
+          action.properties.icmp_code: "{{checkpoint.message.icmp_code}}"
+          action.properties.icmp_message: "{{checkpoint.message.icmp}}"
+          action.properties.icmp_type: "{{checkpoint.message.icmp_type}}"
+          action.properties.ike_ids: "{{checkpoint.message.ike_ids}}"
+          action.properties.ike_initiator_cookie: "{{checkpoint.message.cookiei}}"
+          action.properties.ike_mode: "{{checkpoint.message.ike}}"
+          action.properties.ike_responder_cookie: "{{checkpoint.message.cookier}}"
+          action.properties.loguid: "{{checkpoint.message.loguid}}"
+          action.properties.nat_addtnl_rulenum: "{{checkpoint.message.nat_addtnl_rulenum}}"
+          action.properties.nat_rulenum: "{{checkpoint.message.nat_rulenum}}"
+          action.properties.observer_type: "{{checkpoint.message.DeviceProduct}}"
+          action.properties.origin: "{{checkpoint.message.origin}}"
+          action.properties.origin_sic_name: "{{checkpoint.message.origin_sic_name}}"
+          action.properties.originsicname: "{{checkpoint.message.originsicname.replace('\\\\', '')}}"
+          action.properties.product: "{{checkpoint.message.product}}"
+          action.properties.reject_category: "{{checkpoint.message.reject_category}}"
+          action.properties.rule_name: "{{checkpoint.message.get('Rule Name')}}"
+          action.properties.signature: "{{checkpoint.message.Signature.replace(', ', ',').split(',')}}"
+          action.properties.source_key_id: "{{checkpoint.message.srckeyid}}"
+          action.properties.subproduct: "{{checkpoint.message.fw_subproduct}}"
+          action.properties.vpn_feature_name: "{{checkpoint.message.vpn_feature_name}}"
+          action.properties.vpn_peer_gateway: "{{checkpoint.message.peer_gateway}}"
+          destination.address: "{{checkpoint.message.dst}}"
+          destination.domain: "{{checkpoint.message.dhost}}"
+          destination.nat.port: "{{checkpoint.message.destinationTranslatedPort or checkpoint.message.xlatedport}}"
+          destination.port: "{{checkpoint.message.service or checkpoint.message.dpt}}"
+          destination.user.name: "{{checkpoint.message.duser}}"
+          event.code: "{{checkpoint.message.DeviceEventClassID or checkpoint.message.loguid}}"
+          event.message: "{{checkpoint.message.msg}}"
+          host.name: "{{checkpoint.message.hostname}}"
+          http.request.method: "{{checkpoint.message.requestMethod}}"
+          log.level: "{{checkpoint.message.cp_severity}}"
+          network.direction: "{{checkpoint.message.conn_direction | lower or checkpoint.message.ifdir | lower }}"
+          network.protocol: "{{checkpoint.message.app | lower}}"
+          network.transport: "{{checkpoint.message.proto | lower}}"
+          observer.egress.zone: "{{checkpoint.message.outzone}}"
+          observer.ingress.interface.name: "{{checkpoint.message.ifname}}"
+          observer.ingress.zone: "{{checkpoint.message.inzone}}"
+          rule.id: "{{checkpoint.message.rule}}"
+          rule.name: "{{checkpoint.message.rule_name}}"
+          rule.uuid: "{{checkpoint.message.rule_uid}}"
+          rule.version: "{{checkpoint.message.version}}"
+          service.id: "{{checkpoint.message.service_id}}"
+          source.address: "{{checkpoint.message.src}}"
+          source.domain: "{{checkpoint.message.shost}}"
+          source.nat.port: "{{checkpoint.message.sourceTranslatedPort or checkpoint.message.xlatesport}}"
+          source.port: "{{checkpoint.message.s_port or checkpoint.message.spt}}"
+          source.user.name: "{{checkpoint.message.suser.replace('\n', '')}}"
+          url.full: "{{checkpoint.message.request}}"
+          url.original: "{{checkpoint.message.request}}"
+          user_agent.original: "{{checkpoint.message.user_agent}}"
+          checkpoint.firewall.tcp_flags: "{{checkpoint.message.get('TCP Flags')}}"
+
+      - translate:
+        dictionary:
+          "0": "hopopt"
+          "1": "icmp"
+          "2": "igmp"
+          "3": "ggp"
+          "4": "ipv4"
+          "5": "st"
+          "6": "tcp"
+          "7": "cbt"
+          "8": "egp"
+          "9": "igp"
+          "10": "bbn-rcc-mon"
+          "11": "nvp-ii"
+          "12": "pup"
+          "13": "argus"
+          "14": "emcon"
+          "15": "xnet"
+          "16": "chaos"
+          "17": "udp"
+          "18": "mux"
+          "19": "dcn-meas"
+          "20": "hmp"
+          "21": "prm"
+          "22": "xns-idp"
+          "23": "trunk-1"
+          "24": "trunk-2"
+          "25": "leaf-1"
+          "26": "leaf-2"
+          "27": "rdp"
+          "28": "irtp"
+          "29": "iso-tp4"
+          "30": "netblt"
+          "31": "mfe-nsp"
+          "32": "merit-inp"
+          "33": "dccp"
+          "34": "3pc"
+          "35": "idpr"
+          "36": "xtp"
+          "37": "ddp"
+          "38": "idpr-cmtp"
+          "39": "tp++"
+          "40": "il"
+          "41": "ipv6"
+          "42": "sdrp"
+          "43": "ipv6-route"
+          "44": "ipv6-frag"
+          "45": "idrp"
+          "46": "rsvp"
+          "47": "gre"
+          "48": "dsr"
+          "49": "bna"
+          "50": "esp"
+          "51": "ah"
+          "52": "i-nlsp"
+          "53": "swipe"
+          "54": "narp"
+          "55": "mobile"
+          "56": "tlsp"
+          "57": "skip"
+          "58": "ipv6-icmp"
+          "59": "ipv6-nonxt"
+          "60": "ipv6-opts"
+          "61": "any host internal protocol"
+          "62": "cftp"
+          "63": "any local network"
+          "64": "sat-expak"
+          "65": "kryptolan"
+          "66": "rvd"
+          "67": "ippc"
+          "68": "any distributed file system"
+          "69": "sat-mon"
+          "70": "visa"
+          "71": "ipcv"
+          "72": "cpnx"
+          "73": "cphb"
+          "74": "wsn"
+          "75": "pvp"
+          "76": "br-sat-mon"
+          "77": "sun-nd"
+          "78": "wb-mon"
+          "79": "wb-expak"
+          "80": "iso-ip"
+          "81": "vmtp"
+          "82": "secure-vmtp"
+          "83": "vines"
+          "84": "ttp"
+          "85": "nsfnet-igp"
+          "86": "dgp"
+          "87": "tcf"
+          "88": "eigrp"
+          "89": "ospfigp"
+          "90": "sprite-rpc"
+          "91": "larp"
+          "92": "mtp"
+          "93": "ax.25"
+          "94": "ipip"
+          "95": "micp"
+          "96": "scc-sp"
+          "97": "etherip"
+          "98": "encap"
+          "99": "any private encryption scheme"
+          "100": "gmtp"
+          "101": "ifmp"
+          "102": "pnni"
+          "103": "pim"
+          "104": "aris"
+          "105": "scps"
+          "106": "qnx"
+          "107": "a/n"
+          "108": "ipcomp"
+          "109": "snp"
+          "110": "compaq-peer"
+          "111": "ipx-in-ip"
+          "112": "vrrp"
+          "113": "pgm"
+          "114": "any 0-hop protocol"
+          "115": "l2tp"
+          "116": "ddx"
+          "117": "iatp"
+          "118": "stp"
+          "119": "srp"
+          "120": "uti"
+          "121": "smp"
+          "122": "sm"
+          "123": "ptp"
+          "124": "isis over ipv4"
+          "125": "fire"
+          "126": "crtp"
+          "127": "crudp"
+          "128": "sscopmce"
+          "129": "iplt"
+          "130": "sps"
+          "131": "pipe"
+          "132": "sctp"
+          "133": "fc"
+          "134": "rsvp-e2e-ignore"
+          "135": "mobility header"
+          "136": "udplite"
+          "137": "mpls-in-ip"
+          "138": "manet"
+          "139": "hip"
+          "140": "shim6"
+          "141": "wesp"
+          "142": "rohc"
+          "253": "unassigned"
+          "254": "use for experimentation and testing"
+          "255": "reserved"
+        mapping:
+          checkpoint.message.proto: network.transport

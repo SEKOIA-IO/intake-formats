@@ -1,0 +1,111 @@
+name: duo-security
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.message.isotimestamp }}"
+        output_field: date
+
+  - name: parse_description
+    filter: "{{ parsed_event.message.description and parsed_event.message.description != null }}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ parsed_event.message.description }}"
+        output_field: description
+
+  - name: set_timestamp
+  - name: set_event_data
+  - name: parse_auth_log
+  - name: parse_admin_log
+  - name: parse_telephony_log
+  - name: parse_offline_log
+
+stages:
+  set_timestamp:
+    actions:
+      - set:
+          "@timestamp": "{{ parse_date.date }}"
+
+  set_event_data:
+    actions:
+      - set:
+          observer.vendor: "Duo"
+          observer.product: "Duo Security"
+
+  parse_auth_log:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+          event.dataset: "auth_log"
+          observer.hostname: "{{ parsed_event.message.host }}"
+
+          user.name: "{{ parsed_event.message.user.name }}"
+          user.email: "{{ parsed_event.message.email }}"
+          user.id: "{{ parsed_event.message.user.key }}"
+          user.roles: "{{ parsed_event.message.user.groups }}"
+          source.ip: "{{ parsed_event.message.access_device.ip }}"
+          host.name: "{{ parsed_event.message.access_device.hostname }}"
+          source.geo.city_name: "{{ parsed_event.message.access_device.location.city }}"
+          source.geo.country_name: "{{ parsed_event.message.access_device.location.country }}"
+          source.geo.region_name: "{{ parsed_event.message.access_device.location.state }}"
+          user_agent.name: "{{ parsed_event.message.access_device.browser }}"
+          user_agent.version: "{{ parsed_event.message.access_device.browser_version }}"
+          host.os.name: "{{ parsed_event.message.access_device.os }}"
+          host.os.version: "{{ parsed_event.message.access_device.os_version }}"
+
+        filter: "{{ parsed_event.message.eventtype == 'auth_log' }}"
+
+  parse_admin_log:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["admin"]
+          event.dataset: "admin_log"
+          event.reason: "{{ parse_description.description.error }}"
+          observer.hostname: "{{ parsed_event.message.host }}"
+
+          source.ip: "{{ parse_description.description.ip_address }}"
+          user.email: "{{ parse_description.description.email }}"
+          user.name: "{{ parsed_event.message.username }}"
+          duo.security.object: "{{ parsed_event.message.object }}"
+          duo.security.telephony.phone_number: "{{ parse_description.description.device }}"
+          event.action: "{{ parsed_event.message.action }}"
+        filter: "{{ parsed_event.message.eventtype == 'admin_log' }}"
+
+  parse_telephony_log:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+          event.dataset: "telephony_log"
+
+          event.reason: "{{ parsed_event.message.context }}"
+          duo.security.telephony.type: "{{ parsed_event.message.type }}"
+          duo.security.telephony.phone_number: "{{ parsed_event.message.phone }}"
+        filter: "{{ parsed_event.message.eventtype == 'telephony_log' }}"
+
+  parse_offline_log:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+          event.dataset: "offline_log"
+
+          event.action: "{{ parsed_event.message.action }}"
+          duo.security.object: "{{ parsed_event.message.object }}"
+          user.name: "{{ parsed_event.message.username }}"
+
+          user_agent.original: "{{ parse_description.description.user_agent }}"
+          host.name: "{{ parse_description.description.hostname  }}"
+
+        filter: "{{ parsed_event.message.eventtype == 'offline_log' }}"

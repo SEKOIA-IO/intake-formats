@@ -1,0 +1,120 @@
+name: thinkst_canary
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_incident_field
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.incident_id}}"
+        output_field: message
+        pattern: "(incident:%{WORD:event_type}:%{DATA:token_id}:%{IP:ip_address}:%{NUMBER:timestamp})"
+
+  - name: parsed_dn
+    filter: "{{parsed_event.get('DN') != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.DN}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ","
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+        filter: "{{parsed_event.message.event_type == 'incident'}}"
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["denied"]
+
+          observer.vendor: "Thinkst Canary"
+          observer.product: "Thinkst Canary"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          event.start: "{{parsed_event.message.created | to_rfc3339}}"
+
+          event.reason: "{{parsed_event.message.summary or parsed_event.message.description}}"
+          event.dataset: "{{parsed_event.message.type}}"
+          event.code: "{{parsed_event.message.logtype}}"
+          event.action: "{{parsed_event.message.cmd or parsed_event.message.AUDITACTION}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.dst_host}}"
+        filter: "{{parsed_event.message.dst_host | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.dst_host_public_ip}}"
+        filter: "{{parsed_event.message.dst_host_public_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src_host or parsed_incident_field.message.ip_address}}"
+        filter: "{{parsed_event.message.src_host | is_ipaddress or parsed_incident_field.message.ip_address | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parsed_event.message.HOST or parsed_event.message.hostname or parsed_event.message.HOSTNAME}}"
+          destination.port: "{{parsed_event.message.dst_port}}"
+
+          source.domain: "{{parsed_event.message.src_host_reverse}}"
+          source.port: "{{parsed_event.message.src_port}}"
+
+      - set:
+          user_agent.original: "{{parsed_event.message.USERAGENT or parsed_event.message.get('headers', {}).get('User-Agent')}}"
+          source.geo.city_name: "{{parsed_event.message.geoip.city}}"
+          source.geo.continent_code: "{{parsed_event.message.geoip.continent_code}}"
+          source.geo.country_iso_code: "{{parsed_event.message.geoip.city}}"
+          source.geo.timezone: "{{parsed_event.message.geoip.country_code}}"
+
+      - set:
+          user.name: "{{parsed_event.message.USERNAME or parsed_event.message.user or parsed_event.message.USER}}"
+
+      - set:
+          url.path: "{{parsed_event.message.PATH}}"
+          url.original: "{{parsed_event.message.URL}}"
+          http.request.method: "{{parsed_event.message.METHOD}}"
+          http.response.status_code: "{{parsed_event.message.RESPONSE}}"
+
+      - set:
+          tls.established: "true"
+        filter: "{{parsed_event.message.CHANNEL == 'TLS'}}"
+
+      - set:
+          user.name: "{{parsed_dn.message.uid}}"
+
+          # DC key is repeated (e.g. `DC=example,DC=org`), so we have to extract and concatenate values manually
+          user.domain: >
+            {%- set dc_start = parsed_event.message.DN.index("dc=") + 3 -%}
+            {%- set user_domain = parsed_event.message.DN[dc_start:].replace(",dc=", ".") -%}
+            {{ user_domain }}
+        filter: "{{parsed_event.message.get('DN') != None }}"
+
+      - set:
+          process.name: "{{parsed_event.message.APPNAME}}"
+          file.name: "{{parsed_event.message.FILENAME}}"
+          file.size: "{{parsed_event.message.SIZE}}"
+
+      - set:
+          action.properties.ShareName: "{{parsed_event.message.SHARENAME}}"
+          action.properties.Domain: "{{parsed_event.message.DOMAIN}}"
+          action.properties.UserName: "{{parsed_event.message.USER}}"
+
+          thinkst_canary.smbarch: "{{parsed_event.message.SMBARCH}}"
+          thinkst_canary.smbver: "{{parsed_event.message.SMBVER}}"
+          thinkst_canary.db: "{{parsed_event.message.db}}"
+          thinkst_canary.repo: "{{parsed_event.message.REPO}}"
+          thinkst_canary.ports: "{{parsed_event.message.ports}}"
+          thinkst_canary.canary_token: "{{parsed_event.message.canarytoken}}"
+          thinkst_canary.incident_id: "{{parsed_event.message.incident_id}}"

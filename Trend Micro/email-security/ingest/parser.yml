@@ -1,0 +1,37 @@
+name: trend-micro-email-security
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+
+  - name: set_basic_fields
+  - name: set_additional_fields
+
+stages:
+  set_basic_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parse_event.message.timestamp }}"
+
+          event.category: ["email"]
+          event.type: ["info"]
+
+  set_additional_fields:
+    actions:
+      - set:
+          event.action: "{{ parse_event.message.action }}"
+          email.local_id: "{{ parse_event.message.mailID }}"
+          email.sender.address: "{{ parse_event.message.sender }}"
+          email.subject: "{{ parse_event.message.subject }}"
+          email.from.address: "{{ parse_event.message.headerFrom }}"
+          email.to.address: "{{ parse_event.message.headerTo }}"
+          email.message_id: "{{ parse_event.message.messageID.strip('<').strip('>') }}"
+          email.attachments: >-
+            {%- if parse_event.message.attachments -%}
+            [
+              {%- for item in parse_event.message.attachments -%}
+                {"file": {"name": "{{item.fileName}}", "hash": "{{item.sha256}}" }}
+              {%- endfor -%}
+            ]
+            {%- endif -%}
+          trendmicro.email.embedded_urls: "{{ parse_event.message.embeddedUrls }}"

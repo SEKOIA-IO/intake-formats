@@ -9,11 +9,12 @@ pipeline:
     external:
       name: grok.match
       properties:
-        input_field: '{{json_event.message.messageID}}'
+        raise_errors: false
+        input_field: "{{json_event.message.messageID}}"
         output_field: message
-        pattern: '<%{MESSAGE_ID}>|%{MESSAGE_ID}'
+        pattern: "<%{MESSAGE_ID}>|%{MESSAGE_ID}"
         custom_patterns:
-          MESSAGE_ID: '%{GREEDYDATA:id}'
+          MESSAGE_ID: "%{GREEDYDATA:id}"
   - name: set_common_fields
   - name: set_fields_for_messages
     filter: '{{json_event.message.type == "message"}}'
@@ -24,37 +25,40 @@ stages:
   set_common_fields:
     actions:
       - set:
-          email.local_id: '{{json_event.message.GUID}}'
-          email.message_id: '{{parse_message_id.message.id}}'
-          source.ip: '{{json_event.message.senderIP}}'
-          event.action: '{{json_event.message.status | lower}}'
-          event.dataset: '{{json_event.message.type | lower}}'
-          event.kind: 'event'
-          observer.vendor: 'ProofPoint'
-          observer.product: 'Targeted Attack Protection'
+          source.ip: "{{json_event.message.senderIP}}"
+        filter: "{{json_event.message.senderIP| is_ipaddress}}"
+      - set:
+          email.local_id: "{{json_event.message.GUID}}"
+          email.message_id: "{{parse_message_id.message.id}}"
+
+          event.action: "{{json_event.message.status | lower}}"
+          event.dataset: "{{json_event.message.type | lower}}"
+          observer.vendor: "ProofPoint"
+          observer.product: "Targeted Attack Protection"
       - set:
           email.sender.address: '["{{json_event.message.sender}}"]'
         filter: '{{json_event.message.get("sender") != None}}'
   set_fields_for_messages:
     actions:
       - set:
-          '@timestamp': '{{json_event.message.messageTime}}'
+          "@timestamp": "{{json_event.message.messageTime}}"
           event.type: ["info"]
           event.category: ["email"]
-          email.x_mailer: '{{json_event.message.xmailer}}'
-          email.subject: '{{json_event.message.subject}}'
-          rule.name: '{{json_event.message.quarantineRule}}'
+          email.x_mailer: "{{json_event.message.xmailer}}"
+          email.subject: "{{json_event.message.subject}}"
+          rule.name: "{{json_event.message.quarantineRule}}"
+          proofpoint.tap.completely_rewritten: "{{json_event.message.completelyRewritten}}"
       - set:
-          email.to.address: '{{json_event.message.recipient}}'
+          email.to.address: "{{json_event.message.recipient}}"
         filter: '{{json_event.message.get("recipient", []) != []}}'
       - set:
-          email.reply_to.address: '{{json_event.message.replyToAddress}}'
+          email.reply_to.address: "{{json_event.message.replyToAddress}}"
         filter: '{{json_event.message.get("replyToAddress", []) != []}}'
       - set:
-          email.from.address: '{{json_event.message.fromAddress}}'
+          email.from.address: "{{json_event.message.fromAddress}}"
         filter: '{{json_event.message.get("fromAddress", []) != []}}'
       - set:
-          email.cc.address: '{{json_event.message.ccAddresses}}'
+          email.cc.address: "{{json_event.message.ccAddresses}}"
         filter: '{{json_event.message.get("ccAddresses", []) != []}}'
       - set:
           email.attachments: >
@@ -74,6 +78,13 @@ stages:
             ]
         filter: '{{json_event.message.get("messageParts", []) != []}}'
       - set:
+          url.original: >
+            {%- for threat in json_event.message.threatsInfoMap -%}
+              {%- if threat.get("threatType", "").lower() == "url" -%}
+                {{ threat.threat }}
+              {%- endif -%}
+            {%- endfor -%}
+
           threat.enrichments: >
             [
               {% for threat in json_event.message.threatsInfoMap %}
@@ -91,7 +102,7 @@ stages:
                   {% elif threat.get("threatType", "").lower() == "url" %}
                   "type": "domain-name",
                   "url": {
-                    "domain": "{{threat.threat}}"
+                    "original": "{{threat.threat}}"
                   },
                   {% elif threat.get("threatType", "").lower() == "message" %}
                   "type": "email-addr",
@@ -109,22 +120,22 @@ stages:
             ]
         filter: '{{json_event.message.get("threatsInfoMap", []) != []}}'
       - set:
-          proofpoint.tap.modules: '{{json_event.message.modulesRun}}'
-          proofpoint.tap.cluster.id: '{{json_event.message.clusterId}}'
-          proofpoint.tap.threat.scores.spam: '{{json_event.message.spamScore}}'
-          proofpoint.tap.threat.scores.impostor: '{{json_event.message.impostorScore}}'
-          proofpoint.tap.threat.scores.malware: '{{json_event.message.malwareScore}}'
-          proofpoint.tap.threat.scores.phish: '{{json_event.message.phishScore}}'
+          proofpoint.tap.modules: "{{json_event.message.modulesRun}}"
+          proofpoint.tap.cluster.id: "{{json_event.message.clusterId}}"
+          proofpoint.tap.threat.scores.spam: "{{json_event.message.spamScore}}"
+          proofpoint.tap.threat.scores.impostor: "{{json_event.message.impostorScore}}"
+          proofpoint.tap.threat.scores.malware: "{{json_event.message.malwareScore}}"
+          proofpoint.tap.threat.scores.phish: "{{json_event.message.phishScore}}"
       - set:
-          proofpoint.tap.email.to.address: '{{json_event.message.toAddresses}}'
+          proofpoint.tap.email.to.address: "{{json_event.message.toAddresses}}"
         filter: '{{json_event.message.get("toAddresses", []) != []}}'
   set_fields_for_clicks:
     actions:
       - set:
-          '@timestamp': '{{json_event.message.clickTime}}'
+          "@timestamp": "{{json_event.message.clickTime}}"
           event.category: ["network"]
-          user_agent.original: '{{json_event.message.userAgent}}'
-          url.original: '{{json_event.message.url}}'
+          user_agent.original: "{{json_event.message.userAgent}}"
+          url.original: "{{json_event.message.url}}"
           threat.enrichments: >
             [
               {

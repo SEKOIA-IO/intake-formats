@@ -1,0 +1,408 @@
+name: google-report
+ignored_values: ["UNKNOWN", "-"]
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.id.time}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+  - name: set_drive_fields
+    filter: '{{ json_event.message.id.applicationName == "drive"}}'
+  - name: set_token_fields
+    filter: '{{ json_event.message.id.applicationName == "token"}}'
+  - name: set_meet_fields
+    filter: '{{ json_event.message.id.applicationName == "meet"}}'
+  - name: set_groups_enterprise_fields
+    filter: '{{ json_event.message.id.applicationName == "groups_enterprise"}}'
+  - name: set_chat_fields
+    filter: '{{ json_event.message.id.applicationName == "chat"}}'
+  - name: set_calendar_fields
+    filter: '{{ json_event.message.id.applicationName == "calendar"}}'
+  - name: set_admin_fields
+    filter: '{{ json_event.message.id.applicationName == "admin"}}'
+  - name: set_vault_fields
+    filter: '{{ json_event.message.id.applicationName == "vault"}}'
+  - name: set_context_aware_fields
+    filter: '{{ json_event.message.id.applicationName == "context_aware_access"}}'
+  - name: set_rules_fields
+    filter: '{{ json_event.message.id.applicationName == "rules"}}'
+  - name: set_saml_fields
+    filter: '{{ json_event.message.id.applicationName == "saml"}}'
+  - name: set_chrome_fields
+    filter: '{{ json_event.message.id.applicationName == "chrome"}}'
+  - name: set_parameters_fields
+    filter: '{{ json_event.message.events[0].name == "SUSPEND_USER"}}'
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.dataset: "{{json_event.message.kind}}"
+          cloud.account.id: "{{json_event.message.id.customerId}}"
+          network.application: "{{json_event.message.id.applicationName}}"
+          google.report.actor.email: "{{json_event.message.actor.email}}"
+          # Keep for now as it is used in detection rules
+
+      - set:
+          user.id: "{{json_event.message.actor.profileId}}"
+        filter: '{{ json_event.message.actor.profileId != "105250506097979753968"}}'
+        # The number 105250506097979753968 which acts as a placeholder ID. https://developers.google.com/admin-sdk/reports/reference/rest/v1/activities/list#Activity
+
+      - set:
+          user.email: "{{json_event.message.actor.email}}"
+          user.name: "{{ json_event.message.actor.email.split('@')[0] }}"
+          user.domain: "{{ json_event.message.actor.email.split('@')[1] }}"
+        filter: '{{ "@" in json_event.message.actor.email }}'
+
+      - set:
+          source.ip: "{{json_event.message.ipAddress}}"
+        filter: "{{json_event.message.ipAddress | is_ipaddress}}"
+
+      - set:
+          event.action: "{{json_event.message.events[0].name}}"
+        filter: "{{json_event.message.events|length == 1}}"
+
+      - set:
+          user.target.email: "{{(json_event.message.events[0].parameters | selectattr('name', '==', 'USER_EMAIL') | first).value}}"
+        filter: "{{json_event.message.events|length > 0}}"
+
+      - set:
+          event.action: >
+            {% set actions = [] %}
+            {% for event in json_event.message.events %}
+            {% set actions = actions.append(event.name) %}
+            {% endfor %}
+            {{actions}}
+        filter: "{{ json_event.message.events|length > 1}}"
+
+  set_drive_fields:
+    actions:
+      - set:
+          event.category: ["file"]
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("change" in event.type) or ("add" in event.name) or (event.name in ["edit", "rename", "update"]) -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+                {%- if event.type == "access" -%}
+                    {% set _ = types.append("access") %}
+                {%- endif -%}
+                {%- if event.name == "delete" -%}
+                    {% set _ = types.append("deletion") %}
+                {%- endif -%}
+                {%- if event.name == "create" -%}
+                    {% set _ = types.append("creation") %}
+                {%- endif -%}
+                {%- if event.name == "authorize" -%}
+                    {% set _ = types.append("allowed") %}
+                    {% set _ = types.append("access") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
+
+          # Since file information exists in all events, we extract it from the initial one.
+          file.gid: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner_team_drive_id" %}{{param.value}}{% endif %}{% endfor %}'
+          file.owner: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "owner" %}{{param.value}}{% endif %}{% endfor %}'
+          file.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_type" %}{{param.value}}{% endif %}{% endfor %}'
+          file.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "doc_title" %}{{param.value}}{% endif %}{% endfor %}'
+
+          # These fields may appear in either the initial event or the nth event.
+          google.report.parameters.visibility: >
+            {%- set visibilities = [] -%}
+            {%- for event in json_event.message.events -%}
+            {%- for param in event.parameters -%}
+            {%- if param.name == "visibility"-%}
+            {%- set visibilities = visibilities.append(param.value) -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endfor -%}
+            {%- set visibilities = visibilities|unique|list -%}
+            {%- if visibilities|length == 0 or visibilities|length == 1 -%}
+            {{visibilities[0]}}
+            {%- else -%}
+            {{visibilities}}
+            {%- endif -%}
+          user.target.email: >
+            {%- set mails = [] -%}
+            {%- for event in json_event.message.events -%}
+            {%- for param in event.parameters -%}
+            {%- if param.name == "target_user" -%}
+            {%- set mails = mails.append(param.value) -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endfor -%}
+            {%- set mails = mails|unique|list -%}
+            {%- if mails|length == 0 or mails|length == 1 -%}
+            {{mails[0]}}
+            {%- else -%}
+            {{mails}}
+            {%- endif -%}
+
+  set_token_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["access", "connection"]
+
+          client.user.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "client_id" %}{{param.value}}{% endif %}{% endfor %}'
+
+          google.report.token.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "client_type" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.token.app_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "app_name" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_meet_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+          event.type: ["connection"]
+
+          client.geo.country_iso_code: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "location_country" %}{{param.value}}{% endif %}{% endfor %}'
+          client.geo.region_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "location_region" %}{{param.value}}{% endif %}{% endfor %}'
+
+          network.transport: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "network_transport_protocol" %}{{param.value}}{% endif %}{% endfor %}'
+
+          google.report.meet.code: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "meeting_code" %}{{param.value}}{% endif %}{% endfor %}'
+          user.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "organizer_email" %}{{param.value}}{% endif %}{% endfor %}'
+          source.ip: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "ip_address" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_groups_enterprise_fields:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["admin"]
+          user.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "member_id" %}{{param.value}}{% endif %}{% endfor %}'
+          user.group.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "group_id" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_chat_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+          event.type: ["connection"]
+
+          google.report.chat.room.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "room_name" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.chat.message.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "message_id" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_calendar_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("change" in event.type) or ("add" in event.name) or (event.name in ["edit", "rename", "update"]) -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+                {%- if "delete" in event.name -%}
+                    {% set _ = types.append("deletion") %}
+                {%- endif -%}
+                {%- if "create" in event.name -%}
+                    {% set _ = types.append("creation") %}
+                {%- endif -%}
+                {%- if event.type == "notification" -%}
+                    {% set _ = types.append("info") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
+
+          destination.user.email: >
+            {%- set mails = [] -%}
+            {%- for event in json_event.message.events -%}
+            {%- for param in event.parameters -%}
+            {%- if param.name == "recipient_email" or param.name == "event_guest" -%}
+            {%- set mails = mails.append(param.value) -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endfor -%}
+            {%- set mails = mails|unique|list -%}
+            {{mails[0]}}
+
+  set_admin_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("change" in event.name|lower) -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+                {%- if "delete" in event.name|lower -%}
+                    {% set _ = types.append("deletion") %}
+                {%- endif -%}
+                {%- if "create" in event.name|lower -%}
+                    {% set _ = types.append("creation") %}
+                {%- endif -%}
+                {%- if "authentication" in event.name|lower -%}
+                    {% set _ = types.append("access") %}
+                {%- endif -%}
+                {%- if "alert" in event.name|lower -%}
+                    {% set _ = types.append("info") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
+
+  set_parameters_fields:
+    actions:
+      - set:
+          event.type: ["change"]
+          google.report.parameters.name: "{{json_event.message.events[0].parameters[0].name}}"
+          google.report.parameters.value: "{{json_event.message.events[0].parameters[0].value}}"
+
+  set_vault_fields:
+    actions:
+      - set:
+          event.type: >
+            {% set types = [] %}
+            {% for event in json_event.message.events %}
+                {%- if ("delete" in event.name) or ("remove" in event.name) -%}
+                    {% set _ = types.append("deletion") %}
+                {%- elif ("create" in event.name) -%}
+                    {% set _ = types.append("creation") %}
+                {%- elif ("view" in event.name) -%}
+                    {% set _ = types.append("access") %}
+                {%- else -%}
+                    {% set _ = types.append("change") %}
+                {%- endif -%}
+            {% endfor %}
+            {{ types|unique|list }}
+
+  set_context_aware_fields:
+    actions:
+      - set:
+          event.type: ["denied"]
+          device.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "CAA_DEVICE_ID" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.access.application: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "CAA_APPLICATION" %}{{param.value}}{% endif %}{% endfor %}'
+
+  set_rules_fields:
+    actions:
+      - set:
+          google.report.rule.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "rule_name" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.rule.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "rule_type" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.rule.data_source: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "data_source" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.rule.scan_type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "scan_type" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.rule.severity: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "severity" %}{{param.value}}{% endif %}{% endfor %}'
+
+      - set:
+          event.type: ["info"]
+        filter: '{{ json_event.message.events[0].name in ["action_complete", "label_applied", "rule_trigger", "rule_match", "content_matched"]}}'
+
+      - set:
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.events[0].name == "label_removed"}}'
+
+      - set:
+          event.type: ["change"]
+        filter: '{{ json_event.message.events[0].name == "label_field_value_changed"}}'
+
+  set_saml_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          device.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "device_id" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.saml.status_code: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "saml_status_code" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.saml.initiator: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "initiated_by" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.saml.application_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "application_name" %}{{param.value}}{% endif %}{% endfor %}'
+
+      - set:
+          event.type: ["allowed"]
+        filter: '{{ json_event.message.events[0].name == "login_success"}}'
+
+      - set:
+          event.type: ["denied"]
+          event.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "failure_type" %}{{param.value}}{% endif %}{% endfor %}'
+        filter: '{{ json_event.message.events[0].name == "login_failure"}}'
+
+  set_chrome_fields:
+    actions:
+      - set:
+          organization.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "ORG_UNIT_NAME" %}{{param.value}}{% endif %}{% endfor %}'
+          event.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "EVENT_REASON" %}{{param.value}}{% endif %}{% endfor %}'
+          device.model.identifier: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PRODUCT_ID" %}{{param.value}}{% endif %}{% endfor %}'
+          host.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_NAME" %}{{param.value}}{% endif %}{% endfor %}'
+          device.model.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PRODUCT_NAME" %}{{param.value}}{% endif %}{% endfor %}'
+          device.manufacturer: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "VENDOR_NAME" %}{{param.value}}{% endif %}{% endfor %}'
+          host.os.full: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_PLATFORM" %}{{param.value}}{% endif %}{% endfor %}'
+          device.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DIRECTORY_DEVICE_ID" %}{{param.value}}{% endif %}{% endfor %}'
+          host.os.version: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "CURRENT_OS_VERSION" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.host.os.old_version: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PREVIOUS_OS_VERSION" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.boot_mode.new: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "NEW_BOOT_MODE" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.boot_mode.old: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PREVIOUS_BOOT_MODE" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.session.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "SESSION_ID" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.login.failure.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "LOGIN_FAILURE_REASON" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.remove.user.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "REMOVE_USER_REASON" %}{{param.value}}{% endif %}{% endfor %}'
+          user.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_USER" and "@" in param.value%}{{param.value}}{% endif %}{% endfor %}'
+          user.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_USER" and "@" not in param.value%}{{param.value}}{% endif %}{% endfor %}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGIN_EVENT", "CHROMEOS_AFFILIATED_LOGIN"] }}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_LOGIN_FAILURE_EVENT"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGOUT_EVENT", "CHROMEOS_AFFILIATED_LOCK_SUCCESS", "CHROMEOS_AFFILIATED_LOGOUT"] }}'
+
+      - set:
+          event.category: ["file"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.events[0].name == "CHROMEOS_PERIPHERAL_STATUS_UPDATED"}}'
+
+      - set:
+          event.category: ["file"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.events[0].name == "CHROMEOS_PERIPHERAL_ADDED"}}'
+
+      - set:
+          event.category: ["file"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.events[0].name == "CHROMEOS_PERIPHERAL_REMOVED"}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.events[0].name in ["DEVICE_BOOT_STATE_CHANGE", "CHROMEOS_UPDATE_SUCCESS", "CHROMEOS_POWERWASH_INITIATED"]}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_REMOVE_USER"}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["start"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_HOST_STARTED"}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["end"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_HOST_ENDED"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_CLIENT_DISCONNECTED"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_CLIENT_CONNECTED"}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_ADD_USER"}}'

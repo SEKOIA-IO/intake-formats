@@ -1,0 +1,565 @@
+name: Postfix
+ignored_values: ["-"]
+pipeline:
+  - name: event
+    external:
+      name: grok.case_match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern_key: "{{original.get('log', {}).get('syslog', {}).get('appname') or '-'}}"
+        patterns:
+          "postfix/smtp": "%{POSTFIX_SMTP}"
+          "postfix/smtpd": "%{CASE_POSTFIX_SMTPD}"
+          "postfix/cleanup": "%{CASE_POSTFIX_CLEANUP}"
+          "postfix/scache": "%{POSTFIX_SCACHE}"
+          "policyd-spf": "%{POSTFIX_POLCY_SPF}"
+          "postfix/qmgr": "%{POSTFIX_QMGR}"
+          "postfix-nospam/smtpd": "%{POSTFIX_SMTPD}"
+          "postfix-nospam/cleanup": "%{CASE_POSTFIX_CLEANUP}"
+          "postfix-nospam/smtp": "%{POSTFIX_SMTP}"
+          "postfix-nospam/qmgr": "%{POSTFIX_QMGR}"
+          "postfix/pipe": "%{CASE_POSTFIX_LOCAL}"
+          "spamd": "%{SPAMD}"
+          "postgrey": "%{POSTFIX_POSTGREY}"
+          "postfix/local": "%{CASE_POSTFIX_LOCAL}"
+          "postfix/error": "%{POSTFIX_DISCARD}"
+          "postfix/anvil": "%{POSTFIX_ANVIL}"
+          "postfix/pickup": "%{POSTFIX_PICKUP}"
+          "postfix": "%{POSTFIX}"
+          "-": "%{POSTFIX_POSTGREY}|%{POSTFIX}|%{SPAMD}|%{POSTFIX_POLCY_SPF}|%{POSTFIX_CLEANUP}|%{POSTFIX_QMGR}|%{POSTFIX_SMTPD}"
+
+        custom_patterns:
+          CASE_POSTFIX_LOCAL: "%{POSTFIX_SMTP_RELAY}|%{POSTFIX_KEYVALUE}|%{POSTFIX_WARNING}"
+          CASE_POSTFIX_CLEANUP: "%{POSTFIX_CLEANUP_MILTER}|%{POSTFIX_WARNING}|%{POSTFIX_KEYVALUE}|%{POSTFIX_REPLACE_HEADER}"
+          CASE_POSTFIX_SMTPD: "%{POSTFIX_SMTPD}|%{POSTFIX_WARNING}"
+
+          POSTFIX: "%{POSTFIX_START}|%{POSTFIX_NOQUEUE}|%{POSTFIX_TLS}|%{POSTFIX_SMTP}|%{POSTFIX_PIPE}|%{POSTFIX_POSTSCREEN}|%{POSTFIX_DNSBLOG}|%{POSTFIX_ANVIL}|%{POSTFIX_DISCARD}|%{POSTFIX_PICKUP}|%{POSTFIX_TLSPROXY}|%{POSTFIX_MASTER}|%{POSTFIX_BOUNCE}|%{POSTFIX_SCACHE}|%{POSTFIX_ERROR}|%{POSTFIX_POSTSUPER}|%{POSTFIX_PASS}|%{POSTFIX_PROXY}"
+          POSTFIX_PICKUP: "%{POSTFIX_KEYVALUE}"
+
+          "POSTFIX_START": "Starting"
+          EMAILLOCALPART: "[a-zA-Z0-9_.+-=:]+"
+          GREEDYDATA_NO_COLON: "[^:]*"
+          GREEDYDATA_NO_COMMA: "[^,]*"
+          GREEDYDATA_NO_SEMICOLON: "[^;]*"
+          GREEDYDATA_NO_TREMMA: '[^\"]*'
+          POSTFIX_TIME_UNIT: "%{NUMBER}[smhd]"
+          STATUS_WORD: '[\w-]*'
+          POSTFIX_DESTINATION_INFO: '%{HOSTNAME:destination_domain}?(\[%{IP:destination_address}\]|\<\>)?(:%{INT:destination_port})?'
+          POSTFIX_QUEUEID: "([0-9A-F]{6,}|[0-9a-zA-Z]{12,})"
+          POSTFIX_KEYVALUE_DATA: '([\w-]+=[^;]*)'
+          POSTFIX_KEYVALUE: "%{POSTFIX_QUEUEID}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}"
+          POSTFIX_SMTP_STAGE: '(CONNECT|HELO|EHLO|STARTTLS|AUTH|BDAT|MAIL( FROM)?|RCPT( TO)?|(end of )?DATA|RSET|UNKNOWN|END-OF-MESSAGE|VRFY|\.)'
+
+          POSTFIX_CLIENT_INFO: '%{HOSTNAME:source_domain}?(\[%{IP:source_address}\]|\<\>)(:%{INT:source_port})?'
+          POSTFIX_ACTION: "(accept|(P|p)ass|Permerror|defer|discard|filter|header-redirect|(R|r)eject|greylist|None|Fail|Softfail)"
+
+          POSTFIX_LOSTCONN: "(Connection timed out|No route to host|Connection refused|Network is unreachable|lost connection|timeout|SSL_accept error|-1)"
+          POSTFIX_LOSTCONN_REASONS: "(receiving the initial server greeting|sending message body|sending end of data -- message may be sent more than once)"
+          # POSTFIX_PROXY
+          POSTFIX_PROXY: "proxy-%{POSTFIX_ACTION:action_name}: (%{POSTFIX_SMTP_STAGE:action_type}): %{POSTFIX_PROXY_MESSAGE:postfix_proxy_message};( from=<(%{EMAILADDRESS:postfix_from})?>)?( to=<(%{EMAILADDRESS:postfix_to})?>)?(%{DATA} helo=<%{DATA:source_domain}>)?%{GREEDYDATA}"
+          POSTFIX_PROXY_MESSAGE: "(%{POSTFIX_STATUS_CODE} )?(%{POSTFIX_STATUS_CODE_ENHANCED})?.*"
+          POSTFIX_STATUS_CODE: '\d{3}'
+          POSTFIX_STATUS_CODE_ENHANCED: '\d\.\d\.\d'
+
+          # POSTFIX_NOQUEUE
+          POSTFIX_NOQUEUE: "NOQUEUE: client=%{POSTFIX_DESTINATION_INFO}"
+
+          # POSTFIX_TLS
+          POSTFIX_TLS: "%{POSTFIX_QUEUEID}: %{POSTFIX_TLSUSED}"
+          POSTFIX_TLSUSED: "Used TLS for %{POSTFIX_DESTINATION_INFO}"
+
+          # POSTFIX_SMTP
+
+          POSTFIX_SMTP: "%{POSTFIX_SMTP_RELAY}|%{POSTFIX_SMTP_DELIVERY}|%{POSTFIX_SMTP_CONNERR}|%{POSTFIX_SMTP_SSLCONNERR}|%{POSTFIX_SMTP_LOSTCONN}|%{POSTFIX_SMTP_TIMEOUT}|%{POSTFIX_SMTP_RELAYERR}|%{POSTFIX_SMTP_RELAYER2}|%{POSTFIX_SMTP_RELAYER3}|%{POSTFIX_TLSCONN}|%{POSTFIX_WARNING}|%{POSTFIX_SMTP_UTF8}|%{POSTFIX_TLSVERIFICATION}"
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_RELAY
+          POSTFIX_SMTP_RELAY: "%{POSTFIX_QUEUEID}: (host|to=<%{EMAILADDRESS:postfix_to}>), (relay=%{POSTFIX_RELAY_INFO}), (delay=%{NUMBER}(, |; ))(delays=%{GREEDYDATA_NO_COMMA}, )(dsn=%{GREEDYDATA_NO_COMMA:action_outcome_reason_code}, )(status=%{STATUS_WORD:action_name} ).*"
+          POSTFIX_RELAY_INFO: '%{HOSTNAME:destination_domain}?\[(%{IP:destination_address}|%{DATA:postfix_relay_service})\](:%{INT:destination_port}|%{WORD:postfix_relay_service})?'
+          POSTFIX_SMTP_RELAYER2: '%{POSTFIX_QUEUEID}: host %{POSTFIX_RELAY_INFO} said: %{POSTFIX_STATUS_CODE:action_status_code} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} %{GREEDYDATA:postfix_smtp_response} (\[Hostname=%{HOSTNAME:source_domain}\])? \(in reply to %{POSTFIX_SMTP_STAGE:action_type} command\)'
+          POSTFIX_SMTP_RELAYER3: "%{POSTFIX_QUEUEID}: host %{POSTFIX_RELAY_INFO} said: %{POSTFIX_STATUS_CODE:action_status_code} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} %{GREEDYDATA:event_reason}"
+          POSTFIX_SMTP_RELAYERR: '%{POSTFIX_QUEUEID}: (host|to=<%{EMAILADDRESS:postfix_to}>) (relay=%{POSTFIX_RELAY_INFO}) said: %{GREEDYDATA:postfix_smtp_response} \(in reply to %{POSTFIX_SMTP_STAGE:action_type} command\)'
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_DELIVERY
+          POSTFIX_SMTP_DELIVERY: '%{POSTFIX_KEYVALUE} status=%{STATUS_WORD}( \(%{GREEDYDATA:postfix_smtp_response}\))?'
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_CONNERR
+          POSTFIX_SMTP_CONNERR: "connect to %{POSTFIX_RELAY_INFO}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data}( %{INT:timeout})?" ######
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_SSLCONNERR
+          POSTFIX_SMTP_SSLCONNERR: "SSL_connect error to %{POSTFIX_RELAY_INFO}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data}"
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_LOSTCONN
+          POSTFIX_SMTP_LOSTCONN: "%{POSTFIX_QUEUEID}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data} with %{POSTFIX_RELAY_INFO}( while %{POSTFIX_LOSTCONN_REASONS:postfix_smtp_lostconn_reason})?"
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_TIMEOUT
+          POSTFIX_SMTP_TIMEOUT: "%{POSTFIX_QUEUEID}: conversation with %{POSTFIX_RELAY_INFO} timed out( while %{POSTFIX_LOSTCONN_REASONS:postfix_smtp_lostconn_reason})?"
+
+          ### POSTFIX_SMTP -> POSTFIX_TLSCONN
+          POSTFIX_TLSCONN: "(Anonymous|Trusted|Untrusted|Verified) TLS connection established (to %{POSTFIX_RELAY_INFO}|from %{POSTFIX_CLIENT_INFO}): %{DATA:tls_version} with cipher %{GREEDYDATA:cipher}"
+
+          ### POSTFIX WARNING
+          POSTFIX_WARNING: "%{POSTFIX_WARNING_READ_TCP}|%{POSTFIX_WARNING_CONNECT}|%{POSTFIX_WARNING_FILENAME}|%{POSTFIX_WARNING_WITH_HEADER_CONTENT_DISPOSITION}|%{POSTFIX_WARNING_WITH_HEADER_SUBJECT}|%{POSTFIX_WARNING_WITHOUT_KV}"
+          POSTFIX_WARNING_FILENAME: '(%{POSTFIX_QUEUEID}: )?%{POSTFIX_WARNING_LEVEL}: %{GREEDYDATA}: (attachment;|inline;)( |\?\?|\? | \?\?)(filename=(\"\"|\")%{DATA:file_name}(\"\"|\")( |; |;\? |;\?\?|;\?\? | ;\?\?| ; ))?(size=%{NUMBER:file_size}( |; |;\? |;\?\?|;\?\? | ;\?\?| ; ))?((from %{GREEDYDATA_NO_SEMICOLON}(\[%{IP:source_ip}\])?)?;|%{DATA}) from=<%{EMAILADDRESS:postfix_from}> to=<%{EMAILADDRESS:postfix_to}>'
+          POSTFIX_WARNING_CONNECT: "%{POSTFIX_WARNING_LEVEL}: hostname %{HOSTNAME:source_domain} %{DATA} address %{IP:source_ip}: %{GREEDYDATA:event_reason}"
+          POSTFIX_WARNING_READ_TCP: "%{POSTFIX_WARNING_LEVEL}: read TCP map reply from %{POSTFIX_DESTINATION_INFO}: %{GREEDYDATA:event_reason}"
+          POSTFIX_WARNING_LEVEL: "(warning|fatal|info)"
+          POSTFIX_WARNING_WITHOUT_KV: "(%{POSTFIX_QUEUEID}: )?%{POSTFIX_WARNING_LEVEL}: (%{POSTFIX_CLIENT_INFO}: )?%{GREEDYDATA:postfix_message}"
+          POSTFIX_WARNING_WITH_HEADER_CONTENT_DISPOSITION: '%{GREEDYDATA}: warning: header Content-Disposition:%{GREEDYDATA}filename=\"%{DATA:file_name}\"; size=%{INT:file_size};\?\?creation-date=\"%{GREEDYDATA:file_created}\"\;\?\??modification-date=\"%{GREEDYDATA:file_ctime}\" from %{HOSTNAME:source_domain}\[%{IP:source_ip}\];( from=<(%{EMAILADDRESS:postfix_from})?>)?( to=<(%{EMAILADDRESS:postfix_to})?>)?%{GREEDYDATA}'
+          POSTFIX_WARNING_WITH_HEADER_SUBJECT: "%{POSTFIX_CLEANUP_FALLBACK}"
+          POSTFIX_CLEANUP_FALLBACK: '%{GREEDYDATA}from %{HOSTNAME:source_domain}\[%{IP:source_ip}\];( from=<(%{EMAILADDRESS:postfix_from})?>)?( to=<(%{EMAILADDRESS:postfix_to})?>)?(%{DATA} helo=<%{DATA:source_domain}>)?%{GREEDYDATA}'
+
+          ### POSTFIX_SMTP -> POSTFIX_SMTP_UTF8
+          POSTFIX_SMTP_UTF8: "host %{POSTFIX_RELAY_INFO} offers SMTPUTF8 support, but not 8BITMIME"
+
+          ### POSTFIX_SMTP -> POSTFIX_TLSVERIFICATION
+          POSTFIX_TLSVERIFICATION: "certificate verification failed for %{POSTFIX_RELAY_INFO}: %{GREEDYDATA}"
+
+          # POSTFIX PIPE
+          POSTFIX_PIPE: '%{POSTFIX_QUEUEID}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}, status=%{STATUS_WORD} \(%{GREEDYDATA:postfix_pipe_response}\)'
+
+          POSTFIX_POSTSCREEN: "%{POSTFIX_PS_CONNECT}|%{POSTFIX_PS_ACCESS}|%{POSTFIX_PS_NOQUEUE}|%{NOQUEUE_FALLBACK}|%{POSTFIX_PS_TOOBUSY}|%{POSTFIX_PS_CACHE}|%{POSTFIX_PS_DNSBL}|%{POSTFIX_PS_VIOLATIONS}"
+          POSTFIX_PS_CONNECT: 'connect from %{POSTFIX_CLIENT_INFO} to \[%{IP:destination_ip}\]:%{INT:destination_port}'
+          POSTFIX_PS_ACCESS: "%{POSTFIX_PS_ACCESS_ACTION:postfix_postscreen_access} %{POSTFIX_CLIENT_INFO}"
+          POSTFIX_PS_ACCESS_ACTION: "((DIS)?CONNECT|(dis)?connect|BLACKLISTED|WHITELISTED|WHITELIST VETO|PASS NEW|PASS OLD)"
+          POSTFIX_PS_NOQUEUE: "%{POSTFIX_SMTPD_NOQUEUE}"
+          NOQUEUE_FALLBACK: 'NOQUEUE: %{DATA:action_name}: %{DATA:action_type} from %{HOSTNAME:source_domain}?\[%{IP:source_address}\]:%{GREEDYDATA}from=<%{EMAILADDRESS:postfix_from}> to=<%{EMAILADDRESS:postfix_to}>%{GREEDYDATA}'
+          POSTFIX_DNSBL_MESSAGE: 'Service unavailable; .* \[%{GREEDYDATA}\] %{GREEDYDATA};'
+          POSTFIX_PS_CACHE: "cache %{DATA} full cleanup: retained=%{NUMBER:postfix_postscreen_cache_retained} dropped=%{NUMBER:postfix_postscreen_cache_dropped} entries"
+          POSTFIX_PS_TOOBUSY: "NOQUEUE: %{POSTFIX_ACTION:action_name}: connect from %{POSTFIX_CLIENT_INFO}: %{GREEDYDATA:postfix_postscreen_toobusy_data}"
+          POSTFIX_PS_DNSBL: "%{POSTFIX_PS_VIOLATION:postfix_postscreen_violation} rank %{INT:postfix_postscreen_dnsbl_rank} for %{POSTFIX_CLIENT_INFO}"
+          POSTFIX_PS_VIOLATION: "(BARE NEWLINE|COMMAND (TIME|COUNT|LENGTH) LIMIT|COMMAND PIPELINING|DNSBL|HANGUP|NON-SMTP COMMAND|PREGREET)"
+          POSTFIX_PS_VIOLATIONS: "%{POSTFIX_PS_VIOLATION:postfix_postscreen_violation}( %{INT})?( after %{NUMBER:postfix_postscreen_violation_time})? from %{POSTFIX_CLIENT_INFO}(( after %{POSTFIX_SMTP_STAGE:action_type})?(: %{GREEDYDATA:postfix_postscreen_data})?| in tests (after|before) SMTP handshake)"
+
+          # POSTFIX_DNSBLOG
+          POSTFIX_DNSBLOG: "%{POSTFIX_DNSBLOG_LISTING}"
+          POSTFIX_DNSBLOG_LISTING: "addr %{IP:source_ip} listed by domain %{HOSTNAME:postfix_dnsbl_domain} as %{IP:postfix_dnsbl_result}"
+
+          # ANVIL
+          "POSTFIX_ANVIL_CONN_CACHE": "statistics: max cache size %{NUMBER} at %{SYSLOGTIMESTAMP}"
+          "POSTFIX_ANVIL_CONN_COUNT": "statistics: max connection count %{NUMBER} for \\(%{DATA}:%{IP:source_address}\\) at %{SYSLOGTIMESTAMP}"
+          "POSTFIX_ANVIL_CONN_RATE": "statistics: max connection rate %{NUMBER}/%{POSTFIX_TIME_UNIT} for \\(%{DATA}:%{IP:source_address}\\) at %{SYSLOGTIMESTAMP}"
+          "POSTFIX_ANVIL": "%{POSTFIX_ANVIL_CONN_RATE}|%{POSTFIX_ANVIL_CONN_CACHE}|%{POSTFIX_ANVIL_CONN_COUNT}"
+
+          # SPAMD
+          "SPAMD_DNS_UTF8": "dns: new_dns_packet: domain is utf8 flagged: %{HOSTNAME:destination_domain}"
+          "SPAMD_RESULT": "spamd: result: (Y|\\.) %{NUMBER:spamd_points} - %{DATA:spamd_test_hits} %{GREEDYDATA:spamd_kvs}"
+          "SPAMD_CONNECTION": "spamd: connection from %{HOSTNAME:source_domain}? \\[%{IP:source_address}\\]:%{INT:source_port} to port %{INT:destination_port}%{GREEDYDATA}"
+          "SPAMD_PROCESSING_MESSAGE": "spamd: processing message %{DATA:spamd_message_id} for %{GREEDYDATA}"
+          "SPAMD": "%{SPAMD_PROCESSING_MESSAGE}|%{SPAMD_DNS_UTF8}|%{SPAMD_CONNECTION}|%{SPAMD_RESULT}"
+
+          # CLEANUP
+          "POSTFIX_CLEANUP_MILTER": "%{POSTFIX_QUEUEID}: milter-%{POSTFIX_ACTION:action_name}: %{GREEDYDATA:postfix_milter_message}; %{GREEDYDATA_NO_COLON:postfix_keyvalue_data}(: %{GREEDYDATA:postfix_milter_data})?"
+          "POSTFIX_CLEANUP": "%{POSTFIX_CLEANUP_MILTER}|%{POSTFIX_REPLACE_HEADER}"
+
+          # BOUNCE
+          "POSTFIX_BOUNCE_NOTIFICATION": "%{POSTFIX_QUEUEID}: sender (non-delivery|delivery status|delay) notification: %{POSTFIX_QUEUEID}"
+          "POSTFIX_BOUNCE": "%{POSTFIX_BOUNCE_NOTIFICATION}"
+
+          # DISCARD
+          "POSTFIX_DISCARD_ANY": "%{POSTFIX_QUEUEID}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data} status=%{STATUS_WORD} %{GREEDYDATA}"
+          "POSTFIX_DISCARD": "%{POSTFIX_DISCARD_ANY}"
+
+          # QMGR
+          "POSTFIX_QMGR_ACTIVE": "%{POSTFIX_QUEUEID}: from=<%{EMAILADDRESS:postfix_from}>, %{DATA} \\(queue active\\)"
+          "POSTFIX_QMGR_EXPIRED": "%{POSTFIX_QUEUEID}: from=<%{EMAILADDRESS:postfix_from}>, status=%{STATUS_WORD}, returned to sender"
+          "POSTFIX_QMGR_REMOVED": "%{POSTFIX_QUEUEID}: removed"
+          "POSTFIX_QMGR": "%{POSTFIX_QMGR_REMOVED}|%{POSTFIX_QMGR_EXPIRED}|%{POSTFIX_QMGR_ACTIVE}"
+
+          # SMTPD
+          "POSTFIX_SMTPD_LOST_CONNECTION": "%{POSTFIX_LOSTCONN} %{DATA} from %{POSTFIX_CLIENT_INFO}"
+          "POSTFIX_SMTPD_FILTER": "%{POSTFIX_QUEUEID}: %{DATA} from %{POSTFIX_CLIENT_INFO}: %{DATA}; from=<%{EMAILADDRESS:postfix_from}> to=<%{EMAILADDRESS:postfix_to}> %{POSTFIX_KEYVALUE_DATA} helo=<%{HOSTNAME:source_domain}>"
+          "POSTFIX_SMTPD_CONNECT": "%{POSTFIX_PS_ACCESS_ACTION:action_name} from %{POSTFIX_CLIENT_INFO}( ehlo=%{NUMBER:tmp_ESMTP})?( %{GREEDYDATA})?"
+          "POSTFIX_SMTPD_LOSTCONN": "%{POSTFIX_LOSTCONN:action_name}( after %{POSTFIX_SMTP_STAGE:action_type})?( \\(%{INT} bytes\\))? from %{POSTFIX_CLIENT_INFO}(: %{GREEDYDATA:postfix_smtpd_lostconn_reason})?"
+          "POSTFIX_SMTPD_NOQUEUE": "NOQUEUE: %{POSTFIX_ACTION:action_name}: %{POSTFIX_SMTP_STAGE:action_type} from %{POSTFIX_CLIENT_INFO}:( %{POSTFIX_STATUS_CODE} %{POSTFIX_STATUS_CODE_ENHANCED:action_outcome_reason_code} )?(%{GREEDYDATA_NO_SEMICOLON};)( from=<%{EMAILADDRESS:postfix_from}>:?)?( %{POSTFIX_DNSBL_MESSAGE}|%{GREEDYDATA};)?( to=<%{EMAILADDRESS:postfix_to}>)?"
+          "POSTFIX_SMTPD_PIPELINING": "improper command pipelining after %{POSTFIX_SMTP_STAGE:action_type} from %{POSTFIX_CLIENT_INFO}: %{GREEDYDATA:postfix_improper_pipelining_data}"
+          "POSTFIX_SMTPD_PROXY": "proxy-%{POSTFIX_ACTION:action_name}: (%{POSTFIX_SMTP_STAGE:action_type}): %{POSTFIX_PROXY_MESSAGE:postfix_proxy_message}; %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}"
+          "POSTFIX_SMTPD": "%{POSTFIX_SMTPD_PIPELINING}|%{POSTFIX_SMTPD_NOQUEUE}|%{NOQUEUE_FALLBACK}|%{POSTFIX_SMTPD_PROXY}|%{POSTFIX_SMTPD_CONNECT}|%{POSTFIX_SMTPD_LOSTCONN}|%{POSTFIX_SMTPD_FILTER}|%{POSTFIX_TLSCONN}|%{POSTFIX_KEYVALUE}"
+
+          # PASS
+          "POSTFIX_PASS1": "(%{DATA}: )?action=%{DATA:action_name}(, |; )(reason=%{GREEDYDATA_NO_COMMA:action_outcome_reason}(, |; ))(delay=%{NUMBER}(, |; ))?client_name=%{HOSTNAME:source_domain}(, |; )client_address=%{IP:source_address}(/%{INT:network_mask})?(, |; )(from|sender)=%{EMAILADDRESS:postfix_from}(, |; )(to|recipient)=%{EMAILADDRESS:postfix_to}"
+          "POSTFIX_PASS2": "%{POSTFIX_ACTION:action_name}(, |; )%{GREEDYDATA_NO_SEMICOLON}(, |; )client\\-ip=%{IP:source_address}(, |; )helo=%{HOSTNAME:source_domain}(, |; )envelope\\-from=%{EMAILADDRESS:postfix_from}(, |; )receiver=(<%{EMAILADDRESS:postfix_to}>|<UNKNOWN>)"
+          "POSTFIX_REJECT": "(%{POSTFIX_ACTION:action_name}; )?(Action: )?((prepend )|(prepend: Text: ))?(Received\\-SPF: %{POSTFIX_ACTION} \\(mailfrom\\))? identity=%{GREEDYDATA_NO_SEMICOLON}; client\\-ip=%{IP:source_ip}; helo=(%{HOSTNAME:source_domain}|\\[%{IP:source_domain}\\])(, |; )envelope\\-from=(%{EMAILADDRESS:postfix_from}|<>)(, |; )receiver=(<%{EMAILADDRESS:postfix_to}>|<UNKNOWN>)(  %{DATA:action_name} action: 550 %{GREEDYDATA:action_outcome_reason_code})?"
+          "POSTFIX_PASS": "%{POSTFIX_PASS2}|%{POSTFIX_REJECT}|%{POSTFIX_PASS1}"
+
+          # POSTGREY
+          "POSTFIX_WHITELISTED": "whitelisted: (%{HOSTNAME:source_domain})?\\[%{IP:source_address}(\\/%{INT:network_mask})?\\]"
+          "POSTFIX_POSTGREY": "%{POSTFIX_WHITELISTED}|%{POSTFIX_PASS}"
+
+          # SPF
+          "POSTFIX_POLCY_SPF_PASS": "(%{DATA:action_name};|%{DATA:action_name}: %{DATA}) identity=%{DATA}; client\\-ip=%{IP:source_ip}; helo=(%{HOSTNAME:source_domain}|\\[%{IP:source_domain}\\]); envelope\\-from=(%{EMAILADDRESS:postfix_from}|<>); receiver=(<%{EMAILADDRESS:postfix_to}>|<UNKNOWN>)(\\s*%{INT}|\\s*%{GREEDYDATA})?"
+          "POSTFIX_POLCY_SPF": "(%{POSTFIX_REJECT}|%{POSTFIX_POLCY_SPF_PASS})"
+
+          "POSTFIX_REPLACE_HEADER": "%{POSTFIX_QUEUEID}: replace: header From:.*?%{EMAILADDRESS:postfix_from}.*"
+
+          # TLS PROXY
+          "POSTFIX_TLSPROXY_CONN": "(DIS)?HOSTNAME( from)? %{POSTFIX_CLIENT_INFO}"
+          "POSTFIX_TLSPROXY": "%{POSTFIX_TLSPROXY_CONN}"
+
+          # MASTER
+          "POSTFIX_MASTER_EXIT": "terminating on signal %{INT:postfix_termination_signal}"
+          "POSTFIX_MASTER_START": "(daemon started|reload) -- version %{DATA:postfix_version}, configuration %{PATH:postfix_config_path}"
+          "POSTFIX_MASTER": "%{POSTFIX_MASTER_START}|%{POSTFIX_MASTER_EXIT}"
+
+          # SCACHE
+          "POSTFIX_SCACHE_LOOKUPS": "statistics: (address|domain) lookup hits=%{INT:postfix_scache_hits} miss=%{INT:postfix_scache_miss} success=%{INT:postfix_scache_success}%"
+          "POSTFIX_SCACHE_SIMULTANEOUS": "statistics: max simultaneous domains=%{INT:postfix_scache_domains} addresses=%{INT:postfix_scache_addresses} connection=%{INT:postfix_scache_connection}"
+          "POSTFIX_SCACHE_TIMESTAMP": "statistics: start interval %{SYSLOGTIMESTAMP:postfix_scache_timestamp}(%{GREEDYDATA})?"
+          "POSTFIX_SCACHE": "%{POSTFIX_SCACHE_LOOKUPS}|%{POSTFIX_SCACHE_SIMULTANEOUS}|%{POSTFIX_SCACHE_TIMESTAMP}"
+
+          # POSTSUPER
+          "POSTFIX_POSTSUPER_ACTION": "%{POSTFIX_QUEUEID}: %{POSTFIX_POSTSUPER_ACTIONS:postfix_postsuper_action}"
+          "POSTFIX_POSTSUPER_ACTIONS": "(removed|requeued|placed on hold|released from hold)"
+          "POSTFIX_POSTSUPER_SUMMARY": "%{POSTFIX_POSTSUPER_SUMMARY_ACTIONS:postfix_postsuper_summary_action}: %{NUMBER:postfix_postsuper_summary_count} messages?"
+          "POSTFIX_POSTSUPER_SUMMARY_ACTIONS": "(Deleted|Requeued|Placed on hold|Released from hold)"
+          "POSTFIX_POSTSUPER": "%{POSTFIX_POSTSUPER_ACTION}|%{POSTFIX_POSTSUPER_SUMMARY}"
+
+          # ERROR
+          "POSTFIX_ERROR_ANY": "%{POSTFIX_QUEUEID}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}, status=%{STATUS_WORD} \\(%{GREEDYDATA:postfix_error_response}\\)"
+          "POSTFIX_ERROR": "%{POSTFIX_ERROR_ANY}"
+
+          "POSTFIX_LOCAL": "%{POSTFIX_WARNING}"
+
+  - name: parse_relay
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{event.message.postfix_keyvalue_data}}"
+        output_field: result
+        pattern: "%{PARSE_RELAY_1}|%{PARSE_RELAY_2}"
+        custom_patterns:
+          PARSE_RELAY_1: '.*?relay=%{HOSTNAME:destination_domain}\[%{IP:destination_address}\](:%{INT:destination_port}).*'
+          PARSE_RELAY_2: ".*?relay=%{HOSTNAME:destination_address}(:%{INT:destination_port}).*"
+    filter: "{{event.message.postfix_keyvalue_data != None}}"
+
+  - name: parse_spamd_kvs
+    filter: '{{event.message.get("spamd_kvs") != None}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{event.message.spamd_kvs}}"
+        output_field: message
+        item_sep: ","
+        value_sep: "="
+
+  - name: parse_ctime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{event.message.file_ctime | string}}"
+        output_field: datetime
+        format: "%a, %d %b %Y %H:%M:%S %Z"
+    filter: "{{event.message.file_ctime != None and 'GMT' in event.message.file_ctime}}"
+
+  - name: parse_file_created
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{event.message.file_created | string}}"
+        output_field: datetime
+        format: "%a, %d %b %Y %H:%M:%S %Z"
+    filter: "{{event.message.file_created != None and 'GMT' in event.message.file_created}}"
+
+  - name: parsed_message_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{event.message.postfix_keyvalue_data}}"
+        output_field: message
+        #trim_value: '<>,'
+        #value_sep: ":"
+        #item_sep: \r\n
+    filter: "{{event.message != None and event.message.postfix_keyvalue_data != None}}"
+
+  - name: parse_email_from
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.message.from}}"
+        output_field: message
+        pattern: ".*?%{EMAILADDRESS:postfix_from}.*"
+    filter: "{{parsed_message_kv.message != null and parsed_message_kv.message.from != None }}"
+
+  - name: parse_email_to
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.message.to}}"
+        output_field: message
+        pattern: ".*?%{EMAILADDRESS:postfix_to}.*"
+    filter: "{{parsed_message_kv.message != null and parsed_message_kv.message.to != None }}"
+
+  - name: parse_postfix_smtp_response
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{event.message.postfix_smtp_response}}"
+        output_field: "message"
+        pattern: '.*?%{HOSTNAME:source_domain}?\[%{IP:source_address}\](:%{INT:source_port})?.*'
+    filter: "{{event.message.postfix_smtp_response != None}}"
+
+  - name: parse_postfix_message
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{event.message.postfix_message}}"
+        output_field: "message"
+        pattern: '.*?%{HOSTNAME:source_domain}?\[%{IP:source_address}\](:%{INT:source_port})?.*'
+    filter: "{{event.message.postfix_message != None}}"
+
+  - name: set_basic_fields
+  - name: finalize
+
+stages:
+  set_basic_fields:
+    actions:
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+
+      - set:
+          action.name: "{{event.message.action_name or event.message.STATUS_WORD}}"
+
+      - set:
+          postfix.orig_to: "{{parsed_message_kv.message.orig_to.replace('<','').replace('>','').replace(',','') }}"
+        filter: "{{parsed_message_kv.message != None and parsed_message_kv.message.get('orig_to') != None}}"
+
+      - set:
+          destination.ip: "{{parse_relay.result.destination_address}}"
+          destination.port: "{{parse_relay.result.destination_port}}"
+        filter: "{{parse_relay.result != None}}"
+
+      - set:
+          email.message_id: "{{event.message.get('spamd_message_id').replace('<','').replace('>','')}}"
+        filter: "{{event.message.get('spamd_message_id') != None}}"
+
+      - set:
+          email.from.address:
+            [
+              "{{event.message.postfix_from or parse_email_from.message.postfix_from}}",
+            ]
+        filter: "{{event.message.postfix_from != None or parse_email_from.message.postfix_from != null}}"
+
+      - set:
+          email.to.address:
+            [
+              "{{event.message.postfix_to or parse_email_to.message.postfix_to}}",
+            ]
+        filter: "{{event.message.postfix_to != None or parse_email_to.message.postfix_to != null}}"
+
+      - set:
+          email.message_id: "{{ parsed_message_kv.message.get('message-id').replace('<','').replace('>','') }}"
+          source.domain: "{{parsed_message_kv.message.client.split('[') | first}}"
+          source.address: "{{parsed_message_kv.message.client.split('[') | last | replace(']','')}}"
+          action.name: "{{parsed_message_kv.message.status.split(' ') | first}}"
+        filter: "{{parsed_message_kv.message != None}}"
+
+      - set:
+          source.domain: "{{parse_postfix_smtp_response.message.source_domain}}"
+          source.address: "{{parse_postfix_smtp_response.message.source_address}}"
+          source.port: "{{parse_postfix_smtp_response.message.source_port}}"
+        filter: "{{parse_postfix_smtp_response.message != None}}"
+
+      - set:
+          source.domain: "{{parse_postfix_message.message.source_domain}}"
+          source.address: "{{parse_postfix_message.message.source_address}}"
+          source.port: "{{parse_postfix_message.message.source_port}}"
+        filter: "{{parse_postfix_message.message != None}}"
+
+      - set:
+          source.address: "{{event.message.source_address}}"
+          destination.address: "{{event.message.destination_address}}"
+
+      # Some events source/destination addresses are defined ambiguously. The event will sometimes list
+      # an IP, a domain or a unix socket. You should always store the raw address in the .address field.
+      # Check if source.address/destination.address is an IP or domain address and copy it to the appropriate field
+      - set:
+          source.ip: "{{event.message.source_address}}"
+        filter: "{{event.message.source_address | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{event.message.source_address}}"
+        filter: '{{ not event.message.source_address | is_ipaddress and event.message.source_address | re_match("^(?:[0-9A-Za-z][0-9A-Za-z-]{0,62})(?:\.(?:[0-9A-Za-z][0-9A-Za-z-]{0,62}))*(\.?)$")}}'
+
+      - set:
+          destination.ip: "{{event.message.destination_address }}"
+        filter: "{{event.message.destination_address | is_ipaddress}}"
+      - set:
+          destination.domain: "{{event.message.destination_address}}"
+        filter: '{{ not event.message.destination_address | is_ipaddress and event.message.destination_address | re_match("^(?:[0-9A-Za-z][0-9A-Za-z-]{0,62})(?:\.(?:[0-9A-Za-z][0-9A-Za-z-]{0,62}))*(\.?)$")}}'
+
+      # Use specific fields whenever available
+      - set:
+          source.ip: "{{event.message.source_ip}}"
+        filter: "{{event.message.source_ip | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{event.message.source_domain}}"
+        filter: "{{event.message.source_domain and event.message.source_domain != 'unknown'}}"
+
+      - set:
+          destination.ip: "{{event.message.destination_ip}}"
+        filter: "{{event.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{event.message.destination_domain}}"
+        filter: "{{event.message.destination_domain and event.message.destination_domain != 'unknown'}}"
+
+      - set:
+          network.protocol: "smtp"
+        filter: "{{event.message.POSTFIX_ANVIL_CONN_RATE != None or event.message.POSTFIX_ANVIL_CONN_CACHE != None or event.message.POSTFIX_ANVIL_CONN_COUNT != None}}"
+
+      - set:
+          network.protocol: "{{parsed_message_kv.message.proto}}"
+        filter: "{{parsed_message_kv.message.proto != None}}"
+
+      - set:
+          network.protocol: "smtp"
+        filter: "{{event.message.POSTFIX_SMTPD_CONNECT != null and event.message.tmp_ESMTP != null}}"
+
+      - set:
+          network.protocol: "smtp"
+        filter: "{{original.log.syslog.appname == 'postfix'}}"
+
+      - set:
+          action.type: "{{event.message.action_type}}"
+          action.outcome_reason: "{{event.message.action_outcome_reason}}"
+
+      - set:
+          source.port: "{{event.message.source_port}}"
+          destination.port: "{{event.message.destination_port}}"
+
+      - set:
+          file.name: "{{event.message.file_name.lower()}}"
+          file.ctime: "{{parse_ctime.datetime}}"
+          file.created: "{{parse_file_created.datetime}}"
+          file.size: "{{event.message.file_size}}"
+
+      - set:
+          event.reason: "{{event.message.action_outcome_reason}}"
+
+      - set:
+          event.reason: "{{event.message.event_reason}}"
+        filter: "{{event.message.event_reason != None}}"
+
+      - set:
+          event.reason: "{{event.message.postfix_message}}"
+        filter: "{{event.message.POSTFIX_WARNING_WITHOUT_KV != None}}"
+
+      - set:
+          event.reason: "{{event.message.postfix_smtp_response}}"
+        filter: "{{event.message.POSTFIX_SMTP_RELAYER2 != None}}"
+
+      - translate:
+        dictionary:
+          1.0.1: "Cannot open connection"
+          1.1.1: "Connection refused"
+          2.0.0: "success"
+          2.1.1: "System Status message"
+          2.2.0: "service is running"
+          2.2.1: "The domain service is closing the transmission channel"
+          2.5.0: "Requested mail action OK completed"
+          2.5.1: "User not local will forward"
+          2.5.2: "Cannot verify the user"
+          3.5.4: "Start mail input end with <CRLF>.<CRLF>"
+          4.1.8: "Domain not found"
+          4.2.0: "Timeout communication problem encountered during transmission."
+          4.2.1: "The SMTP service/server you use has a limit on the number of concurrent SMTP streams your server can use"
+          4.2.2: "The recipient`s mailbox is over its storage limit OR The size of the message exceeds the recipient`s size limits for incoming email"
+          4.3.1: "The recipient`s mail server is experiencing a Disk Full condition"
+          4.3.2: "The recipient`s Exchange Server incoming mail queue has been stopped"
+          4.4.1: "The recipient`s server is not responding"
+          4.4.2: "The connection was dropped during transmission"
+          4.4.6: "The maximum hop count was exceeded for the message"
+          4.4.7: "Your outgoing message timed out"
+          4.4.9: "Routing error"
+          4.5.0: "Requested action was not taken - The mailbox was unavailable at the remote end"
+          4.5.1: "Local problem - Requested action aborted in processing. OR Requested action delayed. OR <IP_Address> has recently sent spam"
+          4.5.2: "Requested action not taken - Insufficient storage."
+          4.6.5: "Code Page unavailable on the recipient server"
+          4.7.1: 'This is a local error with the sending server and is often followed with "Please try again later"'
+          5.0.0: "Syntax error command not recognized."
+          5.0.1: "Syntax error in parameters or arguments (e.g. invalid email address) Can sometimes also be indicative of communication problems."
+          5.0.2: "Command not implemented."
+          5.0.3: "Bad sequence of commands. OR This mail server requires authentication."
+          5.0.4: "Command parameter not implemented."
+          5.1.0: "Bad Email Address"
+          5.1.1: "Bad Email Address"
+          5.1.2: "The host server for the recipient`s domain name cannot be found (DNS error)"
+          5.1.3: "Address type is incorrect (most mail servers) OR Relaying denied or Authentication required."
+          5.2.3: "The Recipient`s mailbox cannot receive messages this big"
+          5.3.0: "Authentication is required OR Your server has been blacklisted by the recipient`s server OR The recipient`s mailbox does not exist"
+          5.4.1: "Recipient Address Rejected - Access denied (typically by the recipient`s antispam program / appliance)"
+          5.5.0: "Requested actions not taken as the mailbox is unavailable. It is always a problem external to your own mail server. Usually it is at the recipient`s end, but it could also originate from inside your own “walls” through being caused, for example, by an appliance which scans your outgoing emails once they've left your server."
+          5.5.1: "User not local or invalid address - Relay denied."
+          5.5.2: "Requested mail actions aborted - Exceeded storage allocation. or Size of the incoming message exceeds the incoming size limit."
+          5.5.3: "Requested action not taken - Mailbox name invalid. OR You are attempting to send emails through a specific ISP`s SMTP server without authentication and without being connected to the Internet through that ISP`s service. OR You are sending from an Exchange server configured to send via DNS and you do not have a public reverse DNS record pointing back to your Exchange server."
+          5.5.4: "Transaction failed. Nowadays SMTP status 554 is in most cases returned when the recipient server believes your email is spam or your IP address or ISP server has been blacklisted on one or more Internet blacklists. With Yahoo, on the other hand, this usually means the email address does not exist or has been disabled. OR With IBM`s Lotus Domino this is either a Domino bug or a Disk Full error"
+          5.7.1: "I have been told not to work with you!"
+          5.7.23: "SPF validation failed"
+        mapping:
+          event.message.action_outcome_reason_code: action.outcome_reason
+        filter: "{{event.message.action_outcome_reason_code != None}}"
+
+      - set:
+          event.reason: "{{original.message.split('said:')[1] | trim}}"
+        filter: "{{event.message.action_outcome_reason_code == '4.3.2' and 'said:' in original.message}}"
+
+      - set:
+          postfix.headers.from: >
+            [
+            {% set headers = original.message.split('header')[1] %}
+            {% for from_value in headers.split('From:') %}
+            {% set value = from_value | trim %}
+            {% if value != '' %}
+              {% if value[-1] == ':' %}
+                '{{value[:-1]}}',
+              {% else %}
+                '{{value}}',
+              {% endif %}
+            {% endif %}
+            {% endfor %}
+            ]
+        filter: "{{'replace: header' in original.message}}"
+
+      - set:
+          user.name: "{{parse_spamd_kvs.message.user}}"
+          source.domain: "{{parse_spamd_kvs.message.rhost}}"
+          source.ip: "{{parse_spamd_kvs.message.raddr}}"
+          source.port: "{{parse_spamd_kvs.message.rport}}"
+          email.message_id: "{{parse_spamd_kvs.message.mid}}"
+
+  finalize:
+    actions:
+      - set:
+          action.outcome: "success"
+        filter: "{{final.action.outcome == null and final.action.name != None}}"
+
+      - set:
+          source.ip: "{{final.source.address}}"
+        filter: "{{final.source.ip == null and final.source.address | is_ipaddress}}"
+
+      # if the source.domain key exists, let the finalizer complete source.address as a domain and split associated fields.
+      - delete:
+          - source.address
+        filter: "{{final.source.address | is_ipaddress and final.source.domain != null }}"
+
+      - set:
+          source.domain: "{{final.email.from.address[0].split('@') | last}}"
+        filter: "{{not final.source or final.source.get('domain') == None}}"
+      - set:
+          destination.domain: "{{final.email.to.address[0].split('@') | last}}"
+        filter: "{{not final.destination or final.destination.get('domain') == None}}"
+
+      - set:
+          action.name: reject
+        filter: '{{"Reject action" in original.message}}'
+
+      - set:
+          action.target: network-traffic
+        filter: "{{(final.destination != None or final.source != None) and final.action.name != None}}"

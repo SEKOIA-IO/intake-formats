@@ -1,0 +1,158 @@
+name: claroty-xdome
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.event_timestamp}}"
+        output_field: date
+
+  - name: parsed_cert_expiry_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.certificate_expiry_date}}"
+        output_field: date
+
+  - name: parsed_cert_start_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.certificate_start_date}}"
+        output_field: date
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.date}}"
+
+      - set:
+          event.kind: "alert"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: "{{parsed_event.message.username == null}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+        filter: "{{parsed_event.message.username != null}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{parsed_event.message.change_id != null}}"
+
+      - set:
+          event.severity: "{{parsed_event.message.Severity}}"
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src_ip}}"
+        filter: "{{parsed_event.message.src_ip | is_ipaddress}}"
+
+      - set:
+          source.mac: "{{parsed_event.message.src_mac}}"
+          source.port: "{{parsed_event.message.src_port}}"
+          user.name: "{{parsed_event.message.username}}"
+          destination.ip: "{{parsed_event.message.dst_ip or parsed_event.message.external_ip}}"
+          destination.mac: "{{parsed_event.message.dst_mac}}"
+          destination.port: "{{parsed_event.message.dst_port}}"
+          destination.domain: "{{parsed_event.message.domain}}"
+          network.protocol: "{{parsed_event.message.protocol}}"
+          event.reason: "{{parsed_event.message.event_description}}"
+          event.code: "{{parsed_event.message.event_type}}"
+          host.mac: "{{parsed_event.message.device_mac_list}}"
+          host.ip: >
+            [
+              {% for ip in parsed_event.message.device_ip_list[1:-1].split(", ") %}
+              {% if ip.split("'")[1] | is_ipaddress %}
+                {{ip}}{% if not loop.last %},{% endif %}
+              {% endif %}
+              {% endfor %}
+            ]
+          host.type: "{{parsed_event.message.device_type}}"
+          host.os.full: "{{parsed_event.message.device_os}}"
+
+      - set:
+          device.id: "{{parsed_event.message.device_asset_id}}"
+          device.manufacturer: "{{parsed_event.message.device_manufacturer}}"
+          device.model.name: "{{parsed_event.message.device_model}}"
+
+          host.id: "{{parsed_event.message.device_uid}}"
+          claroty.xdome.device.type: "{{parsed_event.message.device_type}}"
+          claroty.xdome.device.type_family: "{{parsed_event.message.device_type_family}}"
+          claroty.xdome.device.category: "{{parsed_event.message.device_category}}"
+          claroty.xdome.device.subcategory: "{{parsed_event.message.device_subcategory}}"
+          claroty.xdome.device.site_name: "{{parsed_event.message.device_site_name}}"
+
+      - set:
+          claroty.xdome.alert.id: "{{parsed_event.message.alert_id or parsed_event.message.change_alert_id or parsed_event.message.event_alert_id}}"
+          claroty.xdome.alert.type: "{{parsed_event.message.alert_type}}"
+          claroty.xdome.alert.name: "{{parsed_event.message.alert_name}}"
+          claroty.xdome.alert.category: "{{parsed_event.message.alert_category}}"
+          claroty.xdome.alert.description: "{{parsed_event.message.alert_description}}"
+
+      - set:
+          claroty.xdome.malicious_ip.confidence: "{{parsed_event.message.malicious_ip_confidence}}"
+          claroty.xdome.malicious_ip.severity: "{{parsed_event.message.malicious_ip_severity}}"
+          claroty.xdome.malicious_ip.type: "{{parsed_event.message.malicious_ip_type}}"
+          claroty.xdome.malicious_ip.source: "{{parsed_event.message.malicious_ip_source}}"
+          claroty.xdome.malicious_ip.threat_type: "{{parsed_event.message.malicious_ip_threat_type}}"
+
+      - set:
+          tls.server.x509.subject.common_name: "{{parsed_event.message.certificate_CN}}"
+          tls.server.x509.subject.country: "{{parsed_event.message.certificate_C}}"
+          tls.server.x509.subject.locality: "{{parsed_event.message.certificate_L}}"
+          tls.server.x509.subject.organization: "{{parsed_event.message.certificate_O}}"
+          tls.server.x509.subject.organizational_unit: "{{parsed_event.message.certificate_OU}}"
+          tls.server.x509.subject.state_or_province: "{{parsed_event.message.certificate_ST}}"
+          tls.server.x509.not_after: "{{parsed_cert_expiry_date.date}}"
+          tls.server.x509.not_before: "{{parsed_cert_start_date.date}}"
+          tls.server.hash.sha1: "{{parsed_event.message.certificate_thumbprint}}"
+        filter: "{{parsed_event.message.certificate_type != null and parsed_event.message.certificate_type.lower() == 'server' }}"
+
+      - set:
+          tls.client.x509.subject.common_name: "{{parsed_event.message.certificate_CN}}"
+          tls.client.x509.subject.country: "{{parsed_event.message.certificate_C}}"
+          tls.client.x509.subject.locality: "{{parsed_event.message.certificate_L}}"
+          tls.client.x509.subject.organization: "{{parsed_event.message.certificate_O}}"
+          tls.client.x509.subject.organizational_unit: "{{parsed_event.message.certificate_OU}}"
+          tls.client.x509.subject.state_or_province: "{{parsed_event.message.certificate_ST}}"
+          tls.client.x509.not_after: "{{parsed_cert_expiry_date.date}}"
+          tls.client.x509.not_before: "{{parsed_cert_start_date.date}}"
+          tls.client.hash.sha1: "{{parsed_event.message.certificate_thumbprint}}"
+        filter: "{{parsed_event.message.certificate_type != null and parsed_event.message.certificate_type.lower() == 'client' }}"
+
+      - set:
+          claroty.xdome.client_id: "{{parsed_event.message.client_id}}"
+          claroty.xdome.sender_id: "{{parsed_event.message.sender_id}}"
+          claroty.xdome.event_id: "{{parsed_event.message.event_id}}"
+
+      - set:
+          claroty.xdome.change.id: "{{parsed_event.message.change_id}}"
+          claroty.xdome.change.type: "{{parsed_event.message.change_type}}"
+          claroty.xdome.change.timestamp: "{{parsed_event.message.chnage_timestamp}}"
+          claroty.xdome.change.alerted_attribute: "{{parsed_event.message.change_alerted_attribute}}"
+          event.reason: "{{parsed_event.message.change_description}}"
+
+      - set:
+          claroty.xdome.threat.signature_name: "{{parsed_event.message.signature_name}}"
+          claroty.xdome.threat.signature_content: "{{parsed_event.message.signature_content}}"
+          claroty.xdome.threat.signature_confidence: "{{parsed_event.message.signature_confidence}}"
+          claroty.xdome.threat.signature_severity: "{{parsed_event.message.signature_severity}}"
+
+      - set:
+          file.name: "{{parsed_event.message.file_name}}"
+          file.type: "{{parsed_event.message.file_type}}"
+        filter: "{{parsed_event.message.event_type.lower() == 'executable file transfer' }}"

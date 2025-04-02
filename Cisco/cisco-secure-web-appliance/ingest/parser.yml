@@ -6,10 +6,10 @@ pipeline:
       properties:
         input_field: original.message
         output_field: message
-        pattern: '%{PREFIX}%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}\s+%{NOTSPACE:acl_decision}\s+<%{VERDICT:scanning_verdict_information}>\s+%{DATA:user_agent}.*'
+        pattern: '%{PREFIX}%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}%{GREEDYDATA}\s+%{NOTSPACE:acl_decision}\s+<%{VERDICT:scanning_verdict_information}>\s+%{DATA:user_agent}.*'
         custom_patterns:
           PREFIX: '(?:Info:\s+)*'
-          VERDICT: '(?:[^>]+)'
+          VERDICT: "(?:[^>]+)"
   - name: parsed_timestamp
     external:
       name: date.parse
@@ -24,13 +24,13 @@ pipeline:
       properties:
         input_field: parsed_event.message.acl_decision
         output_field: result
-        pattern: '%{WORD:decision_tag}-%{WORD:policy_group_name}-%{WORD:policy_identity}-%{WORD:outbound_malware_scanning_policy}-%{WORD:data_security_policy}-%{WORD:external_dlp_policy}-%{WORD:routing_policy}'
+        pattern: "%{WORD:decision_tag}-%{WORD:policy_group_name}-%{WORD:policy_identity}-%{WORD:outbound_malware_scanning_policy}-%{WORD:data_security_policy}-%{WORD:external_dlp_policy}-%{WORD:routing_policy}(-%{WORD})?"
   - name: parsed_scanning_verdict
     filter: '{{ parsed_event.get("message") != None }}'
     external:
       name: dsv.parse-dsv
       properties:
-        input_field: '{{parsed_event.message.scanning_verdict_information}}'
+        input_field: "{{parsed_event.message.scanning_verdict_information}}"
         output_field: results
         columnnames:
           - url_category
@@ -74,52 +74,51 @@ pipeline:
           - file_reputation
           - archivescan_result
           - archivescan_detail
-        delimiter: ','
+        delimiter: ","
   - name: set_ecs_fields
   - name: set_cisco_fields
 stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_timestamp.start_date}}'
-          event.start: '{{parsed_timestamp.start_date}}'
-          event.duration: '{{parsed_event.message.elapsed}}'
-          event.kind: event
+          "@timestamp": "{{parsed_timestamp.start_date}}"
+          event.start: "{{parsed_timestamp.start_date}}"
+          event.duration: "{{parsed_event.message.elapsed}}"
           event.category:
             - web
             - network
-          observer.product: 'Cisco Web Security Appliances'
+          observer.product: "Cisco Web Security Appliances"
           observer.type: proxy
           observer.vendor: Cisco
           network.direction: egress
-          http.request.method: '{{parsed_event.message.method}}'
-          http.response.status_code: '{{parsed_event.message.status}}'
-          http.response.bytes: '{{parsed_event.message.http_response_bytes}}'
-          url.original: '{{parsed_event.message.url}}'
+          http.request.method: "{{parsed_event.message.method}}"
+          http.response.status_code: "{{parsed_event.message.status}}"
+          http.response.bytes: "{{parsed_event.message.http_response_bytes}}"
+          url.original: "{{parsed_event.message.url}}"
 
       - set:
           rule.ruleset: '{{parsed_acl_decision.result.policy_identity | replace("_", " ")}}'
         filter: '{{parsed_acl_decision.get("result").get("policy_identity") != None}}'
 
       - set:
-          rule.id: '{{parsed_acl_decision.result.decision_tag}}'
+          rule.id: "{{parsed_acl_decision.result.decision_tag}}"
         filter: '{{parsed_acl_decision.get("result").get("decision_tag") != None}}'
 
       - set:
-          user_agent.original: '{{parsed_event.message.useragent}}'
-        filter: '{{parsed_event.message.useragent != "-"}}'
+          user_agent.original: "{{parsed_event.message.user_agent}}"
+        filter: '{{parsed_event.message.user_agent != "-"}}'
 
       - set:
-          user.name: '{{parsed_event.message.username}}'
+          user.name: "{{parsed_event.message.username}}"
         filter: '{{parsed_event.message.username != "-"}}'
 
       - set:
-          http.response.mime_type: '{{parsed_event.message.mime_type}}'
+          http.response.mime_type: "{{parsed_event.message.mime_type}}"
         filter: '{{parsed_event.message.mime_type != "-"}}'
 
       - set:
-          source.ip: '{{parsed_event.message.source_ip}}'
-        filter: '{{parsed_event.message.source_ip != "-"}}'
+          source.ip: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip  | is_ipaddress}}"
 
       - set:
           network.transport: "tcp"
@@ -136,33 +135,33 @@ stages:
         filter: '{{parsed_event.message.code.endswith("_DENIED")}}'
 
       - set:
-          destination.domain: '{{parsed_event.message.peerhost}}'
+          destination.domain: "{{parsed_event.message.peerhost}}"
         filter: '{{parsed_event.message.peerhost != "-"}}'
 
       - set:
-          destination.ip: '{{parsed_event.message.peerhostip}}'
-        filter: '{{parsed_event.message.peerhostip != "-"}}'
+          destination.ip: "{{parsed_event.message.peerhostip}}"
+        filter: "{{parsed_event.message.peerhostip  | is_ipaddress}}"
 
       - set:
-          file.name: '{{parsed_scanning_verdict.results.file_name}}'
+          file.name: "{{parsed_scanning_verdict.results.file_name}}"
         filter: '{{parsed_scanning_verdict.results.file_name != "-"}}'
 
       - set:
-          file.hash.sha256: '{{parsed_scanning_verdict.results.file_sha256}}'
+          file.hash.sha256: "{{parsed_scanning_verdict.results.file_sha256}}"
         filter: '{{parsed_scanning_verdict.results.file_sha256 != "-"}}'
 
   set_cisco_fields:
     actions:
       - set:
-          cisco_wsa.hierarchy_code: '{{parsed_event.message.hierarchy_code}}'
+          cisco_wsa.hierarchy_code: "{{parsed_event.message.hierarchy_code}}"
 
       - set:
-          cisco_wsa.rule.policy.name: '{{parsed_acl_decision.result.policy_group_name}}'
-          cisco_wsa.rule.policy.outbound_malware_scanning: '{{parsed_acl_decision.result.outbound_malware_scanning_policy}}'
-          cisco_wsa.rule.policy.data_security: '{{parsed_acl_decision.result.data_security_policy}}'
-          cisco_wsa.rule.policy.external_dlp: '{{parsed_acl_decision.result.external_dlp_policy}}'
-          cisco_wsa.rule.policy.routing: '{{parsed_acl_decision.result.routing_policy}}'
-        filter: '{{parsed_acl_decision.result != None}}'
+          cisco_wsa.rule.policy.name: "{{parsed_acl_decision.result.policy_group_name}}"
+          cisco_wsa.rule.policy.outbound_malware_scanning: "{{parsed_acl_decision.result.outbound_malware_scanning_policy}}"
+          cisco_wsa.rule.policy.data_security: "{{parsed_acl_decision.result.data_security_policy}}"
+          cisco_wsa.rule.policy.external_dlp: "{{parsed_acl_decision.result.external_dlp_policy}}"
+          cisco_wsa.rule.policy.routing: "{{parsed_acl_decision.result.routing_policy}}"
+        filter: "{{parsed_acl_decision.result != None}}"
 
       - set:
           cisco_wsa.cache_status: hit
@@ -177,132 +176,133 @@ stages:
         filter: '{{parsed_event.message.code.endswith("_DENIED")}}'
 
       - set:
-          cisco_wsa.url.category_code: '{{parsed_scanning_verdict.results.url_category}}'
-        filter: '{{parsed_scanning_verdict.results.url_category != "nc"}}'
+          cisco_wsa.url.category_code: "{{parsed_scanning_verdict.results.url_category}}"
+        filter: '{{parsed_scanning_verdict.results.url_category not in ["nc", "-"]}}'
 
       - translate:
         dictionary:
-          'IW_adlt': 'Adult'
-          'IW_adv': 'Advertisements'
-          'IW_alc': 'Alcohol'
-          'IW_art': 'Arts'
-          'IW_astr': 'Astrology'
-          'IW_auct': 'Auctions'
-          'IW_busi': 'Business and Industry'
-          'IW_chat': 'Chat and Instant Messaging'
-          'IW_plag': 'Cheating and Plagiarism'
-          'IW_cprn': 'Child Abuse Content'
-          'IW_csec': 'Computer Security'
-          'IW_comp': 'Computers and Internet'
-          'IW_date': 'Dating'
-          'IW_card': 'Digital Postcards'
-          'IW_food': 'Dining and Drinking'
-          'IW_dyn': 'Dynamic and Residential'
-          'IW_edu': 'Education'
-          'IW_ent': 'Entertainment'
-          'IW_extr': 'Extreme'
-          'IW_fash': 'Fashion'
-          'IW_fts': 'File Transfer Services'
-          'IW_filt': 'Filter Avoidance'
-          'IW_fnnc': 'Finance'
-          'IW_free': 'Freeware and Shareware'
-          'IW_gamb': 'Gambling'
-          'IW_game': 'Games'
-          'IW_gov': 'Government and Law'
-          'IW_hack': 'Hacking'
-          'IW_hate': 'Hate Speech'
-          'IW_hlth': 'Health and Nutrition'
-          'IW_lol': 'Humor'
-          'IW_ilac': 'Illegal Activities'
-          'IW_ildl': 'Illegal Downloads'
-          'IW_drug': 'Illegal Drugs'
-          'IW_infr': 'Infrastructure and Content Delivery Networks'
-          'IW_voip': 'Internet Telephony'
-          'IW_job': 'Job Search'
-          'IW_ling': 'Lingerie and Swimsuits'
-          'IW_lotr': 'Lotteries'
-          'IW_cell': 'Mobile Phones'
-          'IW_natr': 'Nature'
-          'IW_news': 'News'
-          'IW_ngo': 'Non-Governmental Organizations'
-          'IW_nsn': 'Non-Sexual Nudity'
-          'IW_comm': 'Online Communities'
-          'IW_osb': 'Online Storage and Backup'
-          'IW_trad': 'Online Trading'
-          'IW_pem': 'Organizational Email'
-          'IW_park': 'Parked Domains'
-          'IW_p2p': 'Peer File Transfer'
-          'IW_pers': 'Personal Sites'
-          'IW_img': 'Photo Searches and Images'
-          'IW_pol': 'Politics'
-          'IW_porn': 'Pornography'
-          'IW_pnet': 'Professional Networking'
-          'IW_rest': 'Real Estate'
-          'IW_ref': 'Reference'
-          'IW_rel': 'Religion'
-          'IW_saas': 'B2B'
-          'IW_kids': 'Safe for Kids'
-          'IW_sci': 'Science and Technology'
-          'IW_srch': 'Search Engines and Portals'
-          'IW_sxed': 'Sex Education'
-          'IW_shop': 'Shopping'
-          'IW_snet': 'Social Networking'
-          'IW_socs': 'Social Science'
-          'IW_scty': 'Society and Culture'
-          'IW_swup': 'Software Updates'
-          'IW_sprt': 'Sports and Recreation'
-          'IW_aud': 'Streaming Audio'
-          'IW_vid': 'Streaming Video'
-          'IW_tob': 'Tobacco'
-          'IW_trns': 'Transportation'
-          'IW_trvl': 'Travel'
-          'IW_weap': 'Weapons'
-          'IW_whst': 'Web Hosting'
-          'IW_tran': 'Web Page Translation'
-          'IW_mail': 'Web-Based Email'
+          "IW_adlt": "Adult"
+          "IW_adv": "Advertisements"
+          "IW_alc": "Alcohol"
+          "IW_art": "Arts"
+          "IW_astr": "Astrology"
+          "IW_auct": "Auctions"
+          "IW_busi": "Business and Industry"
+          "IW_chat": "Chat and Instant Messaging"
+          "IW_plag": "Cheating and Plagiarism"
+          "IW_cprn": "Child Abuse Content"
+          "IW_csec": "Computer Security"
+          "IW_comp": "Computers and Internet"
+          "IW_date": "Dating"
+          "IW_card": "Digital Postcards"
+          "IW_food": "Dining and Drinking"
+          "IW_dyn": "Dynamic and Residential"
+          "IW_edu": "Education"
+          "IW_ent": "Entertainment"
+          "IW_extr": "Extreme"
+          "IW_fash": "Fashion"
+          "IW_fts": "File Transfer Services"
+          "IW_filt": "Filter Avoidance"
+          "IW_fnnc": "Finance"
+          "IW_free": "Freeware and Shareware"
+          "IW_gamb": "Gambling"
+          "IW_game": "Games"
+          "IW_gov": "Government and Law"
+          "IW_hack": "Hacking"
+          "IW_hate": "Hate Speech"
+          "IW_hlth": "Health and Nutrition"
+          "IW_lol": "Humor"
+          "IW_ilac": "Illegal Activities"
+          "IW_ildl": "Illegal Downloads"
+          "IW_drug": "Illegal Drugs"
+          "IW_infr": "Infrastructure and Content Delivery Networks"
+          "IW_voip": "Internet Telephony"
+          "IW_job": "Job Search"
+          "IW_ling": "Lingerie and Swimsuits"
+          "IW_lotr": "Lotteries"
+          "IW_cell": "Mobile Phones"
+          "IW_natr": "Nature"
+          "IW_news": "News"
+          "IW_ngo": "Non-Governmental Organizations"
+          "IW_nsn": "Non-Sexual Nudity"
+          "IW_comm": "Online Communities"
+          "IW_osb": "Online Storage and Backup"
+          "IW_trad": "Online Trading"
+          "IW_pem": "Organizational Email"
+          "IW_park": "Parked Domains"
+          "IW_p2p": "Peer File Transfer"
+          "IW_pers": "Personal Sites"
+          "IW_img": "Photo Searches and Images"
+          "IW_pol": "Politics"
+          "IW_porn": "Pornography"
+          "IW_pnet": "Professional Networking"
+          "IW_rest": "Real Estate"
+          "IW_ref": "Reference"
+          "IW_rel": "Religion"
+          "IW_saas": "B2B"
+          "IW_kids": "Safe for Kids"
+          "IW_sci": "Science and Technology"
+          "IW_srch": "Search Engines and Portals"
+          "IW_sxed": "Sex Education"
+          "IW_shop": "Shopping"
+          "IW_snet": "Social Networking"
+          "IW_socs": "Social Science"
+          "IW_scty": "Society and Culture"
+          "IW_swup": "Software Updates"
+          "IW_sprt": "Sports and Recreation"
+          "IW_aud": "Streaming Audio"
+          "IW_vid": "Streaming Video"
+          "IW_tob": "Tobacco"
+          "IW_trns": "Transportation"
+          "IW_trvl": "Travel"
+          "IW_weap": "Weapons"
+          "IW_whst": "Web Hosting"
+          "IW_tran": "Web Page Translation"
+          "IW_mail": "Web-Based Email"
         mapping:
           cisco_wsa.url.category_code: cisco_wsa.url.category
-        fallback: 'Unclassified'
-        filter: '{{parsed_scanning_verdict.results.url_category != "nc"}}'
+        fallback: "Unclassified"
+        filter: '{{parsed_scanning_verdict.results.url_category not in ["nc", "-"]}}'
 
       - set:
-          cisco_wsa.threat.name: '{{parsed_scanning_verdict.results.threat_name}}'
-        filter: '{{parsed_scanning_verdict.results.threat_name != "\"-\""}}'
+          cisco_wsa.threat.name: "{{parsed_scanning_verdict.results.threat_name}}"
+        filter: '{{parsed_scanning_verdict.results.threat_name not in ["\"-\"", "-"]}}'
 
       - set:
-          cisco_wsa.threat.category_code: '{{parsed_scanning_verdict.results.threat_category_code}}'
+          cisco_wsa.threat.category_code: "{{parsed_scanning_verdict.results.threat_category_code}}"
         filter: '{{parsed_scanning_verdict.results.threat_category_code != "-"}}'
 
       - set:
-          cisco_wsa.threat.reputation_score: '{{parsed_scanning_verdict.results.threat_score}}'
+          cisco_wsa.threat.reputation_score: "{{parsed_scanning_verdict.results.threat_score}}"
         filter: '{{parsed_scanning_verdict.results.threat_score != "-"}}'
 
       - translate:
         dictionary:
-          0: 'Unknown'
-          1: 'Not Scanned'
-          2: 'Timeout'
-          3: 'Error'
-          4: 'Unscannable'
-          10: 'Generic Spyware'
-          12: 'Browser Helper Object'
-          13: 'Adware'
-          14: 'System Monitor'
-          18: 'Commercial System Monitor'
-          19: 'Dialer'
-          20: 'Hijacker'
-          21: 'Phishing URL'
-          22: 'Trojan Downloader'
-          23: 'Trojan Horse'
-          24: 'Trojan Phisher'
-          25: 'Worm'
-          26: 'Encrypted File'
-          27: 'Virus'
-          33: 'Other Malware'
-          34: 'PUA'
-          35: 'Aborted'
-          36: 'Outbreak Heuristics'
-          37: 'Known Malicious and High-Risk Files'
+          0: "Unknown"
+          1: "Not Scanned"
+          2: "Timeout"
+          3: "Error"
+          4: "Unscannable"
+          10: "Generic Spyware"
+          12: "Browser Helper Object"
+          13: "Adware"
+          14: "System Monitor"
+          18: "Commercial System Monitor"
+          19: "Dialer"
+          20: "Hijacker"
+          21: "Phishing URL"
+          22: "Trojan Downloader"
+          23: "Trojan Horse"
+          24: "Trojan Phisher"
+          25: "Worm"
+          26: "Encrypted File"
+          27: "Virus"
+          33: "Other Malware"
+          34: "PUA"
+          35: "Aborted"
+          36: "Outbreak Heuristics"
+          37: "Known Malicious and High-Risk Files"
         mapping:
           cisco_wsa.threat.category_code: cisco_wsa.threat.category
-        fallback: 'Not Set'
+        fallback: "Not Set"
+        filter: '{{parsed_scanning_verdict.results.threat_category_code != "-"}}'

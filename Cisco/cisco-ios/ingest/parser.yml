@@ -4,50 +4,53 @@ pipeline:
     external:
       name: grok.match
       properties:
-        pattern: '(?:%{HOSTNAME:hostname}: )?%{CISCO_HEADER}: %{DATA:description}'
+        pattern: "(?:%{HOSTNAME:hostname}: )?%{CISCO_HEADER}: %{DATA:description}"
         custom_patterns:
-          CISCO_HEADER: '%{CISCO_DATESTAMP}: %{MSG_CODE}'
-          CISCO_TIMESTAMP: '%{MONTH} %{MONTHDAY}( %{YEAR})? %{TIME}'
-          CISCO_DATESTAMP: '%{CISCO_TIMESTAMP:date}( %{WORD:timezone})?'
+          CISCO_HEADER: "%{CISCO_DATESTAMP}: %{MSG_CODE}"
+          CISCO_TIMESTAMP: "%{MONTH}\\s+%{MONTHDAY}( %{YEAR})? %{TIME}"
+          CISCO_DATESTAMP: "%{CISCO_TIMESTAMP:date}( %{WORD:timezone})?"
           MSG_CODE: '\%%{WORD:facility}\-%{NONNEGINT:severity}\-%{WORD:mnemonic}'
   - name: parsed_description
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: parsed_event.message.description
-        pattern: '%{LINEPROTO}|%{LINK}'
+        pattern: "%{LINEPROTO}|%{LINK}"
         custom_patterns:
-          LINEPROTO: 'Line protocol on Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}'
-          LINK: 'Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}'
+          LINEPROTO: "Line protocol on Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
+          LINK: "Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
     filter: '{{parsed_event.message.facility in ["LINEPROTO", "LINK"]}}'
   - name: parsed_description
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: parsed_event.message.description
-        pattern: '%{SEC_LOGIN_SUCCESS}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}'
+        pattern: "%{SEC_LOGIN_SUCCESS}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}"
         custom_patterns:
           SEC_LOGIN_SUCCESS: 'Login Success \[user: %{USERNAME:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\] at %{TIME} %{WORD} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
-          SYS_LOGIN_FAILURE: 'Logging to host %{IP:destination_ip} port %{NUMBER:destination_port} failed'
+          SYS_LOGIN_FAILURE: "Logging to host %{IP:destination_ip} port %{NUMBER:destination_port} failed"
           SYS_LOGOUT: 'User %{USERNAME:username} has exited tty session %{NUMBER:terminal}\(%{IP:source_ip}\)'
           SYS_TTY_EXPIRE_TIMER: '\(exec timer expired, tty %{NUMBER:terminal} \(%{IP:source_ip}\)\), user %{USERNAME:username}'
     filter: '{{parsed_event.message.facility in ["SEC_LOGIN", "SYS"]}}'
   - name: parsed_description
     external:
+      raise_errors: false
       name: grok.match
       properties:
         input_field: parsed_event.message.description
-        pattern: '%{SW_MATM_MACFLAP}'
+        pattern: "%{SW_MATM_MACFLAP}"
         custom_patterns:
-          SW_MATM_MACFLAP: 'Host %{MAC:source_mac_addr} in vlan %{NOTSPACE:vlan} is flapping between port %{NOTSPACE:port1} and port %{NOTSPACE:port2}'
+          SW_MATM_MACFLAP: "Host %{MAC:source_mac_addr} in vlan %{NOTSPACE:vlan} is flapping between port %{NOTSPACE:port1} and port %{NOTSPACE:port2}"
     filter: '{{parsed_event.message.facility == "SW_MATM"}}'
   - name: parsed_date
     external:
       name: date.parse
       properties:
-        input_field: '{{parsed_event.message.date}}'
+        input_field: "{{parsed_event.message.date}}"
         output_field: date
-        timezone: '{{parsed_event.message.timezone}}'
+        timezone: "{{parsed_event.message.timezone}}"
   - name: set_ecs_fields
   - name: set_cisco_fields
 
@@ -55,40 +58,48 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_date.date}}'
-          observer.vendor: 'Cisco'
-          observer.product: 'ios'
-          event.kind: 'event'
-          event.category: ['host']
-          event.severity: '{{parsed_event.message.severity}}'
-          event.code: '{{parsed_event.message.mnemonic}}'
-          event.reason: '{{parsed_event.message.description}}'
-          event.action: '{{parsed_description.message.ifstate}}'
-          host.name: '{{parsed_event.message.hostname}}'
-          source.ip: '{{parsed_description.message.source_ip}}'
-          source.mac: '{{parsed_description.message.source_mac_addr | to_mac_address}}'
-          source.port: '{{parsed_description.message.source_port}}'
-          destination.ip: '{{parsed_description.message.destination_ip}}'
-          destination.port: '{{parsed_description.message.destination_port}}'
-          user.name: '{{parsed_description.message.username}}'
-          network.vlan.id: '{{parsed_description.message.vlan}}'
+          "@timestamp": "{{parsed_date.date}}"
+          observer.vendor: "Cisco"
+          observer.product: "ios"
+          event.category: ["host"]
+          event.severity: "{{parsed_event.message.severity}}"
+          event.code: "{{parsed_event.message.mnemonic}}"
+          event.reason: "{{parsed_event.message.description}}"
+          event.action: "{{parsed_description.message.ifstate}}"
+          host.name: "{{parsed_event.message.hostname}}"
+      - set:
+          source.ip: "{{parsed_description.message.source_ip}}"
+        filter: "{{parsed_description.message.source_ip | is_ipaddress}}"
+
+      - set:
+          source.mac: "{{parsed_description.message.source_mac_addr | to_mac_address}}"
+          source.port: "{{parsed_description.message.source_port}}"
+
+      - set:
+          destination.ip: "{{parsed_description.message.destination_ip}}"
+        filter: "{{parsed_description.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          destination.port: "{{parsed_description.message.destination_port}}"
+          user.name: "{{parsed_description.message.username}}"
+          network.vlan.id: "{{parsed_description.message.vlan}}"
       - translate:
         dictionary:
-          LOGIN_SUCCESS: ['access', 'start']
-          LOGOUT: ['access', 'end']
-          LOGGINGHOST_FAIL: ['access', 'end']
+          LOGIN_SUCCESS: ["access", "start"]
+          LOGOUT: ["access", "end"]
+          LOGGINGHOST_FAIL: ["access", "end"]
         mapping:
           parsed_event.message.mnemonic: event.type
-        fallback: ['info']
+        fallback: ["info"]
 
   set_cisco_fields:
     actions:
       - set:
-          cisco.ios.event.facility: '{{parsed_event.message.facility}}'
-          cisco.ios.observer.interface.name: '{{parsed_description.message.ifname}}'
-          cisco.ios.observer.terminal: '{{parsed_description.message.terminal}}'
+          cisco.ios.event.facility: "{{parsed_event.message.facility}}"
+          cisco.ios.observer.interface.name: "{{parsed_description.message.ifname}}"
+          cisco.ios.observer.terminal: "{{parsed_description.message.terminal}}"
       - set:
-          cisco.ios.observer.interface.ports: 
-            - '{{parsed_description.message.port1}}'
-            - '{{parsed_description.message.port2}}'
+          cisco.ios.observer.interface.ports:
+            - "{{parsed_description.message.port1}}"
+            - "{{parsed_description.message.port2}}"
         filter: '{{parsed_description.message.get("port1") != None and parsed_description.message.get("port2") != None}}'

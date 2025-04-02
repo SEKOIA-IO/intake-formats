@@ -1,0 +1,96 @@
+name: fastly_auditlogs
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_message
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.message}}"
+        output_field: message
+        pattern: '%{DATA:user_name} \(%{DATA:user_email}\) %{GREEDYDATA:user_action}'
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parsed_event.message.created }}"
+
+          observer.vendor: "Fastly"
+          observer.product: "Fastly Audit Logs"
+
+          event.reason: "{{ parsed_message.message.user_action }}"
+
+      - set:
+          event.category: ["configuration"]
+
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+        filter: "{{ parsed_event.message.eventType in ('flag', 'expireFlag', 'agentAlert')}}"
+
+      - translate:
+        dictionary:
+          flag: ["indicator"]
+          expireFlag: ["indicator"]
+          agentAlert: ["indicator"]
+
+          loggingModeChanged: ["change"]
+          customTagCreated: ["creation"]
+          customTagUpdated: ["change"]
+
+          customTagDeleted: ["deletion"]
+          customAlertCreated: ["creation"]
+          customAlertUpdated: ["change"]
+
+          customAlertDeleted: ["deletion"]
+          detectionCreated: ["creation"]
+          detectionUpdated: ["change"]
+
+          detectionDeleted: ["deletion"]
+          listCreated: ["creation"]
+          listUpdated: ["change"]
+
+          listDeleted: ["deletion"]
+
+          userMultiFactorAuthEnabled: ["change"]
+          userMultiFactorAuthDisabled: ["change"]
+          userMultiFactorAuthUpdated: ["change"]
+
+          accessTokenCreated: ["creation"]
+          accessTokenDeleted: ["deletion"]
+
+          enableSSO: ["change"]
+          disableSSO: ["change"]
+
+          createIntegration: ["creation"]
+          deleteIntegration: ["deletion"]
+
+          testIntegration: ["info"]
+        mapping:
+          parsed_event.message.eventType: event.type
+
+      - set:
+          event.action: "{{ parsed_event.message.eventType }}"
+
+          url.original: "{{ parsed_event.message.msgData.detailLink }}"
+          user_agent.original: "{{ parsed_event.message.msgData.userAgent }}"
+
+          user.full_name: "{{ parsed_message.message.user_name }}"
+          user.email: "{{ parsed_event.message.msgData.email or parsed_message.message.user_email }}"
+
+      - set:
+          fastly.waf.audit.event_id: "{{ parsed_event.message.id }}"
+          fastly.waf.audit.corp_name: "{{ parsed_event.message.msgData.corpName or parsed_event.message.msgData.corp }}"
+          fastly.waf.audit.site_name: "{{ parsed_event.message.msgData.site }}"
+          fastly.waf.audit.token_name: "{{ parsed_event.message.msgData.tokenName }}"
+          fastly.waf.audit.message: "{{ parsed_event.message.message }}"
+          fastly.waf.audit.has_attachments: "{{ parsed_event.message.attachments | length > 0 }}"

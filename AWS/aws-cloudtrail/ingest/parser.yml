@@ -7,16 +7,17 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.eventTime}}'
+        input_field: "{{json_event.message.eventTime}}"
         output_field: datetime
   - name: parsed_source
     filter: '{{json_event.message.get("sourceIPAddress") != None}}'
     external:
       name: grok.match
       properties:
+        raise_errors: false
         input_field: json_event.message.sourceIPAddress
         output_field: source
-        pattern: '(%{IP:ip}|%{HOSTNAME:domain})'
+        pattern: "(%{IP:ip}|%{HOSTNAME:domain})"
   - name: set_ecs_fields
   - name: set_action_fields
   - name: set_aws_fields
@@ -25,45 +26,48 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          '@timestamp': '{{parsed_date.datetime}}'
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['access']
-          event.dataset: 'cloudtrail'
-          event.action: '{{json_event.message.eventName or json_event.message.insightDetails.eventName}}'
-          event.code: '{{json_event.message.errorCode or json_event.message.insightDetails.errorCode}}'
-          event.reason: '{{json_event.message.errorMessage}}'
-          event.provider: '{{json_event.message.eventSource or json_event.message.insightDetails.eventSource}}'
-          cloud.provider: 'aws'
-          cloud.service.name: 'cloudtrail'
-          cloud.region: '{{json_event.message.awsRegion}}'
-          cloud.account.id: '{{json_event.message.userIdentity.accountId}}'
-          cloud.instance.id: '{{json_event.message.requestParameters.instanceId}}'
-          action.type: '{{json_event.message.eventType}}'
-          action.name: '{{json_event.message.eventName}}'
-          action.outcome: 'success'
-          action.target: 'network-traffic'
-          user_agent.original: '{{json_event.message.userAgent}}'
-          user.id: '{{json_event.message.userIdentity.accountId}}'
-          user.name: '{{json_event.message.responseElements.user.userId}}'
-          tls.cipher: '{{json_event.message.tlsDetails.cipherSuite}}'
-          tls.version: '{{json_event.message.tlsDetails.tlsVersion}}'
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.category: ["network"]
+          event.type: ["access"]
+          event.action: "{{json_event.message.eventName or json_event.message.insightDetails.eventName}}"
+          event.code: "{{json_event.message.errorCode or json_event.message.insightDetails.errorCode}}"
+          event.reason: "{{json_event.message.errorMessage}}"
+          event.provider: "{{json_event.message.eventSource or json_event.message.insightDetails.eventSource}}"
+          cloud.provider: "aws"
+          cloud.service.name: "cloudtrail"
+          cloud.region: "{{json_event.message.awsRegion}}"
+          cloud.account.id: "{{json_event.message.userIdentity.accountId}}"
+          cloud.instance.id: "{{json_event.message.requestParameters.instanceId}}"
+          action.type: "{{json_event.message.eventType}}"
+          action.name: "{{json_event.message.eventName}}"
+          action.outcome: "success"
+          action.target: "network-traffic"
+          user_agent.original: "{{json_event.message.userAgent}}"
+          user.id: "{{json_event.message.userIdentity.accountId}}"
+          user.name: "{{json_event.message.responseElements.user.userId}}"
+          tls.cipher: "{{json_event.message.tlsDetails.cipherSuite}}"
+          tls.version: "{{json_event.message.tlsDetails.tlsVersion}}"
+          source.domain: "{{parsed_source.source.domain}}"
+
       - set:
-          source.address: '{{json_event.message.sourceIPAddress}}'
-          source.ip: '{{parsed_source.source.ip}}'
-          source.domain: '{{parsed_source.source.domain}}'
-        filter: '{{json_event.message.sourceIPAddress != "AWS Internal"}}'
+          source.address: "{{json_event.message.sourceIPAddress}}"
+        filter: '{{ json_event.message.sourceIPAddress != "AWS Internal" and json_event.message.sourceIPAddress | is_ipaddress}}'
+
       - set:
-          event.category: ['iam']
-          event.type: ['change']
+          source.ip: "{{parsed_source.source.ip}}"
+        filter: "{{parsed_source.source.ip | is_ipaddress}}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
         filter: '{{json_event.message.eventName in ("PasswordUpdated", "EnableMFADevice")}}'
       - set:
-          event.category: ['authentication']
+          event.category: ["authentication"]
         filter: '{{json_event.message.eventName == "ConsoleLogin"}}'
       - translate:
         dictionary:
-          Success: ['allowed']
-          Failure: ['denied']
+          Success: ["allowed"]
+          Failure: ["denied"]
         mapping:
           json_event.message.responseElements.ConsoleLogin: event.type
         filter: '{{json_event.message.eventName == "ConsoleLogin"}}'
@@ -71,36 +75,38 @@ stages:
   set_action_fields:
     actions:
       - set:
-          action.properties.errorCode: '{{json_event.message.errorCode}}'
-          action.properties.errorMessage: '{{json_event.message.errorMessage}}'
-          action.properties.recipientAccountId: '{{json_event.message.recipientAccountId}}'
-          action.properties.userIdentity: '{{json_event.message.userIdentity}}'
-          action.properties.resources: '{{json_event.message.resources}}'
-          action.properties.requestParameters.userData: '{{json_event.message.requestParameters.userData}}'
-          action.properties.responseElements.publiclyAccessible: '{{json_event.message.responseElements.publiclyAccessible}}'
-      - set:
-          action.properties.responseElements.pendingModifiedValues.masterUserPassword: '{{json_event.message.responseElements.pendingModifiedValues.masterUserPassword}}'
-        filter: '{{json_event.message.get("responseElement", {}).get("pendingModifiedValues") != None}}'
+          action.properties.errorCode: "{{json_event.message.errorCode}}"
+          action.properties.errorMessage: "{{json_event.message.errorMessage}}"
+          action.properties.recipientAccountId: "{{json_event.message.recipientAccountId}}"
+          action.properties.userIdentity: "{{json_event.message.userIdentity}}"
+          action.properties.resources: "{{json_event.message.resources}}"
+          action.properties.requestParameters.userData: "{{json_event.message.requestParameters.userData}}"
+          action.properties.responseElements.publiclyAccessible: "{{json_event.message.responseElements.publiclyAccessible}}"
 
   set_aws_fields:
     actions:
       - set:
-          aws.cloudtrail.event_version: '{{json_event.message.eventVersion}}'
-          aws.cloudtrail.recipient_account_id: '{{json_event.message.recipientAccountId}}'
-          aws.cloudtrail.user_identity: '{{json_event.message.userIdentity}}'
-          aws.cloudtrail.resources: '{{json_event.message.resources}}'
-          aws.cloudtrail.request_parameters.userData: '{{json_event.message.requestParameters.userData}}'
-          aws.cloudtrail.request_parameters.userName: '{{json_event.message.requestParameters.userName}}'
-          aws.cloudtrail.response_elements.publiclyAccessible: '{{json_event.message.responseElements.publiclyAccessible}}'
-          aws.cloudtrail.response_elements.pendingModifiedValues.masterUserPassword: '{{json_event.message.responseElements.pendingModifiedValues.masterUserPassword}}'
-          aws.cloudtrail.insight_details.state: '{{json_event.message.insightDetails.state}}'
-          aws.cloudtrail.insight_details.type: '{{json_event.message.insightDetails.insightType}}'
-          aws.cloudtrail.insight_details.context: '{{json_event.message.insightDetails.insightContext | tojson}}'
-          aws.cloudtrail.response_elements.user.userName: '{{json_event.message.responseElements.user.userName}}'
-          aws.cloudtrail.response_elements.user.arn: '{{json_event.message.responseElements.user.arn}}'
+          aws.cloudtrail.user_identity: "{{json_event.message.userIdentity}}"
+          aws.cloudtrail.response_elements.pendingModifiedValues.masterUserPassword: "{{json_event.message.responseElements.pendingModifiedValues.masterUserPassword}}"
+          aws.cloudtrail.response_elements.user.userName: "{{json_event.message.responseElements.user.userName}}"
+          aws.cloudtrail.cluster_name: "{{json_event.message.responseElements.cluster.clusterName}}"
+
       - set:
-          aws.cloudtrail.flattened.response_elements: '{{json_event.message.responseElements | tojson}}'
+          aws.cloudtrail.flattened.response_elements: "{{json_event.message.responseElements | tojson}}"
         filter: '{{json_event.message.get("responseElements") != None}}'
+
       - set:
-          aws.cloudtrail.flattened.request_parameters: '{{json_event.message.requestParameters | tojson}}'
+          aws.cloudtrail.flattened.request_parameters: "{{json_event.message.requestParameters | tojson}}"
         filter: '{{json_event.message.get("requestParameters") != None}}'
+
+      - set:
+          aws.cloudtrail.response_elements.policy.policyName: "{{json_event.message.responseElements.policy.policyName}}"
+        filter: '{{json_event.message.get("responseElements") != None}}'
+
+      - set:
+          aws.cloudtrail.response_elements.policy.policyId: "{{json_event.message.responseElements.policy.policyId}}"
+        filter: '{{json_event.message.get("responseElements") != None}}'
+
+      - set:
+          aws.cloudtrail.response_elements.policy.arn: "{{json_event.message.responseElements.policy.arn}}"
+        filter: '{{json_event.message.get("responseElements") != None}}'

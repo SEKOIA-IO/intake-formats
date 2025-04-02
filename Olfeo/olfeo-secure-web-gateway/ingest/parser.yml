@@ -1,0 +1,52 @@
+name: olfeo
+ignored_values: ["-"]
+pipeline:
+  - name: parse_grok
+    description: ""
+    filter: ""
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: >-
+          \s*%{IP:source_ip} - %{DATA:user} \[%{DATA:date}\] "%{DATA:method}
+          %{DATA:url} HTTP/%{NUMBER:http_version}" %{NUMBER:response_code} - -
+          %{DATA:type_id} %{GREEDYDATA:type}
+        custom_patterns: {}
+  - name: ecs_fields
+    description: ""
+    filter: ""
+    external: null
+stages:
+  ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_grok.message.date | to_rfc3339('%d/%m/%Y %H:%M:%S')}}"
+          observer.vendor: "Olfeo"
+          observer.type: "proxy"
+          observer.product: "Olfeo Secure Web Gateway"
+          event.category: ["web"]
+          event.type: ["access"]
+          url.original: "{{parse_grok.message.url}}"
+          source.user.name: "{{parse_grok.message.user}}"
+          source.ip: "{{parse_grok.message.source_ip}}"
+          olfeo.request.type: "{{parse_grok.message.type}}"
+          olfeo.request.type_id: "{{parse_grok.message.type_id}}"
+          http.version: "{{parse_grok.message.http_version}}"
+          http.request.method: "{{parse_grok.message.method}}"
+          http.response.status_code: "{{parse_grok.message.response_code}}"
+          action.outcome: |
+            {%- if parse_grok.message.response_code != None -%}
+              {%- if parse_grok.message.response_cod < 200 -%}
+                information
+              {%- elif parse_grok.message.response_cod < 300 -%}
+                success
+              {%- elif parse_grok.message.response_cod < 400 -%}
+                redirect
+              {%- else -%}
+                failure
+              {%- endif -%}
+            {%- endif -%}
+        filter: ""
+        name: set

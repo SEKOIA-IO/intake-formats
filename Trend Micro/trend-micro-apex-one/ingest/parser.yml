@@ -1,0 +1,635 @@
+name: cef
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_start_date
+    filter: "{{parsed_event.message.start != null or parsed_event.message.startTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.start or parsed_event.message.startTime}}"
+        output_field: date
+
+  - name: parse_end_date
+    filter: "{{parsed_event.message.end != null or parsed_event.message.endTime != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.end or parsed_event.message.endTime}}"
+        output_field: date
+
+  # Parse 'rt' (as a timestamp or as a date)
+  - name: parse_receipt_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: date
+
+  - name: set_timestamp
+  - name: set_cef_header_fields
+  - name: set_attack_discovery_detection_event
+    filter: "{{parsed_event.message.Name == 'Attack Discovery Detections'}}"
+  - name: set_behavior_monitoring_event
+    filter: "{{parsed_event.message.Name == 'Behavior Monitoring'}}"
+  - name: set_cnc_callback_event
+    filter: "{{parsed_event.message.Name == 'CnC Callback'}}"
+  - name: set_content_security_event
+    filter: "{{parsed_event.message.Name == 'This is a policy name'}}"
+  - name: set_data_loss_prevention_event
+    filter: "{{parsed_event.message.Name == 'Data Loss Prevention'}}"
+  - name: set_device_access_control_event
+    filter: "{{parsed_event.message.Name == 'Device Access Control'}}"
+  - name: set_endpoint_application_control_event
+    filter: "{{parsed_event.message.Name == 'Endpoint Application Control Violation Information'}}"
+  - name: set_engine_update_event
+    filter: "{{parsed_event.message.Name == 'Engine Update Status'}}"
+  - name: set_logon_logoff_event
+    filter: "{{parsed_event.message.Name == 'Managed Product Logon/Logoff Events'}}"
+  - name: set_network_content_inspection_event
+    filter: "{{parsed_event.message.Name == 'Suspicious Connection'}}"
+  - name: set_pattern_update_status_event
+    filter: "{{parsed_event.message.Name == 'Pattern Update Status'}}"
+  - name: set_predictive_machine_learning_event
+    filter: "{{parsed_event.message.Name == 'virusa'}}"
+  - name: set_sandbox_detection_event
+    filter: "{{parsed_event.message.Name == 'VAN_RANSOMWARE.umxxhelloransom_abc'}}"
+  - name: set_spyware_grayware_event
+    filter: "{{parsed_event.message.Name == 'Spyware Detected'}}"
+  - name: set_suspicious_files_event
+    filter: "{{parsed_event.message.Name == 'Suspicious Files'}}"
+  - name: set_virus_malware_event
+    filter: "{{parsed_event.message.Name == 'JS_EXPLOIT.SMDN' or parsed_event.message.Name == 'WORM_GAMARUE.ITK'}}"
+  - name: set_web_security_event
+    filter: "{{parsed_event.message.Name == '7'}}"
+  - name: set_trojan_event
+    filter: "{{parsed_event.message.Name.startswith('Trojan.')}}"
+
+stages:
+  set_timestamp:
+    actions:
+      # Default timestamp is the start or startTime field
+      - set:
+          "@timestamp": "{{parse_start_date.date}}"
+
+      # Second choice is the receipt time (rc) field
+      - set:
+          "@timestamp": "{{parse_receipt_time.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time != null}}"
+
+      # Last choice is the end or endTime field
+      - set:
+          "@timestamp": "{{parse_end_date.date}}"
+        filter: "{{parse_start_date == null and parse_receipt_time == null and parse_end_date != null}}"
+
+  set_cef_header_fields:
+    # CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
+    actions:
+      - set:
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          event.dataset: "{{parsed_event.message.Name}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          rule.id: "{{parsed_event.message.DeviceEventClassID}}"
+
+      - set:
+          # Match only for agentSeverity of type int
+          event.severity: "{{parsed_event.message.Severity}}"
+        filter: "{{parsed_event.message.Severity | re_match('[1-9]|10')}}"
+
+  set_attack_discovery_detection_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          user.name: "{{parsed_event.message.duser}}"
+          source.ip: "{{parsed_event.message.c6a3}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          rule.name: "{{parsed_event.message.SLF_RuleID}}"
+          rule.ruleset: "{{parsed_event.message.cat}}"
+
+  set_behavior_monitoring_event:
+    actions:
+      - set:
+          event.category: ["process"]
+          host.name: "{{parsed_event.message.dvchost}}"
+          source.ip: "{{parsed_event.message.src}}"
+          process.executable: "{{parsed_event.message.sproc}}"
+          trendmicro.apexone.behavior.target: "{{parsed_event.message.Target}}"
+
+      - translate:
+        dictionary:
+          1: "Process"
+          2: "Process image"
+          4: "Registry"
+          8: "File system"
+          16: "Driver"
+          32: "SDT"
+          64: "System API"
+          128: "User Mode"
+          2048: "Exploit"
+          65535: "All"
+        mapping:
+          parsed_event.message.cn2: trendmicro.apexone.event_type
+
+      - translate:
+        dictionary:
+          0: "Compromised executable file"
+          1: "New startup program"
+          2: "Host file modification"
+          3: "Program library injection"
+          4: "New Internet Explorer plugin"
+          5: "Internet Explorer setting modification"
+          6: "Shell modification"
+          7: "New service"
+          8: "Security policy modification"
+          9: "Firewall policy modification"
+          10: "System file modification"
+          11: "Duplicated system file"
+          13: "Layered service provider"
+          14: "System process modification"
+          16: "Suspicious behavior"
+          100: "Newly encountered programs"
+          200: "Unauthorized file encryption"
+          1000: "Threat behavior analysis"
+          9999: "User-defined policy"
+        mapping:
+          parsed_event.message.cs2: rule.name
+
+      - translate:
+        dictionary:
+          0: "Allow"
+          1: "Ask"
+          2: "Deny"
+          3: "Terminate"
+          4: "Read Only"
+          5: "Read/Write Only"
+          6: "Read/Execute Only"
+          7: "Feedback"
+          8: "Clean"
+          1002: "Unknown"
+          1003: "Assess"
+          1004: "Terminated. Files were recovered."
+          1005: "Terminated. Some files were not recovered."
+          1006: "Terminated. Files were not recovered."
+          1007: "Terminated. Restart result: Files were recovered."
+          1008: "Terminated: Restart result: Some files were not recovered."
+          1009: "Terminated: Restart result: Riles were not recovered."
+        mapping:
+          parsed_event.message.act: event.action
+        fallback: ["info"]
+
+      - translate:
+        dictionary:
+          0: ["start"]
+          2: ["end"]
+          3: ["end"]
+          1004: ["end"]
+          1005: ["end"]
+          1006: ["end"]
+          1007: ["end"]
+          1008: ["end"]
+          1009: ["end"]
+        mapping:
+          parsed_event.message.act: event.type
+
+  set_cnc_callback_event:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: info
+          host.name: "{{parsed_event.message.shost}}"
+          source.ip: "{{parsed_event.message.src}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          source.domain: "{{parsed_event.message.SLF_DomainName}}"
+          rule.ruleset: "{{parsed_event.message.SLF_PolicyName}}"
+          url.original: "{{parsed_event.message.request}}"
+          event.start: "{{parsed_event.message.SLF_FirstSeen}}"
+          event.end: "{{parsed_event.message.SLF_LastSeen}}"
+          destination.address: "{{parsed_event.message.CnCDestination}}"
+          process.name: "{{parsed_event.message.deviceProcessName | basename}}"
+          process.executable: "{{parsed_event.message.deviceProcessName}}"
+          process.working_directory: "{{parsed_event.message.deviceProcessName | dirname}}"
+
+  set_content_security_event:
+    actions:
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+          event.severity: "{{parsed_event.message.CLF_SeverityCode}}"
+          event.code: "{{parsed_event.message.cs5}}"
+          rule.name: "{{parsed_event.message.SL_PolicyContent}}"
+          rule.ruleset: "{{parsed_event.message.cat}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+          file.name: "{{parsed_event.message.fname}}"
+          email.subject: "{{parsed_event.message.msg}}"
+          source.ip: "{{parsed_event.message.src}}"
+          url.original: "{{parsed_event.message.request}}"
+
+      - set:
+          email.to.address: ["{{parsed_event.message.dhost}}"]
+        filter: "{{parsed_event.message.dhost != null}}"
+
+      - set:
+          email.from.address: ["{{parsed_event.message.shost}}"]
+        filter: "{{parsed_event.message.shost != null}}"
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: N/A
+          2: Clean
+          3: Delete
+          4: Move
+          5: Rename
+          6: Log
+          7: Strip
+          8: Drop
+          9: Quarantine
+          10: Transform
+          11: Archive
+          12: Stamp
+          13: Block
+          14: Redirect mail for approval
+          81: Encrypt
+          90: Detect
+          257: Reset
+        mapping:
+          parsed_event.message.act: event.action
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: ContentFilter
+          2: AttachmentFilter
+          3: StandardFilter
+          4: SizeFilter
+          5: DisclaimerMgr
+          6: SpamFilter
+          7: OPP
+          8: ImportFilter
+          9: PhishingFilter
+          10: UrlReputationFilter
+        mapping:
+          parsed_event.message.cs3: trendmicro.apexone.SL_FilterType
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: N/A
+          2: Deliver
+          3: Delete
+          4: Quarantine
+          5: Postpone
+          6: Forward
+          7: Replace
+          8: Archive
+          100: Strip
+          101: Pass
+        mapping:
+          parsed_event.message.cs6: trendmicro.apexone.SL_MessageAction
+
+  set_data_loss_prevention_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["email"]
+          event.type: ["info"]
+          source.ip: "{{parsed_event.message.src}}"
+          source.mac: "{{parsed_event.message.smac}}"
+          host.name: "{{parsed_event.message.shost}}"
+          user.name: "{{parsed_event.message.get('Incident_Source_(AD_Account)')}}"
+          email.subject: "{{parsed_event.message.msg}}"
+          url.original: "{{parsed_event.message.request}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.size: "{{parsed_event.message.fsize}}"
+          rule.name: "{{parsed_event.message.Rule}}"
+          rule.ruleset: "{{parsed_event.message.Rule}}"
+          source.domain: "{{parsed_event.message.shost}}"
+          destination.domain: "{{parsed_event.message.dvchost}}"
+
+      - set:
+          email.from.address: ["{{parsed_event.message.suser}}"]
+        filter: "{{parsed_event.message.suser != null}}"
+
+      - set:
+          email.to.address: ["{{parsed_event.message.duser}}"]
+        filter: "{{parsed_event.message.duser != null}}"
+
+      - translate:
+        dictionary:
+          -1: Not available
+          0: Blocked
+          1: Deleted
+          2: Delivered
+          3: Logged
+          4: Passed
+          5: Quarantined
+          6: Replaced
+          7: Archived
+          8: Archived (message body only)
+          9: Quarantined (message body only)
+          10: Passed (message body only)
+          11: Encrypted
+          12: Alerted (endpoint)
+          13: Alerted (server)
+          14: Data recorded
+          15: User justified
+          16: Handed off
+          17: Recipient altered
+          18: Blind carbon copied
+          19: Delivery postponed
+          20: Stamped
+          21: Attachment deleted
+          22: Subject tagged
+          23: X-header tagged
+          24: Decrypted
+          25: Re-encrypted
+          26: Tagged (mail)
+          27: Encrypted (user key)
+          28: Encrypted (group key)
+          29: Moved
+          30: Passed (encrypted)
+          31: Passed (user justified)
+          32: Blocked (Endpoint Encryption not installed)
+          33: Blocked (user justified)
+          34: Blocked (Endpoint Encryption logged off)
+          35: Blocked (Endpoint Encryption error)
+          36: web upload
+        mapping:
+          parsed_event.message.cn2: event.action
+
+  set_device_access_control_event:
+    actions:
+      - set:
+          event.type: ["info"]
+          event.category: ["file"]
+          source.domain: "{{parsed_event.message.shost}}"
+          destination.domain: "{{parsed_event.message.dvchost}}"
+          process.executable: "{{parsed_event.message.sproc}}"
+          file.name: "{{parsed_event.message.fname}}"
+
+      - translate:
+        dictionary:
+          0: USB storage device
+          1: Non-storage USB
+          2: CD/DVD
+          3: Floppy disks
+          4: Network driver
+        mapping:
+          parsed_event.message.cn2: trendmicro.apexone.DeviceType
+
+      - translate:
+        dictionary:
+          0: Modify
+          1: Read and execute
+          2: Read
+          3: List device content only
+          4: Block
+        mapping:
+          parsed_event.message.cn3: trendmicro.apexone.Permission
+
+  set_endpoint_application_control_event:
+    actions:
+      - set:
+          event.type: ["info"]
+          event.category: ["process"]
+          source.domain: "{{parsed_event.message.shost}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+          source.user.name: "{{parsed_event.message.suser}}"
+          source.ip: "{{parsed_event.message.cs2 or parsed_event.message.c6a3}}"
+          process.executable: "{{parsed_event.message.fname}}"
+          process.hash.sha1: "{{parsed_event.message.fileHash}}"
+          process.command_line: "{{parsed_event.message.cs3}}"
+          user.name: "{{parsed_event.message.duser}}"
+          rule.name: "{{parsed_event.message.cs4}}"
+          rule.ruleset: "{{parsed_event.message.cs5}}"
+
+      - translate:
+        dictionary:
+          0: Allowed
+          1: Blocked
+          2: Reported as allowed
+          3: Reported as blocked
+        mapping:
+          parsed_event.message.act: event.action
+
+  set_engine_update_event:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["change"]
+          host.name: "{{parsed_event.message.shost}}"
+          source.ip: "{{parsed_event.message.cs2}}"
+          trendmicro.apexone.Engine: "{{parsed_event.message.cn2}}"
+
+      - translate:
+        dictionary:
+          0: Unused
+          1: In use
+        mapping:
+          parsed_event.message.cn3: trendmicro.apexone.Engine_Status
+
+  set_logon_logoff_event:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+          process.title: "{{parsed_event.message.deviceFacility}}"
+          host.name: "{{parsed_event.message.shost}}"
+          event.reason: "{{parsed_event.message.msg}}"
+
+  set_network_content_inspection_event:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.code: "{{parsed_event.message.cat}}"
+          process.executable: "{{parsed_event.message.deviceProcessName}}"
+          source.ip: "{{parsed_event.message.src}}"
+          source.port: "{{parsed_event.message.spt}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          destination.port: "{{parsed_event.message.dpt}}"
+          trendmicro.apexone.NCIE_ThreatName: "{{parsed_event.message.NCIE_ThreatName}}"
+          event.action: "{{parsed_event.message.act}}"
+          network.direction: >-
+            {% if parsed_event.message.deviceDirection != 'None' %}
+              {{parsed_event.message.deviceDirection}}
+            {% endif %}
+
+      - translate:
+        dictionary:
+          Pass: ["allowed"]
+          Block: ["denied"]
+          4: ["denied"]
+        mapping:
+          parsed_event.message.act: event.type
+        fallback: ["access"]
+
+  set_pattern_update_status_event:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          host.name: "{{parsed_event.message.shost}}"
+          host.os.name: "{{parsed_event.message.cs1}}"
+          host.ip: "{{parsed_event.message.cs2}}"
+          trendmicro.apexone.Connection_Status: "{{parsed_event.message.cn1}}"
+          rule.id: "{{parsed_event.message.cn2}}"
+          trendmicro.apexone.Pattern_RuleVersion: "{{parsed_event.message.cn5}}"
+          event.reason: "{{parsed_event.message.msg}}"
+
+      - translate:
+        dictionary:
+          0: Up-to-date
+          1: 1 version old
+          2: 2 versions old
+          3: 3 versions old
+          4: 4 versions old
+          5: 5 versions old
+          6: 6 versions old
+          7: 7 or more versions old
+        mapping:
+          parsed_event.message.cn3: trendmicro.apexone.Pattern_RuleStatus
+
+  set_predictive_machine_learning_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["malware"]
+          event.type: ["info"]
+          file.name: "{{parsed_event.message.fname}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.hash.sha1: "{{parsed_event.message.filehash}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          user.target.name: ["{{parsed_event.message.duser}}"]
+          host.ip: "{{parsed_event.message.dst or c6a3}}"
+          user.name: "{{parsed_event.message.suser}}"
+          source.address: "{{parsed_event.message.shost}}"
+          url.original: "{{parsed_event.message.cs3}}"
+          process.executable: "{{parsed_event.message.sproc}}"
+          process.command_line: "{{parsed_event.message.cs4}}"
+
+  set_sandbox_detection_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["malware"]
+          event.type: ["info"]
+          host.name: "{{parsed_event.message.dhost}}"
+          source.ip: "{{parsed_event.message.src or parsed_event.message.c6a3}}"
+          process.name: "{{parsed_event.message.sproc}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          file.path: "{{parsed_event.message.fname}}"
+          file.name: "{{parsed_event.message.fname | basename}}"
+          file.directory: "{{parsed_event.message.fname | dirname}}"
+          url.original: "{{parsed_event.message.request}}"
+          trendmicro.apexone.Security_Threat: "{{parsed_event.message.cs1}}"
+          trendmicro.apexone.Risk_Level: "{{parsed_event.message.cn1}}"
+          trendmicro.apexone.Threat_Categories: "{{parsed_event.message.cs2}}"
+          trendmicro.apexone.Cloud_Service_Vendor: "{{parsed_event.message.cs3}}"
+
+  set_spyware_grayware_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["malware"]
+          event.type: ["info"]
+          trendmicro.apexone.VirusName: "{{parsed_event.message.cs1}}"
+          file.path: "{{parsed_event.message.fname}}"
+          file.name: "{{parsed_event.message.fname | basename}}"
+          file.directory: "{{parsed_event.message.fname | dirname}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
+          user.name: "{{parsed_event.message.duser}}"
+
+  set_suspicious_files_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["malware"]
+          event.type: ["info"]
+          file.path: "{{parsed_event.message.cs3}}"
+          file.name: "{{parsed_event.message.cs3 | basename}}"
+          file.directory: "{{parsed_event.message.cs3 | dirname}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
+          event.action: "{{parsed_event.message.act}}"
+
+  set_virus_malware_event:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["malware"]
+          event.type: ["info"]
+          host.name: "{{parsed_event.message.dhost}}"
+          user.name: "{{parsed_event.message.duser}}"
+          event.code: "{{parsed_event.message.cs4}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          source.ip: "{{parsed_event.message.dst or parsed_event.message.c6a3}}"
+
+  set_web_security_event:
+    actions:
+      - set:
+          event.category: ["network"]
+          destination.port: "{{parsed_event.message.dpt}}"
+          source.ip: "{{parsed_event.message.src}}"
+          rule.ruleset: "{{parsed_event.message.cs1}}"
+          host.name: "{{parsed_event.message.dvchost}}"
+          file.name: "{{parsed_event.message.fname}}"
+          url.original: "{{parsed_event.message.request}}"
+          user.name: "{{parsed_event.message.duser}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+
+      - translate:
+        dictionary:
+          0: Unknown
+          1: Pass
+          2: Block
+          3: Monitor
+          4: Delete
+          5: Quarantine
+          6: Warn
+          7: Warn and continue
+          8: Override
+        mapping:
+          parsed_event.message.act: event.action
+
+      - translate:
+        dictionary:
+          1: ["allowed"]
+          2: ["denied"]
+          4: ["denied"]
+        mapping:
+          parsed_event.message.act: event.type
+        fallback: ["info"]
+
+      - translate:
+        dictionary:
+          1: Inbound
+          2: Outbound
+        mapping:
+          parsed_event.message.deviceDirection: network.direction
+
+  set_trojan_event:
+    actions:
+      - set:
+          destination.ip: "{{parsed_event.message.dst}}"
+          event.category: ["malware"]
+          event.action: "{{parsed_event.message.cs5}}"
+          event.type: ["info"]
+          file.hash.sha1: "{{parsed_event.message.fileHash}}"
+          file.name: "{{parsed_event.message.fname}}"
+          file.path: "{{parsed_event.message.filePath}}"
+          host.name: "{{parsed_event.message.dhost}}"
+          user.domain: "{{parsed_event.message.duser.split('\\\\')|first}}"
+          user.name: "{{parsed_event.message.duser.split('\\\\')|last}}"
+          server.domain: "{{parsed_event.message.dvchost}}"

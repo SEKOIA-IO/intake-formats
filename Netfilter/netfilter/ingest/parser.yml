@@ -4,55 +4,52 @@ pipeline:
     external:
       name: grok.match
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: result
-        pattern: '%{IPTABLES}'
+        pattern: "%{IPTABLES}"
         custom_patterns:
-          NETFILTERMAC: '%{MAC:destination_mac}:%{MAC:source_mac}:%{ETHTYPE}'
-          ETHTYPE: '(?:(?:[A-Fa-f0-9]{2}):(?:[A-Fa-f0-9]{2}))'
+          NETFILTERMAC: "%{MAC:destination_mac}:%{MAC:source_mac}:%{ETHTYPE}"
+          ETHTYPE: "(?:(?:[A-Fa-f0-9]{2}):(?:[A-Fa-f0-9]{2}))"
           IPTABLES_ETHERNET: '((%{DATA}( %{WORD:action_name})?))?\s+IN=%{DATA}? OUT=%{DATA}?( MAC=%{NETFILTERMAC})?'
-          IPTABLES_PORT_PAIR: 'SPT=%{INT:source_port} DPT=%{INT:destination_port}'
-
-          IPTABLES_TCP_FLAGS: '((?<= )(CWR|ECE|URG|ACK|PSH|RST|SYN|FIN))*'
-          IPTABLES_TCP_SEQ: 'SEQ=%{INT} ACK=%{INT}'
-          IPTABLES_TCP_DETAILS: '(%{IPTABLES_TCP_SEQ} )?WINDOW=%{INT} RES=%{BASE16NUM} %{IPTABLES_TCP_FLAGS}'
-          IPTABLES_INCOMPLETE_PACKET: 'INCOMPLETE \[%{INT} bytes\]'
-          IPTABLES_UDP_DETAILS: 'LEN=%{INT}'
-
-          IPTABLES_ICMP_EXTRA_ECHO: 'ID=%{INT} SEQ=%{INT}'
-          IPTABLES_ICMP_EXTRA_PARAM: 'PARAMETER=%{INT}'
-          IPTABLES_ICMP_EXTRA_REDIRECT: 'GATEWAY=%{IP}'
-          IPTABLES_ICMP_EXTRA: '( (?:%{IPTABLES_ICMP_EXTRA_ECHO}|%{IPTABLES_ICMP_EXTRA_PARAM}|%{IPTABLES_ICMP_EXTRA_REDIRECT}))*'
-          IPTABLES_ICMP_DETAILS: 'TYPE=%{INT} CODE=%{INT}(( %{IPTABLES_INCOMPLETE_PACKET})|%{IPTABLES_ICMP_EXTRA})'
+          IPTABLES_PORT_PAIR: "SPT=%{INT:source_port} DPT=%{INT:destination_port}"
+          IPTABLES_ICMP_EXTRA_ECHO: "ID=%{INT} SEQ=%{INT}"
+          IPTABLES_ICMP_EXTRA_PARAM: "PARAMETER=%{INT}"
+          IPTABLES_ICMP_EXTRA_REDIRECT: "GATEWAY=%{IP}"
+          IPTABLES_ICMP_EXTRA: "( (?:%{IPTABLES_ICMP_EXTRA_ECHO}|%{IPTABLES_ICMP_EXTRA_PARAM}|%{IPTABLES_ICMP_EXTRA_REDIRECT}))*"
           IPTABLES_ICMP_NESTED: '\[%{IPTABLES_IP_START}%{IPTABLES_IP_STDPROTOCOLS}\s*\]'
 
-          IPTABLES_PROTOCOL: 'PROTO=%{WORD:network_transport}'
+          IPTABLES_PROTOCOL: "PROTO=%{WORD:network_transport}"
 
-          IPTABLES_IP_PAYLOAD: '%{IPTABLES_PROTOCOL}( %{IPTABLES_PORT_PAIR})?( %{DATA})?'
-#          IPTABLES_IP_PAYLOAD: '%{IPTABLES_PROTOCOL}( %{IPTABLES_PORT_PAIR})?( (%{IPTABLES_TCP_DETAILS}|%{IPTABLES_UDP_DETAILS}|%{IPTABLES_ICMP_DETAILS}|%{IPTABLES_INCOMPLETE_PACKET}))?'
+          IPTABLES_IP_PAYLOAD: "%{IPTABLES_PROTOCOL}( %{IPTABLES_PORT_PAIR})?( %{DATA})?"
 
-          IPTABLES_IP_FRAGFLAG: '((?<= )(CE|DF|MF))*'
-          IPTABLES_IP_START: 'SRC=%{IP:source_address} DST=%{IP:destination_address} LEN=%{INT:source_bytes} TOS=%{BASE16NUM} PREC=%{BASE16NUM} TTL=%{INT} ID=%{INT}(?: %{IPTABLES_IP_FRAGFLAG})?(?: FRAG: %{INT})?'
-          IPTABLES_IP: '%{IPTABLES_IP_START} %{IPTABLES_IP_PAYLOAD}'
-          IPTABLES: '%{IPTABLES_ETHERNET} %{IPTABLES_IP}'
+          IPTABLES_IP_FRAGFLAG: "(CE|DF|MF)?"
+          IPTABLES_IP_START: "SRC=%{IP:source_address} DST=%{IP:destination_address} LEN=%{INT:source_bytes} TOS=%{BASE16NUM} PREC=%{BASE16NUM} TTL=%{INT} ID=%{INT}(?: %{IPTABLES_IP_FRAGFLAG})?(?: FRAG: %{INT})?"
+          IPTABLES_IP: "%{IPTABLES_IP_START} %{IPTABLES_IP_PAYLOAD}"
+          IPTABLES: "%{IPTABLES_ETHERNET} %{IPTABLES_IP}"
   - name: set
     external: null
 stages:
   set:
     actions:
       - set:
-          destination.mac: '{{ grok.result.destination_mac }}'
-          source.mac: '{{ grok.result.source_mac }}'
-          source.port: '{{ grok.result.source_port }}'
-          destination.port: '{{ grok.result.destination_port }}'
-          network.transport: '{{ grok.result.network_transport|lower }}'
-          source.address: '{{ grok.result.source_address }}'
-          source.ip: '{{ grok.result.source_address }}'
-          destination.address: '{{ grok.result.destination_address }}'
-          destination.ip: '{{ grok.result.destination_address }}'
-          source.bytes: '{{ grok.result.source_bytes }}'
-        name: set
+          destination.mac: "{{ grok.result.destination_mac }}"
+          source.mac: "{{ grok.result.source_mac }}"
+          source.port: "{{ grok.result.source_port }}"
+          destination.port: "{{ grok.result.destination_port }}"
+          network.transport: "{{ grok.result.network_transport|lower }}"
+          source.address: "{{ grok.result.source_address }}"
+          destination.address: "{{ grok.result.destination_address }}"
+          source.bytes: "{{ grok.result.source_bytes }}"
+
       - set:
-          action.name: '{{ grok.result.action_name|lower }}'
+          source.ip: "{{ grok.result.source_address }}"
+        filter: "{{ grok.result.source_address  | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{ grok.result.destination_address }}"
+        filter: "{{ grok.result.destination_address  | is_ipaddress}}"
+
+      - set:
+          action.name: "{{ grok.result.action_name|lower }}"
           action.outcome: success
-        filter: '{{ grok.result.action_name is defined and grok.result.action_name != None }}'
+        filter: "{{ grok.result.action_name is defined and grok.result.action_name != None }}"

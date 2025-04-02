@@ -1,0 +1,62 @@
+name: google-cloud-load-balancing
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+
+  - name: parse_remote_ip
+    filter: "{{parsed_event.message.httpRequest.remoteIp != null}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.httpRequest.remoteIp}}"
+        output_field: message
+        pattern: "%{IP:source_ip}|%{IP:source_ip}:%{NUMBER:source_port}"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          cloud.provider: "Google Cloud"
+          cloud.service.name: "Load Balancing"
+
+          event.category: ["web"]
+          event.type: ["access"]
+
+      - set:
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          cloud.project.id: "{{parsed_event.message.resource.labels.project_id}}"
+          cloud.region: "{{parsed_event.message.resource.labels.zone}}"
+          http.request.method: "{{parsed_event.message.httpRequest.requestMethod}}"
+          http.request.referrer: "{{parsed_event.message.httpRequest.referer}}"
+          url.original: "{{parsed_event.message.httpRequest.requestUrl}}"
+          http.response.status_code: "{{parsed_event.message.httpRequest.status}}"
+          user_agent.original: "{{parsed_event.message.httpRequest.UserAgent}}"
+          rule.name: "{{parsed_event.message.jsonPayload.enforcedSecurityPolicy.name}}"
+          event.action: "{{parsed_event.message.jsonPayload.enforcedSecurityPolicy.configuredAction}}"
+          event.outcome: "{{parsed_event.message.jsonPayload.enforcedSecurityPolicy.outcome}}"
+          source.geo.region_iso_code: "{{parsed_event.message.jsonPayload.SecurityPolicyRequestData.remoteIpInfo.regionCode}}"
+
+      - set:
+          source.ip: "{{parse_remote_ip.message.source_ip}}"
+        filter: "{{parse_remote_ip.message.source_ip != None}}"
+
+      - set:
+          source.port: "{{parse_remote_ip.message.source_port}}"
+        filter: "{{parse_remote_ip.message.source_port != None}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.httpRequest.serverIp}}"
+        filter: "{{parsed_event.message.httpRequest.serverIp | is_ipaddress}}"
+
+      - set:
+          google_cloud_load_balancing.insertId: "{{parsed_event.message.insertId}}"
+          google_cloud_load_balancing.logName: "{{parsed_event.message.logName}}"
+          google_cloud_load_balancing.receiveTimestamp: "{{parsed_event.message.receiveTimestamp}}"
+          google_cloud_load_balancing.severity: "{{parsed_event.message.severity}}"
+
+          google_cloud_load_balancing.priority: "{{parsed_event.message.jsonPayload.enforcedSecurityPolicy.priority}}"
+          google_cloud_load_balancing.statusDetails: "{{parsed_event.message.jsonPayload.enforcedSecurityPolicy.statusDetails}}"

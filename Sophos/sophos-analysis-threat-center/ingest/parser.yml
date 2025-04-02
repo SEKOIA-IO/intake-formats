@@ -1,0 +1,223 @@
+name: sophos-analysis-threat-center
+pipeline:
+  - external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+    name: parse_json
+
+  - name: parsed_analysis
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_json.message.analysis}}"
+        output_field: message
+    filter: '{{parse_json.message.get("analysis") != None }}'
+
+  - name: parsed_sigma
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_json.message.ioc_detection_sigma}}"
+        output_field: message
+    filter: '{{parse_json.message.get("ioc_detection_sigma") != None}}'
+
+  - name: parsed_access
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_json.message.ioc_detection_access}}"
+        output_field: message
+    filter: '{{parse_json.message.get("ioc_detection_access") != None }}'
+
+  - name: parsed_impact
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_json.message.ioc_detection_impact}}"
+        output_field: message
+    filter: '{{parse_json.message.get("ioc_detection_impact") != None }}'
+
+  - name: parsed_ml_score_data
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_json.message.ml_score_data}}"
+        output_field: message
+    filter: '{{parse_json.message.get("ml_score_data") not in [None, ""] }}'
+
+  - name: parsed_password_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_json.message.password_last_set}}"
+        output_field: date
+    filter: '{{parse_json.message.get("password_last_set") not in [None, "-"] and not parse_json.message.get("password_last_set").startswith("%%") }}'
+
+  - name: parsed_unix_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_json.message.ioc_unix_time}}"
+        output_field: date
+    filter: '{{parse_json.message.get("ioc_unix_time") != None }}'
+
+  - name: parsed_ingestion_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_json.message.ingestion_timestamp}}"
+        output_field: date
+    filter: '{{parse_json.message.get("ingestion_timestamp") != None }}'
+
+  - name: set_ecs_fields
+  - name: set_sophos_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_json.message.calendar_time}}"
+
+          event.severity: "{{parse_json.message.ioc_severity}}"
+          event.reason: "{{parse_json.message.description}}"
+          event.code: "{{parse_json.message.ioc_detection_id}}"
+          event.ingested: "{{parsed_ingestion_date.date}}"
+
+          user.name: "{{parse_json.message.meta_username}}"
+          user.target.name: "{{parse_json.message.target_username}}"
+
+          source.ip: "{{parse_json.message.meta_ip_address}}"
+          source.nat.ip: "{{parse_json.message.meta_public_ip}}"
+          source.mac: "{{parse_json.message.meta_mac_address}}"
+          source.geo.country_iso_code: "{{parse_json.message.meta_public_ip_country_code}}"
+          source.geo.postal_code: "{{parse_json.message.meta_public_ip_postal}}"
+          source.geo.city_name: "{{parse_json.message.meta_public_ip_city}}"
+          source.geo.country_name: "{{parse_json.message.meta_public_ip_country}}"
+          source.bytes: "{{parse_json.message.upload_size}}"
+
+          host.name: "{{parse_json.message.meta_hostname}}"
+          host.id: "{{parse_json.message.host_identifier}}"
+          host.os.full: "{{parse_json.message.meta_os_name}}"
+          host.os.name: "{{parse_json.message.meta_os_platform}}"
+          host.os.version: "{{parse_json.message.meta_os_version}}"
+          host.domain: "{{parse_json.message.subject_domain}}"
+
+          vulnerability.reference: "{{parse_json.message.ioc_detection_references[2:-2]}}"
+          vulnerability.description: "{{parse_json.message.ioc_detection_description}}"
+
+          process.pid: "{{parse_json.message.pid}}"
+          process.name: "{{parse_json.message.ioc_worker_name}}"
+          process.hash.sha1: "{{parse_json.message.sha1}}"
+          process.hash.sha256: "{{parse_json.message.sha256 or parse_json.message.lolbins_ml_results.sha256}}"
+          process.parent.name: "{{parse_json.message.process_parent_name or parse_json.message.parent_name}}"
+          process.command_line: "{{parse_json.message.process_cmd_line or parse_json.message.cmdline}}"
+          process.parent.executable: "{{parse_json.message.parent_path}}"
+          process.parent.command_line: "{{parse_json.message.parent_cmdline}}"
+          process.parent.working_directory: "{{parse_json.message.process_parent_path}}"
+
+          destination.domain: "{{parse_json.message.target_domain}}"
+          destination.port: "{{parse_json.message.remote_port}}"
+          destination.address: "{{parse_json.message.remote_address}}"
+
+          threat.indicator.provider: "{{parse_json.message.threat_source}}"
+          server.domain: "{{parse_json.message.target_server}}"
+          file.path: "{{parse_json.message.ioc_event_path}}"
+          file.size: "{{parse_json.message.file_size or parse_json.message.process_file_size}}"
+          file.hash.sha1: "{{parse_json.message.sha1}}"
+          file.hash.sha256: "{{parse_json.message.sha256}}"
+
+      - set:
+          process.hash.sha256: "{{parse_json.message.process_sha256}}"
+        filter: '{{parse_json.message.get("process_sha256") != None}}'
+
+      - set:
+          registry.path: "{{parse_json.message.path}}"
+          registry.key: "{{parse_json.message.key}}"
+          registry.data.type: "{{parse_json.message.type}}"
+          registry.data.strings: "['{{parse_json.message.data}}']"
+        filter: '{{parse_json.message.ioc_detection_type == "Vulnerability"}}'
+
+      - set:
+          file.name: "{{parse_json.message.name}}"
+          file.path: "{{parse_json.message.path}}"
+        filter: '{{final.file.path == null and parse_json.message.path not in [null, "-"] and parse_json.message.ioc_detection_type == "process"}}'
+
+      - set:
+          process.code_signature.exists: "false"
+        filter: '{{parse_json.message.get("is_process_file_signed") != None and parse_json.message.is_process_file_signed == "0"}}'
+
+      - set:
+          process.code_signature.exists: "true"
+        filter: '{{parse_json.message.get("is_process_file_signed") != None and parse_json.message.is_process_file_signed == "1"}}'
+
+  set_sophos_fields:
+    actions:
+      - set:
+          sophos.threat_center.record_identifier: "{{parse_json.message.record_identifier}}"
+          sophos.threat_center.event.id: "{{parse_json.message.eventid}}"
+          sophos.threat_center.id: "{{parse_json.message.endpoint_id}}"
+          sophos.threat_center.user_upn: "{{parse_json.message.user_upn}}"
+          sophos.threat_center.logon_process: "{{parse_json.message.logon_process}}"
+          sophos.threat_center.package: "{{parse_json.message.package}}"
+          sophos.threat_center.message.id: "{{parse_json.message.message_identifier}}"
+
+          sophos.threat_center.sha256.reputation_band: "{{parse_json.message.sha256_reputation_band}}"
+          sophos.threat_center.sha256.reputation_score: "{{parse_json.message.sha256_reputation_score}}"
+          sophos.threat_center.endpoint.type: "{{parse_json.message.meta_endpoint_type}}"
+          sophos.threat_center.worker.id: "{{parse_json.message.ioc_worker_id}}"
+          sophos.threat_center.file.version: "{{parse_json.message.file_version}}"
+          sophos.threat_center.file.description: "{{parse_json.message.file_description}}"
+          sophos.threat_center.aggressive_activity: "{{parse_json.message.meta_aggressive_activity}}"
+          sophos.threat_center.detection_id_dedup: "{{parse_json.message.detection_id_dedup}}"
+          sophos.threat_center.threat_type: "{{parse_json.message.threat_type}}"
+
+          sophos.threat_center.process.executable.is_signed: "{{parse_json.message.is_process_file_signed}}"
+          sophos.threat_center.process.ml_score: "{{parse_json.message.process_ml_score}}"
+          sophos.threat_center.process.pua.score: "{{parse_json.message.process_pua_score}}"
+          sophos.threat_center.process.hash.sha256.reputation_band: "{{parse_json.message.process_sha256_reputation_band}}"
+          sophos.threat_center.process.hash.sha256.reputation_score: "{{parse_json.message.process_sha256_reputation_score}}"
+
+          sophos.threat_center.ioc.ttp_summary: "{{parse_json.message.ioc_event_ttp_summary}}"
+          sophos.threat_center.ioc.log_type: "{{parse_json.message.ioc_log_type}}"
+          sophos.threat_center.ioc.attack_type: "{{parse_json.message.ioc_attack_type}}"
+          sophos.threat_center.ioc.unix_time: "{{parsed_unix_date.date}}"
+          sophos.threat_center.ioc.detection.attack: "{{parse_json.message.ioc_detection_attack}}"
+          sophos.threat_center.ioc.detection.cvss: "{{parse_json.message.ioc_detection_cvss}}"
+          sophos.threat_center.ioc.detection.weight: "{{parse_json.message.ioc_detection_weight}}"
+          sophos.threat_center.ioc.detection.licences: "{{parse_json.message.ioc_detection_licenses}}"
+          sophos.threat_center.ioc.detection.type: "{{parse_json.message.ioc_detection_type}}"
+          sophos.threat_center.ioc.detection.category: "{{parse_json.message.ioc_detection_category}}"
+          sophos.threat_center.ioc.detection.impact.availability: "{{parsed_impact.message.availability}}"
+          sophos.threat_center.ioc.detection.impact.integrity: "{{parsed_impact.message.integrity}}"
+          sophos.threat_center.ioc.detection.impact.confidentiality: "{{parsed_impact.message.confidentiality}}"
+          sophos.threat_center.ioc.detection.access.authentication: "{{parsed_access.message.authentication}}"
+          sophos.threat_center.ioc.detection.access.complexity: "{{parsed_access.message.complexity}}"
+          sophos.threat_center.ioc.detection.access.vector: "{{parsed_access.message.vector}}"
+          sophos.threat_center.ioc.detection.sigma.id: "{{parsed_sigma.message.id}}"
+
+          sophos.threat_center.query.source: "{{parse_json.message.query_source}}"
+          sophos.threat_center.query.action: "{{parse_json.message.osquery_action}}"
+          sophos.threat_center.query.pack_version: "{{parse_json.message.meta_query_pack_version}}"
+          sophos.threat_center.query.name: "{{parse_json.message.query_name}}"
+
+          sophos.threat_center.ml.score: "{{parse_json.message.ml_score or parse_json.message.lolbins_ml_results.score}}"
+          sophos.threat_center.ml.score_band: "{{parse_json.message.process_ml_score_band or parse_json.message.ml_score_band}}"
+          sophos.threat_center.lolbins_ml_results.score: "{{parse_json.message.lolbins_ml_results.score}}"
+          sophos.threat_center.lolbins_ml_results.score_label: "{{parse_json.message.lolbins_ml_results.score_label}}"
+          sophos.threat_center.lolbins_ml_results.sha256: "{{parse_json.message.lolbins_ml_results.sha256}}"
+          sophos.threat_center.file.original.name: "{{parse_json.message.original_filename}}"
+
+          sophos.threat_center.analysis: "{{parsed_analysis.message}}"
+          sophos.threat_center.pua.score: "{{parse_json.message.pua_score}}"
+          sophos.threat_center.global_rep: "{{parse_json.message.global_rep}}"
+          sophos.threat_center.password.last_set: "{{parsed_password_date.date}}"
+
+      - set:
+          sophos.threat_center.ml_score_data.config_version: "{{parsed_ml_score_data.message.configVersion}}"
+          sophos.threat_center.ml_score_data.expire_time: "{{parsed_ml_score_data.message.expire_time}}"
+          sophos.threat_center.ml_score_data.pe.malware.score: "{{parsed_ml_score_data.message.pe.malware_score}}"
+          sophos.threat_center.ml_score_data.pe.pua.score: "{{parsed_ml_score_data.message.pe.pua_score}}"
+          sophos.threat_center.ml_score_data.vldflags: "{{parsed_ml_score_data.message.vldFlags}}"
+        filter: '{{parse_json.message.get("ml_score_data") != None }}'

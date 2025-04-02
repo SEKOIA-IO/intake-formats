@@ -1,0 +1,52 @@
+name: github-audit-logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.created_at}}"
+        output_field: datetime
+        format: timestamp
+  - name: set_common_fields
+  - name: set_custom_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.action: "{{json_event.message.action}}"
+          event.category: ["configuration"]
+          event.type: ["info", "change"]
+      - set:
+          event.type: ["info", "change", "creation"]
+        filter: '{{json_event.message.operation_type == "create"}}'
+      - set:
+          event.type: ["info", "change", "deletion"]
+        filter: '{{json_event.message.operation_type == "remove"}}'
+      - set:
+          event.type: ["info", "change", "denied", "creation", "user"]
+        filter: '{{json_event.message.operation_type == "create" and json_event.message.action == "org.block_user" }}'
+      - set:
+          event.type: ["info", "change", "allowed", "deletion", "user"]
+        filter: '{{json_event.message.operation_type == "remove" and json_event.message.action == "org.unblock_user" }}'
+      - set:
+          event.type: ["info", "change", "allowed", "user"]
+        filter: '{{json_event.message.action == "org.add_member" or json_event.message.action == "org.add_billing_manager" }}'
+      - set:
+          geo.country_iso_code: "{{json_event.message.actor_location.country_code}}"
+          geo.country_name: "{{json_event.message.actor_location.country_name}}"
+          organization.id: "{{json_event.message.org_id}}"
+          organization.name: "{{json_event.message.org}}"
+          user.email: "{{json_event.message.data.email}}"
+          user.id: "{{json_event.message.actor_id}}"
+          user.name: "{{json_event.message.actor}}"
+          user_agent.original: "{{json_event.message.user_agent}}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          github.audit_logs: "{{json_event.message}}"

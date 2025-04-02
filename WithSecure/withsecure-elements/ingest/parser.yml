@@ -4,14 +4,32 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: message
   - name: read_event_date
     external:
       name: date.parse
       properties:
-        input_field: '{{json_event.message.clientTimestamp}}'
+        input_field: "{{json_event.message.clientTimestamp}}"
         output_field: datetime
+  - name: parse_username
+    filter: "{{json_event.message.details.userName != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.details.userName}}"
+        output_field: user
+        pattern: "(%{DATA:domain}[/\\\\]+)?(%{USERNAME:name})"
+  - name: parse_username
+    filter: "{{json_event.message.userName != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.userName}}"
+        output_field: user
+        pattern: "(%{DATA:domain}[/\\\\]+)?(%{USERNAME:name})"
   - name: set_common_fields
   - name: set_malicious_file_fields
     filter: '{{json_event.message.engine == "manualScanning" or json_event.message.engine == "fileScaning" or json_event.message.engine == "deepGuard"}}'
@@ -27,120 +45,276 @@ pipeline:
     filter: '{{json_event.message.engine == "browsingProtection" or json_event.message.engine == "reputationBasedBrowsing" or json_event.message.engine == "webContentControl"}}'
   - name: connection_control
     filter: '{{json_event.message.engine == "connectionControl"}}'
+  - name: application_control
+    filter: '{{json_event.message.engine == "applicationControl"}}'
+  - name: set_email_fields
+    filter: '{{"emailscan" in json_event.message.engine|lower}}'
+
 stages:
   set_common_fields:
     actions:
       - set:
-          '@timestamp': '{{read_event_date.datetime}}'
-          event.kind: 'event'
-          event.dataset: '{{json_event.message.engine}}'
-          event.action: '{{json_event.message.action}}'
-          event.reason: '{{json_event.message.details.reason}}'
+          host.ip: >
+            [
+              {%- for item in json_event.message.details.hostIpAddress.split(' ') -%}
+                {%- if item | re_match("[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?") -%}
+                  '{{ item.split('/')[0] }}',
+                {%- endif -%}
+              {%- endfor -%}
+            ]
+        filter: '{{ json_event.message.details.hostIpAddress | re_match("[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?") }}'
 
-          agent.id: '{{json_event.message.device.id}}'
-          agent.name: '{{json_event.message.device.name}}'
+      - set:
+          "@timestamp": "{{read_event_date.datetime}}"
+          event.dataset: "{{json_event.message.engine}}"
+          event.action: "{{json_event.message.action}}"
+          event.reason: "{{json_event.message.details.reason}}"
+          event.code: "{{json_event.message.details.systemDataEventId}}"
+          event.provider: "{{json_event.message.details.systemDataProviderName}}"
 
-          host.ip: '{{json_event.message.details.hostIpAddress}}'
-          host.hostname: '{{json_event.message.device.name}}'
+          action.id: "{{json_event.message.details.systemDataEventId}}"
+          action.type: "{{json_event.message.details.systemDataChannel}}"
+          action.record_id: "{{json_event.message.details.systemDataRecordId}}"
 
-          agent.type: 'WithSecure Agent'
-          organization.id: '{{json_event.message.organization.id}}'
-          organization.name: '{{json_event.message.organization.name}}'
+          agent.id: "{{json_event.message.device.id}}"
+          agent.name: "{{json_event.message.device.name}}"
+          host.hostname: "{{json_event.message.device.name}}"
 
-          process.executable: '{{json_event.message.details.creator}}'
-          process.hash.sha1: '{{json_event.message.details.creatorSha1}}'
-          process.command_line: '{{json_event.message.details.commandLine}}'
-          process.name: '{{json_event.message.details.process}}'
+          agent.type: "WithSecure Agent"
+          organization.id: "{{json_event.message.organization.id}}"
+          organization.name: "{{json_event.message.organization.name}}"
 
-          user.name: '{{json_event.message.details.userName}}'
-          url.full: '{{json_event.message.details.url}}'
+          user.domain: "{{parse_username.user.domain}}"
+          user.name: "{{parse_username.user.name}}"
+          action.properties.UserPrincipalName: "{{json_event.message.details.userPrincipalName}}"
 
-          file.hash.sha1: '{{json_event.message.details.sha1}}'
-          file.path: '{{json_event.message.details.path}}'
-          file.name: '{{json_event.message.details.path | basename}}'
-          file.created: '{{json_event.message.details.created}}'
-          file.mtime: '{{json_event.message.details.modified}}'
-          file.size: '{{json_event.message.details.size}}'
+          process.pid: "{{json_event.message.details.systemDataProcessId}}"
+          process.executable: "{{json_event.message.details.creator}}"
+          process.hash.sha1: "{{json_event.message.details.creatorSha1}}"
+          process.command_line: "{{json_event.message.details.commandLine}}"
+          process.name: "{{json_event.message.details.process}}"
 
-          withsecure.severity: '{{json_event.message.severity}}'
-          withsecure.infection.name: '{{json_event.message.details.infectionName}}'
-          withsecure.infection.type: '{{json_event.message.details.infectionType}}'
-          withsecure.quarantine.id: '{{json_event.message.details.quarantineId}}'
-          withsecure.file.prevalence: '{{json_event.message.details.prevalence}}'
-          withsecure.file.reputation: '{{json_event.message.details.reputation}}'
-          withsecure.file.rarity: '{{json_event.message.details.rarity}}'
-          withsecure.recommended_action: '{{json_event.message.details.recommandedAction}}'
+          url.full: "{{json_event.message.details.url}}"
+
+          file.hash.sha1: "{{json_event.message.details.sha1}}"
+          file.path: "{{json_event.message.details.path}}"
+          file.name: "{{json_event.message.details.path | basename}}"
+          file.created: "{{json_event.message.details.created | to_rfc3339}}"
+          file.mtime: "{{json_event.message.details.modified | to_rfc3339}}"
+          file.size: "{{json_event.message.details.size}}"
+
+          withsecure.severity: "{{json_event.message.severity}}"
+          withsecure.infection.name: "{{json_event.message.details.infectionName}}"
+          withsecure.infection.type: "{{json_event.message.details.infectionType}}"
+          withsecure.quarantine.id: "{{json_event.message.details.quarantineId}}"
+          withsecure.file.prevalence: "{{json_event.message.details.prevalence}}"
+          withsecure.file.reputation: "{{json_event.message.details.reputation}}"
+          withsecure.file.rarity: "{{json_event.message.details.rarity}}"
+          withsecure.recommended_action: "{{json_event.message.details.recommandedAction}}"
+
+      - set:
+          event.reason: "{{json_event.message.details.description}}"
+        filter: "{{json_event.message.details.description != None}}"
 
   set_malicious_file_fields:
     actions:
       - set:
-          event.category: [ 'malware' ]
-          event.type: [ 'info' ]
+          event.category: ["malware"]
+          event.type: ["info"]
 
   deepguard_blocked_executable_file:
     actions:
       - set:
-          file.path: '{{json_event.message.details.filePath}}'
-          file.name: '{{json_event.message.details.filePath | basename}}'
-          event.reason: '{{json_event.message.details.name}}'
+          file.path: "{{json_event.message.details.filePath}}"
+          file.name: "{{json_event.message.details.filePath | basename}}"
+          event.reason: "{{json_event.message.details.name}}"
 
   endpoint_detection_and_response:
     actions:
       - set:
-          event.category: [ 'intrusion_detection' ]
-          event.type: [ 'info' ]
-          withsecure.incident.id: '{{json_event.message.details.incidentId}}'
-          withsecure.incident.readable_id: '{{json_event.message.details.readableIncidentId}}'
-          withsecure.incident.categories: '{{json_event.message.details.categories.split(","}}'
-          withsecure.incident.fingerprint: '{{json_event.message.details.fingerprint}}'
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          withsecure.incident.id: "{{json_event.message.details.incidentId}}"
+          withsecure.incident.readable_id: "{{json_event.message.details.readableIncidentId}}"
+          withsecure.incident.categories: '{{json_event.message.details.categories.split(",")}}'
+          withsecure.incident.fingerprint: "{{json_event.message.details.fingerprint}}"
 
   amsi:
     actions:
       - set:
-          event.category: [ 'malware' ]
-          event.type: [ 'info' ]
-          package.name: '{{json_event.message.details.appName}}'
-          withsecure.amsi.content_name: '{{json_event.message.details.contentName}}'
+          event.category: ["malware"]
+          event.type: ["info"]
+          package.name: "{{json_event.message.details.appName}}"
+          withsecure.amsi.content_name: "{{json_event.message.details.contentName}}"
 
   firewall_blocked_connection:
     actions:
       - set:
-          event.category: [ 'network' ]
-          event.type: [ 'denied' ]
-          process.executable: '{{json_event.message.details.process}}'
-          network.type: '{{json_event.message.details.ipProtocol}}'
-          rule.name: '{{json_event.message.details.ruleName}}'
+          event.category: ["network"]
+          event.type: ["denied"]
+          process.executable: "{{json_event.message.details.process}}"
+          network.type: "{{json_event.message.details.ipProtocol}}"
+          rule.name: "{{json_event.message.details.ruleName}}"
       - set:
-          source.address: '{{json_event.message.details.localAddress}}'
-          source.port: '{{json_event.message.details.localPort}}'
-          destination.ip: '{{json_event.message.details.remoteAddress}}'
-          destination.port: '{{json_event.message.details.remotePort}}'
-          network.direction: 'outbound'
+          source.address: "{{json_event.message.details.localAddress}}"
+          source.port: "{{json_event.message.details.localPort}}"
+
+          destination.port: "{{json_event.message.details.remotePort}}"
+          network.direction: "outbound"
         filter: '{{json_event.message.details.ruleDirection == "outbound"}}'
+
       - set:
-          destination.ip: '{{json_event.message.details.localAddress}}'
-          destination.port: '{{json_event.message.details.localPort}}'
-          source.ip: '{{json_event.message.details.remoteAddress}}'
-          source.port: '{{json_event.message.details.remotePort}}'
-          network.direction: 'inbound'
+          destination.ip: "{{json_event.message.details.remoteAddress}}"
+        filter: "{{json_event.message.details.remoteAddress| is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json_event.message.details.localAddress}}"
+        filter: "{{json_event.message.details.localAddress| is_ipaddress}}"
+
+      - set:
+          destination.port: "{{json_event.message.details.localPort}}"
+          source.port: "{{json_event.message.details.remotePort}}"
+          network.direction: "inbound"
         filter: '{{json_event.message.details.ruleDirection == "inbound"}}'
 
   browsing_protection:
     actions:
       - set:
-          event.category: [ 'web' ]
-          event.type: [ 'denied' ]
+          event.category: ["web"]
+          event.type: ["denied"]
 
   connection_control:
     actions:
       - set:
-          event.category: [ 'network' ]
-          event.type: [ 'denied' ]
+          event.category: ["network"]
+          event.type: ["denied"]
 
+  application_control:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
 
+      - set:
+          withsecure.profile.id: "{{json_event.message.profileId}}"
+          withsecure.profile.name: "{{json_event.message.profileName}}"
+          withsecure.profile.version: "{{json_event.message.profileVersion}}"
 
+      - set:
+          rule.name: "{{json_event.message.details.ruleEvent}}"
+          rule.id: "{{json_event.message.details.ruleId}}"
+          rule.description: "{{json_event.message.details.ruleName}}"
 
+      - set:
+          file.hash.sha256: "{{json_event.message.details.targetSha256}}"
+          file.hash.sha1: "{{json_event.message.details.targetSha1}}"
 
+          process.command_line: "{{json_event.message.details.targetCommandLine}}"
+          process.executable: "{{json_event.message.details.targetPath}}"
+
+          process.parent.command_line: "{{json_event.message.details.parentCommandLine}}"
+          process.parent.executable: "{{json_event.message.details.parentPath}}"
+
+      - set:
+          withsecure.profile.id: "{{json_event.message.details.profileId}}"
+          withsecure.profile.name: "{{json_event.message.details.profileName}}"
+          withsecure.profile.version: "{{json_event.message.details.profileVersion}}"
+          withsecure.target.copyright.text: "{{json_event.message.details.targetCopyrightText}}"
+          withsecure.target.file.description: "{{json_event.message.details.targetFileDescription}}"
+          withsecure.target.file.version: "{{json_event.message.details.targetFileVersion}}"
+          withsecure.target.product.name: "{{json_event.message.details.targetProductName}}"
+          withsecure.target.product.version: "{{json_event.message.details.targetProductVersion}}"
+          withsecure.target.signature_signer_name: "{{json_event.message.details.targetSignatureSignerName}}"
+          withsecure.target.company_name: "{{json_event.message.details.targetVersionCompanyName}}"
+          withsecure.alert.type: "{{json_event.message.details.alertType}}"
+          withsecure.throttled.count: "{{json_event.message.details.throttledCount}}"
+
+  set_email_fields:
+    actions:
+      - set:
+          email.delivery_timestamp: "{{json_event.message.details.itemDateTimeReceived | to_rfc3339}}"
+          email.from.address: ["{{json_event.message.details.itemSender}}"]
+          email.message_id: "{{json_event.message.details.internetMessageId[1:-1]}}"
+          email.subject: "{{json_event.message.details.itemSubject}}"
+          email.to.address: ["{{json_event.message.details.userPrincipalName}}"]
+          event.category: ["email"]
+          event.type: ["info"]
+          service.type: "{{json_event.message.details.serviceType}}"
+          source.ip: "{{json_event.message.details.sendingServerIP}}"
+          withsecure.incident.fingerprint: "{{json_event.message.fingerprint.similarity}}"
+
+      - set:
+          email.attachments: >
+            {%- set attachments = [] -%}
+            {%- for attachment in json_event.message.details.attachments[1:-1].split("},") -%}
+            {%- set dict = {} -%}
+            {%- set filename = attachment.split('"filename":"')[-1].split('"')[0] -%}
+            {%- set sha1 = attachment.split('"sha1":"')[-1].split('"')[0] -%}
+            {%- set size = attachment.split('"size":')[-1].split(',')[0][1:-1] -%}
+            {%- set _ = dict.update({"file": {"extension": filename.split('.')[-1], "name": filename, "size": size|int, "hash": {"sha1": sha1}}}) -%}
+            {%- set _ = attachments.append(dict) -%}
+            {%- endfor -%}
+            {{attachments}}
+          withsecure.email.attachments: >
+            {%- set attachments = [] -%}
+            {%- for attachment in json_event.message.details.attachments[1:-1].split("},") -%}
+            {%- set dict = {} -%}
+            {%- set filename = attachment.split('"filename":"')[-1].split('"')[0] -%}
+            {%- set prevalence = attachment.split('"prevalence":"')[-1].split('"')[0] -%}
+            {%- set prevalence_score = attachment.split('"prevalenceScore":"')[-1].split('"')[0]|int -%}
+            {%- set reputation = attachment.split('"reputation":"')[-1].split('"')[0] -%}
+            {%- set reputation_score = attachment.split('"reputationScore":"')[-1].split('"')[0]|int -%}
+            {%- set verdict = attachment.split('"verdict":')[-1].split(',')[0][1:-1] -%}
+            {%- set _ = dict.update({"file": {"name": filename, "prevalence": {"code": prevalence_score, "name": prevalence}, "reputation": {"code": reputation_score, "name": reputation}, "verdict":verdict}}) -%}
+            {%- set _ = attachments.append(dict) -%}
+            {%- endfor -%}
+            {{attachments}}
+        filter: "{{json_event.message.details.get('attachments') != None}}"
+
+      - set:
+          withsecure.email.urls: >
+            {%- set urls = [] -%}
+            {%- for url in json_event.message.details.urls[1:-1].split("},") -%}
+            {%- set dict = {} -%}
+            {% set original = url.split('"url":"')[-1].split('"')[0] %}
+            {%- set sha1 = url.split('"sha1":"')[-1].split('"')[0] -%}
+            {%- set reputation = url.split('"reputation":"')[-1].split('"')[0] -%}
+            {%- set reputation_score = url.split('"reputationScore":"')[-1].split('"')[0]|int -%}
+            {%- set verdict = url.split('"verdict":')[-1].split(',')[0][1:-1] -%}
+            {%- set _ = dict.update({"url": {"original": original, "hash":{"sha1": sha1}, "reputation": {"code": reputation_score, "name": reputation}, "verdict":verdict}}) -%}
+            {%- set _ = urls.append(dict) -%}
+            {%- endfor -%}
+            {{urls}}
+        filter: "{{json_event.message.details.get('urls') != None}}"
+
+      - set:
+          threat.enrichments: >
+            {% set threats = [] %}
+            {%- if json_event.message.details.get("attachments") != None -%}
+            {%- for threat in json_event.message.details.attachments[1:-1].split("},") -%}
+            {%- if "Unsafe" in threat -%}
+            {% set dict = {} %}
+            {% set filename = threat.split('"filename":"')[-1].split('"')[0] %}
+            {% set sha1 = threat.split('"sha1":"')[-1].split('"')[0] %}
+            {% set size = threat.split('"size":')[-1].split(',')[0][1:-1] %}
+            {% set email = json_event.message.details.get("itemSender") %}
+            {% set _ = dict.update({"indicator": {"type": "file", "name": filename, "ip": json_event.message.details.get("sendingServerIP"), "file": {"hash": sha1, "size": size|int}, "email": {"address": email }}}) %}
+            {% set _ = threats.append(dict) %}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endif -%}
+            {%- if json_event.message.details.get("urls") != None -%}
+            {%- for threat in json_event.message.details.urls[1:-1].split("},") -%}
+            {%- if "unsafe_url" in threat -%}
+            {% set dict = {} %}
+            {% set url = threat.split('"url":"')[-1].split('"')[0] %}
+            {% set _ = dict.update({"indicator": {"type": "url", "url": {"original": url}}}) %}
+            {% set _ = threats.append(dict) %}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endif -%}
+            {{threats}}
+        filter: "{{json_event.message.details.get('attachments') != None or json_event.message.details.get('urls') != None}}"
 
   ## https://connect.withsecure.com/api-reference/security-events#get-Browsing-protection-harmful-or-suspicious-page-blocked
 
@@ -179,4 +353,3 @@ stages:
   # setting
 
   # xfence
-

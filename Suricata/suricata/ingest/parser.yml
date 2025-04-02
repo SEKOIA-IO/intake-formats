@@ -1,0 +1,124 @@
+name: suricata
+pipeline:
+  - name: json_event
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.timestamp}}"
+        output_field: datetime
+        format: null
+        timezone: UTC
+
+  - name: set_base_fields
+
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          source.ip: "{{json_event.message.src_ip}}"
+          "@timestamp": "{{parsed_date.datetime}}"
+          destination.ip: "{{json_event.message.dest_ip}}"
+          destination.port: "{{json_event.message.dest_port}}"
+          source.port: "{{json_event.message.src_port}}"
+          network.protocol: "{{json_event.message.proto}}"
+          network.transport: "{{final.network.protocol}}" # legacy
+          network.community_id: "{{json_event.message.community_id}}"
+          url.original: "{{json_event.message.http.url}}"
+          url.domain: "{{json_event.message.http.hostname}}"
+          user_agent.original: "{{json_event.message.http.http_user_agent}}"
+          http.request.method: "{{json_event.message.http.http_method}}"
+          http.request.referrer: "{{json_event.message.http.http_refer}}"
+          http.response.status_code: "{{json_event.message.http.status}}"
+          http.response.bytes: "{{json_event.message.http.length}}"
+          http.response.mime_type: "{{json_event.message.http.http_content_type}}"
+          http.version: '{{json_event.message.http.protocol.split("/")[1]}}'
+          dns.type: "{{json_event.message.dns.type}}"
+          dns.id: "{{json_event.message.dns.id}}"
+          tls.client.subject: "{{json_event.message.tls.subject}}"
+          tls.client.issuer: "{{json_event.message.tls.issuerdn}}"
+          tls.version: "{{json_event.message.tls.version}}"
+          tls.client.not_after: "{{json_event.message.tls.notafter}}"
+          tls.client.not_before: "{{json_event.message.tls.notbefore}}"
+          tls.client.ja3: "{{json_event.message.tls.ja3}}"
+          tls.client.server_name: "{{json_event.message.tls.sni}}"
+          action.name: "{{json_event.message.alert.action}}"
+          action.type: "{{json_event.message.event_type}}"
+          action.properties.signature: "{{json_event.message.alert.signature}}"
+          action.properties.category: "{{json_event.message.alert.category}}"
+          action.properties.signature_id: "{{json_event.message.alert.signature_id}}"
+          action.properties.severity: "{{json_event.message.alert.metadata.signature_severity[0]}}"
+          event.severity: "{{json_event.message.alert.severity}}"
+          host.ip: "{{json_event.message.src_ip}}"
+          source.bytes: "{{json_event.message.flow.bytes_toserver}}"
+          event.category: ["network"]
+          event.type: ["connection"]
+
+      - set:
+          event.type: ["info"]
+          event.action: "{{json_event.message.anomaly.event}}"
+        filter: '{{json_event.message.get("event_type") == "anomaly"}}'
+
+      - set:
+          event.type: ["info"]
+        filter: '{{json_event.message.get("event_type") == "stats"}}'
+
+      - set:
+          event.kind: "alert"
+        filter: '{{json_event.message.get("event_type") == "alert"}}'
+
+      - set:
+          dns.question.type: "{{json_event.message.dns.rrtype}}"
+          dns.question.name: "{{json_event.message.dns.rrname}}"
+        filter: '{{json_event.message.dns.get("type") == "query" or json_event.message.dns.get("grouped") != None}}'
+
+      - set:
+          dns.answers: >
+            [ {"type": "{{json_event.message.dns.rrtype}}", "name": "{{json_event.message.dns.rrname}}"} ]
+          dns.response_code: "{{json_event.message.dns.rcode}}"
+        filter: '{{json_event.message.dns.get("type") == "answer" and json_event.message.dns.get("answers") == None}}'
+      - set:
+          dns.answers: >
+            [
+                {% for item in json_event.message.dns.answers %}
+                {"type": "{{item.rrtype}}", "name": "{{item.rrname}}"},
+                {% endfor %}
+            ]
+          dns.response_code: "{{json_event.message.dns.rcode}}"
+        filter: '{{json_event.message.dns.get("answers") != None}}'
+      - set:
+          dns.answers: >
+            [
+                {% for type, record in json_event.message.dns.grouped.items() %}
+                    {% for item in record %}
+                    {"type": "{{type}}", "name": "{{item}}"},
+                    {% endfor %}
+                {% endfor %}
+            ]
+        filter: '{{json_event.message.dns.get("grouped") != None}}'
+      - set:
+          action.type: '{{json_event.message.get("tags")[0]}}'
+          host.name: '{{json_event.message.get("host")}}'
+          event.type: ["info"]
+        filter: '{{json_event.message.get("tags")[0] == "metric" or json_event.message.get("tags")[0] == "beats_input_raw_event"}}'
+      - set:
+          dns.size_in_char: "{{json_event.message.dns.rrname | length}}"
+        filter: '{{json_event.message.dns.get("rrname") != None}}'
+
+      - set:
+          suricata.icmp.type: "{{json_event.message.icmp_type}}"
+          suricata.icmp.code: "{{json_event.message.icmp_code}}"
+          event.start: "{{json_event.message.flow.start}}"
+          event.end: "{{json_event.message.flow.end}}"
+          event.reason: "{{json_event.message.flow.reason}}"
+          observer.ingress.interface.name: "{{json_event.message.in_iface}}"

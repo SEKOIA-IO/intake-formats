@@ -1,0 +1,40 @@
+name: aws-cloudfront
+ignored_values: ["-", "_"]
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.date +' '+json_event.message.start_time}}"
+        output_field: timestamp
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.timestamp}}"
+
+          event.category: ["web"]
+          event.type: ["access"]
+          event.action: "{{json_event.message.get('x-edge-response-result-type')}}"
+
+          cloud.provider: "aws"
+          cloud.service.name: "cloudfront"
+
+          source.ip: "{{json_event.message.get('c-ip')}}"
+          destination.domain: "{{json_event.message.get('cs(Host)')}}"
+          server.geo.name: "{{json_event.message.get('x-edge-location')}}"
+          http.request.method: "{{json_event.message.get('cs-method')}}"
+          http.response.status_code: "{{json_event.message.get('sc-status')}}"
+          network.protocol: "{{json_event.message.get('cs-protocol')}}"
+          url.path: "{{json_event.message.get('cs-uri-stem')}}"
+          user_agent.original: "{{json_event.message.get('cs(User-Agent)')}}"
+          sekoiaio.repeat.count: "{{json_event.message.count}}"
+
+      - set:
+          source.port: "{{json_event.message.get('c-port')}}"
+        filter: "{{json_event.message['c-port'] not in [null, '_', '-']}}"

@@ -1,0 +1,316 @@
+name: netskope-transaction
+ignored_values: ["-", "NotAvailable", "N/A", "NoSSL", "NotChecked"]
+pipeline:
+  - name: parse_event
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        columnnames:
+          - date
+          - time
+          - time-taken
+          - cs-bytes
+          - sc-bytes
+          - bytes
+          - c-ip
+          - s-ip
+          - cs-username
+          - cs-method
+          - cs-uri-scheme
+          - cs-uri-query
+          - cs-user-agent
+          - cs-content-type
+          - sc-status
+          - sc-content-type
+          - cs-dns
+          - cs-host
+          - cs-uri
+          - cs-uri-port
+          - cs-referer
+          - x-cs-session-id
+          - x-cs-access-method
+          - x-cs-app
+          - x-s-country
+          - x-s-latitude
+          - x-s-longitude
+          - x-s-location
+          - x-s-region
+          - x-s-zipcode
+          - x-c-country
+          - x-c-latitude
+          - x-c-longitude
+          - x-c-location
+          - x-c-region
+          - x-c-zipcode
+          - x-c-os
+          - x-c-browser
+          - x-c-browser-version
+          - x-c-device
+          - x-cs-site
+          - x-cs-timestamp
+          - x-cs-page-id
+          - x-cs-userip
+          - x-cs-traffic-type
+          - x-cs-tunnel-id
+          - x-category
+          - x-other-category
+          - x-type
+          - x-server-ssl-err
+          - x-client-ssl-err
+          - x-transaction-id
+          - x-request-id
+          - x-cs-sni
+          - x-cs-domain-fronted-sni
+          - x-category-id
+          - x-other-category-id
+          - x-sr-headers-name
+          - x-sr-headers-value
+          - x-cs-ssl-ja3
+          - x-sr-ssl-ja3s
+          - x-ssl-bypass
+          - x-ssl-bypass-reason
+          - x-r-cert-subject-cn
+          - x-r-cert-issuer-cn
+          - x-r-cert-startdate
+          - x-r-cert-enddate
+          - x-r-cert-valid
+          - x-r-cert-expired
+          - x-r-cert-untrusted-root
+          - x-r-cert-incomplete-chain
+          - x-r-cert-self-signed
+          - x-r-cert-revoked
+          - x-r-cert-revocation-check
+          - x-r-cert-mismatch
+          - x-cs-ssl-fronting-error
+          - x-cs-ssl-handshake-error
+          - x-sr-ssl-handshake-error
+          - x-sr-ssl-client-certificate-error
+          - x-sr-ssl-malformed-ssl
+          - x-s-custom-signing-ca-error
+          - x-cs-ssl-engine-action
+          - x-cs-ssl-engine-action-reason
+          - x-sr-ssl-engine-action
+          - x-sr-ssl-engine-action-reason
+          - x-ssl-policy-src-ip
+          - x-ssl-policy-dst-ip
+          - x-ssl-policy-dst-host
+          - x-ssl-policy-dst-host-source
+          - x-ssl-policy-categories
+          - x-ssl-policy-action
+          - x-ssl-policy-name
+          - x-cs-ssl-version
+          - x-cs-ssl-cipher
+          - x-sr-ssl-version
+          - x-sr-ssl-cipher
+          - x-cs-src-ip-egress
+          - x-s-dp-name
+          - x-cs-src-ip
+          - x-cs-src-port
+          - x-cs-dst-ip
+          - x-cs-dst-port
+          - x-sr-src-ip
+          - x-sr-src-port
+          - x-sr-dst-ip
+          - x-sr-dst-port
+          - x-cs-ip-connect-xff
+          - x-cs-ip-xff
+          - x-cs-connect-host
+          - x-cs-connect-port
+          - x-cs-connect-user-agent
+          - x-cs-url
+          - x-cs-uri-path
+          - x-cs-http-version
+          - rs-status
+          - x-cs-app-category
+          - x-cs-app-cci
+          - x-cs-app-ccl
+          - x-cs-app-tags
+          - x-cs-app-suite
+          - x-cs-app-instance-id
+          - x-cs-app-instance-name
+          - x-cs-app-instance-tag
+          - x-cs-app-activity
+          - x-cs-app-from-user
+          - x-cs-app-to-user
+          - x-cs-app-object-type
+          - x-cs-app-object-name
+          - x-cs-app-object-id
+          - x-rs-file-type
+          - x-rs-file-category
+          - x-rs-file-language
+          - x-rs-file-size
+          - x-rs-file-md5
+          - x-rs-file-sha256
+          - x-error
+          - x-c-local-time
+          - x-policy-action
+          - x-policy-name
+          - x-policy-src-ip
+          - x-policy-dst-ip
+          - x-policy-dst-host
+          - x-policy-dst-host-source
+          - x-policy-justification-type
+          - x-policy-justification-reason
+          - x-sc-notification-name
+        delimiter: " "
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+          "@timestamp": "{{ parse_event.message.get('x-cs-timestamp') | to_iso8601 }}"
+
+      - set:
+          user.email: "{{ parse_event.message.get('cs-username')}}"
+        filter: '{{ parse_event.message.get("cs-username") | re_match("^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$") }}'
+
+      - set:
+          user.email: "{{ parse_event.message.get('x-cs-app-from-user')}}"
+        filter: '{{ parse_event.message.get("x-cs-app-from-user") | re_match("^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$") }}'
+
+      - set:
+          source.nat.ip: "{{ parse_event.message.get('c-ip') }}"
+        filter: "{{parse_event.message.get('c-ip') | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{ parse_event.message.get('x-cs-userip') }}"
+        filter: "{{parse_event.message.get('x-cs-userip') | is_ipaddress }}"
+
+      - set:
+          destination.ip: "{{ parse_event.message.get('s-ip') }}"
+        filter: "{{parse_event.message.get('s-ip') | is_ipaddress }}"
+
+      - set:
+          network.application: "{{ parse_event.message.get('x-cs-app') }}"
+        filter: "{{parse_event.message.get('x-cs-app') != '-'}}"
+
+      - set:
+          user.name: "{{ parse_event.message.get('cs-username') }}"
+        filter: "{{parse_event.message.get('cs-username') != '-'}}"
+
+      - set:
+          destination.bytes: "{{ parse_event.message.get('cs-bytes') }}"
+        filter: "{{parse_event.message.get('cs-bytes') != '-'}}"
+
+      - set:
+          source.bytes: "{{ parse_event.message.get('sc-bytes') }}"
+        filter: "{{parse_event.message.get('sc-bytes') != '-'}}"
+
+      - set:
+          network.bytes: "{{ parse_event.message.get('bytes') }}"
+        filter: "{{parse_event.message.get('bytes') != '-'}}"
+
+      - set:
+          source.nat.ip: "{{ parse_event.message.get('c-ip') }}"
+        filter: "{{parse_event.message.get('c-ip') != '-'}}"
+
+      - set:
+          source.ip: "{{ parse_event.message.get('x-cs-userip') }}"
+        filter: "{{parse_event.message.get('x-cs-userip') != '-'}}"
+
+      - set:
+          destination.ip: "{{ parse_event.message.get('s-ip') }}"
+        filter: "{{parse_event.message.get('s-ip') != '-'}}"
+
+      - set:
+          file.mime_type: "{{ parse_event.message.get('x-rs-file-type') }}"
+        filter: "{{parse_event.message.get('x-rs-file-type') != '-'}}"
+
+      - set:
+          file.hash.md5: "{{ parse_event.message.get('x-rs-file-md5') }}"
+        filter: "{{parse_event.message.get('x-rs-file-md5') != '-'}}"
+
+      - set:
+          destination.geo.country_name: "{{ parse_event.message.get('x-s-country') }}"
+        filter: "{{parse_event.message.get('x-s-country') != '-'}}"
+
+      - set:
+          destination.geo.city_name: "{{ parse_event.message.get('x-s-location') }}"
+        filter: "{{parse_event.message.get('x-s-location') != '-'}}"
+
+      - set:
+          destination.geo.region_name: "{{ parse_event.message.get('x-s-region') }}"
+        filter: "{{parse_event.message.get('x-s-region') != '-'}}"
+
+      - set:
+          destination.geo.postal_code: "{{ parse_event.message.get('x-s-zipcode') }}"
+        filter: "{{parse_event.message.get('x-s-zipcode') != '-'}}"
+
+      - set:
+          source.geo.country_name: "{{ parse_event.message.get('x-c-country') }}"
+        filter: "{{parse_event.message.get('x-c-country') != '-'}}"
+
+      - set:
+          source.geo.city_name: "{{ parse_event.message.get('x-c-location') }}"
+        filter: "{{parse_event.message.get('x-c-location') != '-'}}"
+
+      - set:
+          source.geo.region_name: "{{ parse_event.message.get('x-c-region') }}"
+        filter: "{{parse_event.message.get('x-c-region') != '-'}}"
+
+      - set:
+          source.geo.postal_code: "{{ parse_event.message.get('x-c-zipcode') }}"
+        filter: "{{parse_event.message.get('x-c-zipcode') != '-'}}"
+
+      - set:
+          http.request.method: "{{ parse_event.message.get('cs-method') }}"
+        filter: "{{parse_event.message.get('cs-method') != '-'}}"
+
+      - set:
+          http.request.mime_type: "{{ parse_event.message.get('cs-content-type') }}"
+        filter: "{{parse_event.message.get('cs-content-type') != '-'}}"
+
+      - set:
+          http.response.status_code: "{{ parse_event.message.get('sc-status') }}"
+        filter: "{{parse_event.message.get('sc-status') != '-'}}"
+
+      - set:
+          user_agent.original: "{{ parse_event.message.get('cs-user-agent') }}"
+        filter: "{{parse_event.message.get('cs-user-agent') != '-'}}"
+
+      - set:
+          url.original: "{{ parse_event.message.get('x-cs-url') }}"
+        filter: "{{parse_event.message.get('x-cs-url') != '-'}}"
+
+      - set:
+          event.action: "{{ parse_event.message.get('x-policy-action') }}"
+        filter: "{{parse_event.message.get('x-policy-action') != '-'}}"
+
+      - set:
+          rule.ruleset: "{{ parse_event.message.get('x-policy-name') }}"
+        filter: "{{parse_event.message.get('x-policy-name') != '-'}}"
+
+      - set:
+          event.reason: "{{ parse_event.message.get('x-policy-justification-reason') }}"
+        filter: "{{parse_event.message.get('x-policy-justification-reason') != '-'}}"
+
+      - set:
+          tls.cipher: "{{ parse_event.message.get('x-cs-ssl-cipher') }}"
+        filter: "{{parse_event.message.get('x-cs-ssl-cipher') != '-'}}"
+
+      - set:
+          tls.client.ja3: "{{ parse_event.message.get('x-cs-ssl-ja3') }}"
+        filter: "{{parse_event.message.get('x-cs-ssl-ja3') != '-'}}"
+
+      - set:
+          tls.client.server_name: "{{ parse_event.message.get('x-cs-sni') }}"
+        filter: "{{parse_event.message.get('x-cs-sni') != '-'}}"
+
+      - set:
+          tls.server.ja3s: "{{ parse_event.message.get('x-sr-ssl-ja3s') }}"
+        filter: "{{parse_event.message.get('x-sr-ssl-ja3s') != '-'}}"
+
+      - set:
+          netskope.events.category: "{{ parse_event.message.get('x-category') }}"
+        filter: "{{parse_event.message.get('x-category') != '-'}}"
+
+      - set:
+          netskope.events.category_id: "{{ parse_event.message.get('x-category-id') }}"
+        filter: "{{parse_event.message.get('x-category-id') != '-'}}"

@@ -1,0 +1,116 @@
+name: trellix-edr
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: output
+
+  - name: parsed_first_detected
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.attributes.firstDetected}}"
+        output_field: result
+    filter: "{{json_event.output.attributes.firstDetected != None}}"
+
+  - name: parsed_last_detected
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.attributes.lastDetected}}"
+        output_field: result
+    filter: "{{json_event.output.attributes.lastDetected != None}}"
+
+  - name: parsed_event_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.attributes.eventDate}}"
+        output_field: result
+    filter: "{{json_event.output.attributes.eventDate != None}}"
+
+  - name: set_common_fields
+
+  - name: set_alert_fields
+    filter: '{{json_event.output.type in ["alert", "alerts"]}}'
+
+stages:
+  set_alert_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event_date.result}}"
+          event.kind: "alert"
+          rule.id: "{{json_event.output.attributes.ruleId}}"
+          process.name: "{{json_event.output.attributes.processName}}"
+          process.command_line: "{{json_event.output.attributes.cmdLine}}"
+          process.pid: "{{json_event.output.attributes.pid}}"
+          user.name: "{{json_event.output.attributes.user}}"
+          host.name: "{{json_event.output.attributes.hostName}}"
+          host.os.full: "{{json_event.output.attributes.h_os}}"
+
+  set_common_fields:
+    actions:
+      # Default fields with predefined values
+      - set:
+          observer.vendor: "Trellix"
+          observer.product: "EDR"
+          event.type: '["info"]'
+
+          event.start: "{{parsed_first_detected.result}}"
+          event.end: "{{parsed_last_detected.result}}"
+
+          trellix.edr.name: "{{json_event.output.attributes.name}}"
+          trellix.edr.type: "{{json_event.output.attributes.type}}"
+          trellix.edr.status: "{{json_event.output.attributes.status}}"
+          trellix.edr.threat.id: "{{json_event.output.threatId}}"
+
+          trellix.edr.detection.sha256: "{{json_event.output.attributes.sha256}}"
+
+          file.hash.sha256: "{{json_event.output.attributes.hashes.sha256}}"
+          file.hash.sha1: "{{json_event.output.attributes.hashes.sha1}}"
+          file.hash.md5: "{{json_event.output.attributes.hashes.md5}}"
+
+          host.id: "{{json_event.output.attributes.host.aGuid}}"
+          host.name: "{{json_event.output.attributes.host.hostname}}"
+          host.os.full: "{{json_event.output.attributes.host.hostOs}}"
+
+      - set:
+          trellix.edr.threat.id: "{{json_event.output.id}}"
+        filter: '{{json_event.output.type == "threats"}}'
+
+      - set:
+          host.os.version: "{{json_event.output.attributes.host.os.major}}.{{json_event.output.attributes.host.os.minor}}.{{json_event.output.attributes.host.os.build}}"
+        filter: '{{json_event.output.attributes.host.os.get("major") != None and json_event.output.attributes.host.os.get("minor") != None and json_event.output.attributes.host.os.get("build") != None}}'
+
+      - set:
+          host.ip: >
+            [
+              {% for data in json_event.output.attributes.host.get("netInterfaces", []) %}
+              {% if data.get("ip") %}
+              {% if data["ip"] | is_ipaddress %}
+              '{{data["ip"]}}',
+              {% endif %}
+              {% endif %}
+              {% endfor %}
+            ]
+
+          host.mac: >
+            [
+              {% for data in json_event.output.attributes.host.get("netInterfaces", []) %}
+              {% if data.get("macAddress") %}
+              '{{data["macAddress"]}}',
+              {% endif %}
+              {% endfor %}
+            ]
+        filter: '{{json_event.output.attributes.host.get("netInterfaces") != None and json_event.output.attributes.host.get("netInterfaces") != []}}'
+
+      - translate:
+        dictionary:
+          "threats": '["intrusion_detection"]'
+          "detections": '["intrusion_detection"]'
+          "affected-hosts": '["host"]'
+          "alert": '["malware"]'
+        mapping:
+          json_event.output.type: event.category

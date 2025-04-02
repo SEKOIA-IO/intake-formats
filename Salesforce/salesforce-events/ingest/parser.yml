@@ -1,0 +1,242 @@
+name: Salesforce Events
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: output
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.TIMESTAMP_DERIVED}}"
+        output_field: datetime
+    filter: "{{json_event.output.TIMESTAMP_DERIVED != None}}"
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.TIMESTAMP}}"
+        output_field: datetime
+    filter: "{{json_event.output.TIMESTAMP != None and json_event.output.EVENT_TYPE != 'ApiTotalUsage'}}"
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.TIMESTAMP}}"
+        output_field: datetime
+        format: "%y%m%d%H%M%S.%f"
+    filter: "{{json_event.output.TIMESTAMP != None and json_event.output.EVENT_TYPE == 'ApiTotalUsage'}}"
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.LOGIN_TIME}}"
+        output_field: datetime
+    filter: "{{json_event.output.LOGIN_TIME != None}}"
+
+  - name: parsed_start_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.output.PAGE_START_TIME}}"
+        output_field: datetime
+
+  - name: set_common_fields
+  - name: set_duration
+  - name: set_request_method
+  - name: set_geo
+  - name: set_url_info
+  - name: set_source_ip
+  - name: set_user_agent
+  - name: set_user
+  - name: set_login_event
+    filter: "{{json_event.output.EVENT_TYPE == 'Login'}}"
+  - name: set_logout_event
+    filter: "{{json_event.output.EVENT_TYPE == 'Logout'}}"
+
+stages:
+  set_user_agent:
+    actions:
+      - set:
+          user_agent.name: "{{json_event.output.BROWSER_NAME}}"
+          user_agent.version: "{{json_event.output.BROWSER_VERSION}}"
+
+      - set:
+          user_agent.original: "{{json_event.output.BROWSER_TYPE}}"
+        filter: "{{json_event.output.BROWSER_TYPE != None}}"
+
+      - set:
+          salesforce.user_agent: "{{json_event.output.USER_AGENT | int}}"
+        filter: "{{json_event.output.USER_AGENT != None}}"
+
+  set_source_ip:
+    actions:
+      - set:
+          source.ip: "{{json_event.output.CLIENT_IP}}"
+        filter: "{{json_event.output.CLIENT_IP != None}}"
+
+      - set:
+          source.ip: "{{json_event.output.SOURCE_IP}}"
+        filter: "{{json_event.output.SOURCE_IP != None}}"
+
+  set_url_info:
+    actions:
+      - set:
+          url.path: "{{json_event.output.PAGE_URL}}"
+        filter: "{{json_event.output.PAGE_URL != None}}"
+
+      - set:
+          url.path: "{{json_event.output.URI}}"
+        filter: "{{json_event.output.URI != None}}"
+
+      - set:
+          url.path: "{{json_event.output.API_ENDPOINT}}"
+        filter: "{{json_event.output.API_ENDPOINT != None}}"
+
+      - set:
+          url.query: '{{json_event.output.QUERY.split("?")[1]}}'
+        filter: "{{json_event.output.QUERY != None}}"
+
+      - set:
+          url.original: "{{json_event.output.REPORT_URL}}"
+        filter: "{{json_event.output.REPORT_URL != None}}"
+
+  set_duration:
+    actions:
+      - set:
+          event.duration: "{{json_event.output.DURATION}}"
+        filter: "{{json_event.output.DURATION != None}}"
+
+      - set:
+          event.duration: "{{json_event.output.EXEC_TIME}}"
+        filter: "{{json_event.output.EXEC_TIME != None}}"
+
+  set_request_method:
+    actions:
+      - set:
+          http.request.method: "{{json_event.output.HTTP_METHOD}}"
+        filter: "{{json_event.output.HTTP_METHOD != None}}"
+
+      - set:
+          http.request.method: "{{json_event.output.METHOD}}"
+        filter: "{{json_event.output.METHOD != None}}"
+
+      - set:
+          http.request.method: "{{json_event.output.API_METHOD}}"
+        filter: "{{json_event.output.API_METHOD != None}}"
+
+  set_geo:
+    actions:
+      - set:
+          source.geo.country_name: '{{json_event.output.CLIENT_GEO.split("/")[0]}}'
+          source.geo.region_name: '{{json_event.output.CLIENT_GEO.split("/")[1]}}'
+        filter: "{{json_event.output.CLIENT_GEO != None}}"
+
+  set_user:
+    actions:
+      - set:
+          user.id: "{{json_event.output.USER_ID}}"
+
+      - set:
+          user.name: "{{json_event.output.USERNAME}}"
+        filter: "{{json_event.output.USERNAME != None}}"
+
+      - set:
+          user.name: "{{json_event.output.USER_NAME}}"
+        filter: "{{json_event.output.USER_NAME != None and '@' not in json_event.output.USER_NAME}}"
+
+      - set:
+          user.email: "{{json_event.output.USER_NAME}}"
+        filter: "{{json_event.output.USER_NAME != None and '@' in json_event.output.USER_NAME}}"
+
+      - set:
+          user.email: "{{json_event.output.USER}}"
+        filter: "{{json_event.output.USER != None}}"
+
+  set_common_fields:
+    actions:
+      # Default fields with predefined values
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          event.dataset: "{{json_event.output.EVENT_TYPE}}"
+          event.reason: "{{json_event.output.MESSAGE}}"
+          event.start: "{{ parsed_start_time.datetime }}"
+          event.code: "{{json_event.output.UI_EVENT_ID}}"
+          event.action: "{{json_event.output.UI_EVENT_TYPE or json_event.output.ACTION}}"
+          event.category: ["network"]
+          event.type: ["info"]
+
+          salesforce.api.type: "{{json_event.output.API_TYPE}}"
+          salesforce.api.version: "{{json_event.output.API_VERSION}}"
+          salesforce.client.id: "{{json_event.output.CLIENT_ID}}"
+          salesforce.device.model: "{{json_event.output.DEVICE_MODEL}}"
+          salesforce.device.platform: "{{json_event.output.DEVICE_PLATFORM}}"
+          salesforce.entity.name: "{{json_event.output.ENTITY_NAME}}"
+          salesforce.user.type: "{{json_event.output.USER_TYPE}}"
+          salesforce.user.initiated_logout: "{{json_event.output.USER_INITIATED_LOGOUT}}"
+
+          salesforce.component.name: "{{json_event.output.COMPONENT_NAME}}"
+          salesforce.connection.type: "{{json_event.output.CONNECTION_TYPE}}"
+          salesforce.controller.type: "{{json_event.output.CONTROLLER_TYPE}}"
+
+          salesforce.login.key: "{{json_event.output.LOGIN_KEY}}"
+          salesforce.login.status: "{{json_event.output.LOGIN_STATUS}}"
+          salesforce.login.sub_type: "{{json_event.output.LOGIN_SUB_TYPE}}"
+
+          salesforce.method.name: "{{json_event.output.METHOD_NAME}}"
+          salesforce.class.name: "{{json_event.output.CLASS_NAME}}"
+
+          salesforce.object.type: "{{json_event.output.OBJECT_TYPE}}"
+
+          salesforce.operation.type: "{{json_event.output.OPERATION_TYPE}}"
+          salesforce.session.key.id: "{{json_event.output.SESSION_KEY}}"
+
+          salesforce.quiddity.name: "{{json_event.output.QUIDDITY}}"
+          salesforce.referer.uri: "{{json_event.output.REFERER_URI}}"
+
+          salesforce.request.id: "{{json_event.output.REQUEST_ID}}"
+          salesforce.request.status: "{{json_event.output.REQUEST_STATUS}}"
+          salesforce.request.resource: "{{json_event.output.API_RESOURCE}}"
+
+          network.application: "{{json_event.output.APP_NAME}}"
+          tls.cipher: "{{json_event.output.CIPHER_SUITE}}"
+          tls.version: "{{json_event.output.TLS_PROTOCOL}}"
+
+          url.original: "{{json_event.output.LOGIN_URL}}"
+          host.id: "{{json_event.output.DEVICE_ID}}"
+          host.os.name: "{{json_event.output.OS_NAME}}"
+          host.os.version: "{{json_event.output.OS_VERSION}}"
+
+          http.request.bytes: "{{json_event.output.REQUEST_SIZE}}"
+          http.response.mime_type: "{{json_event.output.MEDIA_TYPE}}"
+          http.response.bytes: "{{json_event.output.RESPONSE_SIZE}}"
+          http.response.status_code: "{{json_event.output.STATUS_CODE}}"
+
+          organization.id: "{{json_event.output.ORGANIZATION_ID}}"
+          source.ip: "{{json_event.output.IP_ADDRESS}}"
+
+  set_login_event:
+    actions:
+      - set:
+          event.category: ["authentication"]
+
+      - translate:
+        dictionary:
+          "Success": ["start"]
+          "LOGIN_NO_ERROR": ["start"]
+        mapping:
+          json_event.output.LOGIN_STATUS: event.type
+        fallback: ["info"]
+
+  set_logout_event:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]

@@ -4,25 +4,80 @@ pipeline:
     external:
       name: json.parse-json
       properties:
-        input_field: "{{original.message[3:]}}"
+        input_field: "{{original.message.lstrip(':-').lstrip('-:').lstrip('- :').lstrip(': -').lstrip()}}"
+        output_field: message
+
+  - name: message_parse_grok
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.message
+        output_field: result
+        pattern: "%{CREATE_TRIAGE_FILTER}|%{EDIT_TRIAGE_FILTER}"
+        custom_patterns:
+          CREATE_TRIAGE_FILTER: "(?P<event_reason>create triage filter) *%{GREEDYDATA:json_data}"
+          EDIT_TRIAGE_FILTER: '(?P<event_reason>edit triage filter) \"%{DATA:filter_type}\" - id %{NUMBER} %{DATA:detection_type} - %{GREEDYDATA}'
+
+  - name: message_parse_json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: message_parse_grok.result.json_data
+        output_field: result
+    filter: "{{message_parse_grok.result.get('json_data', None) != None}}"
+
   - name: field_extraction
   - name: detection_details_ext
     filter: "{{final.vectra.detection != null}}"
+
 stages:
   field_extraction:
     actions:
       - set:
           event.action: "{{json_event.message.category}}"
+          event.outcome: "{{json_event.message.result}}"
           observer.version: "{{json_event.message.version}}"
           observer.name: "{{json_event.message.dvchost}}"
           observer.ip: "{{json_event.message.headend_addr}}"
+          action.name: "{{json_event.message.action}}"
           vectra.timestamp: "{{json_event.message.vectra_timestamp}}"
+          vectra.campaign.id: "{{json_event.message.campaign_id}}"
+          vectra.campaign.link: "{{json_event.message.campaign_link}}"
+          vectra.campaign.name: "{{json_event.message.campaign_name}}"
+          vectra.destination.id: "{{json_event.message.dest_id}}"
+          vectra.health.message: "{{json_event.message.message}}"
+
+          # Comes from grok match for specific events
+          event.reason: "{{message_parse_grok.result.event_reason}}"
+          vectra.filter.type: "{{message_parse_grok.result.filter_type}}"
+          vectra.detection.type: "{{message_parse_json.result.get('Detection Type')}}"
+          vectra.detection.category: "{{message_parse_json.result.get('Detection Category')}}"
+
+      - set:
+          vectra.detection.type: "{{message_parse_grok.result.detection_type}}"
+        filter: "{{message_parse_grok.result.get('detection_type', None) != None}}"
+
+      - set:
+          source.ip: "{{json_event.message.src_ip}}"
+        filter: "{{json_event.message.campaign_id != null and json_event.message.src_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json_event.message.source_ip}}"
+        filter: "{{json_event.message.source_ip | is_ipaddress}}"
+
+      - set:
+          host.ip: "{{json_event.message.host_ip}}"
+        filter: "{{json_event.message.host_ip| is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{json_event.message.dd_dst_ip}}"
+        filter: "{{json_event.message.dd_dst_ip | is_ipaddress}}"
 
       - set:
           observer.product: "{{json_event.message.sensor}}"
           event.url: "{{json_event.message.href}}"
           host.id: "{{json_event.message.host_id |int}}"
-          host.ip: "{{json_event.message.host_ip}}"
+
           host.name: "{{json_event.message.host_name}}"
           host.mac: "{{json_event.message.mac_address}}"
           vectra.history.account_access: "{{json_event.message.account_access_history}}"
@@ -56,7 +111,18 @@ stages:
           vectra.history.host_access_hostname: "[{{json_event.message.host_access_history|map(attribute='name')|map('tojson')|join(', ') }}]"
           vectra.detection.last_type: "{{json_event.message.last_detection_type}}"
           vectra.history.service_access: "{{json_event.message.service_access_history}}"
-          vectra.history.service_access_uid.host: "[{%for i in json_event.message.service_access_history %}{% set proto, host=i.uid.split('/') %}'{{ host }}',{% endfor %}]"
+          vectra.history.service_access_uid.host: >
+            [
+              {%for i in json_event.message.service_access_history %}
+                {% if '/' in i.uid %}
+                  {% set proto, host=i.uid.split('/') %}
+                  '{{ host }}',
+                {% else %}
+                  '{{ i.uid }}',
+                {% endif %}
+              {% endfor %}
+            ]
+
           vectra.history.service_access_uid.proto_host: "[{{ json_event.message.service_access_history|map(attribute='uid')|map('tojson')|join(', ') }}]"
         # If Account Scoring log event
         filter: "{{json_event.message.category == 'ACCOUNT SCORING'}}"
@@ -69,10 +135,10 @@ stages:
           vectra.detection.type: "{{json_event.message.d_type}}"
           vectra.detection.name: "{{json_event.message.d_type_vname}}"
           destination.domain: "{{json_event.message.dd_dst_dns}}"
-          destination.ip: "{{json_event.message.dd_dst_ip}}"
+
           destination.port: "{{json_event.message.dd_dst_port}}"
           network.protocol: "{{json_event.message.dd_proto}}"
-          host.ip: "{{json_event.message.host_ip}}"
+
           host.name: "{{json_event.message.host_name}}"
           vectra.detection.id: "{{json_event.message.detection_id}}"
           vectra.severity: "{{json_event.message.severity}}"
@@ -80,7 +146,6 @@ stages:
           vectra.triaged: "{{json_event.message.triaged}}"
         # If Host Detection or Account Detection log event
         filter: "{{json_event.message.detection_id != null}}"
-
 
       - set:
           vectra.account.id: "{{json_event.message.account_id}}"
@@ -106,32 +171,27 @@ stages:
         filter: "{{json_event.message.category == 'HOST_LOCKDOWN'}}"
 
       - set:
-          action.name: "{{json_event.message.action}}"
-          vectra.campaign.id: "{{json_event.message.campaign_id}}"
-          vectra.campaign.link: "{{json_event.message.campaign_link}}"
-          vectra.campaign.name: "{{json_event.message.campaign_name}}"
-          vectra.destination.id: "{{json_event.message.dest_id}}"
           destination.ip: "{{json_event.message.dest_ip}}"
+        filter: "{{json_event.message.dest_ip | is_ipaddress}}"
+
+      - set:
           vectra.destination.name: "{{json_event.message.dest_name}}"
           vectra.detection.id: "{{json_event.message.det_id}}"
           vectra.detection.reason: "{{json_event.message.reason}}"
           vectra.source.hid: "{{json_event.message.src_hid}}"
-          source.ip: "{{json_event.message.src_ip}}"
           vectra.source.name: "{{json_event.message.src_name}}"
         # If Campaign log event
         filter: "{{json_event.message.campaign_id != null}}"
+
       - set:
           vectra.audit.message: "{{json_event.message.message}}"
           event.outcome: "{{json_event.message.result}}"
           vectra.user.role: "{{json_event.message.role}}"
-          source.ip: "{{json_event.message.source_ip}}"
           user.name: "{{json_event.message.user}}"
         # If Audit log event
         filter: "{{json_event.message.role != null}}"
+
       - set:
-          vectra.health.message: "{{json_event.message.message}}"
-          event.outcome: "{{json_event.message.result}}"
-          source.ip: "{{json_event.message.source_ip}}"
           event.action: "{{json_event.message.type}}"
         # If Health log event
         filter: "{{json_event.message.type != null}}"
@@ -146,17 +206,14 @@ stages:
           vectra.detection.dos_type: "{{json_event.message.dos_type}}"
         filter: "{{json_event.message.d_type_vname == 'Outbound Dos'}}"
 
-
       - set:
           vectra.detection.num_attempts: "{{json_event.message.num_attempts}}"
           vectra.detection.networks: "{{json_event.message.networks}}"
         filter: "{{json_event.message.d_type_vname == 'Outbound Port Sweep'}}"
 
-
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
         filter: "{{json_event.message.d_type_vname == 'Brute-Force'}}"
-
 
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
@@ -165,14 +222,12 @@ stages:
           vectra.detection.ransom_notes: "{{json_event.message.ransom_notes}}"
         filter: "{{json_event.message.d_type_vname == 'Ransomware File Activity'}}"
 
-
       - set:
           vectra.detection.sent_pattern: "{{json_event.message.sent_pattern}}"
           vectra.detection.sent_normal_pattern: "{{json_event.message.sent_normal_pattern}}"
           vectra.detection.received_pattern: "{{json_event.message.received_pattern}}"
           vectra.detection.received_normal_pattern: "{{json_event.message.received_normal_pattern}}"
         filter: "{{json_event.message.d_type_vname == 'Shell Knocker Client'}}"
-
 
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
@@ -181,7 +236,6 @@ stages:
           vectra.detection.shares: "{{json_event.message.shares}}"
         filter: "{{json_event.message.d_type_vname == 'SMB Brute-Force'}}"
 
-
       - set:
           vectra.detection.sql_fragment: "{{json_event.message.sql_fragment}}"
           vectra.detection.http_segment: "{{json_event.message.http_segment}}"
@@ -189,12 +243,10 @@ stages:
           vectra.detection.response_code: "{{json_event.message.response_code}}"
         filter: "{{json_event.message.d_type_vname == 'SQL Injection Activity'}}"
 
-
       - set:
           vectra.detection.normal_servers: "{{json_event.message.normal_servers}}"
           vectra.detection.normal_admins: "{{json_event.message.normal_admins}}"
         filter: "{{json_event.message.d_type_vname == 'Suspicious Admin'}}"
-
 
       - set:
           vectra.detection.reason: "{{json_event.message.reason}}"
@@ -205,7 +257,6 @@ stages:
           vectra.detection.product_id: "{{json_event.message.product_id}}"
         filter: "{{json_event.message.d_type_vname == 'Suspicious Remote Desktop'}}"
 
-
       - set:
           vectra.detection.function: "{{json_event.message.function}}"
           vectra.detection.account: "{{json_event.message.account}}"
@@ -213,12 +264,10 @@ stages:
           vectra.detection.namedpipe: "{{json_event.message.namedpipe}}"
         filter: "{{json_event.message.d_type_vname == 'Suspicious Remote Execution'}}"
 
-
       - set:
           vectra.detection.bytes_sent: "{{json_event.message.bytes_sent}}"
           vectra.detection.bytes_received: "{{json_event.message.bytes_received}}"
         filter: "{{json_event.message.d_type_vname == 'Internal Stage Loader'}}"
-
 
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
@@ -227,12 +276,10 @@ stages:
           vectra.detection.response_code: "{{json_event.message.response_code}}"
         filter: "{{json_event.message.d_type_vname == 'Suspicious LDAP Query'}}"
 
-
       - set:
           vectra.detection.type: "{{json_event.message.uuid}}"
           vectra.detection.count: "{{json_event.message.count}}"
         filter: "{{json_event.message.d_type_vname == 'RPC Recon'}}"
-
 
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
@@ -240,18 +287,15 @@ stages:
           vectra.detection.cookie: "{{json_event.message.cookie}}"
         filter: "{{json_event.message.d_type_vname == 'RDP Recon'}}"
 
-
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
           vectra.detection.accounts: "{{json_event.message.accounts}}"
         filter: "{{json_event.message.d_type_vname == 'SMB Account Scan'}}"
 
-
       - set:
           vectra.detection.num_attempts: "{{json_event.message.num_attempts}}"
           vectra.detection.dst_ips: "{{json_event.message.dst_ips}}"
         filter: "{{json_event.message.d_type_vname == 'Port Sweep'}}"
-
 
       - set:
           vectra.detection.scans: "{{json_event.message.scans}}"
@@ -259,33 +303,27 @@ stages:
           vectra.detection.successes: "{{json_event.message.successes}}"
         filter: "{{json_event.message.d_type_vname == 'Port Scan'}}"
 
-
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
           vectra.detection.shares: "{{json_event.message.shares}}"
           vectra.detection.accounts: "{{json_event.message.accounts}}"
         filter: "{{json_event.message.d_type_vname == 'File Share Enumeration'}}"
 
-
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
         filter: "{{json_event.message.d_type_vname == 'External Remote Access'}}"
-
 
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
         filter: "{{json_event.message.d_type_vname == 'Hidden DNS Tunnel'}}"
 
-
       - set:
           vectra.detection.count: "{{json_event.message.count}}"
         filter: "{{json_event.message.d_type_vname == 'TOR Activity'}}"
 
-
       - set:
           vectra.detection.tunnel_type: "{{json_event.message.tunnel_type}}"
         filter: "{{json_event.message.d_type_vname == 'Hidden HTTPS Tunnel'}}"
-
 
       - set:
           vectra.detection.threat_feeds: "{{json_event.message.threat_feeds}}"
@@ -295,7 +333,6 @@ stages:
           vectra.detection.matched_user_agent: "{{json_event.message.matched_user_agent}}"
         filter: "{{json_event.message.d_type_vname == 'Threat Intelligence Match'}}"
 
-
       - set:
           vectra.detection.http_method: "{{json_event.message.http_method}}"
           vectra.detection.url: "{{json_event.message.url}}"
@@ -304,9 +341,11 @@ stages:
           vectra.detection.reply_cache_control: "{{json_event.message.reply_cache_control}}"
         filter: "{{json_event.message.d_type_vname == 'Suspicious HTTP'}}"
 
-
       - set:
           vectra.detection.ip: "{{json_event.message.ip}}"
+        filter: "{{json_event.message.ip | is_ipaddress}}"
+
+      - set:
           vectra.detection.protocol: "{{json_event.message.protocol}}"
           vectra.detection.port: "{{json_event.message.port}}"
         filter: "{{json_event.message.d_type_vname == 'Suspicious Relay'}}"

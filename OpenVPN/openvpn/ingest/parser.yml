@@ -1,0 +1,143 @@
+name: openvpn
+pipeline:
+  - name: pre_parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: "original.message"
+        output_field: pre_message
+        pattern: '\s*(%{LOG_DATE:date} %{LOG_TIME:time} )?%{DATA:raw_message}'
+        custom_patterns:
+          LOG_DATE: '%{YEAR}\-%{MONTHNUM}\-%{MONTHDAY}'
+          LOG_TIME: '%{HOUR}\:%{MINUTE}\:%{SECOND}'
+
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: message
+        pattern: "%{GATEWAY_1}|%{GATEWAY_2}|%{TUNNEL_1}|%{TUNNEL_2}|%{TUNNEL_3}|%{TUNNEL_4}|%{TUNNEL_5}|%{CLIENT_CONNECTION_1}|%{CLIENT_CONNECTION_2}|%{CLIENT_CONNECTION_3}|%{CLIENT_CONNECTION_4}|%{TLS_INFO}|%{CLIENT_INFO_1}|%{CLIENT_INFO_2}|%{CLIENT_INFO_3}|%{LDAP_ERROR}|%{DEFAULT}"
+        custom_patterns:
+          GATEWAY_1: "%{DATA} IFACE=%{WORD:iface} HWADDR=%{MAC:hwadr}"
+          GATEWAY_2: "net_%{DATA}: via %{IP} %{WORD} %{WORD:iface}"
+          TUNNEL_1: "TUN/TAP %{WORD} %{WORD:observer_interface}%{DATA}"
+          TUNNEL_2: "net_%{DATA}: %{IP:observer_ip} %{WORD} %{IP:peer_ip} %{WORD} %{WORD:observer_interface}"
+          TUNNEL_3: "net_%{DATA}: %{IP}/%{NUMBER} %{WORD} %{IP:peer_ip} %{DATA}"
+          TUNNEL_4: "net_%{DATA}: %{WORD} %{NUMBER} %{WORD} %{WORD:observer_interface}"
+          TUNNEL_5: "net_%{DATA}_up: %{WORD} %{WORD:observer_interface} %{WORD}"
+          CLIENT_CONNECTION_1: "%{DATA} %{IP:nat_ip} -> %{WORD:client_domain}/%{IP:client_ip}:%{NUMBER:client_port}"
+          CLIENT_CONNECTION_2: "%{DATA} %{WORD:client_domain}/%{IP:client_ip}:%{NUMBER:client_port}: %{IP:nat_ip}"
+          CLIENT_CONNECTION_3: "%{WORD:client_domain},%{IP:nat_ip},"
+          CLIENT_CONNECTION_4: '(%{USER:user_name}/)?%{IP:client_ip}:%{NUMBER:client_port} \[%{WORD:client_domain}\] %{DATA}'
+          TLS_INFO: "(%{USER:user_name}/)?%{IP:client_ip}:%{NUMBER:client_port} %{DATA}: TLS%{DATA:tls_version}, cipher %{DATA} %{DATA:tls_cipher}, %{DATA}"
+          CLIENT_INFO_1: "(%{USER:user_name}/)?%{IP:client_ip}:%{NUMBER:client_port} %{DATA:event_reason}"
+          CLIENT_INFO_2: "%{DATA:event_reason}\\(\\), in='%{WORD:client_domain},%{IP:client_ip},'"
+          CLIENT_INFO_3: "%{DATA:event_reason}: base=%{IP:client_ip} size=%{NUMBER}"
+          DEFAULT: "%{DATA:event_reason}"
+
+          LDAP_ERROR: "%{LDAP_ERROR_PASSWORD}|%{LDAP_ERROR_USER_NOT_FOUND}|%{LDAP_ERROR_BIND_FAILED}|%{LDAP_ERROR_BIND_FORBIDDEN}|%{LDAP_ERROR_UNABLE_TO_BIND}"
+          LDAP_MESSAGE_INCORRECT_PASSWORD: "Incorrect password supplied for LDAP DN"
+          LDAP_MESSAGE_BIND_FAILED: "LDAP bind failed: Invalid credentials"
+          LDAP_MESSAGE_BIND_FORBIDDEN: "ldap_bind with zero-length password is forbidden."
+          LDAP_MESSAGE_UNABLE_TO_BIND: "Unable to bind as"
+          LDAP_MESSAGE_USER: "LDAP user"
+          LDAP_ERROR_PASSWORD: '%{LDAP_MESSAGE_INCORRECT_PASSWORD:ldap_message} "%{DATA:ldap_kvs}"\.'
+          LDAP_ERROR_BIND_FAILED: "%{LDAP_MESSAGE_BIND_FAILED:ldap_message} %{GREEDYDATA}"
+          LDAP_ERROR_BIND_FORBIDDEN: "%{LDAP_MESSAGE_BIND_FORBIDDEN:ldap_message}"
+          LDAP_ERROR_UNABLE_TO_BIND: "%{LDAP_MESSAGE_UNABLE_TO_BIND:ldap_message} %{USERNAME:user_name}"
+          LDAP_ERROR_USER_NOT_FOUND: '%{LDAP_MESSAGE_USER:ldap_message} "%{USERNAME:user_name}" was not found.'
+
+  - name: parse_ldap_kv
+    filter: "{{parsed_event.message != None and parsed_event.message.ldap_kvs != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.ldap_kvs}}"
+        output_field: message
+        value_sep: "="
+        item_sep: ","
+
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{pre_parsing.pre_message.date}} {{pre_parsing.pre_message.time}}"
+        output_field: datetime
+    filter: "{{ pre_parsing.pre_message.date != None }}"
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_date.datetime}}"
+        filter: "{{parse_date != null }}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.reason: "{{parsed_event.message.event_reason}}"
+
+          client.ip: "{{parsed_event.message.client_ip}}"
+          client.port: "{{parsed_event.message.client_port}}"
+          client.nat.ip: "{{parsed_event.message.nat_ip}}"
+          client.domain: "{{parsed_event.message.client_domain}}"
+
+          tls.version: "{{parsed_event.message.tls_version}}"
+          tls.cipher: "{{parsed_event.message.tls_cipher}}"
+
+          observer.ingress.interface.name: "{{parsed_event.message.observer_interface}}"
+          observer.egress.interface.name: "{{parsed_event.message.iface}}"
+          observer.mac: "{{parsed_event.message.hwadr}}"
+          observer.ip: "{{parsed_event.message.observer_ip}}"
+          openvpn.peer.ip: "{{parsed_event.message.peer_ip}}"
+
+      - set:
+          user.name: "{{parsed_event.message.user_name}}"
+
+      - set:
+          user.name: "{{parse_ldap_kv.message.CN}}"
+        filter: "{{ parse_ldap_kv.message != null }}"
+
+      - set:
+          # DC key is repeated (e.g. `DC=example,DC=org`), so we have to extract and concatenate values manually
+          user.domain: >
+            {%- set dc_start = parsed_event.message.ldap_kvs.index("DC=") + 3 -%}
+            {%- set user_domain = parsed_event.message.ldap_kvs[dc_start:].replace(",DC=", ".") -%}
+            {%- if "," in result -%}{% set user_domain = user_domain[:result.index(',')] %}{%- endif -%}
+            {{ user_domain }}
+
+        filter: '{{ "DC=" in parsed_event.message.ldap_kvs }}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.ldap_message == 'Incorrect password supplied for LDAP DN'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.ldap_message == 'LDAP bind failed: Invalid credentials'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.ldap_message == 'ldap_bind with zero-length password is forbidden.'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.ldap_message == 'LDAP user'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.ldap_message == 'Unable to bind as'}}"

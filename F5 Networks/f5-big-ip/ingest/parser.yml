@@ -1,0 +1,397 @@
+name: f5-big-ip
+ignored_values: ["-", "N/A", ""]
+pipeline:
+  - name: parse_grok_event
+    external:
+      name: grok.match
+      properties:
+        output_field: message
+        pattern: '\s?(%{CRON_LOG}|%{LOGGER_LOG}|%{SSH_LOG}|%{RULE_LOG}|%{RULE_LOG_REASON_ONLY}|%{AUDIT_LOG}|%{ARROW}|%{VPN_LOG}|%{PERL_EVENT}|%{KV_HEADERS}|%{APM_EVENT}|%{APM_SHORT_EVENT})'
+        custom_patterns:
+          TLS: "TLSv"
+          HEADER: '%{WORD:action_type}\[\d*\]'
+
+          # Crond messages
+          CROND: "CROND"
+          CRON_LOG: '%{CROND:action_type}\[\d*\]:\s*\(%{NOTSPACE:user_name}\) %{NOTSPACE:action_name} \(%{DATA:process_command_line}\)'
+
+          # SSH messages
+          SSHD: "sshd"
+          SSH_MESSAGE_CONNECTION_CLOSED: "Connection closed"
+          SSH_CLIENT_ADDRESS: "%{IP:source_ip}|%{HOSTNAME:source_domain}"
+          SSH_CONNECTION_CLOSED: '%{SSH_MESSAGE_CONNECTION_CLOSED:ssh_reason} by( %{NOTSPACE:user_name})? %{SSH_CLIENT_ADDRESS:source_ip}( port %{NUMBER:source_port}( \[preauth\])?)?'
+          SSH_LOG: '%{SSHD:action_type}\[\d*\]:\s(%{SSH_CONNECTION_CLOSED}|%{GREEDYDATA})'
+
+          # Logger messages
+          LOGGER: "logger"
+          LOGGER_SSL_ACC: '\[ssl_acc\] %{IP:source_ip} %{NOTSPACE} %{NOTSPACE:user_name} \[%{HTTPDATE}\] \"?%{URIPATH:url_original}\"? %{NUMBER:http_response_status_code} %{NOTSPACE}'
+          LOGGER_SSL_REQ: '\[ssl_req\]\[%{HTTPDATE}\] %{IP:source_ip} %{TLS:tls_version_protocol}%{NUMBER:tls_version} %{NOTSPACE} \"?%{URIPATH:url_original}\"? %{NOTSPACE}'
+          LOGGER_LOG: '%{LOGGER:action_type}\[\d*\]:\s(%{LOGGER_SSL_ACC}|%{LOGGER_SSL_REQ})'
+
+          # Rule messages
+          RULE_LOG_MESSAGE: "(Referer: %{NOTSPACE:referer}|Request: %{WORD:http_method} %{NOTSPACE:path_name}|DNT: %{INT:number}|%{GREEDYDATA})"
+          RULE_HTTP_REQUEST: "<HTTP_REQUEST>: LOGS: %{RULE_LOG_MESSAGE:rule_message}"
+          RULE_HTTP_RESPONSE: "<HTTP_RESPONSE_RELEASE>: %{IPORHOST:destination_ip}:%{POSINT:destination_port}: HTTP: %{POSINT:http_response_status_code} response to( %{IPORHOST:destination_ip}:%{POSINT:destination_port})? from( %{IPORHOST:source_ip}:%{POSINT:source_port} )?URL: %{NOTSPACE:url_original} %{DATA} %{TLS:tls_version_protocol}%{NUMBER:tls_version}"
+          RULE_LOG: "%{HEADER}: Rule %{NOTSPACE:rule_name} (%{RULE_HTTP_REQUEST}|%{RULE_HTTP_RESPONSE})"
+          RULE_LOG_REASON_ONLY: '(%{HEADER}:\s?)?\s?Rule %{NOTSPACE:rule_name} \: %{GREEDYDATA:rule_message}'
+
+          # audit message
+          AUDIT_LOG: '%{HEADER}:\s(\d*:\d*: )AUDIT - %{GREEDYDATA:audit_message}'
+
+          # traffic messages
+          ACTION: "(SSL Handshake)|Connection|Rule"
+          ACTION_OUTCOME: "failed|error"
+          PROTOCOL: "TCP|UDP"
+          ARROW: '%{HEADER}:\s(\d*:\d*: )(%{ACTION:action_name} %{ACTION_OUTCOME:action_outcome} (for)? %{PROTOCOL:network_transport} )?%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}(: %{ACTION:action_name} %{ACTION_OUTCOME:action_outcome}: %{DATA:msg})?'
+
+          # vpn messages
+          VPN_PROTOCOL: "tcp|udp"
+          VPN_LOG: '%{DATA}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{WORD:action_name} ACL\:\s*(%{DATA:rule_name}\:%{NUMBER})\s*packet\:\s*%{VPN_PROTOCOL:network_transport}\s*%{IPORHOST:source_ip}:%{POSINT:source_port} -> %{IPORHOST:destination_ip}:%{POSINT:destination_port}'
+
+          # apm events
+          APM_EVENT: '%{APM_HEADER}?%{DATA:rule_name}\:\s*%{WORD}\:\s*%{WORD}\:\s*%{APM_PAYLOAD}'
+          APM_HEADER: "%{APM_HEADER_1}|%{APM_HEADER_2}"
+          APM_HEADER_1: '%{DATA:date} %{TIME:time} %{IPORHOST:source_domain} %{DATA:action_type} %{DATA}\[\d*\]:\s*(\d*:\d*: )'
+          APM_HEADER_2: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
+          APM_PAYLOAD: "%{APM_PAYLOAD_USER}|%{APM_PAYLOAD_USER_AUTH_WITH_DOMAIN}|%{APM_PAYLOAD_USER_AUTH}|%{APM_PAYLOAD_NEW_SESSION}|%{APM_PAYLOAD_ACCESS}|%{APM_PAYLOAD_USER_CLIENT_IP}|%{APM_PAYLOAD_USER_CLIENT_USERAGENT}|%{APM_PAYLOAD_USER_CLIENT_USERAGENT_2}|%{APM_PAYLOAD_SESSION_STATS}|%{APM_PAYLOAD_POLICY_RESULT}|%{APM_PAYLOAD_DEFAULT}"
+          APM_PAYLOAD_USER: "Username '%{DATA:user_name}'"
+          APM_PAYLOAD_USER_AUTH: ".*authenticate with '%{DATA:user_name}'.*"
+          APM_PAYLOAD_USER_AUTH_WITH_DOMAIN: ".*authenticate with '%{DATA:user_name}@%{DATA:user_domain}'.*"
+          APM_PAYLOAD_NEW_SESSION: 'New session from \s*client IP %{IP:src_ip} \(%{DATA}\) at VIP %{IP:dest_ip}.*'
+          APM_PAYLOAD_ACCESS: "Following rule '%{DATA:rule_name}' from item '%{DATA:rule_item}' to %{DATA} '%{DATA}'"
+          APM_PAYLOAD_USER_CLIENT_IP: "(?P<msg>session.user.clientip is %{IP:src_ip})"
+          APM_PAYLOAD_USER_CLIENT_USERAGENT: "(?P<msg>session.user.agent is %{GREEDYDATA:user_agent})"
+          APM_PAYLOAD_USER_CLIENT_USERAGENT_2: "(?P<msg>Received User-Agent header: %{GREEDYDATA:user_agent})"
+          APM_PAYLOAD_SESSION_STATS: "(?P<msg>Session statistics - bytes in: %{NUMBER:src_bytes}, bytes out: %{NUMBER:dest_bytes})"
+          APM_PAYLOAD_POLICY_RESULT: "(?P<msg>Access policy result: %{DATA:policy_result})"
+          APM_PAYLOAD_DEFAULT: "%{GREEDYDATA:msg}"
+
+          # short APM event
+          APM_SHORT_EVENT: '%{WORD:action_type}\[\d*\]: %{GREEDYDATA:msg}'
+
+          # perl events
+          PERL_EVENT: '%{PERL_HEADER}(\[%{WORD:rule_type}\]\s*)?%{DATA:rule_name}\: %{DATA:rule_message}\. Support id\: %{NUMBER}\, %{DATA:kvs}(%{PERL_REQUEST})?'
+          PERL_HEADER: '%{WORD:action_type}\[\d*\]:\s*(\d*:\d*: )'
+          PERL_REQUEST: ', request\: \<%{DATA:http_method} %{DATA:path_name} %{GREEDYDATA}'
+
+          # kv headers
+          KV_HEADERS: 'Rule %{DATA:rule_name} %{DATA}\:\s*%{GREEDYDATA:kvs}'
+
+    filter: '{{"CEF:0|" not in original.message}}'
+
+  - name: parse_cef_event
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: '{{original.message.replace("PSM:CEF:0|", "CEF:0|").replace("ASM:CEF:0|", "CEF:0|").replace("CEF:CEF:0|", "CEF:0|")}}'
+    filter: '{{"CEF:0|" in original.message}}'
+
+  - name: parse_cef_full_request
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: '{{ parse_cef_event.message.full_request.replace("\\r\\n", "\r\n") }}'
+        output_field: message
+        value_sep: ": "
+        item_sep: '\r\n'
+    filter: "{{parse_cef_event.message != null and parse_cef_event.message.full_request != null}}"
+
+  - name: parse_kv_event
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{ parse_grok_event.message.kvs }}"
+        output_field: message
+        value_sep: "="
+        item_sep: " "
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.kvs != None}}"
+
+  - name: parse_kv_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parse_grok_event.message.kvs }}"
+        output_field: message
+        value_sep: ":"
+        item_sep: ',\s'
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.kvs != None and parse_grok_event.message.action_type == 'perl'}}"
+
+  - name: parse_audit_message
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{ parse_grok_event.message.audit_message }}"
+        output_field: message
+        value_sep: "="
+        item_sep: " "
+    filter: "{{parse_grok_event.message != None and parse_grok_event.message.audit_message != None}}"
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parse_cef_event.message.rt }}"
+        output_field: datetime
+    filter: "{{ parse_cef_event.message != None }}"
+
+  - name: set_common_fields
+
+  - name: set_apm_event
+    filter: "{{ parse_grok_event.message.get('APM_EVENT') != None }}"
+
+  - name: set_perl_event
+    filter: "{{ parse_grok_event.message.action_type == 'perl' }}"
+
+  - name: set_cef_fields
+    filter: "{{ parse_cef_event.message != None }}"
+
+  - name: set_grokked_fields
+    filter: "{{ parse_grok_event.message != None }}"
+
+  - name: set_kv_fields
+    filter: "{{ parse_kv_event.message != None }}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          os.family: "linux"
+          os.platform: "linux"
+
+  set_perl_event:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          source.ip: "{{parse_kv_event.message.get('source ip')}}"
+          source.port: "{{parse_kv_event.message.get('source port')}}"
+          destination.ip: "{{parse_kv_event.message.get('destination ip')}}"
+          destination.port: "{{parse_kv_event.message.get('destination port')}}"
+          network.forwarded_ip: "{{parse_kv_event.message.get('xff ip')}}"
+
+          http.request.method: "{{parse_grok_event.message.get('http_method')}}"
+          url.original: "{{parse_grok_event.message.get('path_name')}}"
+          rule.ruleset: "{{parse_grok_event.message.get('rule_type')}}"
+
+  set_grokked_fields:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["start"]
+        filter: "{{parse_grok_event.message.CRON_LOG != None}}"
+
+      - set:
+          event.category: ["session"]
+        filter: "{{parse_grok_event.message.SSH_LOG != None}}"
+
+      - translate:
+        dictionary:
+          "Connection closed": ["end"]
+        mapping:
+          parse_grok_event.message.ssh_reason: event.type
+        fallback: ["info"]
+        filter: "{{parse_grok_event.message.SSH_LOG != None}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: "{{parse_grok_event.message.audit_message != None}}"
+
+      - set:
+          event.type: "alert"
+        filter: "{{parse_grok_event.message.ARROW != None and 'alert' in parse_grok_event.message.ARROW}}"
+
+      - set:
+          url.path: "{{parse_grok_event.message.path_name}}"
+          http.request.method: "{{parse_grok_event.message.http_method}}"
+          http.request.referrer: "{{parse_grok_event.message.referer}}"
+        filter: "{{parse_grok_event.message.RULE_LOG != None }}"
+
+      - set:
+          rule.name: "{{parse_grok_event.message.rule_name}}"
+
+          event.reason: "{{parse_grok_event.message.msg or parse_grok_event.message.rule_message or parse_grok_event.message.ssh_reason}}"
+          user.name: "{{parse_grok_event.message.user_name or parse_audit_message.message.user}}"
+          action.name: "{{parse_grok_event.message.action_name}}"
+          process.command_line: "{{parse_grok_event.message.process_command_line or parse_audit_message.message.cmd_data}}"
+          process.pid: "{{parse_audit_message.message.pid}}"
+          process.working_directory: "{{parse_audit_message.message.folder}}"
+
+          action.type: "{{parse_grok_event.message.action_type}}"
+          action.outcome: "{{parse_grok_event.message.action_outcome}}"
+          network.transport: "{{parse_grok_event.message.network_transport.lower()}}"
+          source.ip: "{{parse_grok_event.message.source_ip}}"
+          source.port: "{{parse_grok_event.message.source_port}}"
+          destination.ip: "{{parse_grok_event.message.destination_ip}}"
+          destination.port: "{{parse_grok_event.message.destination_port}}"
+
+          url.original: "{{parse_grok_event.message.url_original}}"
+
+          url.full: >
+            {%- if parse_grok_event.message.url_original.startswith('http') -%}
+              {{parse_grok_event.message.url_original}}
+            {%- elif parse_grok_event.message.url_original.endswith(':443') -%}
+              https://{{parse_grok_event.message.url_original.strip(':443')}}
+            {%- elif parse_grok_event.message.url_original.endswith(':80') -%}
+              http://{{parse_grok_event.message.url_original.strip(':80')}}
+            {%- endif -%}
+
+          http.response.status_code: "{{parse_grok_event.message.http_response_status_code}}"
+          tls.version_protocol: "{{parse_grok_event.message.tls_version_protocol.lower()}}"
+          tls.version: "{{parse_grok_event.message.tls_version.lower()}}"
+
+      - set:
+          action.target: "network-traffic"
+        filter: "{{parse_grok_event.message.source_ip != None and parse_grok_event.message.destination_ip != None and parse_grok_event.message.action_type != None}}"
+
+  set_cef_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+        filter: "{{parse_cef_event.message.act == 'alerted'}}"
+
+      - set:
+          action.target: "network-traffic"
+        filter: "{{parse_cef_event.message.src != None and parse_cef_event.message.dst != None and parse_cef_event.message.act != None}}"
+
+      - set:
+          "@timestamp": "{{parse_timestamp.datetime}}"
+          action.name: "{{parse_cef_event.message.act}}"
+          action.outcome: "success"
+          rule.ruleset: "{{parse_cef_event.message.policy_name}}"
+
+      - set:
+          observer.vendor: "{{parse_cef_event.message.DeviceVendor}}"
+          observer.product: "{{parse_cef_event.message.DeviceProduct}}"
+          observer.version: "{{parse_cef_event.message.DeviceVersion}}"
+
+      - set:
+          event.severity: "{{parse_cef_event.message.Severity}}"
+        filter: "{{parse_cef_event.message.Severity | int(-1) > -1}}"
+
+      - set:
+          observer.ip: "{{parse_cef_event.message.dvc}}"
+          observer.hostname: "{{parse_cef_event.message.dvchost}}"
+          observer.type: "firewall"
+          host.name: "{{parse_cef_event.message.dvchost}}"
+          host.hostname: "{{parse_cef_event.message.dvchost}}"
+
+      - set:
+          event.code: "{{parse_cef_event.message.DeviceEventClassID}}"
+          event.action: "{{parse_cef_event.message.Name}}"
+
+      - set:
+          source.ip: "{{parse_cef_event.message.src}}"
+          source.port: "{{parse_cef_event.message.spt}}"
+          source.user.id: "{{parse_cef_event.message.suid}}"
+          source.user.name: "{{parse_cef_event.message.suser}}"
+
+          destination.ip: "{{parse_cef_event.message.dst}}"
+          destination.port: "{{parse_cef_event.message.dpt}}"
+
+          network.transport: "{{parse_cef_event.message.proto}}"
+          network.protocol: "{{parse_cef_event.message.app}}"
+
+          user_agent.original: "{{parse_cef_event.message.requestClientApplication}}"
+
+          http.response.status_code: "{{parse_cef_event.message.response_code}}"
+          http.request.method: "{{parse_cef_event.message.requestMethod}}"
+
+      - set:
+          rule.name: "{{parse_cef_event.message.acl_rule_name}}"
+          f5.bigip.afm.virtual_name: "{{parse_cef_event.message.virtual_name}}"
+          f5.bigip.afm.vlan: "{{parse_cef_event.message.vlan}}"
+          f5.bigip.afm.drop_reason: "{{parse_cef_event.message.drop_reason}}"
+          f5.bigip.afm.route_domain: "{{parse_cef_event.message.route_domain}}"
+          f5.bigip.afm.attack_id: "{{parse_cef_event.message.attack_id}}"
+          f5.bigip.afm.attack_status: "{{parse_cef_event.message.attack_status}}"
+          f5.bigip.afm.attack_type: "{{parse_cef_event.message.attack_type}}"
+        filter: "{{parse_cef_event.message.DeviceProduct == 'Advanced Firewall Module'}}"
+
+      - set:
+          dns.question.class: "{{parse_cef_event.message.query_type}}"
+          dns.question.name: "{{parse_cef_event.message.query_name}}"
+
+      - set:
+          source.address: "{{parse_cef_event.message.source_address}}"
+          destination.address: "{{parse_cef_event.message.destination_address}}"
+
+      - set:
+          event.reason: "{{parse_cef_event.message.violation_details}}"
+        filter: "{{parse_cef_event.message.DeviceProduct == 'PSM'}}"
+
+      - set:
+          url.original: "{{parse_cef_event.message.request}}"
+
+      - set:
+          user_agent.original: "{{parse_cef_full_request.message.get('User-Agent')}}"
+        filter: "{{parse_cef_full_request.message != None and parse_cef_full_request.message.get('User-Agent') != None}}"
+
+  set_kv_fields:
+    actions:
+      - set:
+          rule.name: "{{parse_grok_event.message.rule_name}}"
+
+          source.ip: "{{parse_kv_event.message.client_ip}}"
+          source.port: "{{parse_kv_event.message.client_port}}"
+          http.response.bytes: "{{parse_kv_event.message.content_length}}"
+          http.response.mime_type: "{{parse_kv_event.message.content_type.strip(';')}}"
+          destination.domain: "{{parse_kv_event.message.host}}"
+          http.response.status_code: "{{parse_kv_event.message.server_status}}"
+          user_agent.original: "{{parse_kv_event.message.user_agent}}"
+          url.original: "{{parse_kv_event.message.username}}"
+          url.full: >
+            {%- if parse_kv_event.message.url_original.startswith('http') -%}
+              {{parse_grok_event.message.url_original}}
+            {%- elif parse_kv_event.message.url_original.endswith(':443') -%}
+              https://{{parse_grok_event.message.url_original.strip(':443')}}
+            {%- elif parse_kv_event.message.url_original.endswith(':80') -%}
+              http://{{parse_grok_event.message.url_original.strip(':80')}}
+            {%- endif -%}
+
+          http.request.referrer: "{{parse_kv_event.message.referer}}"
+          http.request.method: '{{parse_kv_event.message.request.strip(''"'').split('' '')[0]}}'
+
+      - set:
+          destination.ip: "{{parse_kv_event.message.lb_server.split(':')[0]}}"
+          destination.port: "{{parse_kv_event.message.lb_server.split(':')[1]}}"
+        filter: '{{parse_kv_event.message.lb_server | re_match("([0-9\.]+)\:([0-9]+)") == True }}'
+
+  set_apm_event:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+
+      - set:
+          event.type: ["start"]
+        filter: "{{parse_grok_event.message.APM_PAYLOAD_USER_AUTH != None or parse_grok_event.message.APM_PAYLOAD_USER_AUTH_WITH_DOMAIN != None}}"
+
+      - set:
+          rule.name: "{{parse_grok_event.message.rule_name}}"
+          f5.bigip.apm.rule_item: "{{parse_grok_event.message.rule_item}}"
+          source.domain: "{{parse_grok_event.message.source_domain}}"
+        filter: "{{parse_grok_event.message.APM_PAYLOAD_ACCESS != None}}"
+
+      - set:
+          action.target: "network-traffic"
+
+          user.name: "{{parse_grok_event.message.user_name}}"
+          user.domain: "{{parse_grok_event.message.user_domain}}"
+
+          source.ip: "{{parse_grok_event.message.src_ip}}"
+          source.bytes: "{{parse_grok_event.message.src_bytes}}"
+
+          destination.ip: "{{parse_grok_event.message.dest_ip}}"
+          destination.bytes: "{{parse_grok_event.message.dest_bytes}}"
+
+          user_agent.original: "{{parse_grok_event.message.user_agent}}"
+
+          f5.bigip.apm.policy_result: "{{parse_grok_event.message.policy_result}}"

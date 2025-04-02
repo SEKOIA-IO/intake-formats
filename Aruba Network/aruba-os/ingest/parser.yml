@@ -1,0 +1,209 @@
+name: aruba-os
+pipeline:
+  - name: parse_message
+    external:
+      name: grok.match
+      properties:
+        pattern: "%{SYSLOG}|%{DEFAULT}"
+        custom_patterns:
+          SYSLOG: '<%{NUMBER:code}> <%{NUMBER}> (<%{WORD}> )?<%{WORD} %{IP:src_ip}>\s*(%{WORD}:\s*)?\s*%{GREEDYDATA:syslog_payload}'
+          DEFAULT: '%{DATA:prefix}\:\s*%{USERNAME:obs}\s*\:\s*%{GREEDYDATA:payload}\s*'
+
+  - name: parse_syslog_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.syslog_payload"
+        pattern: "%{USER_INFO}|%{FORMAT_133121}|%{KV_PART}"
+        custom_patterns:
+          FORMAT_133121: "%{DATA} to %{IP:dst_ip}(:%{NUMBER:dst_port})? with %{GREEDYDATA}"
+          KV_PART: '%{DATA:payload}.\s*%{GREEDYDATA:kv_part}'
+          USER_INFO: "User %{USERNAME:user_name}.*?"
+    filter: "{{ parse_message.message.get('syslog_payload') != None }}"
+
+  - name: syslog_parse_kv_part_message
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_syslog_message.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+    filter: "{{ parse_syslog_message.message.get('kv_part') != None }}"
+
+  - name: parse_auth_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.payload"
+        pattern: ".*?User '%{USERNAME:user_name}'.*from %{IP:src_ip}.*"
+    filter: "{{ parse_message.message.prefix.lower()  == 'auth' }}"
+
+  - name: parse_mgr_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.payload"
+        pattern: ".*?from %{IP:src_ip}.*"
+    filter: "{{ parse_message.message.prefix.lower()  == 'mgr' }}"
+
+  - name: parse_ssl_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.payload"
+        pattern: ".*?from %{IP:src_ip}.*"
+    filter: "{{ parse_message.message.prefix.lower()  == 'ssl' }}"
+
+  - name: parse_sntp_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.payload"
+        pattern: ".*?at %{IP:src_ip}.*"
+    filter: "{{ parse_message.message.prefix.lower()  == 'sntp' }}"
+
+  - name: parse_snmp_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.payload"
+        pattern: ".*?from %{IP:src_ip}.*"
+    filter: "{{ parse_message.message.prefix.lower()  == 'snmp' }}"
+
+  - name: parse_dhcp_snoop_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_message.message.payload"
+        pattern: ".*?%{IP:src_ip}.*"
+    filter: "{{ parse_message.message.prefix.lower()  == 'dhcp-snoop' }}"
+
+  - name: set_ecs_fields
+
+  - name: set_auth_fields
+    filter: "{{ parse_message.message.prefix.lower()  == 'auth' }}"
+
+  - name: set_mgr_fields
+    filter: "{{ parse_message.message.prefix.lower()  == 'mgr' }}"
+
+  - name: set_ssl_fields
+    filter: "{{ parse_message.message.prefix.lower()  == 'ssl' }}"
+
+  - name: set_sntp_fields
+    filter: "{{ parse_message.message.prefix.lower()  == 'sntp' }}"
+
+  - name: set_snmp_fields
+    filter: "{{ parse_message.message.prefix.lower()  == 'snmp' }}"
+
+  - name: set_dhcp_fields
+    filter: "{{ parse_message.message.prefix.lower()  == 'dhcp-snoop' }}"
+
+  - name: set_misc_fields
+    filter: "{{ parse_message.message.prefix.lower()  not in ('auth', 'mgr', 'ssl', 'sntp', 'snmp', 'dhcp-snoop') }}"
+
+  - name: set_syslog_fields
+    filter: "{{ parse_message.message.get('syslog_payload') != None }}"
+
+stages:
+  set_syslog_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.reason: "{{ parse_message.message.syslog_payload }}"
+          source.ip: "{{ parse_message.message.src_ip }}"
+          destination.domain: "{{ syslog_parse_kv_part_message.message.servername }}"
+          destination.ip: "{{ parse_syslog_message.message.dst_ip or syslog_parse_kv_part_message.message.serverip }}"
+          destination.port: "{{ parse_syslog_message.message.dst_port }}"
+          user.name: "{{ parse_syslog_message.message.user_name or syslog_parse_kv_part_message.message.username }}"
+
+      - set:
+          source.ip: "{{ syslog_parse_kv_part_message.message.userip }}"
+        filter: "{{ syslog_parse_kv_part_message.message.get('userip') != None }}"
+
+      - set:
+          event.category: ["authentication"]
+        filter: "{{ 'authentication' in parse_message.message.syslog_payload.lower() }}"
+
+  set_ecs_fields:
+    actions:
+      - set:
+          event.dataset: "{{ parse_message.message.prefix }}"
+          event.reason: "{{ parse_message.message.payload }}"
+
+  set_auth_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+
+      - set:
+          event.type: ["start"]
+        filter: "{{ 'logged in' in parse_message.message.payload }}"
+
+      - set:
+          event.type: ["info"]
+        filter: "{{ 'logged in' not in parse_message.message.payload }}"
+
+      - set:
+          user.name: "{{ parse_auth_message.message.user_name }}"
+          source.ip: "{{ parse_auth_message.message.src_ip }}"
+
+  set_mgr_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+      - set:
+          source.ip: "{{ parse_mgr_message.message.src_ip }}"
+
+  set_ssl_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+
+      - set:
+          event.type: ["end"]
+        filter: "{{ 'session closed' in parse_message.message.payload }}"
+
+      - set:
+          event.type: ["info"]
+        filter: "{{ 'session closed' not in parse_message.message.payload }}"
+
+      - set:
+          source.ip: "{{ parse_ssl_message.message.src_ip }}"
+
+  set_sntp_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+
+      - set:
+          source.ip: "{{ parse_sntp_message.message.src_ip }}"
+
+  set_snmp_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["session"]
+          event.type: ["info"]
+
+      - set:
+          source.ip: "{{ parse_snmp_message.message.src_ip }}"
+
+  set_dhcp_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+
+      - set:
+          source.ip: "{{ parse_dhcp_snoop_message.message.src_ip }}"
+
+  set_misc_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]

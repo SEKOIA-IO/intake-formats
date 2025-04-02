@@ -1,0 +1,88 @@
+name: HAProxy
+pipeline:
+  - name: grok
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message.strip().replace('\n','')}}"
+        pattern: "(%{JSON_MESSAGE}|%{HAPROXYHTTPBASE}|%{HAPROXYERROR})"
+        custom_patterns:
+          JSON_MESSAGE: >-
+            %{DATA}\[%{INT}\]: \[%{WORD}\] %{INT} %{GREEDYDATA:json_msg}
+          # HAPROXYTIME is redefined to get rid of [lookarounds](https://www.regular-expressions.info/lookaround.html)
+          HAPROXYTIME: >-
+            ([0-9])%{HOUR}:%{MINUTE}(?::%{SECOND})([0-9])
+          HAPROXYURL: "(%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?(?:%{URIPATHPARAM:url_path})"
+          TLS_PROTOCOL: "TLS"
+          HAPROXYHTTPBASE: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE} %{NOTSPACE}/%{NOTSPACE} %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT:http_response_status_code} %{NOTSPACE:http_response_bytes} %{DATA:http_request_cookie} %{DATA:http_response_cookie} %{NOTSPACE} %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT}/%{INT} (\{%{DATA:captured_request_headers}\})?( )?(\{%{DATA:captured_response_headers}\})?( )?"(<BADREQ>|(%{WORD:http_request_method} (?:%{HAPROXYURL:url_original})?( HTTP/%{NUMBER:http_version})?))?"( %{TLS_PROTOCOL:tls_protocol}v%{NUMBER:tls_version})?%{GREEDYDATA}'
+          HAPROXYERROR: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE}: %{GREEDYDATA:error_msg}'
+
+  - name: json
+    filter: "{{grok.message.json_msg | length > 0}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{grok.message.json_msg}}"
+
+  - name: json_main_stage
+    filter: "{{grok.message.json_msg | length > 0}}"
+  - name: grok_main_stage
+    filter: "{{grok.message.HAPROXYHTTPBASE | length > 0}}"
+  - name: grok_error_stage
+    filter: "{{grok.message.HAPROXYERROR | length > 0}}"
+  - name: finalizer
+
+stages:
+  finalizer:
+    actions:
+      - set:
+          event.kind: "access"
+          destination.size_in_char: "{{final.destination.domain | length}}"
+
+  grok_main_stage:
+    actions:
+      - set:
+          destination.domain: "{{ grok.message.url_domain }}"
+          http.request.method: "{{ grok.message.http_request_method }}"
+          http.response.bytes: "{{grok.message.http_response_bytes}}"
+          http.response.status_code: "{{ grok.message.http_response_status_code }}"
+          http.version: "{{ grok.message.http_version }}"
+          source.address: "{{ grok.message.source_ip }}"
+          source.ip: "{{ grok.message.source_ip }}"
+          source.port: "{{ grok.message.source_port }}"
+          url.original: "{{grok.message.url_original}}"
+          url.path: "{{grok.message.source_path}}"
+          tls.version_protocol: "{{grok.message.tls_protocol}}"
+          tls.version: "{{grok.message.tls_version}}"
+
+  json_main_stage:
+    actions:
+      - set:
+          action.name: "{{json.message.action}}"
+          action.outcome: "{{json.message.status}}"
+          destination.domain: "{{json.message.fqdn}}"
+          http.request.method: "{{json.message.meth}}"
+          http.response.bytes: "{{json.message.bytes}}"
+          http.response.status_code: "{{json.message.code}}"
+          os.name: "{{json.message.pn}}"
+          os.version: "{{json.message.pv}}"
+          source.address: "{{json.message.ip}}"
+          source.ip: "{{json.message.ip}}"
+          source.port: "{{json.message.port}}"
+          url.path: "{{json.message.path}}"
+          user_agent.original: "{{json.message.ua}}"
+
+      - set:
+          # legacy
+          url.original: "{{final.destination.domain+final.url.path}}"
+          http.version: "{{json.message.vers.split('/')[1]}}"
+
+  grok_error_stage:
+    actions:
+      - set:
+          error.message: "{{grok.message.error_msg}}"
+          source.address: "{{grok.message.source_ip}}"
+          source.ip: "{{grok.message.source_ip}}"
+          source.port: "{{grok.message.source_port}}"
+          event.kind: "error"
+          error.type: "HAProxy error"

@@ -1,0 +1,95 @@
+name: identity
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+
+  - name: detected_at
+    filter: "{{json_event.message.detectedAt != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.detectedAt}}"
+        output_field: timestamp
+
+  - name: started_at
+    filter: "{{json_event.message.firstSeenAt != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.firstSeenAt}}"
+        output_field: timestamp
+
+  - name: last_seen_at
+    filter: "{{json_event.message.lastSeenAt != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.lastSeenAt}}"
+        output_field: timestamp
+
+  - name: set_meta_fields
+stages:
+  set_meta_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: "intrusion_detection"
+          event.type: "info"
+          observer.vendor: "SentinelOne"
+          observer.product: "Singularity Identity"
+
+          "@timestamp": "{{detected_at.timestamp}}"
+          event.start: "{{started_at.timestamp}}"
+          event.end: "{{last_seen_at.timestamp}}"
+
+          event.provider: "{{json_event.message.detectionSource.product}}"
+          event.reason: "{{json_event.message.description}}"
+
+          process.command_line: "{{json_event.message.process.cmdLine}}"
+          process.parent.name: "{{json_event.message.process.parentName}}"
+
+          process.executable: "{{json_event.message.process.file.path}}"
+          process.name: "{{json_event.message.process.file.path | basename}}"
+          process.hash.sha1: "{{json_event.message.process.file.sha1}}"
+          process.hash.sha256: "{{json_event.message.process.file.sha256}}"
+          process.hash.md5: "{{json_event.message.process.file.md5}}"
+
+          agent.id: "{{json_event.message.asset.agentUuid}}"
+          agent.version: "{{json_event.message.asset.agentVersion}}"
+          host.os.family: "{{json_event.message.asset.osType}}"
+          host.os.version: "{{json_event.message.asset.osVersion}}"
+
+          sentinelone.identity.id: "{{json_event.message.id}}"
+          sentinelone.identity.name: "{{json_event.message.name}}"
+          sentinelone.identity.attackSurfaces: "{{json_event.message.attackSurfaces}}"
+          sentinelone.identity.status: "{{json_event.message.status}}"
+          sentinelone.identity.classification: "{{json_event.message.classification}}"
+          sentinelone.identity.confidenceLevel: "{{json_event.message.confidenceLevel}}"
+          sentinelone.identity.result: "{{json_event.message.result}}"
+          sentinelone.identity.storyLineId: "{{json_event.message.storyLineId}}"
+          sentinelone.identity.analystVerdict: "{{json_event.message.analystVerdict}}"
+          sentinelone.identity.analyticsCategory: "{{json_event.message.analytics.category}}"
+
+      - set:
+          threat.tactic.id: "[{% for attack in json_event.message.rawData.finding_info.attacks %}{% for tactic in attack['tactics'] %}'{{tactic.uid}}',{% endfor %}{% endfor %}]"
+          threat.tactic.name: "[{% for attack in json_event.message.rawData.finding_info.attacks %}{% for tactic in attack['tactics'] %}'{{tactic.name}}',{% endfor %}{% endfor %}]"
+        filter: "{{json_event.message.get('rawData', {}).get('finding_info', {}).get('attacks', []) | length > 0}}"
+
+      - set:
+          host.name: "{{json_event.message.rawData.resources[0].name}}"
+          organization.id: "{{json_event.message.rawData.resources[0].s1_metadata.account_id}}"
+          organization.name: "{{json_event.message.rawData.resources[0].s1_metadata.account_name}}"
+          sentinelone.identity.siteId: "{{json_event.message.rawData.resources[0].s1_metadata.site_id}}"
+          sentinelone.identity.siteName: "{{json_event.message.rawData.resources[0].s1_metadata.site_name}}"
+        filter: "{{json_event.message.get('rawData', {}).get('resources', []) | length > 0}}"
+
+      - set:
+          destination.domain: "{{json_event.message.rawData.evidences[0].dst_endpoint.hostname}}"
+          destination.ip: "{{json_event.message.rawData.evidences[0].dst_endpoint.ip}}"
+          source.domain: "{{json_event.message.rawData.evidences[0].src_endpoint.hostname}}"
+          source.ip: "{{json_event.message.rawData.evidences[0].src_endpoint.ip}}"
+          user.name: "{{json_event.message.rawData.evidences[0].actor.user.name}}"
+        filter: "{{json_event.message.get('rawData', {}).get('evidences', []) | length > 0}}"

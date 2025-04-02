@@ -1,0 +1,123 @@
+name: open-ldap
+pipeline:
+  - name: pre_parsing
+    external:
+      name: grok.match
+      properties:
+        input_field: "original.message"
+        output_field: pre_message
+        pattern: "%{GREEDYDATA}conn=%{NUMBER}%{SPACE}(op=%{NUMBER})?(fd=%{NUMBER})?%{SPACE}%{ACTION_TYPE:action_type}%{GREEDYDATA:raw_message}?"
+        custom_patterns:
+          ACTION_TYPE: "(ACCEPT|BIND|MOD|SRCH|STARTTLS|RESULT|TLS|UNBIND|closed)"
+
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: message
+        pattern: "%{Group_1}?"
+        custom_patterns:
+          Group_1: "%{SPACE}?from IP=%{IP:src_ip}:%{NUMBER:src_port} %{NOTSPACE}IP=%{IP:dst_ip}:%{NUMBER:dst_port}%{NOTSPACE}"
+
+  - name: parse_kv
+    filter: "{{pre_parsing.pre_message.action_type not in ['UNBIND', 'closed', 'STARTTLS']}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{pre_parsing.pre_message.raw_message}}"
+        output_field: parse_kv_field
+        value_sep: "="
+        item_sep: '\s'
+
+  - name: parse_dn
+    filter: "{{parse_kv.parse_kv_field.get('dn') != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parse_kv.parse_kv_field.dn}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ","
+
+  - name: parse_user_domain
+    filter: "{{parse_kv.parse_kv_field.get('base') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_kv.parse_kv_field.base}}"
+        output_field: result
+        pattern: '"%{DATA}(%{RESERVED_KEYWORDS}=%{WORD:first_part})%{GREEDYDATA:data_to_parse}"'
+        custom_patterns:
+          RESERVED_KEYWORDS: "(ou|o|dc)"
+
+  - name: parse_user_domain
+    filter: "{{parse_kv.parse_kv_field.get('dn') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_kv.parse_kv_field.dn}}"
+        output_field: result
+        pattern: "%{DATA}(%{RESERVED_KEYWORDS}=%{WORD:first_part})%{GREEDYDATA:data_to_parse}?"
+        custom_patterns:
+          RESERVED_KEYWORDS: "(ou|o|dc)"
+
+  - name: set_event_fields
+  - name: set_common_fields
+stages:
+  set_event_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection", "info"]
+        filter: "{{pre_parsing.pre_message.action_type in ['ACCEPT']}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{pre_parsing.pre_message.action_type in ['BIND']}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: "{{pre_parsing.pre_message.action_type in ['UNBIND']}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{pre_parsing.pre_message.action_type in ['MOD']}}"
+
+  set_common_fields:
+    actions:
+      - set:
+          event.action: "{{pre_parsing.pre_message.action_type | lower}}"
+          source.port: "{{parsed_event.message.src_port}}"
+          destination.port: "{{parsed_event.message.dst_port}}"
+          openldap.attribute: "{{parse_kv.parse_kv_field.attr}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.dst_ip}}"
+        filter: "{{parsed_event.message.dst_ip | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src_ip}}"
+        filter: "{{parsed_event.message.dst_ip | is_ipaddress}}"
+
+      - set:
+          user.name: "{{parse_dn.result.uid}}"
+        filter: "{{parse_dn.result != None}}"
+
+      - set:
+          user.domain: "{{parse_user_domain.result.first_part}}"
+        filter: "{{parse_user_domain.result != None and parse_user_domain.result.first_part != None}}"
+
+      - set:
+          user.domain: "{{parse_user_domain.result.first_part + parse_user_domain.result.data_to_parse.replace(',dc=', '.').replace(',ou=', '.').replace(',o=', '.')}}"
+        filter: "{{parse_user_domain.result != None and parse_user_domain.result.first_part != None and parse_user_domain.result.data_to_parse != None}}"

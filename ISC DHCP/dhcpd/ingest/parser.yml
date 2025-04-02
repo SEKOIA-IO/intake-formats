@@ -4,115 +4,95 @@ pipeline:
     external:
       name: grok.match
       properties:
-        input_field: '{{original.message}}'
+        input_field: "{{original.message}}"
         output_field: message
-        pattern: 'DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?'
+        pattern: "DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?"
         custom_patterns:
-          DHCPD_VIA: "via (%{IP:dhcp_relay_ip}|(?<dhcp_device>[^: ]+))"
-          DHCPD_DISCOVER: (?<dhcp_operation>DISCOVER) from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
-          DHCPD_OFFER_ACK: (?<dhcp_operation>(OFFER|N?ACK)) on %{IP:dhcp_client_ip} to %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
-          DHCPD_REQUEST: (?<dhcp_operation>REQUEST) for %{IP:dhcp_client_ip}( \(%{DATA:dhcp_server_ip}\))? from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
-          DHCPD_DECLINE: (?<dhcp_operation>DECLINE) of %{IP:dhcp_client_ip} from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
-          DHCPD_RELEASE: (?<dhcp_operation>RELEASE) of %{IP:dhcp_client_ip} from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA} \((?<dhcpd_release>(not )?found)\)
-          DHCPD_INFORM: (?<dhcp_operation>INFORM) from %{IP:dhcp_client_ip}? %{DHCPD_VIA}
+          DHCPD_VIA: "via (%{IP:dhcp_relay_ip}|(?P<dhcp_device>[^: ]+))"
+          DHCPD_DISCOVER: (?P<dhcp_operation>DISCOVER) from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_OFFER_ACK: (?P<dhcp_operation>(OFFER|N?ACK)) on %{IP:dhcp_client_ip} to %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_REQUEST: (?P<dhcp_operation>REQUEST) for %{IP:dhcp_client_ip}( \(%{DATA:dhcp_server_ip}\))? from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_DECLINE: (?P<dhcp_operation>DECLINE) of %{IP:dhcp_client_ip} from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA}
+          DHCPD_RELEASE: (?P<dhcp_operation>RELEASE) of %{IP:dhcp_client_ip} from %{MAC:dhcp_client_mac}( \(%{DATA:dhcp_client_name}\))? %{DHCPD_VIA} \((?P<dhcpd_release>(not )?found)\)
+          DHCPD_INFORM: (?P<dhcp_operation>INFORM) from %{IP:dhcp_client_ip}? %{DHCPD_VIA}
+  - name: common_fields
   - name: stage1
 stages:
+  common_fields:
+    actions:
+      - set:
+          source.ip: "{{grok_event.message.dhcp_client_ip}}"
+        filter: "{{grok_event.message.dhcp_client_ip | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{grok_event.message.dhcp_client_name}}"
+          source.mac: "{{grok_event.message.dhcp_client_mac}}"
+
+      - set:
+          destination.ip: "{{grok_event.message.dhcp_relay_ip}}"
+        filter: "{{grok_event.message.dhcp_relay_ip | is_ipaddress}}"
+
   stage1:
     actions:
-
       # The user localizes the DHCP server
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'discover'
-          source.mac: '{{grok_event.message.dhcp_client_mac}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "discover"
 
         filter: "{{grok_event.message.dhcp_operation == 'DISCOVER'}}"
 
-
       # The server acknowledges (ACK) the use of the address requested by the user
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'ack'
-          source.ip: '{{grok_event.message.dhcp_client_ip}}'
-          source.mac: '{{grok_event.message.dhcp_client_mac}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "ack"
 
         filter: "{{grok_event.message.dhcp_operation == 'ACK'}}"
 
       # The server rejects (NACK) the use of the address requested by the user
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'nack'
-          source.ip: '{{grok_event.message.dhcp_client_ip}}'
-          source.mac: '{{grok_event.message.dhcp_client_mac}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "nack"
 
         filter: "{{grok_event.message.dhcp_operation == 'NACK'}}"
 
       # The server answers (OFFER) to a client discover
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'offer'
-          source.ip: '{{grok_event.message.dhcp_client_ip}}'
-          source.mac: '{{grok_event.message.dhcp_client_mac}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "offer"
 
         filter: "{{grok_event.message.dhcp_operation == 'OFFER'}}"
 
       # The client requests (REQUEST) something to the server
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'request'
-          source.ip: '{{grok_event.message.dhcp_client_ip}}'
-          source.mac: '{{grok_event.message.dhcp_client_mac}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "request"
 
         filter: "{{grok_event.message.dhcp_operation == 'REQUEST'}}"
 
       # The client releases (RELEASE) its IP
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'release'
-          source.ip: '{{grok_event.message.dhcp_client_ip}}'
-          source.mac: '{{grok_event.message.dhcp_client_mac}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "release"
 
         filter: "{{grok_event.message.dhcp_operation == 'RELEASE'}}"
 
       # The client asks (INFORM) for more parameters
       - set:
-          event.kind: 'event'
-          event.category: ['network']
-          event.type: ['connection']
-          event.outcome: 'success'
-          dhcpd.query: 'inform'
-          source.ip: '{{grok_event.message.dhcp_client_ip}}'
-          source.domain: '{{grok_event.message.dhcp_client_name}}'
-          destination.ip: '{{grok_event.message.dhcp_relay_ip}}'
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+          dhcpd.query: "inform"
 
         filter: "{{grok_event.message.dhcp_operation == 'INFORM'}}"

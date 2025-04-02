@@ -1,0 +1,72 @@
+name: umbrella-dns
+pipeline:
+  - name: event
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - datetime
+          - user_name
+          - DATA
+          - source_ip
+          - source_nat_ip
+          - action_type
+          - dns_question_type
+          - dns_response_code
+          - dns_question_name
+          - dns_question_categories
+          - user_type
+          - identity_types
+          - blocked_categories
+          - rule_id
+          - destination_countries
+          - organization_id
+          - GREEDYDATA
+        delimiter: ","
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": '{{event.message.datetime.strip('' '').strip(''"'') | to_rfc3339 }}'
+          action.name: "DNS query"
+          action.properties.Categories: "{{event.message.dns_question_categories}}"
+          action.target: "network-traffic"
+          action.type: "{{event.message.action_type | lower}}"
+          destination.geo.country_iso_code: "{{event.message.destination_countries}}"
+          dns.question.name: >
+            {%- if event.message.dns_question_name.endswith('.') -%}
+            {{event.message.dns_question_name[:-1]}}
+            {%- else -%}
+            {{event.message.dns_question_name}}
+            {%- endif -%}
+          dns.size_in_char: "{{event.message.dns_question_name | length}}"
+          dns.question.type: "{{event.message.dns_question_type.split(' ')[1].replace('(', '').replace(')','')}}"
+          dns.response_code: "{{event.message.dns_response_code}}"
+          dns.type: "query"
+          organization.id: "{{event.message.organization_id}}"
+          rule.id: "{{event.message.rule_id}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.nat.ip: "{{event.message.source_nat_ip}}"
+          user.name: "{{event.message.user_name}}"
+          umbrella.most_granular_identity_type: "{{event.message.user_type}}"
+
+      - set:
+          action.outcome: "success"
+        filter: "{{event.message.dns_response_code == 'NOERROR'}}"
+
+      - set:
+          action.outcome: "failure"
+          action.outcome_reason: "{{event.message.dns_response_code}}"
+        filter: "{{event.message.dns_response_code != 'NOERROR'}}"
+
+      - set:
+          umbrella.blocked_categories: "{{event.message.blocked_categories.split(',')}}"
+        filter: "{{event.message.blocked_categories != ''}}"
+
+      - set:
+          umbrella.identity_types: "{{event.message.identity_types.split(',')}}"
+        filter: "{{event.message.identity_types != ''}}"

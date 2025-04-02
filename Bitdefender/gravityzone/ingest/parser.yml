@@ -1,0 +1,127 @@
+name: bitdefender-gravityzone
+pipeline:
+  - name: parse_event
+    external:
+      name: cef.parse-cef
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.message.eventdate or parse_event.message.BitdefenderGZDetectionTime or parse_event.message.end or parse_event.message.start}}"
+        output_field: datetime
+
+  - name: set_event_fields
+  - name: set_ecs_fields
+
+stages:
+  set_event_fields:
+    actions:
+      - set:
+          event.action: "{{parse_event.message.act}}"
+          event.module: "{{parse_event.message.BitdefenderGZModule}}"
+          event.severity: "{{parse_event.message.Severity}}"
+          event.type: ["info"]
+
+      - set:
+          event.kind: "alert"
+        filter: "{{ parse_event.message.BitdefenderGZModule == 'new-incident' }}"
+
+      - set:
+          event.type: ["denied"]
+        filter: "{{ parse_event.message.BitdefenderGZModule == 'aph' }}"
+
+      - set:
+          event.type: ["start"]
+        filter: "{{ parse_event.message.Name == 'Login from new device' }}"
+
+      - translate:
+        dictionary:
+          Exchange Malware Detected: ["malware"]
+          Invalid Exchange user credentials: ["intrusion_detection"]
+          Sandbox Analyzer Detection: ["malware"]
+          Storage Antimalware Event: ["malware"]
+          Login from new device: ["authentication"]
+          Authentication audit: ["authentication"]
+          SMTP Connection: ["network"]
+          Internet Connection: ["network"]
+          Malware Outbreak: ["malware"]
+        mapping:
+          parse_event.message.Name: event.category
+        filter: "{{parse_event.message.Name != None}}"
+
+      - translate:
+        dictionary:
+          "aph": ["network"]
+          "application-control": ["process"]
+          "application-inventory": ["package"]
+          "av": ["malware"]
+          "avc": ["malware"]
+          "dp": ["intrusion_detection"]
+          "exchange-user-credentials": ["intrusion_detection"]
+          "fw": ["network"]
+          "hd": ["malware"]
+          "antiexploit": ["intrusion_detection"]
+          "network-monitor": ["intrusion_detection"]
+          "registration": ["host"]
+          "device-control": ["host"]
+          "ransomware-mitigation": ["intrusion_detection"]
+          "new-incident": ["process"]
+          "uc": ["web"]
+        mapping:
+          parse_event.message.BitdefenderGZModule: event.category
+        filter: "{{parse_event.message.BitdefenderGZModule != None}}"
+
+  set_ecs_fields:
+    actions:
+      - set:
+          host.ip: "{{parse_event.message.dvc}}"
+          host.name: "{{parse_event.message.BitdefenderGZComputerFQDN or parse_event.message.dvchost}}"
+          destination.user.name: "{{parse_event.message.duser}}"
+          source.user.name: "{{parse_event.message.suser}}"
+          source.user.id: "{{parse_event.message.suid}}"
+          url.original: "{{parse_event.message.request}}"
+          rule.name: "{{parse_event.message.BitdefenderGZBlockingRuleName}}"
+          organization.id: "{{parse_event.message.BitdefenderGZCompanyId}}"
+          host.id: "{{parse_event.message.BitdefenderGZEndpointId}}"
+          email.subject: "{{parse_event.message.BitdefenderGZEmailSubject}}"
+          email.sender.address: "{{parse_event.message.BitdefenderGZEmailSender}}"
+          source.ip: "{{parse_event.message.BitdefenderGZEventSourceIP}}"
+          process.parent.name: "{{parse_event.message.BitdefenderGZParentProcess}}"
+          process.parent.path: "{{parse_event.message.BitdefenderGZParentProcessPath}}"
+          threat.indicator.name: "{{parse_event.message.BitdefenderGZThreatName}}"
+          threat.indicator.file.hash.sha256: "{{parse_event.message.BitdefenderGZMalwareHash}}"
+          observer.vendor: "{{parse_event.message.DeviceVendor}}"
+          observer.product: "{{parse_event.message.DeviceProduct}}"
+          observer.version: "{{parse_event.message.DeviceVersion}}"
+          bitdefender.gravityzone.application_control.block_type: "{{parse_event.message.BitdefenderGZApplicationControlBlockType}}"
+          bitdefender.gravityzone.application_control.type: "{{parse_event.message.BitdefenderGZApplicationControlType}}"
+          bitdefender.gravityzone.application_control.detection_count: "{{parse_event.message.cnt}}"
+          bitdefender.gravityzone.data.categories: "{{parse_event.message.BitdefenderGZDataCategories}}"
+          bitdefender.gravityzone.exploit.type: "{{parse_event.message.BitdefenderGZExploitType}}"
+
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+        filter: "{{parse_event.message.get('eventdate') != None or parse_event.message.get('BitdefenderGZDetectionTime') != None}}"
+
+      - set:
+          event.start: "{{parsed_date.datetime}}"
+        filter: "{{parse_event.message.get('start') != None}}"
+
+      - set:
+          event.end: "{{parsed_date.datetime}}"
+        filter: "{{parse_event.message.get('end') != None}}"
+
+      - set:
+          file.path: "{{parse_event.message.filePath}}"
+        filter: "{{parse_event.message.get('BitdefenderGZMalwareType') == None or parse_event.message.BitdefenderGZMalwareType.lower() != 'file'}}"
+
+      - set:
+          threat.indicator.name: "{{parse_event.message.BitdefenderGZMalwareName}}"
+          threat.indicator.type: "file"
+        filter: "{{parse_event.message.get('BitdefenderGZMalwareName') != None}}"
+
+      - set:
+          threat.indicator.file.path: "{{parse_event.message.filePath}}"
+          threat.indicator.file.name: "{{parse_event.message.filePath | basename}}"
+        filter: "{{parse_event.message.get('BitdefenderGZMalwareType', '').lower() == 'file'}}"

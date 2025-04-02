@@ -1,0 +1,508 @@
+name: openssh
+pipeline:
+  - name: event
+    external:
+      name: grok.match
+      properties:
+        pattern: >-
+          %{SSHD_HEADER}%{SPACE}(%{SSHD_INFO}|%{SSHD_ERROR})
+        custom_patterns:
+          SSHD_HEADER: (%{MONTH:month} %{MONTHDAY:month_day} %{TIME:time} %{HOSTNAME:hostname} sshd\[%{INT}\]:)?
+          SSHD_TEXT: ((%{WORD}|,)%{SPACE})*
+          SSHD_TWO_WORDS: "%{WORD}%{SPACE}%{WORD}"
+          SSHD_MESSAGE_ACCEPTED_POSTPONED: Accepted|Postponed
+          SSHD_MESSAGE_CONNECTION_CLOSED: Connection closed by
+          SSHD_MESSAGE_CONNECTION_FROM: Connection from
+          SSHD_MESSAGE_DISCONNECTED: Disconnected from
+          SSHD_MESSAGE_RECEIVED_DISCONNECT: Received disconnect from
+          SSHD_MESSAGE_CONNECTION_RESET: Connection reset by
+          SSHD_MESSAGE_SESSION_STARTING: Starting session
+          SSHD_MESSAGE_PAM_SESSION_CLOSED: 'pam_unix\(sshd:session\): session closed for user'
+          SSHD_MESSAGE_PAM_SESSION_OPENED: 'pam_unix\(sshd:session\): session opened for user'
+          SSHD_MESSAGE_PAM_FAILLOCK: 'pam_faillock\(sshd:auth\)'
+          SSHD_MESSAGE_PAM: 'PAM service\(sshd\)'
+          SSHD_MESSAGE_BAD_PROTOCOL: Bad protocol version
+          SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED: Did not receive identification string
+          SSHD_MESSAGE_DISCONNECTING_USER: Disconnecting
+          SSHD_MESSAGE_ERROR_USER: "(error:|fatal:)"
+          SSHD_MESSAGE_ERROR_NEGOCIATE: Unable to negotiate with
+          SSHD_MESSAGE_ERROR_AUTH_REQUEST: "input_userauth_request:"
+          SSHD_MESSAGE_ERROR_CONNECTION: "ssh_dispatch_run_fatal:"
+          SSHD_MESSAGE_PAM_CHECK_PASS: 'pam_unix\(sshd:auth\): check pass;'
+          SSHD_MESSAGE_PAM_AUTH_FAILURE: 'pam_unix\(sshd:auth\): authentication failure;'
+          SSHD_MESSAGE_PAM_EXPIRED_PASSWORD: 'pam_unix\(sshd:account\): expired password'
+          SSHD_MESSAGE_PAM_WIN_GRANTED_ACCESS: 'pam_winbind\(sshd:account\)'
+          SSHD_MESSAGE_PAMD_FAILED: 'pam_systemd\(sshd:session\): Failed to create session:'
+          SSHD_MESSAGE_PAM_FAULTY_MODULE: "PAM adding faulty module:"
+          SSHD_MESSAGE_PAM_UNABLE_DLOPEN: "PAM unable to dlopen"
+          SSHD_MESSAGE_FAILED_PASSWORD: "Failed password|Failed none"
+          SSHD_MESSAGE_INVALID_USER2: Invalid
+          SSHD_MESSAGE_USER2: User
+          SSHD_MESSAGE_INVALID_USER: invalid user
+          SSHD_MESSAGE_ILLEGAL_USER: illegal user
+          SSHD_MESSAGE_AUTHENTICATING_USER: authenticating user
+          SSHD_MESSAGE_NORMAL_USER: user
+          SSHD_MESSAGE_USER_QUALITY: "%{SSHD_MESSAGE_AUTHENTICATING_USER}|%{SSHD_MESSAGE_ILLEGAL_USER}|%{SSHD_MESSAGE_INVALID_USER}|(%{SSHD_MESSAGE_NORMAL_USER})?"
+          SSHD_MESSAGE_USER: "(%{SSHD_MESSAGE_USER_QUALITY:userquality})|((%{SSHD_MESSAGE_USER_QUALITY:userquality} )?(%{USERNAME:user_name}|[\\*]+)(@%{HOSTNAME:source_domain})?)" # ***** for redacted
+          SSHD_CLIENT_ADDRESS: "%{IP:source_ip}|%{HOSTNAME:source_domain}"
+          SSHD_INFO_ACCEPTED:
+            "%{SSHD_MESSAGE_ACCEPTED_POSTPONED:sshd_message} %{NOTSPACE:outcome_reason}
+            for %{USERNAME:user_name}(@%{HOSTNAME:source_domain})?( from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}(
+            ssh2: %{NOTSPACE} SHA256:%{NOTSPACE:file_hash_sha256}|%{GREEDYDATA}))?"
+          SSHD_INFO_KEY_ACCEPTED: '%{SSHD_MESSAGE_ACCEPTED_POSTPONED:sshd_message} key %{DATA} %{DATA:public_key_hash} found at %{DATA:key_path}\:%{NUMBER}'
+          SSHD_INFO_CONNECTION_CLOSED:
+            '%{SSHD_MESSAGE_CONNECTION_CLOSED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port}( \[preauth\])?)?'
+          SSHD_INFO_CONNECTION: "%{SSHD_MESSAGE_CONNECTION_FROM:sshd_message} %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port} on %{IP:destination_ip} port %{NUMBER:destination_port}"
+          SSHD_INFO_DISCONNECTED:
+            '%{SSHD_MESSAGE_DISCONNECTED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
+          SSHD_INFO_RECEIVED_DISCONNECT: '%{SSHD_MESSAGE_RECEIVED_DISCONNECT:sshd_message} %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port})?:%{SPACE}?%{INT}:%{SPACE}%{SSHD_TEXT:outcome_reason}( \[preauth\])?'
+          SSHD_INFO_CONNECTION_RESET:
+            '%{SSHD_MESSAGE_CONNECTION_RESET:sshd_message}( %{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
+          SSHD_INFO_DISCONNECTION: "%{SSHD_INFO_CONNECTION_CLOSED}|%{SSHD_INFO_DISCONNECTED}|%{SSHD_INFO_RECEIVED_DISCONNECT}|%{SSHD_INFO_CONNECTION_RESET}"
+          SSHD_INFO_SESSION_STARTING: "%{SSHD_MESSAGE_SESSION_STARTING:sshd_message}: command for %{SSHD_MESSAGE_USER} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port} id %{NUMBER}"
+          SSHD_INFO_USER_ON_PID: "%{SSHD_MESSAGE_USER2:sshd_message} %{SSHD_MESSAGE_USER} (?P<outcome_reason>is on pid %{NUMBER:pid})"
+          SSHD_INFO_RSA_DISABLED: "(?P<sshd_message>main: sshd: ssh-rsa algorithm is disabled)"
+          SSHD_INFO_PAM_SESSION_CLOSED: "%{SSHD_MESSAGE_PAM_SESSION_CLOSED:sshd_message} %{WORD:user_name}"
+          SSHD_INFO_PAM_SESSION_OPENED:
+            '%{SSHD_MESSAGE_PAM_SESSION_OPENED:sshd_message} %{WORD:user_name}(\(uid=%{NUMBER:user_id}\))?
+            by \(%{GREEDYDATA}\)'
+          SSHD_INFO_PAM_MORE_AUTH_FAIL:
+            (%{SSHD_INFO_PAM_MORE_AUTH_FAIL_MESSAGE:sshd_message}); (logname=(%{USERNAME:user_logname})?
+            )?(uid=(%{INT:user_id})? )?(euid=(%{INT:user_euid})?)?%{SPACE}(tty=ssh )?(ruser=(%{USERNAME:user_ruser})?)?%{SPACE}(rhost=(%{IP:source_ip})?)?%{SPACE}(user=%{USERNAME:user_name})?
+          SSHD_INFO_PAM_MORE_AUTH_FAIL_MESSAGE: "PAM %{INT} more authentication failure(s)?"
+          SSHD_INFO_PAM_IGNORE_MAX_RETRIES: "%{SSHD_MESSAGE_PAM:sshd_message} %{GREEDYDATA:outcome_reason}"
+          SSHD_INFO_PAM_WIN_GRANTED_ACCESS: '%{SSHD_MESSAGE_PAM_WIN_GRANTED_ACCESS:sshd_message}: user \''%{USERNAME:user_name}@%{HOSTNAME:source_domain}\'' granted access'
+          SSHD_INFO_PAM: "%{SSHD_INFO_PAM_SESSION_CLOSED}|%{SSHD_INFO_PAM_SESSION_OPENED}|%{SSHD_INFO_PAM_MORE_AUTH_FAIL}|%{SSHD_INFO_PAM_IGNORE_MAX_RETRIES}|%{SSHD_INFO_PAM_WIN_GRANTED_ACCESS}"
+          SSHD_INFO: "%{SSHD_INFO_ACCEPTED}|%{SSHD_INFO_KEY_ACCEPTED}|%{SSHD_INFO_CONNECTION}|%{SSHD_INFO_DISCONNECTION}|%{SSHD_INFO_SESSION_STARTING}|%{SSHD_INFO_USER_ON_PID}|%{SSHD_INFO_RSA_DISABLED}|%{SSHD_INFO_PAM}|%{SSHD_EXPIRED_PASSWORD}"
+          SSHD_ERROR_BAD_PROTOCOL:
+            "%{SSHD_MESSAGE_BAD_PROTOCOL:sshd_message} identification
+            '%{GREEDYDATA}' from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}"
+          SSHD_ERROR_CONNECTION: '%{SSHD_MESSAGE_ERROR_CONNECTION:sshd_message} Connection from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}:%{GREEDYDATA:outcome_reason}( \[preauth\])?'
+          SSHD_ERROR_IDENTIFICATION_NOT_RECEIVED:
+            "%{SSHD_MESSAGE_IDENTIFICATION_NOT_RECEIVED:sshd_message}
+            from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}"
+          SSHD_ERROR_IDENTIFICATION: "%{SSHD_ERROR_BAD_PROTOCOL}|%{SSHD_ERROR_IDENTIFICATION_NOT_RECEIVED}"
+          SSHD_ERROR_INVALID_USER:
+            (%{SSHD_MESSAGE_FAILED_PASSWORD:sshd_message} for|%{SSHD_MESSAGE_INVALID_USER2:sshd_message})%{SPACE}%{SSHD_MESSAGE_USER}%{SPACE}from
+            %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port})?(%{SPACE}ssh2)?
+          SSHD_ERROR_DISCONNECTING_USER:
+            '%{SSHD_MESSAGE_DISCONNECTING_USER:sshd_message} %{SSHD_MESSAGE_USER}
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}:%{SPACE}(%{GREEDYDATA:outcome_reason})?
+            (\[preauth\])?'
+          SSHD_ERROR_FOR_USER:
+            "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:outcome_reason}
+            for %{SSHD_MESSAGE_USER} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}%{GREEDYDATA}"
+          SSHD_ERROR_FOR_USER_2:
+            "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:outcome_reason}
+            for %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}%{GREEDYDATA}"
+          SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION:
+            "%{SSHD_MESSAGE_ERROR_USER:sshd_message} kex_exchange_identification:
+            %{GREEDYDATA:outcome_reason}"
+          SSHD_ERROR_USER_NOT_ALLOWED:
+            "%{SSHD_MESSAGE_USER2:sshd_message} %{USERNAME:user_name}
+            from %{SSHD_CLIENT_ADDRESS} %{GREEDYDATA:outcome_reason}"
+          SSHD_ERROR_AUTH_REQUEST:
+            '%{SSHD_MESSAGE_ERROR_AUTH_REQUEST:sshd_message} %{SSHD_MESSAGE_USER}(
+            \[preauth\])?'
+          SSHD_ERROR_NEGOCIATE:
+            "%{SSHD_MESSAGE_ERROR_NEGOCIATE:sshd_message} %{SSHD_CLIENT_ADDRESS}
+            port %{NUMBER:source_port}(: %{GREEDYDATA:outcome_reason})?"
+          SSHD_ERROR_SEND_FAILURE_PACKET: "%{SSHD_MESSAGE_ERROR_USER:sshd_message} %{GREEDYDATA:outcome_reason}"
+          SSHD_ERROR_PAM_CHECK_PASS: "%{SSHD_MESSAGE_PAM_CHECK_PASS:sshd_message} %{SSHD_MESSAGE_USER}"
+          SSHD_ERROR_PAM_AUTH_FAILURE: "%{SSHD_MESSAGE_PAM_AUTH_FAILURE:sshd_message} %{GREEDYDATA:pam}"
+          SSHD_ERROR_PAM_FAILED_TO_CREATE: '%{SSHD_MESSAGE_PAMD_FAILED:sshd_message} (?P<outcome_reason>Maximum number of sessions \(%{NUMBER}\) reached, refusing further sessions.)'
+          SSHD_ERROR_PAM_FAULTY_MODULE: "%{SSHD_MESSAGE_PAM_FAULTY_MODULE:sshd_message} %{DATA:filename}"
+          SSHD_ERROR_PAM_UNABLE_DLOPEN: '%{SSHD_MESSAGE_PAM_UNABLE_DLOPEN:sshd_message}\(%{DATA:filename}\): %{DATA:filepath}: %{GREEDYDATA:outcome_reason}'
+          SSHD_ERROR_PAM_MANY_CONSECUTIVE_FAILURES: "%{SSHD_MESSAGE_PAM_FAILLOCK:sshd_message}: (?P<outcome_reason>Consecutive login failures for %{SSHD_MESSAGE_USER} account temporarily locked)"
+          SSHD_ERROR_PAM_USER_UNKNOWN: "%{SSHD_MESSAGE_PAM_FAILLOCK:sshd_message}: (?P<outcome_reason>User unknown)"
+          SSHD_ERROR_PAM: "%{SSHD_ERROR_PAM_CHECK_PASS}|%{SSHD_ERROR_PAM_AUTH_FAILURE}|%{SSHD_ERROR_PAM_FAILED_TO_CREATE}|%{SSHD_ERROR_PAM_FAULTY_MODULE}|%{SSHD_ERROR_PAM_UNABLE_DLOPEN}|%{SSHD_ERROR_PAM_MANY_CONSECUTIVE_FAILURES}|%{SSHD_ERROR_PAM_USER_UNKNOWN}"
+          SSHD_EXPIRED_PASSWORD:
+            '%{SSHD_MESSAGE_PAM_EXPIRED_PASSWORD:sshd_message} for user
+            %{USERNAME:user_name} \(%{SSHD_TWO_WORDS:action_outcome_reason}\)'
+          SSHD_ERROR: "%{SSHD_ERROR_IDENTIFICATION}|%{SSHD_ERROR_INVALID_USER}|%{SSHD_ERROR_NEGOCIATE}|%{SSHD_ERROR_DISCONNECTING_USER}|%{SSHD_ERROR_FOR_USER}|%{SSHD_ERROR_FOR_USER_2}|%{SSHD_ERROR_AUTH_REQUEST}|%{SSHD_ERROR_PAM}|%{SSHD_ERROR_USER_NOT_ALLOWED}|%{SSHD_ERROR_KEX_EXCHANGE_IDENTIFICATION}|%{SSHD_ERROR_CONNECTION}|%{SSHD_ERROR_SEND_FAILURE_PACKET}"
+
+  - name: parse_kv
+    filter: "{{event.message != None and event.message.pam != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{event.message.pam}}"
+        output_field: message
+        value_sep: "="
+        item_sep: '\s'
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.product: "openssh"
+          observer.vendor: "openbsd project"
+          observer.type: "server"
+          process.name: "sshd"
+          action.outcome_reason: "{{ event.message.SSHD_INFO or event.message.SSHD_ERROR }}"
+          event.outcome: "success" # legacy
+
+      - set:
+          source.domain: "{{event.message.source_domain}}"
+          source.ip: "{{event.message.source_ip}}"
+          source.port: "{{event.message.source_port}}"
+
+          user.id: "{{event.message.user_id}}"
+          user.euid: "{{event.message.user_id}}"
+          user.name: "{{event.message.user_name}}"
+          source.user.name: "{{event.message.user_name}}"
+
+          file.hash.sha256: "{{event.message.file_hash_sha256}}"
+
+      - set:
+          user.id: "{{parse_kv.message.ruser}}"
+          source.ip: "{{parse_kv.message.rhost}}"
+        filter: "{{parse_kv.message != None}}"
+
+      - set:
+          destination.ip: "{{event.message.destination_ip}}"
+          destination.port: "{{event.message.destination_port}}"
+        filter: "{{event.message.destination_ip | is_ipaddress }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          action.type: "open"
+          action.name: "session"
+          action.outcome: "success"
+          action.target: "user"
+
+          openssh.auth.method: "{{ event.message.outcome_reason }}"
+        filter: "{{event.message.sshd_message == 'Accepted'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          action.type: "open"
+          action.name: "session"
+          action.outcome: "success"
+          action.target: "user"
+
+          openssh.auth.method: "{{ event.message.outcome_reason }}"
+        filter: "{{event.message.sshd_message == 'Postponed'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Connection closed by'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Disconnected from'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+          action.outcome_reason: "{{event.message.outcome_reason}}"
+        filter: "{{event.message.sshd_message == 'Received disconnect from'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["end"]
+
+          action.type: "close"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+          action.outcome_reason: "reset"
+        filter: "{{event.message.sshd_message == 'Connection reset by'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+
+          action.type: "close"
+          action.name: "sshd:session"
+          action.outcome: "success"
+          action.target: "user"
+
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:session): session closed for user'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+          action.type: "open"
+          action.name: "sshd:session"
+          action.outcome: "success"
+          action.target: "user"
+
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:session): session opened for user'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "open"
+          action.name: "sshd:session"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'pam_winbind(sshd:account)'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["protocol"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+          action.type: "open"
+          action.name: "negotiate"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Bad protocol version'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Did not receive identification string'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Disconnecting'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message in ('error:', 'fatal:')}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["protocol"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+          action.type: "open"
+          action.name: "negotiate"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'ssh_dispatch_run_fatal:'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+
+          action.type: "open"
+          action.name: "negotiate"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Unable to negotiate with'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.userquality }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'input_userauth_request:'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+
+          action.type: "check"
+          action.name: "sshd:auth"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:auth): check pass;'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+          action.type: "authentication"
+          action.name: "sshd:auth"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:auth): authentication failure;'}}"
+
+      - set:
+          action.type: "account"
+          action.name: "expired password"
+
+        filter: "{{event.message.sshd_message == 'pam_unix(sshd:account): expired password'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message in ('Failed password', 'Failed none')}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }} {{ event.message.userquality }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Invalid'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'User' and 'not allowed' in event.message.outcome_reason}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+
+          process.pid: "{{event.message.pid}}"
+        filter: "{{event.message.sshd_message == 'User' and 'is on pid' in event.message.outcome_reason}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "authentication"
+          action.name: "sshd:auth"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message.endswith('more authentication failures')}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'PAM service(sshd)'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'pam_systemd(sshd:session): Failed to create session:'}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["start"]
+
+          action.type: "open"
+          action.name: "connection"
+          action.outcome: "success"
+          action.target: "user"
+        filter: "{{event.message.sshd_message == 'Connection from'}}"
+
+      - set:
+          event.category: ["library"]
+          event.type: ["start"]
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.outcome: "failure"
+
+          dll.name: "{{event.message.filename}}"
+        filter: "{{event.message.sshd_message == 'PAM adding faulty module:'}}"
+
+      - set:
+          event.category: ["library"]
+          event.type: ["start"]
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.outcome: "failure"
+
+          dll.name: "{{event.message.filename}}"
+          dll.path: "{{event.message.filepath}}"
+        filter: "{{event.message.sshd_message == 'PAM unable to dlopen'}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["info"]
+
+          action.outcome_reason: "{{ event.message.sshd_message }}"
+        filter: "{{event.message.sshd_message == 'main: sshd: ssh-rsa algorithm is disabled'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "authentication"
+          action.name: "sshd:auth"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{'Consecutive login failures for' in event.message.outcome_reason}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+
+          action.outcome_reason: "{{ event.message.outcome_reason }}"
+          action.type: "authentication"
+          action.name: "sshd:auth"
+          action.outcome: "failure"
+          action.target: "user"
+        filter: "{{'User unknown' in event.message.outcome_reason}}"
