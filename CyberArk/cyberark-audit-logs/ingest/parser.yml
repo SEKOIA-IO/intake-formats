@@ -1,0 +1,130 @@
+name: cyberark-audit-logs
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_category_fields
+  - name: set_common_fields
+  - name: set_specific_fields
+
+stages:
+  set_category_fields:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: "{{parsed_event.message.auditCode in ('PAM00088', 'PAM00294', 'IDP6004', )}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["creation"]
+        filter: "{{parsed_event.message.auditCode in ('PAM00105', 'PAM00032', 'PAM00185', 'IDP2001')}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["access"]
+        filter: "{{parsed_event.message.auditCode in ('PAM00295', 'PAM00099', )}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["deletion"]
+        filter: "{{parsed_event.message.auditCode in ('PAM00273', 'IDP6010', )}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{parsed_event.message.auditCode in ('IDP2009', )}}"
+
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "CyberArk"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          observer.product: "{{parsed_event.message.serviceName}}"
+
+          event.provider: "{{parsed_event.message.component}}"
+          event.action: "{{parsed_event.message.action}}"
+          event.dataset: "{{parsed_event.message.applicationCode}}"
+          event.code: "{{parsed_event.message.auditCode}}"
+
+          user.id: "{{parsed_event.message.userId}}"
+
+      - set:
+          user.email: "{{parsed_event.message.username}}"
+        filter: "{{'@' in parsed_event.message.username}}"
+
+      - set:
+          user.name: "{{parsed_event.message.username}}"
+        filter: "{{'@' not in parsed_event.message.username}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.source}}"
+        filter: "{{parsed_event.message.source | is_ipaddress}}"
+
+      - set:
+          observer.name: "{{parsed_event.message.source}}"
+        filter: "{{not parsed_event.message.source | is_ipaddress}}"
+
+      - set:
+          event.reason: "{{parsed_event.message.message}}"
+          cloud.provider: "{{parsed_event.message.cloudProvider}}"
+          user.target.name: "{{parsed_event.message.targetAccount}}"
+          destination.ip: "{{parsed_event.message.target}}"
+          organization.id: "{{parsed_event.message.tenantId}}"
+
+          cyberark.audit.uuid: "{{parsed_event.message.uuid}}"
+          cyberark.audit.safe: "{{parsed_event.message.safe}}"
+          cyberark.audit.session_id: "{{parsed_event.message.sessionId}}"
+          cyberark.audit.account_id: "{{parsed_event.message.accountId}}"
+          cyberark.audit.account_name: "{{parsed_event.message.accountName}}"
+          cyberark.audit.target_platform: "{{parsed_event.message.targetPlatform}}"
+
+  set_specific_fields:
+    actions:
+      - set:
+          cyberark.audit.new_target: "{{parsed_event.message.customData.PAM.new_target}}"
+        filter: "{{parsed_event.message.auditCode in ('PAM00105', 'PAM00295')}}"
+
+      - set:
+          user.target.domain: "{{parsed_event.message.customData.PAM.target.split('\\\\')[0]}}"
+          user.target.name: "{{parsed_event.message.customData.PAM.target.split('\\\\')[1]}}"
+        filter: "{{parsed_event.message.auditCode in ('PAM00105', 'PAM00294', 'PAM00295')}}"
+
+      - set:
+          file.path: "{{parsed_event.message.customData.PAM.target}}"
+          file.name: "{{parsed_event.message.customData.PAM.target | basename}}"
+        filter: "{{parsed_event.message.auditCode in ('PAM00099',)}}"
+
+      - set:
+          source.geo.city_name: "{{parsed_event.message.customData.geoip_city_name}}"
+          source.geo.country_name: "{{parsed_event.message.customData.geoip_country_name}}"
+          source.geo.country_iso_code: "{{parsed_event.message.customData.geoip_country_code}}"
+          user_agent.name: "{{parsed_event.message.customData.request_browser_name}}"
+          host.os.platform: "{{parsed_event.message.customData.request_device_os}}"
+          user.target.id: "{{parsed_event.message.customData.user_id}}"
+          cyberark.audit.directory_service_id: "{{parsed_event.message.customData.directory_service_id}}"
+
+      - set:
+          cyberark.audit.application.description: "{{parsed_event.message.customData.description}}"
+          cyberark.audit.application.id: "{{parsed_event.message.customData.id}}"
+          cyberark.audit.application.display_name: "{{parsed_event.message.customData.app_display_name}}"
+          cyberark.audit.application.service_name: "{{parsed_event.message.customData.service_name}}"
+        filter: "{{parsed_event.message.customData.app_display_name | length > 0}}"
+
+      - set:
+          user.target.name: "{{parsed_event.message.customData.user_name}}"
+        filter: "{{parsed_event.message.customData.user_name | length > 0 and '@' not in parsed_event.message.customData.user_name}}"
+
+      - set:
+          user.target.email: "{{parsed_event.message.customData.user_name}}"
+        filter: "{{parsed_event.message.customData.user_name | length > 0 and  '@' in parsed_event.message.customData.user_name}}"
