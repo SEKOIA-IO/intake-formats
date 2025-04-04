@@ -1,0 +1,61 @@
+name: olfeo-saas
+ignored_values: ["-"]
+pipeline:
+  - name: json_livelog
+    external:
+      name: json.parse-json
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_livelog.message.timestamp}}'
+        output_field: timestamp
+        format: timestamp
+        timezone: UTC
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.timestamp}}"
+          observer.vendor: "Olfeo"
+          observer.type: "{{json_livelog.message.type}}"
+          observer.product: "Olfeo SAAS"
+          event.category: ["web"]
+          event.type: ["access"]
+          event.action: "{{json_livelog.message.action}}"
+          destination.ip: "{{json_livelog.message.dest_ip}}"
+          url.original: |
+            {%- if json_livelog.message.url != "" -%}
+              {{ json_livelog.message.url }}
+            {%- else -%}
+              {{ json_livelog.message.domain }}
+            {%- endif -%}
+          dns.answers: >
+            [
+              {%- if json_livelog.message.type == "dns" -%}
+                {%- set record = json_livelog.message.dns_answer.split('\t') -%}
+                {
+                  'name': '{{record[0]}}',
+                  'ttl': {{record[1]}},
+                  'class': '{{record[2]}}',
+                  'type': '{{record[3]}}',
+                  'data': '{{record[4]}}',
+                }
+              {%- endif -%}
+            ]
+          user.id: "{{json_livelog.message.user_id}}"
+          source.ip: "{{json_livelog.message.src_ip}}"
+          source.port: "{{json_livelog.message.src_port}}"
+          source.user.name: "{{json_livelog.message.display_name}}"
+          olfeo.request.category: "{{json_livelog.message.category_label}}"
+          olfeo.request.theme: "{{json_livelog.message.theme_label}}"
+          olfeo.request.external_id: "{{json_livelog.message.external_id}}"
+          olfeo.directory_name: "{{json_livelog.message.directory_name}}"
+          olfeo.groups_name: "{{json_livelog.message.groups_name}}"
+          http.version: "{{json_livelog.message.http_version}}"
+          http.request.method: "{{json_livelog.message.http_method}}"
+          http.request.bytes: "{{json_livelog.message.user_sent_bytes}}"
+          http.response.status_code: "{{json_livelog.message.user_status_code}}"
+          http.response.bytes: "{{json_livelog.message.user_received_bytes}}"
