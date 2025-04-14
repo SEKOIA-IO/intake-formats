@@ -241,12 +241,22 @@ stages:
           fortinet.fortigate.attack.id: "{{parsed_event.message.attackid}}"
           fortinet.fortigate.policyid: "{{parsed_event.message.policyid}}"
           fortinet.fortigate.poluuid: "{{parsed_event.message.poluuid}}"
+          fortinet.fortigate.sessionid: "{{parsed_event.message.sessionid}}"
+          fortinet.fortigate.utmaction: "{{parsed_event.message.utmaction}}"
           network.forwarded_ip: "{{parsed_event.message.forwardedfor}}"
           group.name: "{{parsed_event.message.group or parsed_event.message.FTNTFGTgroup}}"
 
       - set:
+          event.duration: "{{(parsed_event.message.duration | int) * 1_000_000_000}}" # nanoseconds
+        filter: "{{parsed_event.message.duration | int(-1) > 0}}"
+
+      - set:
           fortinet.fortigate.method: "{{parsed_event.message.method}}"
-        filter: "{{parsed_event.message.subtype in ['webfilter', 'system']}}"
+        filter: "{{parsed_event.message.subtype in ['webfilter', 'system'] and parsed_event.message.method in ['jsconsole', 'domain', 'ip']}}"
+
+      - set:
+          network.protocol: "{{parsed_event.message.method}}"
+        filter: "{{parsed_event.message.subtype in ['webfilter', 'system'] and parsed_event.message.method not in ['jsconsole', 'domain', 'ip']}}"
 
       - set:
           http.request.method: "{{parsed_event.message.method}}"
@@ -314,6 +324,7 @@ stages:
       - set:
           network.bytes: "{{parsed_event.message.get('sentbyte', 0) | int + parsed_event.message.get('rcvdbyte', 0) | int}}"
         filter: "{{parsed_event.message.get('sentbyte') != None or parsed_event.message.get('rcvdbyte') != None }}"
+
       - set:
           network.application: "{{parsed_event.message.app}}"
           network.protocol: "{{parsed_event.message.app | lower}}"
@@ -348,12 +359,22 @@ stages:
       - set:
           fortinet.fortigate.tunnel.ip: "{{parsed_event.message.tunnelip}}"
         filter: "{{parsed_event.message.subtype == 'vpn' and parsed_event.message.get('tunnelip') | is_ipaddress}}"
+
+      - translate:
+        dictionary:
+          incoming: "inbound"
+          outgoing: "outbound"
+        mapping:
+          parsed_event.message.direction: network.direction
+        filter: "{{parsed_event.message.get('direction') != None}}"
+
       - translate:
         dictionary:
           0: "inbound"
           1: "outbound"
         mapping:
           parsed_event.message.deviceDirection: network.direction
+        filter: "{{parsed_event.message.get('deviceDirection') != None}}"
 
       - translate:
         dictionary:
