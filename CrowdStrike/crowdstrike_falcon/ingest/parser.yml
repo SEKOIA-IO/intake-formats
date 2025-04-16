@@ -114,6 +114,7 @@ stages:
           process.name: "{{parsed_event.message.event.FileName}}"
           process.working_directory: "{{parsed_event.message.event.FilePath}}"
           crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
+          threat.indicator.name: "{{parsed_event.message.event.IOCValue}}"
           threat.technique.name: "{{parsed_event.message.event.Technique or parsed_event.message.event.Techniques}}"
           threat.technique.id: "{{parsed_event.message.event.TechniqueIds}}"
           crowdstrike.customer_id: "{{parsed_event.message.event.CustomerIDString}}"
@@ -126,6 +127,37 @@ stages:
           crowdstrike.severity_name: "{{parsed_event.message.event.SeverityName}}"
           crowdstrike.host_groups: '{{parsed_event.message.event.HostGroups.split(",")}}'
 
+      - translate:
+        dictionary:
+          domain: domain-name
+          filename: file
+          ipv4: ipv4-addr
+          ipv6: ipv6-addr
+          hash_md5: file
+          hash_sha256: file
+          registry_key: windows-registry-key
+          command_line: process
+          behavior: process
+        mapping:
+          parsed_event.message.event.IOCType: threat.indicator.type
+        filter: "{{parsed_event.message.event.get('IOCType') != None}}"
+
+      - set:
+          threat.indicator.url.domain: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'domain'}}"
+
+      - set:
+          threat.indicator.file.name: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'filename'}}"
+
+      - set:
+          threat.indicator.file.hash.md5: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'hash_md5'}}"
+
+      - set:
+          threat.indicator.registry.key: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'registry_key'}}"
+
       - set:
           process.end: "{{parsed_event.message.event.ProcessEndTime | string | to_rfc3339}}"
         filter: "{{parsed_event.message.event.ProcessEndTime > 0}}"
@@ -136,8 +168,11 @@ stages:
 
       - set:
           threat.indicator.file.hash.sha256: "{{parsed_event.message.event.IOCValue}}"
-          threat.indicator.type: "file"
         filter: "{{parsed_event.message.event.IOCType == 'hash_sha256'}}"
+
+      - set:
+          threat.indicator.ip: "{{parsed_event.message.event.IOCValue.split(',')}}"
+        filter: "{{parsed_event.message.event.IOCType in ['ipv4', 'ipv6']}}"
 
       - set:
           process.parent.executable: "{{parsed_event.message.event.ParentImageFilePath}}"
