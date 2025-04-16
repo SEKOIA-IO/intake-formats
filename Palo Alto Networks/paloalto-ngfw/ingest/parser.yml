@@ -543,6 +543,46 @@ pipeline:
           - ClusterName
         delimiter: ","
 
+  # DECRYPTION CONFIG
+  # https://docs.paloaltonetworks.com/pan-os/10-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/config-log-fields
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - FutureUse
+          - ReceiveTime
+          - DeviceSN
+          - Type
+          - Subtype
+          - GenerateTime
+          - FutureUse
+          - SourceHostname
+          - VirtualSystemName
+          - Action
+          - SourceUser
+          - Client
+          - Result
+          - ConfigurationPath
+          - BeforeChangeDetail
+          - AfterChangeDetail
+          - SequenceNumber
+          - ActionFlags
+          - DGHierarchyLevel1
+          - DGHierarchyLevel2
+          - DGHierarchyLevel3
+          - DGHierarchyLevel4
+          - VirtualSystemName
+          - DeviceName
+          - DeviceGroup
+          - AuditComment
+          - FutureUse
+          - HighResTimestamp
+        delimiter: ","
+
   - name: parsed_timestamp
     external:
       name: date.parse
@@ -599,9 +639,8 @@ pipeline:
       properties:
         raise_errors: false
         input_field: "{{parsed_event.message.EventDescription}}"
-        pattern: "%{SYSTEM_AUTH_AUTHENTICATION_FOR}|%{CONNECTION}|%{CONTENT}|%{WILDFIRE}|%{NETWORK}|%{PANDB_GENERIC}|%{CLOUD_ELECTION}|%{AUTHENTICATION}|%{REASON}"
+        pattern: "%{CONNECTION}|%{CONTENT}|%{WILDFIRE}|%{NETWORK}|%{PANDB_GENERIC}|%{CLOUD_ELECTION}|%{AUTHENTICATION}|%{REASON}"
         custom_patterns:
-          SYSTEM_AUTH_AUTHENTICATION_FOR: "authenticated for user '%{USERNAME:user}'.   auth profile '%{DATA:auth_profile}', vsys '%{DATA:vsys}', server profile '%{DATA:server_profile}', server address '%{HOSTNAME:server_address}', From: %{IP:src}."
           CONNECTION: "%{CONNECTION_SUCCESS}|%{CONNECTION_TO_SERVER}|%{CONNECTION_REGISTERED}"
           CONNECTION_SUCCESS: "Successfully connect to address: %{IP:dst} port: %{NUMBER:dport}, conn id: %{DATA:connection_id}"
           CONNECTION_TO_SERVER: "Connection to %{DATA} server: %{DATA:dst_addr} completed successfully, initiated by %{IP:src}"
@@ -624,12 +663,14 @@ pipeline:
           AUTHENTICATION: "%{AUTHENTICATION_CONSOLE}|%{AUTHENTICATION_WEB}"
           AUTHENTICATION_CONSOLE: "authenticated for user '%{USERNAME:user}'.   From: %{IP:src}."
           AUTHENTICATION_WEB: "User %{USERNAME:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
-          REASON: "%{REASON1}|%{REASON2}|%{REASON3}|%{REASON4}|%{REASON5}"
+          REASON: "%{REASON1}|%{REASON2}|%{REASON3}|%{REASON4}|%{REASON5}|%{REASON6}|%{REASON7}"
           REASON1: 'User-ID server monitor %{HOSTNAME:hostname}\(%{WORD:vsys}\) %{GREEDYDATA:message}'
           REASON2: "ldap cfg %{WORD:config_name} connected to server %{IP:destination_ip}:%{INT:port}, initiated by: %{IP:source_ip}"
-          REASON3: "When authenticating user '?%{WORD:user}'? from '?%{IP:source_ip}'?, a less secure authentication method %{WORD:auth_method} is used. Please migrate to %{WORD:recommended_methods1} or %{DATA:recommended_methods2}. Authentication Profile '?%{WORD:auth_profile}'?, vsys '?%{WORD:vsys}'?, Server Profile '?%{WORD:server_profile}'?, Server Address '?%{IP:destination_ip}'?"
-          REASON4: "failed authentication for user '?%{USERNAME:user}'?. Reason: %{GREEDYDATA:reason} auth profile '?%{DATA:auth_profile}'?, vsys '?%{WORD:vsys}'?, server profile '?%{WORD:server_profile}'?, server address '?%{IP:destination_ip}'?, auth protocol '?%{WORD:auth_protocol}'?, From: '?%{IP:source_ip}'?."
-          REASON5: 'authenticated for user %{WORD:user}\.   auth profile %{WORD:auth_profile}, vsys %{WORD:vsys}, server profile %{DATA:server_profile}, server address %{IP:destination_ip}, auth protocol %{WORD:auth_protocol}, admin role %{WORD:admin_role}, From: %{IP:source_ip}\.'
+          REASON3: "When authenticating user '?%{WORD:user}'? from '?%{IP:source_ip}'?, a less secure authentication method %{WORD:auth_method} is used. Please migrate to %{WORD:recommended_methods1} or %{DATA:recommended_methods2}. Authentication Profile '?%{WORD:auth_profile}'?, vsys '?%{WORD:vsys}'?, Server Profile '?%{WORD:server_profile}'?, Server Address '?%{IPORHOST:dst}'?"
+          REASON4: "failed authentication for user '?%{USERNAME:user}'?.%{DATA}Reason: %{GREEDYDATA:reason} auth profile '?%{DATA:auth_profile}'?,( vsys '?%{WORD:vsys}'?,)?( server profile '?%{DATA:server_profile}'?,)?( server address '?%{IPORHOST:dst}'?,)?( auth protocol '?%{DATA:auth_protocol}'?,)?( admin role '?%{DATA:admin_role}'?,)? From: '?%{IP:source_ip}'?."
+          REASON5: "authenticated for user '?%{USERNAME:user}'?\\.\\s+auth profile '?%{DATA:auth_profile}'?,( vsys '?%{WORD:vsys}'?,)?( server profile '?%{DATA:server_profile}'?,)?( server address '?%{IPORHOST:dst}'?,)?( auth protocol '?%{DATA:auth_protocol}'?,)?( admin role '?%{DATA:admin_role}'?,)? From: '?%{IP:source_ip}'?\\."
+          REASON6: "failed authentication for user '?%{USERNAME:user}'?.%{DATA}Reason: %{DATA:reason} From: '?%{IP:source_ip}'?."
+          REASON7: "failed authentication for user '?%{USERNAME:user}'?.%{DATA}Reason: %{DATA:reason}"
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
   - name: parsed_threat
@@ -704,9 +745,14 @@ stages:
           destination.address: "{{parsed_event.message.DestinationAddress or parsed_event.message.dst or parsed_description.message.dst_addr}}"
           destination.bytes: "{{parsed_event.message.BytesReceived or parsed_event.message.out}}"
           destination.domain: "{{parsed_description.message.dst_domain}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.SourceHostname}}"
+        filter: "{{parsed_event.message.SourceHostname | is_ipaddress}}"
+
       - set:
           destination.ip: "{{parsed_event.message.DestinationAddress}}"
-        filter: "{{parsed_event.message.DestinationAddress| is_ipaddress}}"
+        filter: "{{parsed_event.message.DestinationAddress | is_ipaddress}}"
 
       - set:
           destination.ip: "{{parsed_event.message.dst}}"
@@ -715,6 +761,10 @@ stages:
       - set:
           destination.ip: "{{parsed_description.message.dst}}"
         filter: "{{parsed_description.message.dst  | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parsed_description.message.dst}}"
+        filter: "{{parsed_description.message.dst | length > 0 and not parsed_description.message.dst  | is_ipaddress}}"
 
       - set:
           destination.ip: "{{parsed_description.message.destination_ip}}"
@@ -743,6 +793,10 @@ stages:
       - set:
           network.packets: "{{parsed_event.message.Packets or parsed_event.message.PacketsTotal}}"
         filter: "{{ (parsed_event.message.get('PacketsTotal') != None and (parsed_event.message.PacketsTotal is number or parsed_event.message.PacketsTotal.isdigit())) or (parsed_event.message.get('Packets') != None and (parsed_event.message.Packets is number or parsed_event.message.Packets.isdigit())) }}"
+
+      - set:
+          observer.ingress.vlan.name: "{{parsed_event.message.SourceZone}}"
+          observer.egress.vlan.name: "{{parsed_event.message.DestinationZone}}"
 
       - set:
           event.reason: "{{parsed_event.message.reason or parsed_event.message.EventDescription or parsed_event.message.PanOSConnectionError or parsed_event.message.Description}}"
@@ -978,7 +1032,15 @@ stages:
       - set:
           paloalto.dns.category: "{{parsed_event.message.DNSCategory}}"
           dns.question.type: "{{parsed_event.message.RecordType}}"
-          dns.resolved_ip: "{{parsed_event.message.DNSResponse}}"
+
+      - set:
+          dns.resolved_ip: >
+            {%- set dns_response = [] -%}
+            {%- for item in parsed_event.message.DNSResponse -%}
+              {%- if item | is_ipaddress -%}{%- set dns_response = dns_response.append(item) -%}{%- endif -%}
+            {%- endfor -%}
+            {%- if dns_response | length > 0 -%}{{ dns_response }}{%- endif -%}
+        filter: '{{parsed_event.message.get("DNSResponse") != None}}'
 
       - set:
           paloalto.source.private.ip: "{{parsed_event.message.PrivateIPv4}}"

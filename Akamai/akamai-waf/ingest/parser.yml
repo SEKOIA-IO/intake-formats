@@ -1,0 +1,62 @@
+name: akamai-waf
+ignored_values: [""]
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.dataset: "Security logs"
+          event.module: "akamai.waf"
+
+          "@timestamp": "{{parse_event.message.httpMessage.start | to_rfc3339}}"
+
+          observer.vendor: "Akamai"
+          observer.product: "Akamai WAF"
+          observer.type: "waf"
+
+      - set:
+          client.ip: "{{parse_event.message.attackData.clientIP}}"
+          url.port: "{{parse_event.message.httpMessage.port}}"
+          url.path: "{{parse_event.message.httpMessage.path}}"
+          url.query: "{{parse_event.message.httpMessage.query}}"
+          url.domain: "{{parse_event.message.httpMessage.host}}"
+          package.version: "{{parse_event.message.clientData.appVersion}}"
+          user.name: "{{parse_event.message.userRiskData.username}}"
+          user.id: "{{parse_event.message.userRiskData.uuid}}"
+          user.risk.calculated_score: "{{parse_event.message.userRiskData.score}}"
+          source.geo.region_iso_code: "{{parse_event.message.geo.regionCode}}"
+          source.geo.country_iso_code: "{{parse_event.message.geo.country}}"
+          source.geo.continent_code: "{{parse_event.message.geo.continent}}"
+          source.geo.city_name: "{{parse_event.message.geo.city}}"
+          http.response.bytes: "{{parse_event.message.httpMessage.bytes}}"
+          http.request.id: "{{parse_event.message.httpMessage.requestId}}"
+          http.version: "{{parse_event.message.httpMessage.protocol}}"
+          http.request.method: "{{parse_event.message.httpMessage.method}}"
+
+          akamai.configuration.id: "{{parse_event.message.configId}}"
+          akamai.bot.score: "{{parse_event.message.botData.botScore}}"
+          akamai.bot.response_segment: "{{parse_event.message.botData.responseSegment}}"
+
+      - set:
+          akamai.rules: >
+            {%- set rules = [] -%}
+            {%- for rule in parse_event.message.attackData.rules -%}
+              {%- set data = {} -%}
+              {%- if rule.get("ruleVersion") -%}{%- set _ = data.update({'version': rule.get("ruleVersion")}) -%}{%- endif -%}
+              {%- if rule.get("rule") -%}{%- set _ = data.update({'id': rule.get("rule")}) -%}{%- endif -%}
+              {%- if rule.get("ruleDescription") -%}{%- set _ = data.update({'description': rule.get("ruleDescription")}) -%}{%- endif -%}
+              {%- if rule.get("ruleTags") -%}{%- set _ = data.update({'tags': rule.get("ruleTags")}) -%}{%- endif -%}
+              {%- if rule.get("ruleData") -%}{%- set _ = data.update({'data': rule.get("ruleData")}) -%}{%- endif -%}
+              {%- set _ = rules.append(data) -%}
+            {%- endfor -%}
+            {%- if rules | length > 0 -%}{{ rules }}{%- endif -%}

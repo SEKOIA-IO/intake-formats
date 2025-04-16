@@ -26,6 +26,7 @@ pipeline:
     external:
       name: xml.parse-xml
       properties:
+        raise_errors: false
         input_field: "{{json_event.message.event_data.TaskContent}}"
         output_field: message
 
@@ -34,6 +35,7 @@ pipeline:
     external:
       name: xml.parse-xml
       properties:
+        raise_errors: false
         input_field: "{{json_event.message.eventlog.event_data.TaskContent}}"
         output_field: message
 
@@ -105,6 +107,9 @@ pipeline:
   - name: driverload_info
     filter: "{{json_event.message.log_type == 'driverload'}}"
 
+  - name: alert_driverload_info
+    filter: "{{json_event.message.alert_subtype == 'driverload'}}"
+
   - name: injectedthread_info
     filter: "{{json_event.message.log_type == 'injectedthread'}}"
 
@@ -128,7 +133,16 @@ stages:
         filter: "{{json_event.message.rules | length > 0}}"
 
       - set:
-          user.name: '{{json_event.message.impacted_users[0].user_name.replace("\\", " ")}}'
+          user.name: >
+            {%- if '\\' not in json_event.message.impacted_users[0].user_name -%}
+              {{ json_event.message.impacted_users[0].user_name }}
+            {%- else -%}
+              {{ json_event.message.impacted_users[0].user_name.split('\\')[1] }}
+            {%- endif -%}
+          user.domain: >
+            {%- if '\\' in json_event.message.impacted_users[0].user_name -%}
+              {{ json_event.message.impacted_users[0].user_name.split('\\')[0] }}
+            {%- endif -%}
         filter: "{{json_event.message.impacted_users | length > 0 }}"
 
       - set:
@@ -330,6 +344,7 @@ stages:
             {%- endif -%}
 
           process.parent.executable: "{{json_event.message.process.parent_image}}"
+          process.parent.name: "{{json_event.message.process.parent_image | basename}}"
           process.parent.command_line: "{{json_event.message.process.parent_commandline}}"
           process.working_directory: "{{json_event.message.process.current_directory}}"
           process.pe.imphash: "{{json_event.message.process.pe_imphash}}"
@@ -442,7 +457,6 @@ stages:
           action.properties.LogonGuid: "{{json_event.message.event_data.get('LogonGuid')}}"
           action.properties.LogonProcessName: "{{json_event.message.event_data.get('LogonProcessName')}}"
           action.properties.LogonType: "{{json_event.message.event_data.get('LogonType')}}"
-          action.properties.MemberName: "{{parse_member_name.message.first_name + ' ' + parse_member_name.message.last_name}}"
           action.properties.CompatibleIds: "{{json_event.message.event_data.get('CompatibleIds')}}"
           action.properties.NRIengineversion: "{{json_event.message.event_data.get('NRI engine version')}}"
           action.properties.NRIsecurityintelligenceversion: "{{json_event.message.event_data.get('NRI security intelligence version')}}"
@@ -565,6 +579,14 @@ stages:
           action.properties.TaskContentNew_Command: "{{parse_task_info.message.Task.Actions.Exec.Command}}"
           action.properties.TaskContentNew_Args: "{{parse_task_info.message.Task.Actions.Exec.Arguments}}"
         filter: "{{json_event.message.event_data != None}}"
+
+      - set:
+          action.properties.MemberName: "{{parse_member_name.message.first_name + ' ' + parse_member_name.message.last_name}}"
+        filter: "{{(parse_member_name.message.first_name | length > 0) and (parse_member_name.message.last_name | length > 0)}}"
+
+      - set:
+          action.properties.MemberName: "{{json_event.message.event_data.MemberName.split('\\\\')[-1]}}"
+        filter: "{{(json_event.message.event_data.get('MemberName') != None) and (parse_member_name.message.first_name | length == 0)}}"
 
       - set:
           source.ip: "{{json_event.message.event_data.IpAddress}}"
@@ -910,6 +932,25 @@ stages:
           file.path: "{{json_event.message.imagepath}}"
           file.name: "{{json_event.message.imagename}}"
           file.size: "{{json_event.message.imagesize}}"
+
+  alert_driverload_info:
+    actions:
+      - set:
+          event.category: ["driver"]
+          event.type: ["info"]
+
+          agent.id: "{{json_event.message.agent.agent_id}}"
+          agent.version: "{{json_event.message.agent.version}}"
+          file.hash: "{{json_event.message.driverload.hashes}}"
+          file.pe.file_version: "{{json_event.message.driverload.pe_info.file_version}}"
+          file.pe.description: "{{json_event.message.driverload.pe_info.file_description}}"
+          file.pe.company: "{{json_event.message.driverload.pe_info.company_name}}"
+          file.pe.original_file_name: "{{json_event.message.driverload.pe_info.original_filename}}"
+          file.pe.imphash: "{{json_event.message.driverload.pe_imphash}}"
+          file.pe.product: "{{json_event.message.driverload.pe_info.product_name}}"
+          file.path: "{{json_event.message.driverload.imagepath}}"
+          file.name: "{{json_event.message.driverload.imagename}}"
+          file.size: "{{json_event.message.driverload.imagesize}}"
 
   injectedthread_info:
     actions:

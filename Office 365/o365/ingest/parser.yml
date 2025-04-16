@@ -76,11 +76,14 @@ stages:
           service.name: "{{json_event.message.Workload}}"
           event.code: "{{json_event.message.RecordType | string}}"
           event.reason: "{{json_event.message.ActionName}}"
-          user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
-          user.id: "{{json_event.message.UserKey}}"
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
           user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
+
+      - set:
+          user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
+          user.id: "{{json_event.message.UserKey}}"
+        filter: "{{json_event.message.RecordType not in [40]}}"
 
       - set:
           event.action: "{{json_event.message.Operation.rstrip('.')}}"
@@ -641,6 +644,10 @@ stages:
             ]
         filter: '{{json_event.message.get("Members", []) != []}}'
 
+      - set:
+          # we can only put 1 of these URLs
+          url.original: "{{json_event.message.MessageURLs | first}}"
+
   parse_microsoft_defender_email:
     actions:
       - set:
@@ -838,7 +845,7 @@ stages:
                 {%- endif -%}
               {%- endfor -%}
             {{urls|unique|list or None}}
-
+          url.original: "{{final.office365.investigation.email.urls | first}}"
           office365.investigation.email.sender.ip: >
             {%- set senders = [] -%}
               {%- for Property in parse_data.ParsedData.Entities -%}
@@ -956,6 +963,18 @@ stages:
       - set:
           source.user.email: "{{parse_data.ParsedData.f3u}}"
         filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.trc}}"
+          user.name: "{{parse_data.ParsedData.trc.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.trc.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.trc != None and '@' in parse_data.ParsedData.trc}}"
+
+      - set:
+          user.email: "{{parse_data.ParsedData.suid}}"
+          user.name: "{{parse_data.ParsedData.suid.split('@')[0]}}"
+          user.domain: "{{parse_data.ParsedData.suid.split('@')[1]}}"
+        filter: "{{parse_data.ParsedData.suid != None and '@' in parse_data.ParsedData.suid}}"
 
       - set:
           user.email: "{{parse_data.ParsedData.f3u}}"
