@@ -20,7 +20,7 @@ pipeline:
           DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           TIMEZONE: "GMT"
-    filter: "{{ not original.message.startswith('CEF') }}"
+    filter: "{{ not original.message.startswith('CEF') and not 'shell_command=' in original.message }}"
 
   - name: parse_audit_timestamp
     filter: "{{ parse_audit_header.message.DATE_TIME_YMD != None }}"
@@ -102,6 +102,14 @@ pipeline:
         output_field: message
         pattern: '.*User %{USERNAME:user_name} -.*ADM_User (NONE|%{USERNAME:adm_user}).*Remote_ip %{IP:src_ip}.*Command "%{GREEDYDATA:command}".*Status \"%{DATA:status}\".*'
 
+  - name: parse_audit_bash
+    external:
+      name: grok.match
+      properties:
+        output_field: message
+        pattern: '%{DATA:source} on %{DATA:path} shell_command="%{GREEDYDATA:command}"'
+    filter: "{{ not original.message.startswith('CEF') and 'shell_command=' in original.message}}"
+
   - name: set_audit_log_fields
     filter: '{{not original.message.startswith("CEF") and parse_audit_header.message.type not in ["AAATM"]}}'
 
@@ -122,6 +130,9 @@ pipeline:
 
   - name: set_other_log_fields
     filter: "{{ parse_audit_header.message.type not in ['SSLVPN', 'SSLLOG', 'TCP', 'AAATM'] and parse_audit_header.message.message_type != 'CMD_EXECUTED'}}"
+
+  - name: set_bash_log_fields
+    filter: "{{ parse_audit_bash.get('message') != None }}"
 
 stages:
   set_cef_header_fields:
@@ -264,3 +275,19 @@ stages:
       - set:
           event.reason: "{{ parse_audit_sslvpn_logs.message.reason }}"
         filter: "{{ parse_audit_sslvpn_logs.message.get('reason') != None }}"
+
+  set_bash_log_fields:
+    actions:
+      - set:
+          event.action: "execute_shell_command"
+          event.category: ["configuration"]
+          event.dataset: "audit_cmd"
+          event.type: ["change"]
+          process.command_line: "{{ parse_audit_bash.message.command }}"
+          process.name: "bash"
+          user.name: "{{ parse_audit_bash.message.source }}"
+
+      - set:
+          citrix.adc.pseudo_tty: "{{ parse_audit_bash.message.path }}"
+          process.interactive: "true"
+        filter: "{{ parse_audit_bash.message.path != '(null)' }}"
