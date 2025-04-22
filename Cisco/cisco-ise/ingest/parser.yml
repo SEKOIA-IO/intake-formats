@@ -6,11 +6,11 @@ pipeline:
       properties:
         input_field: original.message
         output_field: pre_message
-        pattern: "%{RESPONSE_MESSAGE}|%{WITH_HEADER}|%{KV_MESSAGE}"
+        pattern: "%{WITH_HEADER}|%{KV_MESSAGE}"
         custom_patterns:
-          WITH_HEADER: "%{DATA:status}:%{GREEDYDATA:reason_with_kv}"
-          RESPONSE_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}  Response=%{GREEDYDATA:response_message}"
-          KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER} %{GREEDYDATA:reason_with_kv}"
+          WITH_HEADER: "%{NOT_KV_DATA:status}:%{GREEDYDATA:reason_with_kv}"
+          KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}\\s+%{GREEDYDATA:reason_with_kv}"
+          NOT_KV_DATA: "[^=]*?"
 
   - name: grok_timestamp_in_status
     filter: "{{pre_parsed_event.pre_message.status[0].isdigit()}}"
@@ -132,6 +132,10 @@ stages:
         filter: '{{parsed_kv_sentence.result.get("Called-Station-ID") != None }}'
 
       - set:
+          source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
+        filter: '{{parsed_kv_sentence.result.get("EndPointMACAddress") != None }}'
+
+      - set:
           source.mac: '{{parsed_kv_sentence.result["Calling-Station-ID"] | to_mac_address}}'
         filter: '{{parsed_kv_sentence.result.get("Calling-Station-ID") != None }}'
 
@@ -146,6 +150,9 @@ stages:
   set_miscellaneous_fields:
     actions:
       - set:
+          event.reason: "{{parsed_kv_sentence.result.FailureReason}}"
+
+      - set:
           event.reason: "{{pre_parsed_event.pre_message.reason_with_kv}}"
         filter: '{{":" not in pre_parsed_event.pre_message.reason_with_kv and "=" not in pre_parsed_event.pre_message.reason_with_kv}}'
 
@@ -159,8 +166,8 @@ stages:
 
       - set:
           event.category: ["network"]
-          event.reason: "{{pre_parsed_event.pre_message.get('response_message')}}"
-        filter: "{{pre_parsed_event.pre_message.get('response_message') != None}}"
+          event.reason: "{{parsed_kv_sentence.result.get('Response')}}"
+        filter: "{{parsed_kv_sentence.result.get('Response') != None}}"
 
       - set:
           event.category: ["authentication"]
