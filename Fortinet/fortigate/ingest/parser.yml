@@ -247,8 +247,16 @@ stages:
           group.name: "{{parsed_event.message.group or parsed_event.message.FTNTFGTgroup}}"
 
       - set:
+          event.duration: "{{(parsed_event.message.duration | int) * 1_000_000_000}}" # nanoseconds
+        filter: "{{parsed_event.message.duration | int(-1) > 0}}"
+
+      - set:
           fortinet.fortigate.method: "{{parsed_event.message.method}}"
-        filter: "{{parsed_event.message.subtype in ['webfilter', 'system']}}"
+        filter: "{{parsed_event.message.subtype in ['webfilter', 'system'] and parsed_event.message.method in ['jsconsole', 'domain', 'ip']}}"
+
+      - set:
+          network.protocol: "{{parsed_event.message.method}}"
+        filter: "{{parsed_event.message.subtype in ['webfilter', 'system'] and parsed_event.message.method not in ['jsconsole', 'domain', 'ip']}}"
 
       - set:
           http.request.method: "{{parsed_event.message.method}}"
@@ -316,6 +324,7 @@ stages:
       - set:
           network.bytes: "{{parsed_event.message.get('sentbyte', 0) | int + parsed_event.message.get('rcvdbyte', 0) | int}}"
         filter: "{{parsed_event.message.get('sentbyte') != None or parsed_event.message.get('rcvdbyte') != None }}"
+
       - set:
           network.application: "{{parsed_event.message.app}}"
           network.protocol: "{{parsed_event.message.app | lower}}"
@@ -336,6 +345,20 @@ stages:
           user.domain: '{{final.user.name.split("\\") | first}}'
           user.name: '{{final.user.name.split("\\") | last}}'
         filter: "{{final.get('user', {}).get('name') != None and '\\\\' in final.user.name}}"
+      - set:
+          destination.user.full_name: "{{final.destination.user.name}}"
+          destination.user.name: '{{final.destination.user.name.split(",cn=") | first}}'
+        filter: "{{final.get('destination', {}).get('user', {}).get('name') != None and ',cn=' in final.destination.user.name}}"
+      - set:
+          user.full_name: "{{final.source.user.name}}"
+          source.user.full_name: "{{final.source.user.name}}"
+          user.name: '{{final.source.user.name.split(",cn=") | first}}'
+          source.user.name: '{{final.source.user.name.split(",cn=") | first}}'
+        filter: "{{final.get('source', {}).get('user', {}).get('name') != None and ',cn=' in final.source.user.name}}"
+      - set:
+          user.full_name: "{{final.source.user.name}}"
+          user.name: "{{final.user.name.split(',cn=') | first}}"
+        filter: "{{final.get('user', {}).get('name') != None and ',cn=' in final.user.name}}"
       - set:
           fortinet.fortigate.logdev.id: "{{parsed_event.message.logdev_id}}"
           fortinet.fortigate.logdev.name: "{{parsed_event.message.logdev_name}}"
