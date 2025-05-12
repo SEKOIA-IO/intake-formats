@@ -5,13 +5,13 @@ pipeline:
     external:
       name: xml.parse-xml
       properties:
-        input_field: '{{original.message.lstrip("\ufeff")}}'
+        input_field: '{{original.message.lstrip("\ufeff").replace("<EPOevent>", "<EPOEvent>").replace("</EPOevent>", "</EPOEvent>")}}'
         output_field: output
 
   - name: set_common_fields
 
   - name: set_epo_events_fields
-    filter: "{{parsed_event.output.get('EPOEvent') != None or parsed_event.output.get('EPOevent') != None}}"
+    filter: "{{parsed_event.output.get('EPOEvent') != None}}"
 
   - name: set_update_events_fields
     filter: "{{parsed_event.output.get('UpdateEvents') != None}}"
@@ -58,39 +58,6 @@ stages:
           trellix.threat.severity: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.ThreatSeverity}}"
           trellix.threat.category: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.ThreatCategory}}"
           trellix.threat.type: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.ThreatType}}"
-        filter: "{{parsed_event.output.get('EPOEvent') != None}}"
-
-      - set:
-          "@timestamp": "{{parsed_event.output.EPOevent.SoftwareInfo.Event.GMTTime | to_rfc3339}}"
-
-          agent.id: "{{parsed_event.output.EPOevent.MachineInfo.AgentGUID.strip('{}')}}"
-          agent.version: "{{parsed_event.output.EPOevent.MachineInfo.AgentVersion}}"
-
-          host.mac: "{{parsed_event.output.EPOevent.MachineInfo.RawMACAddress}}"
-          host.ip: "{{parsed_event.output.EPOevent.MachineInfo.IPAddress}}"
-          host.os.full: "{{parsed_event.output.EPOevent.MachineInfo.OSName}}"
-
-          user.name: "{{parsed_event.output.EPOevent.MachineInfo.UserName}}"
-
-          event.severity: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.Severity}}"
-          event.provider: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.ProductName}}"
-          event.action: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatActionTaken}}"
-
-          file.name: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.TargetFileName}}"
-          process.name: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.TargetProcessName}}"
-          user.target.name: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.TargetUserName}}"
-
-          threat.indicator.name: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatName}}"
-          threat.indicator.sightings: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatHandled}}"
-
-          trellix.event.id: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.EventID}}"
-          trellix.event.detect_date: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.DetectedUTC | to_rfc3339}}"
-
-          trellix.threat.action_taken: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatActionTaken}}"
-          trellix.threat.severity: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatSeverity}}"
-          trellix.threat.category: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatCategory}}"
-          trellix.threat.type: "{{parsed_event.output.EPOevent.SoftwareInfo.Event.CommonFields.ThreatType}}"
-        filter: "{{parsed_event.output.get('EPOevent') != None}}"
 
   set_update_events_fields:
     actions:
@@ -108,9 +75,12 @@ stages:
           event.reason: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.Description}}"
           event.severity: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.Severity}}"
 
-          trellix.update_event.user_name: "{{parsed_event.output.UpdateEvents.MachineInfo.UserName}}"
           trellix.update_event.site_name: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.SiteName}}"
           trellix.update_event.type: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.Type}}"
           trellix.update_event.initiator.id: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.InitiatorID}}"
           trellix.update_event.initiator.type: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.InitiatorType}}"
           trellix.update_event.product_id: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.ProductID}}"
+
+      - set:
+          trellix.update_event.usernames: "{{parsed_event.output.UpdateEvents.MachineInfo.UserName.split(',')}}"
+        filter: "{{parsed_event.output.UpdateEvents.MachineInfo.UserName | length > 0}}"
