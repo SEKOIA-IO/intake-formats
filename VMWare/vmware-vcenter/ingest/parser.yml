@@ -28,6 +28,16 @@ pipeline:
           OTHERS_EVENTS_TYPE_8: '%{TIMESTAMP_ISO8601:timestamp} %{DATA}\s+%{DATA}\s+%{DATA}\s+%{DATA}\s+%{DATA}\s+%{DATA}\s+: PWD=%{DATA:pwd} ; USER=%{DATA:proc_username} ; COMMAND=%{DATA:command_line}'
           USERNAME_WITH_DOMAIN: '(%{DATA:user_domain}\\)?%{DATA:username}(@(%{IP:ip_address}|%{DATA:user_domain}))?'
 
+  - name: parsed_reason
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.reason}}"
+        output_field: result
+        pattern: "%{FAILED_LOGIN}"
+        custom_patterns:
+          FAILED_LOGIN: "%{DATA} from %{IP:source_ip} %{DATA}"
+
   - name: parsed_json
     filter: '{{parsed_event.message.LOGIN != None and parsed_event.message.reason | re_match("^\\s*\\{.*\\}\\s*$")}}'
     external:
@@ -52,7 +62,7 @@ stages:
           "@timestamp": "{{parsed_event.message.timestamp}}"
           user.name: "{{parsed_event.message.username or parsed_json.message.user.split('@')[0]}}"
           user.domain: "{{parsed_event.message.user_domain or parsed_json.message.user.split('@')[1]}}"
-          source.ip: "{{parsed_event.message.source_ip}}"
+          source.ip: "{{parsed_event.message.source_ip or parsed_reason.result.source_ip}}"
           destination.ip: "{{parsed_event.message.destination_ip}}"
           source.user.name: "{{parsed_event.message.source_user_name}}"
           source.user.domain: "{{parsed_event.message.source_user_domain}}"
