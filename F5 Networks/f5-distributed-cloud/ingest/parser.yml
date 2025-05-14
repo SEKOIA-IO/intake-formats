@@ -1,0 +1,82 @@
+name: f5xc-security
+ignore-values: [""]
+pipeline:
+  - name: parsed_json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_json.message.time}}"
+        output_field: timedate
+        timezone: UTC
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parsed_date.timedate }}"
+          event.dataset: "{{ parsed_json.message.sec_event_type }}"
+          event.action: "{{ parsed_json.message.action }}"
+          observer.vendor: F5
+          observer.product: F5 Distributed Cloud
+          organization.name: "{{ parsed_json.message.tenant }}"
+
+          source.ip: "{{ parsed_json.message.src_ip }}"
+          source.port: "{{ parsed_json.message.src_port }}"
+          destination.ip: "{{ parsed_json.message.dst_ip }}"
+          destination.port: "{{ parsed_json.message.dst_port }}"
+          user_agent.original: "{{ parsed_json.message.user_agent }}"
+          client.user.id: "{{ parsed_json.message.user }}"
+
+          # URL fields
+          url.path: "{{ parsed_json.message.req_path }}"
+          url.domain: "{{ parsed_json.message.domain }}"
+
+          # Autonomous System fields
+          source.as.number: "{{ parsed_json.message.as_number }}"
+          source.as.organization.name: "{{ parsed_json.message.as_org }}"
+
+          # Geo fields
+          source.geo.city_name: "{{ parsed_json.message.city }}"
+          source.geo.country_iso_code: "{{ parsed_json.message.country }}"
+          source.geo.region_iso_code: "{{ parsed_json.message.region }}"
+
+          # HTTP fields
+          http.request.bytes: "{{ parsed_json.message.req_size }}"
+          http.request.method: "{{ parsed_json.message.method }}"
+          http.request.id: "{{ parsed_json.message.req_id }}"
+          http.response.status_code: "{{ parsed_json.message.rsp_code }}"
+          http.response.bytes: "{{ parsed_json.message.rsp_size }}"
+          http.version: '{{ parsed_json.message.http_version.split("/")[-1] }}'
+
+          # Threat fields
+          threat.indicator.confidence: "{{ parsed_json.message.threat_level }}"
+
+      - set:
+          event.module: "f5.xc.waf"
+        filer: "{{ parsed_json.message.sec_event_name == 'WAF' }}"
+
+      - set:
+          f5.xc.http_lb: "{{ parsed_json.message.authority }}"
+          f5.xc.namespace: "{{ parsed_json.message.namespace }}"
+          f5.xc.api_endpoint: "{{ parsed_json.message.api_endpoint }}"
+          f5.xc.violation_rating: "{{ parsed_json.message.violation_rating }}"
+          f5.xc.bot_info.classification: "{{ parsed_json.message.bot_info.classification }}"
+          f5.xc.bot_info.type: "{{ parsed_json.message.bot_info.type }}"
+          f5.xc.signatures: "{{ parsed_json.message.signatures }}"
+          f5.xc.violations: "{{ parsed_json.message.violations}}"
+          f5.xc.attack_types: "{{ parsed_json.message.attack_types}}"
+          f5.xc.threat_campaigns: "{{ parsed_json.message.threat_campaigns }}"
+          f5.xc.bot_defense: "{{ parsed_json.message.bot_defense }}"
+          f5.xc.summary_msg: "{{ parsed_json.message.summary_msg }}"
+          f5.xc.sec_event_name: "{{ parsed_json.message.sec_event_name }}"
+          f5.xc.tls_fingerprint: "{{ parsed_json.message.tls_fingerprint }}"
+          f5.xc.req_risk_reasons: "{{ parsed_json.message.req_risk_reasons }}"

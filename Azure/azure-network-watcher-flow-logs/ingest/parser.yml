@@ -1,0 +1,71 @@
+name: azure-network-watcher-flow-logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_flow_0
+    filter: "{{json_event.message.get('flow.0') != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{ json_event.message.get('flow.0') }}"
+        output_field: result
+        pattern: "%{NUMBER:timestamp},%{IP:source_ip},%{IP:destination_ip},%{NUMBER:source_port},%{NUMBER:destination_port},%{DATA:protocol},%{DATA:flow_direction},%{FLOWSTATE:flow_state},%{DATA:flow_encryption},%{INT:packets_sent},%{INT:bytes_sent},%{INT:packets_received},%{INT:bytes_received}"
+        custom_patterns:
+          "FLOWSTATE": "B|C|E|D"
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_flow_0.result.timestamp }}"
+        output_field: date
+        format: timestamp
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.code: "{{ json_event.message.operationName }}"
+          action.target: "network-traffic"
+          "@timestamp": "{{ parsed_date.date }}"
+          observer.mac: "{{ json_event.message.macAddress }}"
+
+          action.properties.OperationName: "{{ json_event.message.operationName }}"
+          action.properties.FlowEncryption: "{{ parsed_flow_0.result.flow_encryption }}"
+          rule.name: "{{ json_event.message.rule }}"
+
+          source.ip: "{{ parsed_flow_0.result.source_ip }}"
+          source.port: "{{ parsed_flow_0.result.source_port }}"
+
+          destination.ip: "{{ parsed_flow_0.result.destination_ip }}"
+          destination.port: "{{ parsed_flow_0.result.destination_port }}"
+
+          network.iana_number: "{{ parsed_flow_0.result.protocol }}"
+
+          source.packets: "{{ parsed_flow_0.result.packets_sent }}"
+          source.bytes: "{{ parsed_flow_0.result.bytes_sent }}"
+
+          destination.packets: "{{ parsed_flow_0.result.packets_received }}"
+          destination.bytes: "{{ parsed_flow_0.result.bytes_received }}"
+
+      - translate:
+        dictionary:
+          "I": "inbound"
+        mapping:
+          parsed_flow_0.result.flow_direction: network.direction
+        fallback: "outbound"
+
+      - translate:
+        dictionary:
+          "B": ["start"] # Begin
+          "C": ["info"] # Continuing for an ongoing flow
+          "E": ["end"] # End
+          "D": ["denied"] # Deny
+        mapping:
+          parsed_flow_0.result.flow_state: event.type
