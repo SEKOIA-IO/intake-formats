@@ -42,10 +42,10 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{parsed_event.message.kv.strip(' ,')}}"
+        input_field: "{{parsed_event.message.kv.strip(' ,').replace(', ', ',')}}"
         output_field: result
         value_sep: "="
-        item_sep: ',\s'
+        item_sep: ","
 
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
@@ -95,6 +95,10 @@ stages:
           destination.port: '{{parsed_kv_sentence.result.get("DestinationPort")}}'
           network.protocol: '{{parsed_kv_sentence.result.get("Protocol")}}'
         filter: '{{"Configuration" not in parsed_event.message.reason }}'
+
+      - set:
+          destination.domain: "{{parsed_kv_sentence.result.get('PeerName', '').replace('CN=', '') }}"
+        filter: "{{parsed_kv_sentence.result.get('PeerName') != None}}"
 
       - set:
           source.mac: "{{grok_mac.address_mac.address | to_mac_address}}"
@@ -180,3 +184,10 @@ stages:
       - set:
           cisco.ise.event.outcome: "failure"
         filter: "{{'failure' in parsed_kv_sentence.result.get('MESSAGE', '')}}"
+
+      - set:
+          cisco.ise.dhcp.message_type: "{{parsed_kv_sentence.result.get('dhcp-message-type')}}"
+          cisco.ise.dhcp.requested_address: "{{parsed_kv_sentence.result.get('dhcp-requested-address')}}"
+          rule.id: "{{parsed_kv_sentence.result.get('EndPointPolicyID')}}"
+          rule.name: "{{parsed_kv_sentence.result.get('EndpointPolicy')}}"
+          host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System')}}"
