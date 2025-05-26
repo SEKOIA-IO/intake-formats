@@ -77,7 +77,6 @@ stages:
       - set:
           container.id: "{{json_event.message.containerInfo.id}}"
           container.image.name: "{{json_event.message.containerInfo.image}}"
-          container.labels: "{{json_event.message.containerInfo.labels}}"
           container.name: "{{json_event.message.containerInfo.name}}"
 
   read_agent_info:
@@ -89,7 +88,6 @@ stages:
           organization.id: "{{json_event.message.accountId}}"
           organization.name: "{{json_event.message.accountName}}"
           action.type: "{{json_event.message.activityType}}"
-          user.id: "{{json_event.message.userId}}"
           sentinelone.secondaryDescription: "{{json_event.message.secondaryDescription}}"
           sentinelone.siteId: "{{json_event.message.siteId}}"
           sentinelone.description: "{{json_event.message.description}}"
@@ -114,6 +112,11 @@ stages:
           sentinelone.EventTime: "{{json_event.message.EventTime}}"
           sentinelone.applications: "{{json_event.message.applications}}"
           sentinelone.whiteningOptions: "{{json_event.message.whiteningOptions}}"
+
+      - set:
+          user.id: "{{json_event.message.userId}}"
+        filter: "{{json_event.message.get('data',{}).get('sourceprocessusername') == None}}"
+
       - translate:
         dictionary:
           2: Hash Defined as Malicious By Cloud
@@ -491,7 +494,9 @@ stages:
           sentinelone.data.bluetoothAddress: "{{json_event.message.data.bluetoothAddress}}"
           sentinelone.data.byUser: "{{json_event.message.data.byUser}}"
 
-          host.name: "{{json_event.message.data.computerName}}"
+          host.name: "{{json_event.message.data.computerName or json_event.message.data.origagentname}}"
+          host.os.family: "{{json_event.message.data.origagentosfamily}}"
+          host.os.name: "{{json_event.message.data.origagentosname}}"
 
           sentinelone.data.current: "{{json_event.message.data.current}}"
           sentinelone.data.deviceClass: "{{json_event.message.data.deviceClass}}"
@@ -542,9 +547,19 @@ stages:
           sentinelone.data.uploadedFilename: "{{json_event.message.data.uploadedFilename}}"
           sentinelone.data.uuid: "{{json_event.message.data.uuid}}"
 
-          user.name: "{{json_event.message.data.userName or json_event.message.data.username or json_event.message.data.lastLoggedInUserName}}"
+      - set:
           user.id: "{{json_event.message.data.userId}}"
+          user.name: "{{json_event.message.data.userName or json_event.message.data.username or json_event.message.data.lastLoggedInUserName}}"
+        filter: "{{json_event.message.get('data',{}).get('sourceprocessusername') == None}}"
 
+      - set:
+          process.user.domain: "{{json_event.message.data.sourceprocessusername.split('\\\\')[0]}}"
+          process.user.name: "{{json_event.message.data.sourceprocessusername.split('\\\\')[1]}}"
+
+          user.name: "{{json_event.message.data.sourceprocessusername.split('\\\\')[1]}}"
+        filter: "{{json_event.message.data.sourceprocessusername | length > 0}}"
+
+      - set:
           sentinelone.data.userscope: "{{json_event.message.data.userscope}}"
           sentinelone.data.version: "{{json_event.message.data.version}}"
           sentinelone.data.setting: "{{json_event.message.data.setting}}"
@@ -606,6 +621,11 @@ stages:
           process.command_line: "{{json_event.message.data.sourceprocesscommandline}}"
           process.executable: "{{json_event.message.data.sourceprocessfilepath}}"
 
+      - set:
+          process.name: "{{json_event.message.data.sourceprocessfilepath | basename}}"
+        filter: "{{json_event.message.data.sourceprocessfilepath | length > 0}}"
+
+      - set:
           sentinelone.data.sourceprocessfilesingeridentity: "{{json_event.message.data.sourceprocessfilesingeridentity}}"
           sentinelone.data.sourceprocessintegritylevel: "{{json_event.message.data.sourceprocessintegritylevel}}"
           sentinelone.data.sourceprocesskey: "{{json_event.message.data.sourceprocesskey}}"
@@ -670,6 +690,7 @@ stages:
           sentinelone.data.oldGroupId: "{{json_event.message.data.oldGroupId}}"
           sentinelone.data.oldGroupName: "{{json_event.message.data.oldGroupName}}"
           sentinelone.data.originalStatus: "{{json_event.message.data.originalStatus}}"
+          threat.software.type: "{{json_event.message.data.threatClassification}}"
           sentinelone.data.threatClassification: "{{json_event.message.data.threatClassification}}"
           sentinelone.data.threatClassificationSource: "{{json_event.message.data.threatClassificationSource}}"
           sentinelone.threatInfo.fileExtension: "{{json_event.message.threatInfo.fileExtension}}"
@@ -765,12 +786,13 @@ stages:
     actions:
       - set:
           host.os.version: "{{json_event.message.agentRealtimeInfo.agentOsName}}"
-          host.os.family: "{{json_event.message.agentRealtimeInfo.agentOsType}}"
+          host.os.family: "{{json_event.message.agentRealtimeInfo.agentOsType or json_event.message.data.origagentosfamily}}"
+          host.os.name: "{{json_event.message.data.origagentosname}}"
           organization.id: "{{json_event.message.agentRealtimeInfo.accountId}}"
           organization.name: "{{json_event.message.agentRealtimeInfo.accountName}}"
           sentinelone.agentRealtimeInfo.activeThreats: "{{json_event.message.agentRealtimeInfo.activeThreats}}"
           sentinelone.agentRealtimeInfo.agentComputerName: "{{json_event.message.agentRealtimeInfo.agentComputerName}}"
-          host.name: "{{json_event.message.agentRealtimeInfo.agentComputerName}}"
+          host.name: "{{json_event.message.agentRealtimeInfo.agentComputerName or json_event.message.data.origagentname}}"
           sentinelone.agentRealtimeInfo.agentDecommissionedAt: "{{json_event.message.agentRealtimeInfo.agentDecommissionedAt}}"
           sentinelone.agentRealtimeInfo.agentDomain: "{{json_event.message.agentRealtimeInfo.agentDomain}}"
           sentinelone.agentRealtimeInfo.agentId: "{{json_event.message.agentRealtimeInfo.agentId}}"
@@ -914,5 +936,6 @@ stages:
           sentinelone.threatInfo.rebootRequired: "{{json_event.message.threatInfo.rebootRequired}}"
           sentinelone.threatInfo.storyline: "{{json_event.message.threatInfo.storyline}}"
           sentinelone.threatInfo.threatId: "{{json_event.message.threatInfo.threatId}}"
+          sentinelone.threatId: "{{json_event.message.threatInfo.threatId}}"
           sentinelone.threatInfo.updatedAt: "{{json_event.message.threatInfo.updatedAt}}"
           sentinelone.threatInfo.fileExtension: "{{json_event.message.threatInfo.fileExtension}}"

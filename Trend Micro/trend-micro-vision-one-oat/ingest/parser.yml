@@ -1,0 +1,135 @@
+name: trend-micro-vision-one-oat
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+  - name: parse_email_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt_utc}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.scanType in ['exchange_mailbox_realtime_detection_logs', 'realtime_mailmeta-exchange']}}"
+
+  - name: set_email_fields
+    filter: "{{parsed_event.message.scanType in ['exchange_mailbox_realtime_detection_logs', 'realtime_mailmeta-exchange']}}"
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          observer.vendor: "TrendMicro"
+          observer.product: "Vision One"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.detectedDateTime | to_rfc3339}}"
+
+          host.name: "{{parsed_event.message.endpoint.endpointName}}"
+          host.ip: "{{parsed_event.message.endpoint.ips}}"
+
+          agent.id: "{{parsed_event.message.endpoint.agentGuid}}"
+          event.start: "{{parsed_event.message.detail.firstSeen | to_rfc3339}}"
+          event.end: "{{parsed_event.message.detail.lastSeen | to_rfc3339}}"
+          event.provider: "{{parsed_event.message.pname}}"
+          event.reason: "{{parsed_event.message.description}}"
+          event.dataset: "{{parsed_event.message.source}}"
+
+          host.id: "{{parsed_event.message.detail.endpointGuid}}"
+          host.os.name: "{{parsed_event.message.detail.osName}}"
+          host.os.version: "{{parsed_event.message.detail.osVer}}"
+          host.os.full: "{{parsed_event.message.detail.osDescription}}"
+
+          process.name: "{{parsed_event.message.detail.processName | basename or parsed_event.message.detail.ObjectName | basename}}"
+          process.parent.pid: "{{parsed_event.message.detail.processPid}}"
+          process.parent.user.name: "{{parsed_event.message.detail.processUser}}"
+          process.parent.user.domain: "{{parsed_event.message.detail.processUserDomain}}"
+          process.parent.start: "{{parsed_event.message.detail.processLaunchTime | to_rfc3339}}"
+          process.parent.command_line: "{{parsed_event.message.detail.processCmd}}"
+          process.parent.executable: "{{parsed_event.message.detail.processFilePath}}"
+          process.parent.hash.sha1: "{{parsed_event.message.detail.processFileHashSha1}}"
+          process.parent.hash.sha256: "{{parsed_event.message.detail.processFileHashSha256}}"
+          process.parent.hash.md5: "{{parsed_event.message.detail.processFileHashMd5}}"
+          process.parent.parent.name: "{{parsed_event.message.detail.parentName | basename}}"
+          process.parent.parent.executable: "{{parsed_event.message.detail.parentFilePath}}"
+          process.parent.parent.command_line: "{{parsed_event.message.detail.parentCmd}}"
+          process.parent.parent.pid: "{{parsed_event.message.detail.parentPid}}"
+          process.parent.parent.start: "{{parsed_event.message.detail.parentLaunchTime | to_rfc3339}}"
+          process.parent.parent.hash.sha1: "{{parsed_event.message.detail.parentFileHashSha1}}"
+          process.parent.parent.hash.sha256: "{{parsed_event.message.detail.parentFileHashSha256}}"
+          process.parent.parent.hash.md5: "{{parsed_event.message.detail.parentFileHashMd5}}"
+          process.parent.parent.user.name: "{{parsed_event.message.detail.parentUser}}"
+          process.parent.parent.user.domain: "{{parsed_event.message.detail.parentUserDomain}}"
+
+          group.id: "{{parsed_event.message.detail.groupId}}"
+          action.properties.ScriptBlockText: "{{parsed_event.message.detail.objectRawDataStr}}"
+
+          user.name: "{{parsed_event.message.detail.objectUser}}"
+          user.domain: "{{parsed_event.message.detail.objectUserDomain}}"
+
+          process.pid: "{{parsed_event.message.detail.objectPid}}"
+          process.command_line: "{{parsed_event.message.detail.objectCmd}}"
+          process.executable: "{{parsed_event.message.detail.ObjectFilePath}}"
+          process.hash.md5: "{{parsed_event.message.detail.ObjectFileHashMd5}}"
+          process.hash.sha1: "{{parsed_event.message.detail.ObjectFileHashSha1}}"
+          process.hash.sha256: "{{parsed_event.message.detail.ObjectFileHashSha256}}"
+
+          url.original: "{{ parsed_event.message.request }}"
+
+          organization.id: "{{parsed_event.message.orgId}}"
+
+          rule.ruleset: "{{parsed_event.message.policyName}}"
+          rule.name: "{{parsed_event.message.ruleName}}"
+
+          cloud.service.name: "{{parsed_event.message.cloudAppName}}"
+
+          trendmicro.visionone.oat.eventId: "{{parsed_event.message.eventId}}"
+          trendmicro.visionone.oat.eventName: "{{parsed_event.message.eventName}}"
+          trendmicro.visionone.oat.eventSubName: "{{parsed_event.message.eventSubName}}"
+          trendmicro.visionone.oat.detectionType: "{{parsed_event.message.detectionType}}"
+          trendmicro.visionone.oat.riskLevel: "{{parsed_event.message.riskLevel}}"
+
+      - set:
+          event.action: "{{parsed_event.message.act[0]}}"
+        filter: "{{parsed_event.message.act | length > 0 }}"
+
+      - set:
+          threat.tactic.id: "{{parsed_event.message.filters | map(attribute='mitreTacticIds') | list | sum(start = [])}}"
+
+          threat.technique.id: >
+            {%- set ids = [] -%}
+            {%- for item in parsed_event.message.filters | map(attribute='mitreTechniqueIds') | list | sum(start = []) -%}
+              {%- if "." not in item -%}{%- set ids = ids.append(item) -%}{%- endif -%}
+            {%- endfor -%}
+            {%- if ids | length > 0 -%}{{ ids | tojson }}{%- endif -%}
+
+          threat.technique.subtechnique.id: >
+            {%- set ids = [] -%}
+            {%- for item in parsed_event.message.filters | map(attribute='mitreTechniqueIds') | list | sum(start = []) -%}
+              {%- if "." in item -%}{%- set ids = ids.append(item) -%}{%- endif -%}
+            {%- endfor -%}
+            {%- if ids | length > 0 -%}{{ ids | tojson }}{%- endif -%}
+
+        filter: "{{parsed_event.message.filters | length > 0 }}"
+
+  set_email_fields:
+    actions:
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+
+          email.from.address: "{{ parsed_event.message.suser }}"
+          email.to.address: "{{ parsed_event.message.duser }}"
+          email.subject: "{{ parsed_event.message.mailMsgSubject }}"
+          email.local_id: "{{ parsed_event.message.msgUuid }}"
+          email.message_id: "{{ parsed_event.message.msgId }}"
+          email.delivery_timestamp: "{{ parse_email_date.datetime }}"
+          email.attachments: "{{ parsed_event.message.attachment }}"

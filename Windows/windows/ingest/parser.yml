@@ -92,6 +92,16 @@ pipeline:
         output_field: event
         pattern: "%{GREEDYDATA}%{IPV4:ip}%{GREEDYDATA}"
 
+  - name: source_ip_client_address
+    filter: "{{parsed_message_kv.result.get('Client Address') != None}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.result.get('Client Address')}}"
+        output_field: event
+        pattern: '%{IP:source_ip}(\:%{NUMBER:source_port})?'
+
   - name: sysmon_15
     description: issue 17164
     filter: "{{parsed_message_kv.result.Contents != null and json.event.EventID == 15 }}"
@@ -200,7 +210,7 @@ stages:
           dll.name: "{{json.event.OriginalFileName}}"
 
       - set:
-          dll.hash.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
+          dll.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
           dll.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
           dll.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
 
@@ -228,10 +238,10 @@ stages:
         filter: "{{json.event.SourceName == 'Microsoft-Windows-PowerShell'}}"
 
       - set:
-          file.hash.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
+          file.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
           file.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
           file.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
-        filter: "{{json.event.EventID in (15,23,24,28) }}"
+        filter: "{{json.event.EventID in (15,23,24,26,28) }}"
 
       - set:
           file.name: '{{json.event.Message.split(" ")[0].split("\\")[-1]}}'
@@ -245,16 +255,17 @@ stages:
           process.command_line: '{{final.process.command_line | replace(''"'', '''')}}'
           process.parent.command_line: '{{final.process.parent.command_line | replace(''"'', '''')}}'
 
-          process.hash.imphash: "{{final.process.hash.imphash | lower}}"
+          process.pe.imphash: "{{final.process.pe.imphash | lower}}"
           process.hash.md5: "{{final.process.hash.md5 | lower}}"
           process.hash.sha1: "{{final.process.hash.sha1 | lower}}"
           process.hash.sha256: "{{final.process.hash.sha256 | lower}}"
 
-          file.hash.imphash: "{{final.file.hash.imphash | lower}}"
+          file.pe.imphash: "{{final.file.pe.imphash | lower}}"
           file.hash.md5: "{{final.file.hash.md5 | lower}}"
           file.hash.sha256: "{{final.file.hash.sha256 | lower}}"
 
-          dll.hash.imphash: "{{final.dll.hash.imphash | lower}}"
+          dll.hash.imphash: "{{final.dll.pe.imphash | lower}}"
+          dll.pe.imphash: "{{final.dll.pe.imphash | lower}}"
           dll.hash.md5: "{{final.dll.hash.md5 | lower}}"
           dll.hash.sha256: "{{final.dll.hash.sha256 | lower}}"
 
@@ -400,6 +411,10 @@ stages:
           action.properties.BytesTotal: "{{json.event.bytesTotal}}"
           action.properties.ConfigurationFile: "{{ json.event.Configuration }}"
 
+          action.properties.FileVersion: "{{ json.event.FileVersion }}"
+          action.properties.Product: "{{ json.event.FileVersion }}"
+          action.properties.Description: "{{ json.event.Description }}"
+
       - set:
           action.properties.BytesTotal: "-1"
         filter: "{{final.action != null and final.action.properties != null and final.action.properties.BytesTotal == '18446744073709551615'}}"
@@ -539,7 +554,7 @@ stages:
   hashes:
     actions:
       - set:
-          process.hash.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
+          process.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
           process.hash.sha1: "{{parsed_hashes_kv.result.SHA1 or parsed_hashes_kv_2.result.SHA1}}"
           process.hash.md5: "{{parsed_hashes_kv.result.MD5 or parsed_hashes_kv_2.result.MD5}}"
           process.hash.sha256: "{{parsed_hashes_kv.result.SHA256 or parsed_hashes_kv_2.result.SHA256}}"
@@ -1120,13 +1135,14 @@ stages:
     actions:
       - set:
           source.ip: "{{json.event.SourceIp or json.event.SourceAddress}}"
+        filter: "{{json.event.SourceIp | is_ipaddress or json.event.SourceAddress | is_ipaddress}}"
 
       - set:
           source.ip: "{{json.event.Message.split('Client IP: ')[-1].strip('.')}}"
         filter: "{{json.event.EventID == 56 and json.event.Message != null }}"
 
       - set:
-          source.ip: "{{parsed_message_kv.result.get('Client Address')}}"
+          source.ip: "{{source_ip_client_address.event.source_ip}}"
         filter: "{{final.source == null or final.source.ip == null }}"
 
       - set:
@@ -1140,6 +1156,7 @@ stages:
 
       - set:
           source.ip: "{{source_ip_ip_address.event.ip}}"
+        filter: "{{source_ip_ip_address.event.ip | is_ipaddress}}"
 
       - set:
           source.address: "{{json.event.SourceIp}}"
@@ -1166,11 +1183,18 @@ stages:
       - set:
           source.ip: "{{ json.event.CallingStationID }}"
         filter: "{{json.event.CallingStationID | is_ipaddress}}"
+
       - set:
           source.mac: "{{ json.event.CallingStationID }}"
         filter: "{{ final.source.ip == null }}"
+
+      - set:
+          destination.ip: "{{ json.event.AuthenticationServer }}"
+        filter: "{{json.event.AuthenticationServer | is_ipaddress}}"
+
       - set:
           destination.domain: "{{ json.event.AuthenticationServer }}"
+        filter: "{{not json.event.AuthenticationServer | is_ipaddress}}"
 
   rule:
     actions:

@@ -35,14 +35,17 @@ pipeline:
       properties:
         input_field: original.message
         output_field: message
-        pattern: '^%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}( "%{DATA:referrer}" "%{DATA:user_agent}")?$'
+        pattern: "%{NATIVE_FORMAT}|%{COMMON_LOG_FORMAT}"
+        custom_patterns:
+          NATIVE_FORMAT: '^%{NUMBER:timestamp}\s+%{NUMBER:elapsed}\s+%{IP:source_ip}\s+%{WORD:code}/%{NUMBER:status}\s+%{NUMBER:http_response_bytes}\s+%{WORD:method}\s+%{NOTSPACE:url}\s+%{NOTSPACE:username}\s+%{NOTSPACE:hierarchy_code}/(%{IP:peerhostip}|%{NOTSPACE:peerhost})\s+%{NOTSPACE:mime_type}( "%{DATA:referrer}" "%{DATA:user_agent}")?\s?$'
+          COMMON_LOG_FORMAT: '^(%{IPORHOST:source_ip}|-)\s+(%{USER:user_id}|-)\s+(%{USER:username}|-)\s+\[%{DATA:timestamp}\]\s+\"%{WORD:method}\s+%{DATA:url}\s+HTTP/%{NUMBER:http_version}\"\s+%{NUMBER:status}\s+(%{NUMBER:http_response_bytes}|-)%{GREEDYDATA}'
+
   - name: parsed_timestamp
     external:
       name: date.parse
       properties:
         input_field: parsed_event.message.timestamp
         output_field: start_date
-        format: timestamp
 
   - name: url
     external:
@@ -144,4 +147,6 @@ stages:
       - set:
           destination.domain: "{{url.message.domain}}"
           destination.port: "{{url.message.port}}"
+          server.domain: "{{parsed_event.message.peerhost}}"
+          server.ip: "{{parsed_event.message.peerhostip}}"
         filter: '{{parsed_event.message.method == "CONNECT"}}'

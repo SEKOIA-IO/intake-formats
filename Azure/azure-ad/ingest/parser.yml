@@ -77,6 +77,14 @@ stages:
           azuread.properties.deviceDetail.isCompliant: "{{parsed_event.message.properties.deviceDetail.isCompliant}}"
           azuread.properties.deviceDetail.isManaged: "{{parsed_event.message.properties.deviceDetail.isManaged}}"
           azuread.properties.deviceDetail.trustType: "{{parsed_event.message.properties.deviceDetail.trustType}}"
+          azuread.properties.original_transfer_method: "{{parsed_event.message.properties.originalTransferMethod}}"
+          azuread.properties.session_id: "{{parsed_event.message.properties.sessionId}}"
+          azuread.properties.userPrincipalObjectID: "{{parsed_event.message.properties.UserPrincipalObjectID}}"
+
+      - set:
+          azuread.properties.network_location.network_type: "{{(parsed_event.message.properties.networkLocationDetails | first).networkType}}"
+          azuread.properties.network_location.network_names: "{{(parsed_event.message.properties.networkLocationDetails | first).networkNames}}"
+        filter: "{{parsed_event.message.get('properties', {}).get('networkLocationDetails', []) | length > 0}}"
 
       - set:
           event.type: ["connection"]
@@ -110,9 +118,67 @@ stages:
           service.type: "ldap"
           service.name: '{{ parsed_event.message.resourceDisplayName or "Azure Active Directory"}}'
           action.name: "{{parsed_event.message.operationName}}"
+          event.action: "{{parsed_event.message.operationName}}"
           user.id: "{{ parsed_event.message.userId}}"
           user.name: "{{ parsed_event.message.userPrincipalName}}"
-          user_agent.original: "{{ parsed_event.message.userAgent }}"
+          user_agent.original: "{{ parsed_event.message.userAgent}}"
+          log.level: "{{parsed_event.message.Level}}"
+          http.request.method: "{{parsed_event.message.properties.requestMethod}}"
+          http.response.status_code: "{{parsed_event.message.properties.responseStatusCode}}"
+          url.original: "{{parsed_event.message.properties.requestUri}}"
+
+      - set:
+          azuread.properties.scopes: >
+            [
+            {% for scope in parsed_event.message.properties.scopes.split(" ") %}
+              "{{scope}}",
+            {% endfor %}
+            ]
+        filter: "{{parsed_event.message.properties.get('scopes') != None}}"
+
+      - set:
+          user.target.name: >
+            {%- for item in parsed_event.message.properties.targetResources -%}
+              {%- if item.type == "User" -%}{{ item.userPrincipalName }}{%- endif -%}
+            {%- endfor -%}
+          user.target.id: >
+            {%- for item in parsed_event.message.properties.targetResources -%}
+              {%- if item.type == "User" -%}{{ item.id }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | list | length == 1 and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first != [] }}"
+
+      - set:
+          user.target.group.name: >
+            {%- for item in parsed_event.message.properties.targetResources -%}
+              {%- if item.type == "Group" -%}{{ item.displayName }}{%- endif -%}
+            {%- endfor -%}
+          user.target.group.id: >
+            {%- for item in parsed_event.message.properties.targetResources -%}
+              {%- if item.type == "Group" -%}{{ item.id }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'Group') | list | length == 1 and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'Group') | map(attribute = 'modifiedProperties') | list | first != [] }}"
+
+      - set:
+          user.target.group.id: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'Group.ObjectID' -%}{{prop.oldValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          user.changes.group.id: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'Group.ObjectID' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          user.target.group.name: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'Group.DisplayName' -%}{{prop.oldValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          user.changes.group.name: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'Group.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
 
       - set:
           source.ip: "{{parsed_event.message.ipAddress}}"
@@ -128,7 +194,6 @@ stages:
           azuread.durationMs: "{{parsed_event.message.durationMs}}"
           azuread.correlationId: "{{parsed_event.message.correlationId}}"
           azuread.identity: "{{parsed_event.message.identity}}"
-          azuread.Level: "{{parsed_event.message.Level}}"
 
           azuread.activityDateTime: "{{parsed_event.message.activityDateTime}}"
           azuread.detectedDateTime: "{{parsed_event.message.detectedDateTime}}"
@@ -238,3 +303,6 @@ stages:
       - set:
           action.outcome: "failure"
         filter: "{{ parsed_event.message.properties.status.errorCode != 0 }}"
+
+      - set:
+          azuread.properties.conditionalAccessStatus: "{{ parsed_event.message.properties.conditionalAccessStatus }}"

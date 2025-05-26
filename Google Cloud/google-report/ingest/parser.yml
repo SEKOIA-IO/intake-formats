@@ -1,5 +1,5 @@
 name: google-report
-ignored_values: ["UNKNOWN"]
+ignored_values: ["UNKNOWN", "-"]
 pipeline:
   - name: json_event
     external:
@@ -68,7 +68,11 @@ stages:
 
       - set:
           event.action: "{{json_event.message.events[0].name}}"
-        filter: "{{ json_event.message.events|length == 1}}"
+        filter: "{{json_event.message.events|length == 1}}"
+
+      - set:
+          user.target.email: "{{(json_event.message.events[0].parameters | selectattr('name', '==', 'USER_EMAIL') | first).value}}"
+        filter: "{{json_event.message.events|length > 0}}"
 
       - set:
           event.action: >
@@ -174,7 +178,7 @@ stages:
       - set:
           event.category: ["iam"]
           event.type: ["admin"]
-
+          user.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "member_id" %}{{param.value}}{% endif %}{% endfor %}'
           user.group.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "group_id" %}{{param.value}}{% endif %}{% endfor %}'
 
   set_chat_fields:
@@ -319,7 +323,6 @@ stages:
   set_chrome_fields:
     actions:
       - set:
-          event.category: ["web"]
           organization.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "ORG_UNIT_NAME" %}{{param.value}}{% endif %}{% endfor %}'
           event.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "EVENT_REASON" %}{{param.value}}{% endif %}{% endfor %}'
           device.model.identifier: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PRODUCT_ID" %}{{param.value}}{% endif %}{% endfor %}'
@@ -327,11 +330,79 @@ stages:
           device.model.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PRODUCT_NAME" %}{{param.value}}{% endif %}{% endfor %}'
           device.manufacturer: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "VENDOR_NAME" %}{{param.value}}{% endif %}{% endfor %}'
           host.os.full: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_PLATFORM" %}{{param.value}}{% endif %}{% endfor %}'
+          device.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DIRECTORY_DEVICE_ID" %}{{param.value}}{% endif %}{% endfor %}'
+          host.os.version: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "CURRENT_OS_VERSION" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.host.os.old_version: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PREVIOUS_OS_VERSION" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.boot_mode.new: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "NEW_BOOT_MODE" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.boot_mode.old: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "PREVIOUS_BOOT_MODE" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.session.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "SESSION_ID" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.login.failure.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "LOGIN_FAILURE_REASON" %}{{param.value}}{% endif %}{% endfor %}'
+          google.report.remove.user.reason: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "REMOVE_USER_REASON" %}{{param.value}}{% endif %}{% endfor %}'
+          user.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_USER" and "@" in param.value%}{{param.value}}{% endif %}{% endfor %}'
+          user.name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "DEVICE_USER" and "@" not in param.value%}{{param.value}}{% endif %}{% endfor %}'
 
       - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGIN_EVENT", "CHROMEOS_AFFILIATED_LOGIN"] }}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_LOGIN_FAILURE_EVENT"}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+        filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGOUT_EVENT", "CHROMEOS_AFFILIATED_LOCK_SUCCESS", "CHROMEOS_AFFILIATED_LOGOUT"] }}'
+
+      - set:
+          event.category: ["file"]
           event.type: ["change"]
         filter: '{{ json_event.message.events[0].name == "CHROMEOS_PERIPHERAL_STATUS_UPDATED"}}'
 
       - set:
-          event.type: ["connection"]
-        filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGOUT_EVENT", "CHROME_OS_LOGIN_EVENT"]}}'
+          event.category: ["file"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.events[0].name == "CHROMEOS_PERIPHERAL_ADDED"}}'
+
+      - set:
+          event.category: ["file"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.events[0].name == "CHROMEOS_PERIPHERAL_REMOVED"}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["change"]
+        filter: '{{ json_event.message.events[0].name in ["DEVICE_BOOT_STATE_CHANGE", "CHROMEOS_UPDATE_SUCCESS", "CHROMEOS_POWERWASH_INITIATED"]}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["deletion"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_REMOVE_USER"}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["start"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_HOST_STARTED"}}'
+
+      - set:
+          event.category: ["host"]
+          event.type: ["end"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_HOST_ENDED"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_CLIENT_DISCONNECTED"}}'
+
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_CRD_CLIENT_CONNECTED"}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["creation"]
+        filter: '{{ json_event.message.events[0].name == "CHROME_OS_ADD_USER"}}'

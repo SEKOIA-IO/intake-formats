@@ -50,6 +50,11 @@ stages:
           host.name: "{{parsed_event.message.hostname}}"
           host.os.name: "{{parsed_event.message.os}}"
           host.os.version: "{{parsed_event.message.os_version}}"
+
+      - set:
+          client.ip: "{{parsed_event.message.userip}}"
+        filter: "{{parsed_event.message.userip | is_ipaddress}}"
+
       - set:
           source.ip: "{{parsed_event.message.srcip}}"
         filter: "{{parsed_event.message.srcip | is_ipaddress}}"
@@ -66,6 +71,9 @@ stages:
       - set:
           destination.ip: "{{parsed_event.message.dstip}}"
         filter: "{{parsed_event.message.dstip | is_ipaddress}}"
+      - set:
+          destination.ip: "{{parsed_event.message.dsthost}}"
+        filter: "{{parsed_event.message.dsthost | is_ipaddress}}"
 
       - set:
           destination.bytes: "{{parsed_event.message.server_bytes}}"
@@ -103,6 +111,20 @@ stages:
         mapping:
           parsed_event.message.alert: event.kind
         fallback: "event"
+      - set:
+          url.domain: "{{parsed_event.message.url.split('?')[0].split('/')[0] }}"
+          url.path: "/{{parsed_event.message.url.split('?')[0].split('/')[1:] | join('/') }}"
+          url.query: "{{parsed_event.message.url.split('?')[1]}}"
+        filter: "{{parsed_event.message.url | length > 0 and not parsed_event.message.url.startswith('http')}}"
+      - set:
+          url.domain: "{{parsed_event.message.url.split('?')[0].split('/')[2] }}"
+          url.path: "/{{parsed_event.message.url.split('?')[0].split('/')[3:] | join('/') }}"
+          url.query: "{{parsed_event.message.url.split('?')[1]}}"
+        filter: "{{parsed_event.message.url | length > 0 and parsed_event.message.url.startswith('http')}}"
+      - set:
+          url.full: "https://{{parsed_event.message.url}}"
+          url.scheme: "https"
+        filter: "{{parsed_event.message.url | length > 0 and not parsed_event.message.url.startswith('https') and 'HTTPS' in parsed_event.message.protocol}}"
       - set:
           host.os.type: "macos"
           host.os.platform: "darwin"
@@ -144,8 +166,40 @@ stages:
           netskope.events.application.activity: "{{parsed_event.message.app_activity}}"
           netskope.events.access_method: "{{parsed_event.message.access_method}}"
           netskope.events.ccl: "{{parsed_event.message.ccl}}"
-          netskope.events.severity.id: "{{parsed_event.message.severity_id}}"
-          netskope.events.severity.level: "{{parsed_event.message.severity_level}}"
+
+      - set:
+          netskope.events.severity_id: "{{parsed_event.message.severity_id}}"
+          netskope.events.severity_level: "{{parsed_event.message.severity_level}}"
+        filter: '{{ parsed_event.message.severity_level|int(-1) == -1  and not parsed_event.message.type == "malsite" }}'
+
+      - translate:
+        dictionary:
+          "med": "Medium"
+          "high": "High"
+          "low": "Low"
+        fallback: "Info"
+        mapping:
+          parsed_event.message.severity_level: netskope.malsite.severity_level
+        filter: '{{ parsed_event.message.severity|int(-1) == -1 and parsed_event.message.type == "malsite" }}'
+
+      - set:
+          netskope.alerts.severity: "{{parsed_event.message.severity}}"
+        filter: "{{ parsed_event.message.severity|int(-1) == -1}}"
+
+      - set:
+          netskope.audit.severity_id: "{{parsed_event.message.severity_level}}"
+        filter: '{{ parsed_event.message.severity_level|int(-1) >= 0 and parsed_event.message.type == "admin_audit_logs"}}'
+
+      - translate:
+        dictionary:
+          1: "High"
+          2: "Medium"
+          3: "Low"
+        mapping:
+          parsed_event.message.severity_level: netskope.audit.severity_level
+        fallback: "Info"
+        filter: '{{ parsed_event.message.severity_level|int(-1) >= 0 and parsed_event.message.type == "admin_audit_logs"}}'
+
       - set:
           netskope.dlp.action: "{{parsed_event.message.dlp_match_info[0].dlp_action}}"
           netskope.dlp.forensic_id: "{{parsed_event.message.dlp_match_info[0].dlp_forensic_id}}"
@@ -154,16 +208,30 @@ stages:
         filter: "{{parsed_event.message.dlp_match_info[0] != None}}"
 
       - set:
+          netskope.dlp.action: "{{parsed_event.message.action}}"
+          netskope.dlp.policy: "{{parsed_event.message.policy}}"
+          netskope.dlp.profile_name: "{{parsed_event.message.dlp_profile}}"
+          netskope.dlp.rules: >
+            [ 
+              {
+                "name": "{{parsed_event.message.dlp_rule}}",
+                "severity": "{{parsed_event.message.dlp_rule_severity}}",
+                "unique_count": "{{parsed_event.message.dlp_is_unique_count}}"
+              }
+            ]
+        filter: '{{ parsed_event.message.alert_type == "DLP" }}'
+
+      - set:
           netskope.dlp.rules: >
             {%- set rules = [] -%}
             {%- for rule in parsed_event.message.dlp_match_info[0].dlp_rules -%}
             {%- set _ = rules.append({
-              "name": rule.dlp_rule_name,
-              "score": rule.dlp_rule_score,
-              "severity": rule.dlp_rule_severity,
-              "count": rule.dlp_incident_rule_count,
-              "unique_count": rule.is_unique_count,
-              "data_identifiers": rule.dlp_data_identifiers
+              "name": rule.get('dlp_rule_name'),
+              "score": rule.get('dlp_rule_score'),
+              "severity": rule.get('dlp_rule_severity'),
+              "count": rule.get('dlp_incident_rule_count'),
+              "unique_count": rule.get('is_unique_count'),
+              "data_identifiers": rule.get('dlp_data_identifiers')
             }) -%}
             {%- endfor -%}
             {{rules}}
@@ -215,4 +283,10 @@ stages:
           event.type: ["info"]
           event.kind: "alert"
           event.dataset: "dlp_incident"
-        filter: '{{parsed_event.message.get("dlp_incident_id") not in [None, 0]}}'
+        filter: '{{parsed_event.message.get("dlp_incident_id") not in [None, 0] and parsed_event.message.get("alert_type") == None }}'
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.kind: "alert"
+          event.dataset: "dlp_alert"
+        filter: '{{ parsed_event.message.alert_type == "DLP" }}'

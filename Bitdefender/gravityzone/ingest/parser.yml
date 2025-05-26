@@ -3,12 +3,14 @@ pipeline:
   - name: parse_event
     external:
       name: cef.parse-cef
+      properties:
+        input_field: '{{original.message.strip(''"'')}}'
 
   - name: parsed_date
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_event.message.eventdate or parse_event.message.BitdefenderGZDetectionTime}}"
+        input_field: "{{parse_event.message.eventdate or parse_event.message.BitdefenderGZDetectionTime or parse_event.message.end or parse_event.message.start}}"
         output_field: datetime
 
   - name: set_event_fields
@@ -67,6 +69,7 @@ stages:
           "device-control": ["host"]
           "ransomware-mitigation": ["intrusion_detection"]
           "new-incident": ["process"]
+          "uc": ["web"]
         mapping:
           parse_event.message.BitdefenderGZModule: event.category
         filter: "{{parse_event.message.BitdefenderGZModule != None}}"
@@ -74,7 +77,6 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          "@timestamp": "{{parsed_date.datetime}}"
           host.ip: "{{parse_event.message.dvc}}"
           host.name: "{{parse_event.message.BitdefenderGZComputerFQDN or parse_event.message.dvchost}}"
           destination.user.name: "{{parse_event.message.duser}}"
@@ -94,7 +96,23 @@ stages:
           observer.vendor: "{{parse_event.message.DeviceVendor}}"
           observer.product: "{{parse_event.message.DeviceProduct}}"
           observer.version: "{{parse_event.message.DeviceVersion}}"
+          bitdefender.gravityzone.application_control.block_type: "{{parse_event.message.BitdefenderGZApplicationControlBlockType}}"
+          bitdefender.gravityzone.application_control.type: "{{parse_event.message.BitdefenderGZApplicationControlType}}"
+          bitdefender.gravityzone.application_control.detection_count: "{{parse_event.message.cnt}}"
+          bitdefender.gravityzone.data.categories: "{{parse_event.message.BitdefenderGZDataCategories}}"
           bitdefender.gravityzone.exploit.type: "{{parse_event.message.BitdefenderGZExploitType}}"
+
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+        filter: "{{parse_event.message.get('eventdate') != None or parse_event.message.get('BitdefenderGZDetectionTime') != None}}"
+
+      - set:
+          event.start: "{{parsed_date.datetime}}"
+        filter: "{{parse_event.message.get('start') != None}}"
+
+      - set:
+          event.end: "{{parsed_date.datetime}}"
+        filter: "{{parse_event.message.get('end') != None}}"
 
       - set:
           file.path: "{{parse_event.message.filePath}}"

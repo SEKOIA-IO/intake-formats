@@ -3,6 +3,7 @@ pipeline:
   - name: json_event
     external:
       name: json.parse-json
+
   - name: parse_sender
     external:
       name: grok.match
@@ -12,6 +13,20 @@ pipeline:
         output_field: sender
         pattern: "^%{GREEDYDATA:username}@%{GREEDYDATA:domain}$"
     filter: "{{json_event.message.sender != null and json_event.message.sender != ''}}"
+
+  - name: parse_header_from
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: json_event.message.metaData.header.from
+        output_field: message
+        pattern: ".*?<?%{EMAILADDRESS:email}>?.*"
+        custom_patterns:
+          EMAILADDRESSPART: '[a-zA-Z0-9_\.+-=:]+'
+          EMAILADDRESS: "%{EMAILADDRESSPART:local}@%{EMAILADDRESSPART:remote}"
+    filter: "{{json_event.message.get('metaData', {}).get('header', {}).get('from') != None}}"
+
   - name: parse_recipient
     external:
       name: grok.match
@@ -21,9 +36,12 @@ pipeline:
         output_field: recipient
         pattern: "^%{GREEDYDATA:username}@%{GREEDYDATA:domain}$"
     filter: "{{json_event.message.recipient != null}}"
+
   - name: field_extraction
+
   - name: hash_extraction
     filter: "{{final.retarus.class == 'THREAT'}}"
+
 stages:
   field_extraction:
     actions:
@@ -37,6 +55,8 @@ stages:
           observer.version: "{{json_event.message.version}}"
           observer.hostname: "{{json_event.message.host}}"
 
+          "@timestamp": "{{json_event.message.ts | to_rfc3339}}"
+
           organization.id: "{{json_event.message.customer}}"
           source.domain: "{{parse_sender.sender.domain}}"
           destination.domain: "{{parse_recipient.recipient.domain}}"
@@ -45,8 +65,10 @@ stages:
           "retarus.spf.record": "{{json_event.message.metaData.authentication.spf.dns}}"
           "retarus.dkim.result": "{{json_event.message.metaData.authentication.dkim.details}}"
 
-          email.from.address: ["{{json_event.message.metaData.header.from}}"]
-          email.sender.address: ["{{json_event.message.recipient}}"]
+          email.from.address: >
+            {%- if parse_header_from.message.email | length > 0 -%}["{{parse_header_from.message.email}}"]{%- endif -%}
+
+          email.to.address: ["{{json_event.message.recipient}}"]
           email.subject: "{{json_event.message.metaData.header.subject}}"
 
           retarus.timestamp: "{{json_event.message.ts}}"

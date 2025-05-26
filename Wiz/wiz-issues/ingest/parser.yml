@@ -1,0 +1,54 @@
+name: wiz-issues
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.createdAt}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          observer.vendor: "Wiz"
+          event.dataset: "Issues"
+
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          log.level: "{{json_event.message.severity}}"
+
+          rule.id: "{{json_event.message.sourceRule.id}}"
+          rule.name: "{{json_event.message.sourceRule.name}}"
+
+          wiz.issues.status: "{{json_event.message.status}}"
+          wiz.issues.type: "{{json_event.message.type}}"
+          wiz.issues.id: "{{json_event.message.id}}"
+          wiz.issues.entitySnapshot.type: "{{json_event.message.entitySnapshot.type}}"
+
+      - set:
+          wiz.issues.securitySubCategories.titles: >
+            [ {%- for subcategory in json_event.message.sourceRule.securitySubCategories -%}
+              "{{subcategory.title}}",
+              {%- endfor -%}
+            ]
+        filter: "{{json_event.message.sourceRule.get('securitySubCategories') != None}}"
+
+      - set:
+          wiz.issues.entitySnapshot.name: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') != 'SECURITY_TOOL_FINDING'}}"
+
+      - set:
+          vulnerability.name: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'SECURITY_TOOL_FINDING'}}"
