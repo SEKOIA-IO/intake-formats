@@ -17,6 +17,15 @@ pipeline:
         output_field: message
         pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
 
+  - name: parse_requesting_user
+    filter: "{{parsed_event.message.get('data', {}).get('requesting_user') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.data.requesting_user}}"
+        output_field: message
+        pattern: '%{DATA:requesting_username} \(%{DATA:requesting_email}\)'
+
   - name: set_ecs_fields
   - name: set_category_and_type
 
@@ -69,6 +78,7 @@ stages:
           user.target.id: "{{parsed_event.message.data.user_id}}"
           user.target.name: "{{parsed_event.message.data.username}}"
           process.executable: "{{parsed_event.message.data.exeName}}"
+          process.command_line: "{{parsed_event.message.data.text}}"
           process.title: "{{parsed_event.message.data.windowName}}"
           event.action: "{{parsed_event.message.data.action_name}}"
           url.original: "{{parsed_event.message.data.download_url or parsed_event.message.data.view_url}}"
@@ -90,6 +100,32 @@ stages:
           beyondtrust.pra.owner: "{{parsed_event.message.data.owner}}"
           beyondtrust.pra.destination_type: "{{parsed_event.message.destination.type}}"
           beyondtrust.pra.destination_name: "{{parsed_event.message.destination.name}}"
+
+      - set:
+          beyondtrust.pra.request.id: "{{parsed_event.message.data.request_id}}"
+
+          beyondtrust.pra.jump_policy_name: "{{parsed_event.message.data.jump_policy_name}}"
+          beyondtrust.pra.jump_item_type: "{{parsed_event.message.data.jump_item_type}}"
+
+          beyondtrust.pra.push_agent_name: "{{parsed_event.message.data.push_agent_name}}"
+          beyondtrust.pra.jump_item_name: "{{parsed_event.message.data.jump_item_name}}"
+
+          beyondtrust.pra.request.duration: "{{parsed_event.message.data.request_duration}}" # should be event.duration?
+          beyondtrust.pra.request.start_time: "{{parsed_event.message.data.request_start_time}}" # should be parsed to RFC3339? but %Z wouldn't recognize `C
+
+          beyondtrust.pra.request_reason: "{{parsed_event.message.data.request_reason}}"
+          beyondtrust.pra.approver_name: "{{parsed_event.message.data.approver_name}}"
+          beyondtrust.pra.request_approver: "{{parsed_event.message.data.request_approver}}"
+
+          beyondtrust.pra.approval_applies_to: "{{parsed_event.message.data.approval_applies_to}}"
+          beyondtrust.pra.approver_comments: "{{parsed_event.message.data.approver_comments}}"
+
+          source.user.id: "{{parsed_event.message.data.requesting_user_id}}"
+
+      - set:
+          source.user.email: "{{parse_requesting_user.message.requesting_email}}"
+          source.user.name: "{{parse_requesting_user.message.requesting_username}}"
+        filter: "{{parse_requesting_user.get('message') != None}}"
 
   set_category_and_type:
     actions:
