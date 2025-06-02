@@ -1,0 +1,55 @@
+name: vade-cloud
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: "message"
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.message.date}}"
+        output_field: date
+
+  - name: set_base_fields
+
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parse_timestamp.date }}"
+
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+          event.action: "{{ parse_event.message.h_action }}"
+          event.reason: "{{ parse_event.message.h_reason }}"
+
+      - set:
+          email.from.address: ["{{ parse_event.message.from }}"]
+          email.to.address: ["{{ parse_event.message.to }}"]
+          email.subject: "{{ parse_event.message.subject }}"
+          email.message_id: "{{ parse_event.message.message_id }}"
+          email.direction: "{{ parse_event.message.direction }}"
+          source.ip: "{{ parse_event.message.source_ip }}"
+          destination.domain: "{{ parse_event.message.destination_domain }}"
+          destination.ip: "{{ parse_event.message.destination_ip }}"
+
+      - set:
+          hornetsecurity.email.classification: "{{ parse_event.message.h_classification }}"
+          hornetsecurity.email.crypt_type_in: "{{ parse_event.message.h_crypt_type_in }}"
+          hornetsecurity.email.crypt_type_out: "{{ parse_event.message.h_crypt_type_out }}"
+          hornetsecurity.email.status: "{{ parse_event.message.h_status }}"
+          hornetsecurity.email.size: "{{ parse_event.message.h_size }}"
+          hornetsecurity.email.source_hostname: "{{ parse_event.message.h_source_hostname }}"
+          hornetsecurity.email.destination_hostname: "{{ parse_event.message.h_destination_hostname }}"
+          hornetsecurity.email.private: "{{ parse_event.message.h_private }}"
+          hornetsecurity.email.gateway: "{{ parse_event.message.h_gateway }}"
+          hornetsecurity.email.has_url_rewritten: "{{ parse_event.message.h_has_url_rewritten }}"
+
+      - set:
+          email.attachments: "{{ parse_event.message.attachments }}"
+        filter: "{{ parse_event.message.attachments not in [null, '', 'no'] }}"
