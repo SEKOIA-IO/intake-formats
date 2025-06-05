@@ -14,6 +14,14 @@ pipeline:
         input_field: "{{json_event.message.createdAt}}"
         output_field: datetime
 
+  - name: parsed_endpoint
+    filter: "{{json_event.message.entitySnapshot.get('type') == 'ENDPOINT'}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json_event.message.entitySnapshot.name}}"
+        pattern: "%{DATA:ip_or_url}:%{NUMBER:port}"
+
   - name: set_ecs_fields
 stages:
   set_ecs_fields:
@@ -35,6 +43,8 @@ stages:
           wiz.issues.status: "{{json_event.message.status}}"
           wiz.issues.type: "{{json_event.message.type}}"
           wiz.issues.id: "{{json_event.message.id}}"
+
+          wiz.issues.entitySnapshot.name: "{{json_event.message.entitySnapshot.name}}"
           wiz.issues.entitySnapshot.type: "{{json_event.message.entitySnapshot.type}}"
 
       - set:
@@ -46,9 +56,34 @@ stages:
         filter: "{{json_event.message.sourceRule.get('securitySubCategories') != None}}"
 
       - set:
-          wiz.issues.entitySnapshot.name: "{{json_event.message.entitySnapshot.name}}"
-        filter: "{{json_event.message.entitySnapshot.get('type') != 'SECURITY_TOOL_FINDING'}}"
-
-      - set:
           vulnerability.name: "{{json_event.message.entitySnapshot.name}}"
         filter: "{{json_event.message.entitySnapshot.get('type') == 'SECURITY_TOOL_FINDING'}}"
+
+      - set:
+          cloud.instance.name: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'VIRTUAL_MACHINE'}}"
+
+      - set:
+          user.target.email: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'USER_ACCOUNT'}}"
+
+      - set:
+          container.name: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'CONTAINER'}}"
+
+      - set:
+          container.image.name: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'CONTAINER_IMAGE'}}"
+
+      - set:
+          host.name: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') in ('LOAD_BALANCER', 'VIRTUAL_WORKSTATION', 'DB_SERVER')}}"
+
+      - set:
+          destination.ip: "{{parsed_endpoint.message.ip_or_url}}"
+          destination.port: "{{parsed_endpoint.message.port}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'ENDPOINT' and parsed_endpoint.message.ip_or_url | is_ipaddress}}"
+
+      - set:
+          url.full: "{{json_event.message.entitySnapshot.name}}"
+        filter: "{{json_event.message.entitySnapshot.get('type') == 'ENDPOINT' and not parsed_endpoint.message.ip_or_url | is_ipaddress}}"
