@@ -1,5 +1,21 @@
 name: aruba-os
 pipeline:
+
+  - name: parsed_leef_event
+    external:
+      name: leef.parse-leef
+      properties:
+        input_field: "{{original.message.replace(' ', '\t')}}"
+    filter: '{{original.message.startswith("LEEF")}}'
+
+  - name: parsed_leef_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_leef_event.message.devTime}}"
+        output_field: date
+    filter: '{{parsed_leef_event.message.devTime != None}}'
+
   - name: parse_message
     external:
       name: grok.match
@@ -107,6 +123,10 @@ pipeline:
   - name: set_syslog_fields
     filter: "{{ parse_message.message.get('syslog_payload') != None }}"
 
+  - name: set_leef_fields
+    filter: '{{original.message.startswith("LEEF")}}'
+
+
 stages:
   set_syslog_fields:
     actions:
@@ -134,6 +154,7 @@ stages:
       - set:
           event.dataset: "{{ parse_message.message.prefix }}"
           event.reason: "{{ parse_message.message.payload }}"
+        filter: '{{original.message.startswith("LEEF") == False}}'
 
   set_auth_fields:
     actions:
@@ -210,3 +231,13 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["connection"]
+
+  set_leef_fields:
+    actions:
+      - set:
+          event.dataset: "aruba_os"
+          event.category: ["network"]
+          event.type: ["info"]
+          event.reason: "{{ parsed_leef_event.message.description.replace('\t',' ') }}"
+          "@timestamp": "{{ parsed_leef_date.date }}"
+          source.ip: "{{ parsed_leef_event.message.src }}"
