@@ -203,7 +203,11 @@ stages:
           fortinet.fortigate.cfgtid: "{{parsed_event.message.cfgtid or parsed_event.message.FTNTFGTcfgtid or parsed_event.message.FortinetFortiGatecfgtid}}"
           fortinet.fortigate.event.type: "{{parsed_event.message.type}}"
           fortinet.fortigate.event.severity: "{{parsed_event.message.severity or parsed_event.message.FTNTFGTseverity}}"
+          fortinet.fortigate.security_profile: "{{parsed_event.message.profile}}"
           fortinet.fortigate.sn: "{{parsed_event.message.sn or parsed_event.message.FTNTFGTsn or FortinetFortiGatesn}}"
+          fortinet.fortigate.threat.level: "{{parsed_event.message.crlevel}}"
+          fortinet.fortigate.threat.score: "{{parsed_event.message.crscore}}"
+          fortinet.fortigate.threat.type: "{{parsed_event.message.craction}}"
           event.code: "{{parsed_event.message.logid or parsed_event.message.FTNTFGTlogid or parsed_event.message.FortinetFortiGatelogid or parsed_event.message.DeviceEventClassID}}"
           event.reason: "{{parsed_event.message.msg}}"
           event.timezone: "{{parsed_event.message.FortinetFortiGatetz or parsed_event.message.tz or parsed_event.message.FTNTFGTtz }}"
@@ -234,7 +238,7 @@ stages:
           fortinet.fortigate.icmp.request.type: "{{parsed_event.message.icmptype}}"
           fortinet.fortigate.icmp.request.code: "{{parsed_event.message.icmpcode}}"
           url.original: "{{parsed_event.message.url or parsed_event.message.request}}"
-          user_agent.original: "{{parsed_event.message.requestClientApplication}}"
+          user_agent.original: "{{parsed_event.message.requestClientApplication or parsed_event.message.agent}}"
           user.name: "{{parsed_event.message.unauthuser}}"
           fortinet.fortigate.user.source: "{{parsed_event.message.unauthusersource}}"
           fortinet.fortigate.attack.name: "{{parsed_event.message.attack}}"
@@ -243,8 +247,20 @@ stages:
           fortinet.fortigate.poluuid: "{{parsed_event.message.poluuid}}"
           fortinet.fortigate.sessionid: "{{parsed_event.message.sessionid}}"
           fortinet.fortigate.utmaction: "{{parsed_event.message.utmaction}}"
-          network.forwarded_ip: "{{parsed_event.message.forwardedfor}}"
           group.name: "{{parsed_event.message.group or parsed_event.message.FTNTFGTgroup}}"
+
+      - set:
+          network.forwarded_ip: "{{parsed_event.message.forwardedfor}}"
+        filter: "{{ ',' not in parsed_event.message.get('forwardedfor', '' )}}"
+
+      - set:
+          network.forwarded_ip: >
+            [
+              {% for ip in parsed_event.message.forwardedfor.split(',') %}
+                "{{ip}}",
+              {% endfor %}
+            ]
+        filter: "{{ ',' in parsed_event.message.get('forwardedfor', '' )}}"
 
       - set:
           event.duration: "{{(parsed_event.message.duration | int) * 1_000_000_000}}" # nanoseconds
@@ -259,7 +275,7 @@ stages:
         filter: "{{parsed_event.message.subtype in ['webfilter', 'system'] and parsed_event.message.method not in ['jsconsole', 'domain', 'ip']}}"
 
       - set:
-          http.request.method: "{{parsed_event.message.method}}"
+          http.request.method: "{{parsed_event.message.method or parsed_event.message.httpmethod}}"
         filter: "{{parsed_event.message.subtype not in ['webfilter', 'system']}}"
 
       - set:
@@ -373,6 +389,19 @@ stages:
       - set:
           fortinet.fortigate.tunnel.ip: "{{parsed_event.message.tunnelip}}"
         filter: "{{parsed_event.message.subtype == 'vpn' and parsed_event.message.get('tunnelip') | is_ipaddress}}"
+      - set:
+          fortinet.fortigate.total.duration: "{{(parsed_event.message.duration | int) * 1_000_000_000}}" # nanoseconds
+          fortinet.fortigate.total.received_bytes: "{{parsed_event.message.rcvdbyte}}"
+          fortinet.fortigate.total.sent_bytes: "{{parsed_event.message.sentbyte}}"
+          fortinet.fortigate.total.received_packets: "{{parsed_event.message.rcvdpk}}"
+          fortinet.fortigate.total.sent_packets: "{{parsed_event.message.sentpkt}}"
+          event.duration: "{{(parsed_event.message.durationdelta| int) * 1_000_000_000}}" # nanoseconds
+          source.bytes: "{{parsed_event.message.sentdelta}}"
+          source.packets: "{{parsed_event.message.sentpktdelta}}"
+          destination.bytes: "{{parsed_event.message.rcvddelta}}"
+          destination.packets: "{{parsed_event.message.rcvdpktdelta}}"
+          network.bytes: "{{parsed_event.message.get('sentdelta', 0) | int + parsed_event.message.get('rcvddelta', 0) | int}}"
+        filter: "{{parsed_event.message.logid =='0000000020'}}"
 
       - translate:
         dictionary:
