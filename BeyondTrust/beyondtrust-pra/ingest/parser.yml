@@ -17,6 +17,15 @@ pipeline:
         output_field: message
         pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
 
+  - name: parse_requesting_user
+    filter: "{{parsed_event.message.get('data', {}).get('requesting_user') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.data.requesting_user}}"
+        output_field: message
+        pattern: '%{DATA:requesting_username} \(%{DATA:requesting_email}\)'
+
   - name: set_ecs_fields
   - name: set_category_and_type
 
@@ -32,7 +41,26 @@ stages:
           event.code: "{{parsed_event.message.event_type}}"
 
           group.name: "{{parsed_event.message.jump_group.name}}"
-          user.name: "{{parsed_event.message.performed_by.name}}"
+
+      - set:
+          user.name: >
+            {%- set variable = parsed_event.message.performed_by.name -%}
+            {%- if variable and variable != ' ' and (('.' in variable and ' ' in variable) or not '.' in variable) -%}
+            {{ variable }}
+            {%- endif -%}
+        filter: "{{parsed_event.message.performed_by.type != 'system' and not parsed_event.message.performed_by.name | is_ipaddress}}"
+
+      - set:
+          source.domain: >
+            {%- set variable = parsed_event.message.performed_by.name -%}
+            {%- if variable and variable != ' ' and '.' in variable and ' ' not in variable -%}
+            {{ variable }}
+            {%- endif -%}
+        filter: "{{parsed_event.message.performed_by.type != 'system' and not parsed_event.message.performed_by.name | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.performed_by.name}}"
+        filter: "{{parsed_event.message.performed_by.name | is_ipaddress}}"
 
       - set:
           source.ip: "{{parsed_event.message.data.private_ip}}"
@@ -59,6 +87,10 @@ stages:
           registry.value: "{{parsed_event.message.data.value_name}}"
 
       - set:
+          process.command_line: "{{parsed_event.message.data.text}}"
+        filter: "{{parsed_event.message.event_type == 'Remote Shell Event'}}"
+
+      - set:
           registry.data.type: "REG_SZ"
           registry.data.strings: "{{parsed_event.message.data.value_data}}"
         filter: "{{parsed_event.get('message', {}).get('data', {}).get('value_data') != None}}"
@@ -71,6 +103,47 @@ stages:
           beyondtrust.pra.owner: "{{parsed_event.message.data.owner}}"
           beyondtrust.pra.destination_type: "{{parsed_event.message.destination.type}}"
           beyondtrust.pra.destination_name: "{{parsed_event.message.destination.name}}"
+
+      - set:
+          beyondtrust.pra.request.id: "{{parsed_event.message.data.request_id}}"
+
+          beyondtrust.pra.jump_policy_name: "{{parsed_event.message.data.jump_policy_name}}"
+          beyondtrust.pra.jump_item_type: "{{parsed_event.message.data.jump_item_type}}"
+
+          beyondtrust.pra.push_agent_name: "{{parsed_event.message.data.push_agent_name}}"
+          beyondtrust.pra.jump_item_name: "{{parsed_event.message.data.jump_item_name}}"
+
+          beyondtrust.pra.request.start_time: "{{parsed_event.message.data.request_start_time | to_rfc3339}}"
+
+          beyondtrust.pra.request_reason: "{{parsed_event.message.data.request_reason}}"
+          beyondtrust.pra.approver_name: "{{parsed_event.message.data.approver_name}}"
+          beyondtrust.pra.request_approver: "{{parsed_event.message.data.request_approver}}"
+
+          beyondtrust.pra.approval_applies_to: "{{parsed_event.message.data.approval_applies_to}}"
+          beyondtrust.pra.approver_comments: "{{parsed_event.message.data.approver_comments}}"
+
+          source.user.id: "{{parsed_event.message.data.requesting_user_id}}"
+
+      - set:
+          source.user.email: "{{parse_requesting_user.message.requesting_email}}"
+          source.user.name: "{{parse_requesting_user.message.requesting_username}}"
+        filter: "{{parse_requesting_user.get('message') != None}}"
+
+      - set:
+          event.duration: "{{ parsed_event.message.data.request_duration.split(maxsplit=1) | first | int * 1_000_000}}"
+        filter: "{{ parsed_event.message.data.request_duration != null and 'second(s)' in parsed_event.message.data.request_duration}}"
+
+      - set:
+          event.duration: "{{ parsed_event.message.data.request_duration.split(maxsplit=1) | first | int * 60 * 1_000_000}}"
+        filter: "{{ parsed_event.message.data.request_duration != null and 'minute(s)' in parsed_event.message.data.request_duration}}"
+
+      - set:
+          event.duration: "{{ parsed_event.message.data.request_duration.split(maxsplit=1) | first | int * 60 * 60 * 1_000_000}}"
+        filter: "{{ parsed_event.message.data.request_duration != null and 'hour(s)' in parsed_event.message.data.request_duration}}"
+
+      - set:
+          event.duration: "{{ parsed_event.message.data.request_duration.split(maxsplit=1) | first | int * 24 * 60 * 60 * 1_000_000}}"
+        filter: "{{ parsed_event.message.data.request_duration != null and 'day(s)' in parsed_event.message.data.request_duration}}"
 
   set_category_and_type:
     actions:

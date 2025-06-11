@@ -134,7 +134,13 @@ stages:
             {
               {%- for property in json_event.message.OperationProperties -%}
                 {%- if property.Value | length > 0 -%}
-                  "{{property.Name}}": "{{property.Value | from_json or property.Value | e}}",
+                  {%- if property.Name == "RuleCondition" -%}
+                    "{{property.Name}}":"{{property.Value | e}}",
+                  {%- elif property.Value | from_json == None -%}
+                    "{{property.Name}}":"{{property.Value}}",
+                  {%- else -%}
+                    "{{property.Name}}": {{property.Value | from_json}},
+                  {%- endif -%}
                 {%- endif -%}
               {%- endfor -%}
             }
@@ -564,15 +570,29 @@ stages:
       - translate:
         dictionary:
           "UserLoggedIn": '["authentication"]'
+          "UserLoginFailed": '["authentication"]'
         mapping:
           event.action: event.category
         fallback: '["iam"]'
       - translate:
         dictionary:
           "UserLoggedIn": '["start"]'
+          "UserLoginFailed": '["start"]'
         mapping:
           event.action: event.type
         fallback: '["info"]'
+      - translate:
+        dictionary:
+          "UserLoggedIn": "success"
+          "UserLoginFailed": "failure"
+        mapping:
+          event.action: event.outcome
+      - translate:
+        dictionary:
+          "UserLoggedIn": "success"
+          "UserLoginFailed": "failure"
+        mapping:
+          event.action: action.outcome
 
       - set:
           event.category: ["iam"]
@@ -608,6 +628,7 @@ stages:
                 {% if json_event.message.get("UserAgent") != None %}"UserAgent": "{{json_event.message.UserAgent}}",{% endif %}
               }
             ]
+          office365.audit.item_type: "{{json_event.message.ItemType}}"
 
   parse_team:
     actions:
