@@ -1,0 +1,118 @@
+name: watchguard-epdr
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.security_event_date}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.security_event_date != None}}"
+
+  - name: parsed_rule_mitre
+    filter: "{{parsed_event.message.get('rule_mitre') != None and 'tactic' in parsed_event.message.rule_mitre}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.rule_mitre}}"
+        value_sep: ":"
+        item_sep: ","
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.date}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.date != None}}"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          event.dataset: "Security logs"
+          observer.vendor: "WatchGuard"
+          observer.product: "WatchGuard EPDR"
+          event.module: "watchguard.epdr"
+
+          event.reason: "{{parsed_event.message.network_attack}}"
+
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          file.hash.md5: "{{parsed_event.message.hash}}"
+
+          host.name: "{{parsed_event.message.host_name}}"
+          host.domain: "{{parsed_event.message.domain}}"
+          host.ip: "{{parsed_event.message.local_ip_address}}"
+          client.ip: "{{parsed_event.message.remote_ip_address}}"
+
+          cloud.account.id: "{{parsed_event.message.account_id}}"
+
+          user.name: "{{parsed_event.message.user_name}}"
+
+          source.ip: "{{parsed_event.message.source_ip}}"
+          source.user.name: "{{parsed_event.message.source_user}}"
+
+          threat.technique.name: "{{parsed_event.message.exploit_technique}}"
+          threat.indicator.confidence: "{{parsed_event.message.rule_risk}}"
+          threat.software.alias: "{{parsed_event.message.alias}}"
+
+          #          threat.tactic.id: "{{parsed_event.message.rule_mitre.tactic}}"
+          #          threat.technique.id: "{{parsed_event.message.rule_mitre.technique}}"
+
+          rule.id: "{{parsed_event.message.rule_id}}"
+          rule.name: "{{parsed_event.message.rule_name}}"
+
+          watchguard.epdr.malware.category: "{{parsed_event.message.malware_category}}"
+          watchguard.epdr.malware.type: "{{parsed_event.message.malware_type}}"
+          watchguard.epdr.site.id: "{{parsed_event.message.site_id}}"
+          watchguard.epdr.site.name: "{{parsed_event.message.site_name}}"
+
+      - set:
+          threat.tactic.id: "{{parsed_event.message.rule_mitre[0].tactic or parsed_rule_mitre.message.get('tactic')}}"
+          threat.technique.id: "{{parsed_event.message.rule_mitre[0].technique or parsed_rule_mitre.message.get('tactic')}}"
+        filter: "{{parsed_event.message.get('rule_mitre') != None}}"
+
+      # Device types based on
+      # https://www.watchguard.com/help/docs/API/Content/en-US/endpoint_security/WES_endpoint_security/v1/WES_endpoint_security.html#Retrieve_Security_Events_for_Devices_..184
+      - translate:
+        dictionary:
+          1: "Workstation"
+          2: "Laptop"
+          3: "Server"
+          4: "Mobile device"
+        mapping:
+          parsed_event.message.device_type: watchguard.epdr.device.type
+
+      - set:
+          file.path: "{{parsed_event.message.path.split('|')[-1]}}"
+        filter: "{{parsed_event.message.get('path') != None}}"
+
+      - set:
+          file.name: "{{parsed_event.message.item_name}}"
+        filter: "{{parsed_event.message.get('event_type') == 3}}"
+
+      - set:
+          watchguard.epdr.malware.name: "{{parsed_event.message.item_name}}"
+        filter: "{{parsed_event.message.get('event_type') != 3}}"
+
+      - set:
+          # TODO: Maybe we should map event type as well. Based on the docs:
+          # https://www.watchguard.com/help/docs/API/Content/en-US/endpoint_security/WES_endpoint_security/v1/WES_endpoint_security.html#Retrieve_Security_Events_for_Devices_..184
+          #  0 — Malware
+          #  1 — Exploit
+          #  2 — PUPs
+          #  3 — Blocked Item
+          #  6 — Lock Plus Advanced Security
+          #  7 — Lock Plus Application Control
+          #  8 — Application Control
+          #  10 — Network Attack Activity
+          event.type: "{{parsed_event.message.event_type}}"
+          event.category: "{{parsed_event.message.event_type}}"
