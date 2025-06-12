@@ -1,0 +1,46 @@
+name: vectra-cognito-saas-entities-scoring
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: "message"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Vectra"
+          observer.product: "Vectra Respond UX"
+
+          event.category: ["configuration"]
+          event.type: ["change"]
+          event.dataset: "entity_scoring"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.event_timestamp | to_rfc3339}}"
+          event.reference: "{{parsed_event.message.url}}"
+
+          vectra.entities_scoring.category: "{{parsed_event.message.category}}"
+          vectra.entities_scoring.type: "{{parsed_event.message.type}}"
+          vectra.entities_scoring.is_prioritized: "{{parsed_event.message.is_prioritized}}"
+          vectra.entities_scoring.importance: "{{parsed_event.message.importance}}"
+          vectra.entities_scoring.attack_rating: "{{parsed_event.message.attack_rating}}"
+          vectra.entities_scoring.last_detection.id: "{{parsed_event.message.last_detection.id}}"
+          vectra.entities_scoring.last_detection.type: "{{parsed_event.message.last_detection.type}}"
+          vectra.entities_scoring.last_detection.url: "{{parsed_event.message.last_detection.url}}"
+
+      - set:
+          user.name: "{{parsed_event.message.name}}"
+          user.risk.static_score: "{{parsed_event.message.urgency_score}}"
+          user.risk.static_level: "{{parsed_event.message.severity}}"
+        filter: "{{parsed_event.message.type == 'account'}}"
+
+      - set:
+          host.name: "{{parsed_event.message.name}}"
+          host.risk.static_score: "{{parsed_event.message.urgency_score}}"
+          host.risk.static_level: "{{parsed_event.message.severity}}"
+        filter: "{{parsed_event.message.type == 'host'}}"
