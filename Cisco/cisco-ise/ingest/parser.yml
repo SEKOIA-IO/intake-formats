@@ -6,59 +6,29 @@ pipeline:
       properties:
         input_field: original.message
         output_field: pre_message
-        pattern: "%{WITH_HEADER}|%{KV_MESSAGE}"
+        pattern: "%{KV_MESSAGE_WIDTH_DATETIME}|%{KV_MESSAGE}|%{WITH_HEADER}"
         custom_patterns:
-          WITH_HEADER: "%{NOT_KV_DATA:status}:%{GREEDYDATA:reason_with_kv}"
+          KV_MESSAGE_WIDTH_DATETIME: "%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER} %{WORD:severity}\\s+%{GREEDYDATA:reason_with_kv}"
           KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}\\s+%{GREEDYDATA:reason_with_kv}"
+          WITH_HEADER: "%{NOT_KV_DATA:status}:\\s+%{GREEDYDATA:reason_with_kv}"
+
           NOT_KV_DATA: "[^=]*?"
-
-  - name: grok_timestamp_in_status
-    filter: "{{pre_parsed_event.pre_message.status[0].isdigit()}}"
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{pre_parsed_event.pre_message.reason_with_kv}}"
-        output_field: time_message
-        pattern: "%{DATA:start_of_msg}: %{DATA:reason},%{GREEDYDATA:end_of_msg}"
-
-  - name: grok_event_outcome
-    filter: '{{ "MESSAGE" in grok_timestamp_in_status.time_message.end_of_msg and grok_timestamp_in_status.time_message.end_of_msg.count("=") == 1 }}'
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{grok_timestamp_in_status.time_message.end_of_msg}}"
-        output_field: event_outcome
-        pattern: " MESSAGE=%{DATA:outcome_msg},"
-
-  - name: grok_event_outcomes
-    filter: '{{ "MESSAGE" in grok_timestamp_in_status.time_message.end_of_msg and grok_timestamp_in_status.time_message.end_of_msg.count("=") > 1 }}'
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{grok_timestamp_in_status.time_message.end_of_msg}}"
-        output_field: event_outcomes
-        pattern: " MESSAGE=%{DATA:outcome_msg} threshold_space = %{DATA:threshold_space}, used_space = %{DATA:used_space},"
+          DATETIME: "%{YEAR}-%{MONTHNUM}-%{MONTHDAY}[T ]%{HOUR}:?%{MINUTE}(?::?%{SECOND})? %{ISO8601_TIMEZONE}"
 
   - name: parsed_event
-    filter: '{{":" in pre_parsed_event.pre_message.reason_with_kv}}'
     external:
       name: grok.match
       properties:
         input_field: "{{pre_parsed_event.pre_message.reason_with_kv}}"
         output_field: message
-        pattern: "%{DATA:reason}:%{GREEDYDATA:kv}"
-
-  - name: grok_conf
-    filter: '{{"Configuration" in parsed_event.message.reason and ":" in pre_parsed_event.pre_message.reason_with_kv}}'
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{parsed_event.message.reason.strip()}}"
-        output_field: conf_result
-        pattern: "Configuration %{WORD:change}"
+        pattern: "%{REASON_ONLY:reason}|(%{PRE_REASON:reason}(\\s+%{GREEDYDATA:kv})?)|%{GREEDYDATA:kv}"
+        custom_patterns:
+          PRE_REASON: "(%{NOT_KV_DATA}: %{NOT_KV_DATA:reason},)|(%{NOT_KV_DATA:reason}:)|(%{NOT_KV_DATA:reason},)"
+          REASON_ONLY: "%{NOT_KV_DATA}:: %{NOT_KV_DATA}"
+          NOT_KV_DATA: "[^=]*?"
 
   - name: parsed_kv_sentence
-    filter: '{{":" in pre_parsed_event.pre_message.reason_with_kv}}'
+    filter: '{{";" in parsed_event.message.kv and "Response={" not in parsed_event.message.kv}}'
     external:
       name: kv.parse-kv
       properties:
@@ -72,10 +42,10 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{pre_parsed_event.pre_message.reason_with_kv.strip()}}"
+        input_field: "{{parsed_event.message.kv.strip(' ,').replace(', ', ',')}}"
         output_field: result
         value_sep: "="
-        item_sep: ',\s'
+        item_sep: ","
 
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
@@ -83,8 +53,8 @@ pipeline:
       name: grok.match
       properties:
         input_field: '{{parsed_kv_sentence.result.get("NAS Identifier")}}'
-        output_field: adress_mac
-        pattern: "%{MAC:adress}:%{GREEDYDATA:word}"
+        output_field: address_mac
+        pattern: "%{MAC:address}:%{GREEDYDATA:word}"
 
   - name: set_ecs_fields
   - name: set_configuration_fields
@@ -109,27 +79,42 @@ stages:
           event.type: ["change"]
           cisco.ise.config_object.name: '{{parsed_kv_sentence.result.get("Object Name")}}'
           cisco.ise.config_object.type: '{{parsed_kv_sentence.result.get("Object Type")}}'
-          cisco.ise.config_action: "{{grok_conf.conf_result.change}}"
+          cisco.ise.config_action: '{{parsed_event.message.get("reason").split() | last}}'
         filter: '{{"Configuration" in parsed_event.message.reason }}'
 
   set_network_fields:
     actions:
       - set:
           event.category: ["network"]
-          event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason")}}'
+          event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason") or parsed_event.message.get("reason").strip()}}'
           cisco.ise.network_calling_station.id: '{{parsed_kv_sentence.result.get("Error Message")}}'
           user.name: '{{parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("Calling Station Id") or parsed_kv_sentence.result.get("UserName")}}'
           source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
-          source.mac: "{{grok_mac.adress_mac.adress}}"
-          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAS-IP-Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address")}}'
+          source.ip: '{{parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAS-IP-Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address") or parsed_kv_sentence.result.get("EndpointIPAddress")}}'
           destination.ip: '{{parsed_kv_sentence.result.get("DestinationIPAddress")}}'
           destination.port: '{{parsed_kv_sentence.result.get("DestinationPort")}}'
           network.protocol: '{{parsed_kv_sentence.result.get("Protocol")}}'
         filter: '{{"Configuration" not in parsed_event.message.reason }}'
 
       - set:
+          destination.domain: "{{parsed_kv_sentence.result.get('PeerName', '').replace('CN=', '') }}"
+        filter: "{{parsed_kv_sentence.result.get('PeerName') != None}}"
+
+      - set:
+          source.mac: "{{grok_mac.address_mac.address | to_mac_address}}"
+        filter: '{{grok_mac != None and grok_mac.get("address_mac", {}).get("address") != None}}'
+
+      - set:
+          source.mac: '{{parsed_kv_sentence.result.get("EndpointMacAddress") | to_mac_address}}'
+        filter: '{{parsed_kv_sentence.result.get("EndpointMacAddress") != None}}'
+
+      - set:
           destination.mac: '{{parsed_kv_sentence.result["Called-Station-ID"] | to_mac_address}}'
         filter: '{{parsed_kv_sentence.result.get("Called-Station-ID") != None }}'
+
+      - set:
+          destination.mac: '{{parsed_kv_sentence.result["PeerAddress"] | to_mac_address  }}'
+        filter: '{{parsed_kv_sentence.result.get("PeerAddress") != None}}'
 
       - set:
           source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
@@ -150,6 +135,9 @@ stages:
   set_miscellaneous_fields:
     actions:
       - set:
+          event.reason: "{{parsed_event.message.reason.strip()}}"
+
+      - set:
           event.reason: "{{parsed_kv_sentence.result.FailureReason}}"
 
       - set:
@@ -165,6 +153,12 @@ stages:
         filter: '{{parsed_kv_sentence.result.get("EapChainingResult") != None}}'
 
       - set:
+          event.category: ["authentication"]
+          user.name: "{{parsed_kv_sentence.result.get('AD-Account-Name')}}"
+          user.domain: "{{parsed_kv_sentence.result.get('AD-Domain')}}"
+        filter: "{{parsed_kv_sentence.result.get('AD-Log-Id') != None}}"
+
+      - set:
           event.category: ["network"]
           event.reason: "{{parsed_kv_sentence.result.get('Response')}}"
         filter: "{{parsed_kv_sentence.result.get('Response') != None}}"
@@ -176,13 +170,24 @@ stages:
         filter: '{{"Authentication" in parsed_kv_sentence.result.get("AuthenticationStatus")}}'
 
       - set:
-          event.reason: "{{grok_timestamp_in_status.time_message.reason}}"
-        filter: "{{pre_parsed_event.pre_message.status[0].isdigit()}}"
+          event.category: ["authentication"]
+        filter: '{{parsed_kv_sentence.result.get("AuthenticationMethod") != None}}'
+
+      - set:
+          event.category: ["authentication"]
+        filter: '{{parsed_kv_sentence.result.get("AKI") != None}}'
 
       - set:
           cisco.ise.event.outcome: "success"
-        filter: "{{pre_parsed_event.pre_message.status[0].isdigit() and ('success' in grok_event_outcome.event_outcome.outcome_msg or 'success' in grok_event_outcomes.event_outcomes.outcome_msg)}}"
+        filter: "{{'success' in parsed_kv_sentence.result.get('MESSAGE', '')}}"
 
       - set:
           cisco.ise.event.outcome: "failure"
-        filter: "{{pre_parsed_event.pre_message.status[0].isdigit() and ('fail' in grok_event_outcome.event_outcome.outcome_msg or 'fail' in grok_event_outcomes.event_outcomes.outcome_msg)}}"
+        filter: "{{'failure' in parsed_kv_sentence.result.get('MESSAGE', '')}}"
+
+      - set:
+          cisco.ise.dhcp.message_type: "{{parsed_kv_sentence.result.get('dhcp-message-type')}}"
+          cisco.ise.dhcp.requested_address: "{{parsed_kv_sentence.result.get('dhcp-requested-address')}}"
+          rule.id: "{{parsed_kv_sentence.result.get('EndPointPolicyID')}}"
+          rule.name: "{{parsed_kv_sentence.result.get('EndpointPolicy')}}"
+          host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System')}}"
