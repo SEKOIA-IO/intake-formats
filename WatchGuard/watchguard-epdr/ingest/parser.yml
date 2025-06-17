@@ -67,6 +67,8 @@ stages:
           #          threat.tactic.id: "{{parsed_event.message.rule_mitre.tactic}}"
           #          threat.technique.id: "{{parsed_event.message.rule_mitre.technique}}"
 
+          device.id: "{{parsed_event.message.device_id}}"
+
           rule.id: "{{parsed_event.message.rule_id}}"
           rule.name: "{{parsed_event.message.rule_name}}"
 
@@ -92,8 +94,13 @@ stages:
           parsed_event.message.device_type: watchguard.epdr.device.type
 
       - set:
+          file.path: "{{parsed_event.message.path}}"
+        filter: "{{'|' not in parsed_event.message.get('path')}}"
+
+      - set:
           file.path: "{{parsed_event.message.path.split('|')[-1]}}"
-        filter: "{{parsed_event.message.get('path') != None}}"
+          watchguard.epdr.file.root: "{{parsed_event.message.path.split('|')[1] if parsed_event.message.path.split('|') | length > 2 else parsed_event.message.path.split('|')[0]}}"
+        filter: "{{'|' in parsed_event.message.get('path')}}"
 
       - set:
           file.name: "{{parsed_event.message.item_name}}"
@@ -104,15 +111,38 @@ stages:
         filter: "{{parsed_event.message.get('event_type') != 3}}"
 
       - set:
-          # TODO: Maybe we should map event type as well. Based on the docs:
-          # https://www.watchguard.com/help/docs/API/Content/en-US/endpoint_security/WES_endpoint_security/v1/WES_endpoint_security.html#Retrieve_Security_Events_for_Devices_..184
-          #  0 — Malware
-          #  1 — Exploit
-          #  2 — PUPs
-          #  3 — Blocked Item
-          #  6 — Lock Plus Advanced Security
-          #  7 — Lock Plus Application Control
-          #  8 — Application Control
-          #  10 — Network Attack Activity
-          event.type: "{{parsed_event.message.event_type}}"
-          event.category: "{{parsed_event.message.event_type}}"
+          event.category: ["malware"]
+          event.type: ["info"]
+          watchguard.epdr.event.type: "{{parsed_event.message.event_type}}"
+
+      # https://www.watchguard.com/help/docs/API/Content/en-US/endpoint_security/WES_endpoint_security/v1/WES_endpoint_security.html#Retrieve_Security_Events_for_Devices_..184
+      #  0 — Malware
+      #  1 — Exploit
+      #  2 — PUPs
+      #  3 — Blocked Item
+      #  6 — Lock Plus Advanced Security
+      #  7 — Lock Plus Application Control
+      #  8 — Application Control
+      #  10 — Network Attack Activity
+      - translate:
+        dictionary:
+          0: "Malware"
+          1: "Exploit"
+          2: "PUPs"
+          3: "Blocked Item"
+          6: "Lock Plus Advanced Security"
+          7: "Lock Plus Application Control"
+          8: "Application Control"
+          10: "Network Attack Activity"
+        mapping:
+          final.watchguard.epdr.event.type: watchguard.epdr.event.name
+
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+        filter: "{{parsed_event.message.event_type == 10}}"
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["denied"]
+        filter: "{{parsed_event.message.event_type == 3}}"
