@@ -1,12 +1,14 @@
 name: aruba-os
 pipeline:
-
   - name: parsed_leef_event
     external:
-      name: leef.parse-leef
+      name: kv.parse-kv
       properties:
-        input_field: "{{original.message.replace(' ', '\t')}}"
-    filter: '{{original.message.startswith("LEEF")}}'
+        input_field: "'|'.join(original.message.split('|')[5:])"
+        value_sep: "="
+        output_field: message
+        groups: true
+    filter: '{{"LEEF:" in original.message}}'
 
   - name: parsed_leef_date
     external:
@@ -14,7 +16,7 @@ pipeline:
       properties:
         input_field: "{{parsed_leef_event.message.devTime}}"
         output_field: date
-    filter: '{{parsed_leef_event.message.devTime != None}}'
+    filter: "{{parsed_leef_event.message.devTime != None}}"
 
   - name: parse_message
     external:
@@ -25,6 +27,7 @@ pipeline:
           CLI: 'cli\[%{NUMBER}\]: <%{NUMBER:code}> <%{WORD}> %{DATA} <%{IP:src_ip} %{MAC:src_mac}>\s*%{GREEDYDATA:syslog_payload}'
           SYSLOG: '<%{NUMBER:code}> <%{NUMBER}> (<%{WORD}> )?<%{WORD} %{IP:src_ip}>\s*(%{WORD}:\s*)?\s*%{GREEDYDATA:syslog_payload}'
           DEFAULT: '%{DATA:prefix}\:\s*%{USERNAME:obs}\s*\:\s*%{GREEDYDATA:payload}\s*'
+    filter: '{{"LEEF:" not in original.message}}'
 
   - name: parse_syslog_message
     external:
@@ -125,7 +128,6 @@ pipeline:
 
   - name: set_leef_fields
     filter: '{{original.message.startswith("LEEF")}}'
-
 
 stages:
   set_syslog_fields:
@@ -248,9 +250,15 @@ stages:
   set_leef_fields:
     actions:
       - set:
-          event.dataset: "aruba_os"
-          event.category: ["network"]
-          event.type: ["info"]
-          event.reason: "{{ parsed_leef_event.message.description.replace('\t',' ') }}"
+          aruba.os.component: "{{ parsed_leef_event.message.get('component') }}"
+          event.action: "{{ parsed_leef_event.message.get('action') }}"
+          event.dataset: "{{ parsed_leef_event.message.cat }}"
+          event.category:
+            [
+              "{{parsed_leef_event.message.get('sub-cat')|lower|default('network')}}",
+            ]
+          event.type:
+            ["{{parsed_leef_event.message.get('level')|lower|default('info')}}"]
+          event.reason: "{{ parsed_leef_event.message.description }}"
           "@timestamp": "{{ parsed_leef_date.date }}"
           source.ip: "{{ parsed_leef_event.message.src }}"
