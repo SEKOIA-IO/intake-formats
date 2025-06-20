@@ -703,6 +703,7 @@ pipeline:
   - name: set_ecs_deviceInboundInterface
     filter: '{{parsed_event.message.get("deviceInboundInterface") != None}}'
   - name: set_action_outcome
+  - name: set_event_outcome
   - name: set_csv_severity
 
 stages:
@@ -732,6 +733,32 @@ stages:
       - set:
           action.outcome: "{{parsed_event.message.Status or parsed_event.message.PanOSEventStatus}}"
         filter: "{{parsed_event.message.Status != None or parsed_event.message.PanOSEventStatus != None}}"
+
+  set_event_outcome:
+    actions:
+      - set:
+          event.outcome: "failure"
+        filter: "{{ 'failed authentication' in parsed_event.message.EventDescription }}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{ 'authenticated for user' in parsed_event.message.EventDescription }}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parsed_event.message.EventID == 'auth-success' and 'failed' not in parsed_event.message.EventDescription}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parsed_event.message.Type == 'USERID' and parsed_event.message.Subtype in ('login', 'logout')}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parsed_event.message.DeviceEventClassID == 'USERID' and parsed_event.message.Name in ('login', 'logout')}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{'Invalid' in parsed_event.message.msg}}"
 
   set_extracted_fields:
     actions:
