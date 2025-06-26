@@ -18,6 +18,13 @@ pipeline:
         output_field: event
     filter: '{{original.message.startswith(":{") == False}}'
 
+  - name: parsed_event_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json.event.EventTime}}"
+        output_field: datetime
+
   - name: parsed_message_kv
     description: "Extract fields from Message field"
     filter: "{{json.event.Message != null and '<?xml' not in json.event.Message}}"
@@ -174,6 +181,7 @@ pipeline:
   - name: process_ids
   - name: set_source_fields
   - name: action_outcome
+  - name: event_outcome
   - name: set_dll
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Sysmon' and json.event.EventID == 7}}"
   - name: hashes
@@ -310,7 +318,7 @@ stages:
     actions:
       - name: set
         set:
-          "@timestamp": "{{json.event.UtcTime}}"
+          "@timestamp": "{{json.event.UtcTime or parsed_event_time.datetime}}"
           file.name: "{{json.event.name}}"
           process.command_line: "{{json.event.CommandLine}}"
           process.parent.command_line: "{{json.event.ParentCommandLine}}"
@@ -1130,6 +1138,15 @@ stages:
       - set:
           action.outcome: "failure"
         filter: "{{json.event.EventType == 'AUDIT_FAILURE' }}"
+
+  event_outcome:
+    actions:
+      - set:
+          event.outcome: "success"
+        filter: "{{json.event.EventID | int == 4624}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{json.event.EventID | int == 4625}}"
 
   set_source_fields:
     actions:
