@@ -9,27 +9,28 @@ pipeline:
         output_field: message
         pattern_key: "{{original.get('log', {}).get('syslog', {}).get('appname') or '-'}}"
         patterns:
-          "postfix/smtp": "%{POSTFIX_SMTP}"
-          "postfix/smtpd": "%{CASE_POSTFIX_SMTPD}"
-          "postfix/cleanup": "%{CASE_POSTFIX_CLEANUP}"
-          "postfix/scache": "%{POSTFIX_SCACHE}"
-          "policyd-spf": "%{POSTFIX_POLCY_SPF}"
-          "postfix/qmgr": "%{POSTFIX_QMGR}"
-          "postfix-nospam/smtpd": "%{POSTFIX_SMTPD}"
-          "postfix-nospam/cleanup": "%{CASE_POSTFIX_CLEANUP}"
-          "postfix-nospam/smtp": "%{POSTFIX_SMTP}"
-          "postfix-nospam/qmgr": "%{POSTFIX_QMGR}"
-          "postfix/pipe": "%{CASE_POSTFIX_LOCAL}"
-          "spamd": "%{SPAMD}"
-          "postgrey": "%{POSTFIX_POSTGREY}"
-          "postfix/local": "%{CASE_POSTFIX_LOCAL}"
-          "postfix/error": "%{POSTFIX_DISCARD}"
-          "postfix/anvil": "%{POSTFIX_ANVIL}"
-          "postfix/pickup": "%{POSTFIX_PICKUP}"
-          "postfix": "%{POSTFIX}"
-          "-": "%{POSTFIX_POSTGREY}|%{POSTFIX}|%{SPAMD}|%{POSTFIX_POLCY_SPF}|%{POSTFIX_CLEANUP}|%{POSTFIX_QMGR}|%{POSTFIX_SMTPD}"
+          "postfix/smtp": "%{SYSLOGHEADER}?%{POSTFIX_SMTP}"
+          "postfix/smtpd": "%{SYSLOGHEADER}?%{CASE_POSTFIX_SMTPD}"
+          "postfix/cleanup": "%{SYSLOGHEADER}?%{CASE_POSTFIX_CLEANUP}"
+          "postfix/scache": "%{SYSLOGHEADER}?%{POSTFIX_SCACHE}"
+          "policyd-spf": "%{SYSLOGHEADER}?%{POSTFIX_POLCY_SPF}"
+          "postfix/qmgr": "%{SYSLOGHEADER}?%{POSTFIX_QMGR}"
+          "postfix-nospam/smtpd": "%{SYSLOGHEADER}?%{POSTFIX_SMTPD}"
+          "postfix-nospam/cleanup": "%{SYSLOGHEADER}?%{CASE_POSTFIX_CLEANUP}"
+          "postfix-nospam/smtp": "%{SYSLOGHEADER}?%{POSTFIX_SMTP}"
+          "postfix-nospam/qmgr": "%{SYSLOGHEADER}?%{POSTFIX_QMGR}"
+          "postfix/pipe": "%{SYSLOGHEADER}?%{CASE_POSTFIX_LOCAL}"
+          "spamd": "%{SYSLOGHEADER}?%{SPAMD}"
+          "postgrey": "%{SYSLOGHEADER}?%{POSTFIX_POSTGREY}"
+          "postfix/local": "%{SYSLOGHEADER}?%{CASE_POSTFIX_LOCAL}"
+          "postfix/error": "%{SYSLOGHEADER}?%{POSTFIX_DISCARD}"
+          "postfix/anvil": "%{SYSLOGHEADER}?%{POSTFIX_ANVIL}"
+          "postfix/pickup": "%{SYSLOGHEADER}?%{POSTFIX_PICKUP}"
+          "postfix": "%{SYSLOGHEADER}?%{POSTFIX}"
+          "-": "%{SYSLOGHEADER}?(%{POSTFIX_POSTGREY}|%{POSTFIX}|%{SPAMD}|%{POSTFIX_POLCY_SPF}|%{POSTFIX_CLEANUP}|%{POSTFIX_QMGR}|%{POSTFIX_SMTPD})"
 
         custom_patterns:
+          SYSLOGHEADER: "%{TIMESTAMP_ISO8601:timestamp} %{DATA:syslog_host} %{DATA:appname}(\\[%{INT:syslog_pid}\\])?: "
           CASE_POSTFIX_LOCAL: "%{POSTFIX_SMTP_RELAY}|%{POSTFIX_KEYVALUE}|%{POSTFIX_WARNING}"
           CASE_POSTFIX_CLEANUP: "%{POSTFIX_CLEANUP_MILTER}|%{POSTFIX_WARNING}|%{POSTFIX_KEYVALUE}|%{POSTFIX_REPLACE_HEADER}"
           CASE_POSTFIX_SMTPD: "%{POSTFIX_SMTPD}|%{POSTFIX_WARNING}"
@@ -119,7 +120,7 @@ pipeline:
           POSTFIX_PIPE: '%{POSTFIX_QUEUEID}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}, status=%{STATUS_WORD} \(%{GREEDYDATA:postfix_pipe_response}\)'
 
           POSTFIX_POSTSCREEN: "%{POSTFIX_PS_CONNECT}|%{POSTFIX_PS_ACCESS}|%{POSTFIX_PS_NOQUEUE}|%{NOQUEUE_FALLBACK}|%{POSTFIX_PS_TOOBUSY}|%{POSTFIX_PS_CACHE}|%{POSTFIX_PS_DNSBL}|%{POSTFIX_PS_VIOLATIONS}"
-          POSTFIX_PS_CONNECT: 'connect from %{POSTFIX_CLIENT_INFO} to \[%{IP:destination_ip}\]:%{INT:destination_port}'
+          POSTFIX_PS_CONNECT: '(connect|CONNECT) from %{POSTFIX_CLIENT_INFO} to \[%{IP:destination_ip}\]:%{INT:destination_port}'
           POSTFIX_PS_ACCESS: "%{POSTFIX_PS_ACCESS_ACTION:postfix_postscreen_access} %{POSTFIX_CLIENT_INFO}"
           POSTFIX_PS_ACCESS_ACTION: "((DIS)?CONNECT|(dis)?connect|BLACKLISTED|WHITELISTED|WHITELIST VETO|PASS NEW|PASS OLD)"
           POSTFIX_PS_NOQUEUE: "%{POSTFIX_SMTPD_NOQUEUE}"
@@ -394,6 +395,10 @@ stages:
         filter: '{{ not event.message.destination_address | is_ipaddress and event.message.destination_address | re_match("^(?:[0-9A-Za-z][0-9A-Za-z-]{0,62})(?:\.(?:[0-9A-Za-z][0-9A-Za-z-]{0,62}))*(\.?)$")}}'
 
       # Use specific fields whenever available
+      - set:
+          "@timestamp": "{{event.message.timestamp}}"
+        filter: "{{event.message.timestamp != None}}"
+
       - set:
           source.ip: "{{event.message.source_ip}}"
         filter: "{{event.message.source_ip | is_ipaddress}}"
