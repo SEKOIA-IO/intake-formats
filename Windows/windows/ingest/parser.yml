@@ -170,6 +170,18 @@ pipeline:
         pattern: >-
           (%{GREEDYDATA}Accesses:%{DATA:Accesses}#NEWLINE#\t\t\t\t#NEWLINE#%{GREEDYDATA})
 
+  - name: parse_event_2946
+    filter: "{{json.event.Message != null and 'CN' in json.event.Message}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: '{{json.event.Message.replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: event
+        pattern: >-
+          %{GREEDYDATA} #NEWLINE#CN=%{USER:target}%{GREEDYDATA}Caller IP: #NEWLINE#%{IP:ip}:%{INT:port}
+
+
   - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
@@ -191,6 +203,8 @@ pipeline:
   - name: dns_fields
   - name: action_target
   - name: destination
+  - name: set_event_2946
+    filter: "{{json.event.get('EventID') == 2946 and json.event.Message != null}}"
   - name: set_network_policy_fields
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [6272, 6273, 6274, 6275, 6276, 6277, 6278, 6279, 6280]}}"
   - name: rule
@@ -255,6 +269,13 @@ stages:
           file.name: '{{json.event.Message.split(" ")[0].split("\\")[-1]}}'
           file.path: "{{json.event.Message.split(' ')[0]}}"
         filter: "{{json.event.EventID in (8002, 8005)}}"
+
+  set_event_2946:
+    actions:
+      - set:
+          user.target.name: "{{parse_event_2946.event.target}}"
+          source.ip: "{{parse_event_2946.event.ip}}"
+          source.port: "{{parse_event_2946.event.port}}"
 
   finalize:
     actions:
