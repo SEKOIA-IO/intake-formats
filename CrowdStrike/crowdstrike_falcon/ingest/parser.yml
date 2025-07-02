@@ -84,9 +84,6 @@ pipeline:
   - name: scheduler_report_notification_event
     filter: '{{parsed_event.message.metadata.eventType == "ScheduledReportNotificationEvent"}}'
 
-  - name: api_activity_audit_event
-    filter: '{{parsed_event.message.metadata.eventType == "APIActivityAuditEvent"}}'
-
 stages:
   set_common_fields:
     actions:
@@ -129,7 +126,7 @@ stages:
           process.name: "{{parsed_event.message.event.FileName}}"
           process.working_directory: "{{parsed_event.message.event.FilePath}}"
           crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
-          crowdstrike.pattern.id: "{{ parsed_event.message.event.PatternId }}"
+          crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
           crowdstrike.pattern.disposition_flags: "{{ parsed_event.message.event.PatternDispositionFlags }}"
           crowdstrike.pattern.disposition_value: "{{ parsed_event.message.event.PatternDispositionValue }}"
           crowdstrike.process.grandparent.executable: "{{parsed_event.message.event.GrandparentImageFileName}}"
@@ -327,7 +324,7 @@ stages:
           crowdstrike.detect_description: "{{ parsed_event.message.event.DetectDescription }}"
           crowdstrike.detect_name: "{{ parsed_event.message.event.DetectName }}"
           crowdstrike.idp_policy_rule_trigger: "{{ parsed_event.message.event.IdpPolicyRuleTrigger }}"
-          crowdstrike.pattern.id: "{{ parsed_event.message.event.PatternId }}"
+          crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
           crowdstrike.previous_privileges: "{{ parsed_event.message.event.PreviousPrivileges }}"
           destination.domain: "{{ parsed_event.message.event.TargetEndpointHostName }}"
           event.end: "{{ parse_event_end_date.datetime }}"
@@ -703,36 +700,3 @@ stages:
           user.id: "{{parsed_event.message.event.UserUUID}}"
           user.name: "{{parsed_event.message.event.UserID}}"
           file.name: "{{parsed_event.message.event.ExecutionMetadata.ReportFileName}}"
-
-  api_activity_audit_event:
-    actions:
-      - set:
-          crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
-          crowdstrike.customer_id: "{{parsed_event.message.event.Attributes.cid}}"
-          event.category: ["api"]
-          http.request.method: "{{parsed_event.message.event.Attributes.request_method}}"
-          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes}}"
-          http.response.status_code: "{{parsed_event.message.event.Attributes.status_code}}"
-          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces}}"
-          service.name: "{{parsed_event.message.event.ServiceName}}"
-          trace.id: "{{parsed_event.message.event.Attributes.trace_id}}"
-          url.query: "{{parsed_event.message.event.Attributes.request_query}}"
-          url.path: "{{parsed_event.message.event.Attributes.request_path}}"
-          user_agent.original: "{{parsed_event.message.event.Attributes.user_agent}}"
-      - set:
-          event.outcome: >
-            {%- if parsed_event.message.event.Success -%}
-              success
-            {%- else -%}
-              failure
-            {%- endif -%}
-        filter: '{{parsed_event.message.event.get("OperationName") == "logged"}}'
-      - set:
-          source.ip: "{{parsed_event.message.event.UserIp}}"
-        filter: "{{parsed_event.message.event.UserIp | is_ipaddress}}"
-      - translate:
-        dictionary:
-          "logged": ["access"]
-        mapping:
-          crowdstrike.operation_name: event.type
-        fallback: ["info"]
