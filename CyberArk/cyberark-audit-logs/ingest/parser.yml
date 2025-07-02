@@ -6,10 +6,30 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+    filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  - name: extract_leef
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{HEADER}?(?P<leef>LEEF.*)"
+        custom_patterns:
+          HEADER: '<%{NUMBER}>%{DATESTAMP:datestamp}\s+%{DATA:hostname}'
+          DATESTAMP: '%{MONTH}\s+%{MONTHDAY}\s+%{TIME}'
+
+  - name: parsed_event
+    external:
+      name: leef.parse-leef
+      properties:
+        input_field: "{{extract_leef.message.leef.replace(' shost', 'shost')}}"
+    filter: "{{extract_leef.message.get('leef') != None}}"
 
   - name: set_category_fields
   - name: set_common_fields
   - name: set_specific_fields
+  - name: set_leef_fields
 
 stages:
   set_category_fields:
@@ -42,7 +62,17 @@ stages:
           event.category: ["authentication"]
           event.type: ["start"]
           event.outcome: "success"
-        filter: "{{parsed_event.message.auditCode in ('IDP2009', )}}"
+        filter: "{{parsed_event.message.auditCode in ('IDP2009', ) or parsed_event.message.Action == 'Logon'}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{'file' in parsed_event.message.Action.lower()}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: "{{'connection' in parsed_event.message.Action.lower()}}"
 
   set_common_fields:
     actions:
@@ -129,3 +159,22 @@ stages:
       - set:
           user.target.email: "{{parsed_event.message.customData.user_name}}"
         filter: "{{parsed_event.message.customData.user_name | length > 0 and  '@' in parsed_event.message.customData.user_name}}"
+
+  set_leef_fields:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
+      - set:
+          "@timestamp": "{{extract_leef.message.datestamp | to_rfc3339}}"
+          event.action: "{{parsed_event.message.Action}}"
+
+          user.name: "{{parsed_event.message.usrName}}"
+          source.user.name: "{{parsed_event.message.duser}}"
+          target.user.name: "{{parsed_event.message.TargetUser}}"
+
+          source.address: "{{parsed_event.message.shost}}"
+          destination.address: "{{parsed_event.message.dhost}}"
+
+          file.name: "{{parsed_event.message.File}}"
