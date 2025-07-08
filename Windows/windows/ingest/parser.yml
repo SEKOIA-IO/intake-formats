@@ -18,6 +18,13 @@ pipeline:
         output_field: event
     filter: '{{original.message.startswith(":{") == False}}'
 
+  - name: parsed_event_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json.event.EventTime}}"
+        output_field: datetime
+
   - name: parsed_message_kv
     description: "Extract fields from Message field"
     filter: "{{json.event.Message != null and '<?xml' not in json.event.Message}}"
@@ -163,6 +170,17 @@ pipeline:
         pattern: >-
           (%{GREEDYDATA}Accesses:%{DATA:Accesses}#NEWLINE#\t\t\t\t#NEWLINE#%{GREEDYDATA})
 
+  - name: parse_event_2946
+    filter: "{{json.event.Message != null and 'CN' in json.event.Message}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: '{{json.event.Message.replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: event
+        pattern: >-
+          %{GREEDYDATA} #NEWLINE#CN=%{USER:target}%{GREEDYDATA}Caller IP: #NEWLINE#%{IP:ip}:%{INT:port}
+
   - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
@@ -174,6 +192,7 @@ pipeline:
   - name: process_ids
   - name: set_source_fields
   - name: action_outcome
+  - name: event_outcome
   - name: set_dll
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Sysmon' and json.event.EventID == 7}}"
   - name: hashes
@@ -183,6 +202,8 @@ pipeline:
   - name: dns_fields
   - name: action_target
   - name: destination
+  - name: set_event_2946
+    filter: "{{json.event.get('EventID') == 2946 and json.event.Message != null}}"
   - name: set_network_policy_fields
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [6272, 6273, 6274, 6275, 6276, 6277, 6278, 6279, 6280]}}"
   - name: rule
@@ -248,6 +269,19 @@ stages:
           file.path: "{{json.event.Message.split(' ')[0]}}"
         filter: "{{json.event.EventID in (8002, 8005)}}"
 
+  set_event_2946:
+    actions:
+      - set:
+          user.target.name: "{{parse_event_2946.event.target}}"
+
+      - set:
+          source.port: "{{parse_event_2946.event.port}}"
+        filter: "{{parse_event_2946.event.port != null}}"
+
+      - set:
+          source.ip: "{{parse_event_2946.event.ip}}"
+        filter: "{{parse_event_2946.event.ip | is_ipaddress}}"
+
   finalize:
     actions:
       - set:
@@ -310,7 +344,7 @@ stages:
     actions:
       - name: set
         set:
-          "@timestamp": "{{json.event.UtcTime}}"
+          "@timestamp": "{{json.event.UtcTime or parsed_event_time.datetime}}"
           file.name: "{{json.event.name}}"
           process.command_line: "{{json.event.CommandLine}}"
           process.parent.command_line: "{{json.event.ParentCommandLine}}"
@@ -326,7 +360,6 @@ stages:
           file.created: "{{json.event.CreationUtcTime}}"
           file.owner: "{{json.event.jobOwner}}"
           log.hostname: "{{json.event.Hostname}}"
-          host.hostname: "{{json.event.Hostname}}"
           log.level: "{{json.event.Severity}}"
           network.transport: "{{json.event.Protocol}}"
           os.family: "windows"
@@ -345,6 +378,8 @@ stages:
           user.target.name: "{{json.event.TargetUserName}}"
           user.target.domain: "{{json.event.TargetDomainName}}"
           user.target.id: "{{json.event.TargetUserSid}}"
+          host.name: "{{json.event.Hostname}}"
+          host.hostname: "{{json.event.Hostname.split('.') | first}}"
 
       - set:
           package.name: "{{json.event.LmPackageName.split()|first}}"
@@ -1130,6 +1165,15 @@ stages:
       - set:
           action.outcome: "failure"
         filter: "{{json.event.EventType == 'AUDIT_FAILURE' }}"
+
+  event_outcome:
+    actions:
+      - set:
+          event.outcome: "success"
+        filter: "{{json.event.EventID | int == 4624}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{json.event.EventID | int == 4625}}"
 
   set_source_fields:
     actions:

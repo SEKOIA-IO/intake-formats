@@ -26,7 +26,7 @@ pipeline:
         input_field: "{{json_event.message.properties.LoggedOnUsers}}"
         output_field: "users"
   - name: parse_additional_fields
-    filter: '{{json_event.message.get("category") in ["AdvancedHunting-AlertEvidence","AdvancedHunting-DeviceNetworkEvents"] and json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
+    filter: '{{json_event.message.get("category") in ["AdvancedHunting-AlertEvidence","AdvancedHunting-DeviceNetworkEvents","AdvancedHunting-DeviceProcessEvents"] and json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
     external:
       name: json.parse-json
       properties:
@@ -338,6 +338,24 @@ stages:
       - set:
           process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
         filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      # DeviceProcessEvents don't have a field that indicates the OS type.
+      # The 3 conditions below are heuristics based on slight differences in which fields are set or not depending on the OS.
+      # - `AdditionalFields.InitiatingProcessPosixSessionId` is only set on Linux and macOS
+      # - `AccountSid` is only set on Windows and macOS
+      # - `InitiatingProcessUniqueId` is only set on Windows
+
+      - set:
+          host.os.type: "linux"
+        filter: '{{parse_additional_fields.fields.InitiatingProcessPosixSessionId != null and json_event.message.properties.get("AccountSid") == None}}'
+
+      - set:
+          host.os.type: "macos"
+        filter: '{{parse_additional_fields.fields.InitiatingProcessPosixSessionId != null and json_event.message.properties.get("AccountSid") | length > 1}}'
+
+      - set:
+          host.os.type: "windows"
+        filter: '{{json_event.message.properties.get("InitiatingProcessUniqueId") | length > 1}}'
 
   set_alert_evidence_fields:
     actions:
