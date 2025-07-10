@@ -11,13 +11,13 @@ pipeline:
         pattern: "(%{MODSECAPACHEERROR}|%{HTTPD24_ERRORLOG}|%{HTTPD20_ERRORLOG}|%{HTTPD_COMBINEDLOG}|%{HTTPD_COMMONLOG})"
         custom_patterns:
           # HTTPD standard logs
-          HTTPD20_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{LOGLEVEL:action_name}\] (?:\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?\] ){0,1}%{GREEDYDATA:action_outcome_reason}'
-          HTTPD24_ERRORLOG: '\[%{HTTPDERROR_DATE}\] \[%{WORD}?:%{LOGLEVEL:action_name}\] \[pid %{POSINT:process_id}(:tid %{NUMBER:process_thread_id})?\]( \(%{POSINT}\)%{DATA}:)?( \[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{POSINT:source_port})?\])?( %{DATA}:)? %{GREEDYDATA:action_outcome_reason}'
+          HTTPD20_ERRORLOG: '\[%{HTTPDERROR_DATE:error_timestamp}\] \[%{LOGLEVEL:action_name}\] (?:\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?\] ){0,1}%{GREEDYDATA:action_outcome_reason}'
+          HTTPD24_ERRORLOG: '\[%{HTTPDERROR_DATE:error_timestamp}\] \[%{WORD}?:%{LOGLEVEL:action_name}\] \[pid %{POSINT:process_id}(:tid %{NUMBER:process_thread_id})?\]( \(%{POSINT}\)%{DATA}:)?( \[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{POSINT:source_port})?\])?( %{DATA}:)? %{GREEDYDATA:action_outcome_reason}'
           HTTPD_COMBINEDLOG: '%{HTTPD_COMMONLOG} "%{DATA:http_request_referrer}" "%{DATA:user_agent_original}"'
           HTTPD_COMMONLOG: >-
             ((%{IPORHOST:destination_address}(:%{NUMBER:destination_port})|-)? )?%{IPORHOST:source_ip} (?:(\()?-(\))?|%{HTTPDUSER:apache_access_user_identity}) (?:-( -)*|%{HTTPDUSER:user_name}) \[%{HTTPDATE:timestamp}]\ "(?:%{WORD:http_request_method} %{NOTSPACE:url_original}(?: HTTP/%{NUMBER:http_version})?|%{DATA})" (?:-|%{INT:http_response_status_code:int}) (?:-|%{INT:http_response_body_bytes:int})%{GREEDYDATA}
           # Apache ModSecurity logs
-          APACHEERRORPREFIX: '(\[%{HTTPDERROR_DATE:timestamp}\] )?(\[%{WORD}?:%{LOGLEVEL:action_name}\] )?(\[pid %{POSINT:process_pid}(:tid %{NUMBER:process_thread_id})?\] )?(\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{NUMBER:source_port})?\])?.*'
+          APACHEERRORPREFIX: '(\[%{HTTPDERROR_DATE:error_timestamp}\] )?(\[%{WORD}?:%{LOGLEVEL:action_name}\] )?(\[pid %{POSINT:process_pid}(:tid %{NUMBER:process_thread_id})?\] )?(\[client (%{IP:source_ip}|%{HOSTNAME:source_domain})?(:%{NUMBER:source_port})?\])?.*'
           MODSECHOSTNAME: '\[hostname "?%{DATA:destination_domain}"?\]'
           MODSECMATCHOFFSET: '\[offset "?%{DATA:matchoffset}"?\]'
           MODSECPREFIX: '%{APACHEERRORPREFIX} ModSecurity: %{NOTSPACE:action_type}\. %{GREEDYDATA:modsecmessage}'
@@ -32,6 +32,14 @@ pipeline:
           MODSECUID: '\[unique_id "?%{DATA:uniqueid}"?\]'
           MODSECURI: '\[uri "?%{DATA:url_original}"?\]'
           MODSECAPACHEERROR: "%{MODSECPREFIX} %{MODSECRULEFILE} %{MODSECRULELINE} (?:%{MODSECMATCHOFFSET} )?(?:%{MODSECRULEID} )?(?:%{MODSECRULEREV} )?(?:%{MODSECRULEMSG} )?(?:%{MODSECRULEDATA} )?(?:%{MODSECRULESEVERITY} )?%{MODSECRULETAGS}.*%{MODSECHOSTNAME} %{MODSECURI} %{MODSECUID}.*"
+
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{grok.event.timestamp}}"
+        output_field: timestamp
+        format: "%d/%b/%Y:%H:%M:%S %z"
 
   - name: set_apache_fields
   - name: set_action_properties
@@ -50,7 +58,7 @@ stages:
           action.properties.ruleline: "{{grok.event.ruleline}}"
           action.properties.rulerev: "{{grok.event.rulerev}}"
           action.properties.ruleseverity: "{{grok.event.ruleseverity}}"
-          action.properties.timestamp: "{{grok.event.timestamp}}"
+          action.properties.timestamp: "{{grok.event.timestamp or grok.event.error_timestamp}}"
           action.properties.uniqueid: "{{grok.event.uniqueid}}"
 
   finalizer:
