@@ -1,0 +1,76 @@
+name: one-identity
+ignored_values: []
+pipeline:
+  - name: parse_grok
+    description: ''
+    filter: ''
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+        pattern: '%{TIMESTAMP_ISO8601:date} %{HOSTNAME:host} %{GREEDYDATA:data}'
+        custom_patterns: {}
+  - name: parse_cef
+    description: ''
+    filter: ''
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: '{{parse_grok.message.data}}'
+        output_field: message
+  - name: parse_date
+    description: ''
+    filter: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parse_grok.message.date}}'
+        output_field: datetime
+        format: null
+        timezone: UTC+1
+  - name: set_fields
+    description: ''
+    filter: ''
+    external: null
+stages:
+  set_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parse_date.datetime}}'
+          log.hostname: '{{parse_grok.message.host}}'
+        filter: ''
+        name: set
+      - set:
+          host.ip: '{{parse_cef.message.dvc}}'
+          source.ip: '{{parse_cef.message.src}}'
+          source.port: '{{parse_cef.message.spt}}'
+          event.action: '{{parse_cef.message.Name}}'
+          action.outcome: '{{parse_cef.message.Verdict}}'
+          destination.ip: '{{parse_cef.message.dst}}'
+          observer.vendor: '{{parse_cef.message.DeviceVendor}}'
+          destination.port: '{{parse_cef.message.dpt}}'
+          network.protocol: '{{parse_cef.message.app}}'
+          observer.product: '{{parse_cef.message.DeviceProduct}}'
+          observer.version: '{{parse_cef.message.DeviceVersion}}'
+          source.user.name: '{{parse_cef.message.suser}}'
+          process.command_line: '{{parse_cef.message.Command}}'
+          destination.user.name: '{{parse_cef.message.duser}}'
+          oneidentity.session.id: '{{parse_cef.message["Session ID"]}}'
+          oneidentity.dest.host.name: '{{parse_cef.message.dhost}}'
+          oneidentity.source.host.name: '{{parse_cef.message.shost}}'
+        filter: ''
+        name: set
+      - set:
+          file.path: '{{parse_cef.message.filePath}}'
+          action.name: '{{parse_cef.message.act}}'
+        filter: '{{parse_cef.message.Name == "FileTransfer"}}'
+        name: set
+      - set:
+          oneidentity.window.title: '{{parse_cef.message.cs2}}'
+        filter: '{{parse_cef.message.cs2Label == "Window title"}}'
+        name: set
+      - set:
+          event.reason: '{{parse_cef.message.reason}}'
+        filter: '{{parse_cef.message.Name == "ChannelAlert"}}'
+        name: set
