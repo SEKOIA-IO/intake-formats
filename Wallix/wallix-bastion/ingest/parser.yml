@@ -14,7 +14,7 @@ pipeline:
       name: grok.match
       properties:
         input_field: "{{original.message}}"
-        pattern: 'pam_unix\((cron|sudo):session\): %{EVENT_REASON:event_reason} for user %{WORD:user_name}.*'
+        pattern: 'pam_unix\((cron|sudo|sshd):session\): %{EVENT_REASON:event_reason} for user %{WORD:user_name}(\(uid=%{DATA:user_uid}\))?.*'
         custom_patterns:
           EVENT_REASON: "session (opened|closed)"
 
@@ -98,6 +98,10 @@ stages:
           process.command_line: "{{ parsed_event.message.command_line }}"
         filter: '{{parsed_event.message.get("type") in ["NEW_PROCESS", "COMPLETED_PROCESS"]}}'
 
+      - set:
+          wallix.keyboard_input: "{{ parsed_event.message.data }}"
+        filter: "{{parsed_event.message.get('type') == 'KBD_INPUT'}}"
+
   set_auditd:
     actions:
       - set:
@@ -129,7 +133,7 @@ stages:
         filter: '{{original.message.startswith("rexec")}}'
       - set:
           event.provider: "sshd"
-        filter: '{{original.message.startswith("rexec")}}'
+        filter: '{{original.message.startswith("rexec") or original.message.startswith("pam_unix(sshd")}}'
 
   # We use a custom stage for IP fields
   # because Wallix can set things like target_ip="foo-bar-baz-foo.foobar.eu"
@@ -156,3 +160,7 @@ stages:
       - set:
           user.name: "{{ parse_pam_unix_fields.message.user_name }}"
           event.reason: "{{ parse_pam_unix_fields.message.event_reason }}"
+
+      - set:
+          user.id: "{{ parse_pam_unix_fields.message.user_uid }}"
+        filter: '{{parse_pam_unix_fields.message.get("user_uid") is not in [none, "0"]}}'

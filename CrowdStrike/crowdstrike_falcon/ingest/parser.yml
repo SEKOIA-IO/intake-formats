@@ -77,6 +77,9 @@ pipeline:
   - name: scheduler_report_notification_event
     filter: '{{parsed_event.message.metadata.eventType == "ScheduledReportNotificationEvent"}}'
 
+  - name: api_activity_audit_event
+    filter: '{{parsed_event.message.metadata.eventType == "APIActivityAuditEvent"}}'
+
 stages:
   set_common_fields:
     actions:
@@ -672,3 +675,42 @@ stages:
           user.id: "{{parsed_event.message.event.UserUUID}}"
           user.name: "{{parsed_event.message.event.UserID}}"
           file.name: "{{parsed_event.message.event.ExecutionMetadata.ReportFileName}}"
+
+  api_activity_audit_event:
+    actions:
+      - set:
+          crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
+          crowdstrike.customer_id: "{{parsed_event.message.event.Attributes.cid}}"
+          event.category: ["api"]
+          http.request.method: "{{parsed_event.message.event.Attributes.request_method}}"
+          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes}}"
+          http.response.status_code: "{{parsed_event.message.event.Attributes.status_code}}"
+          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces}}"
+          service.name: "{{parsed_event.message.event.ServiceName}}"
+          trace.id: "{{parsed_event.message.event.Attributes.trace_id}}"
+          url.query: "{{parsed_event.message.event.Attributes.request_query}}"
+          url.path: "{{parsed_event.message.event.Attributes.request_path}}"
+          user_agent.original: "{{parsed_event.message.event.Attributes.user_agent}}"
+      - set:
+          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes[1:-1]|join()}}"
+        filter: "{{parsed_event.message.event.Attributes.consumes | first == '[' and parsed_event.message.event.Attributes.consumes | last == ']'}}"
+      - set:
+          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces[1:-1]|join()}}"
+        filter: "{{parsed_event.message.event.Attributes.produces | first == '[' and parsed_event.message.event.Attributes.produces | last == ']'}}"
+      - set:
+          event.outcome: >
+            {%- if parsed_event.message.event.Success -%}
+              success
+            {%- else -%}
+              failure
+            {%- endif -%}
+        filter: '{{parsed_event.message.event.get("OperationName") == "logged"}}'
+      - set:
+          source.ip: "{{parsed_event.message.event.UserIp}}"
+        filter: "{{parsed_event.message.event.UserIp | is_ipaddress}}"
+      - translate:
+        dictionary:
+          "logged": ["access"]
+        mapping:
+          crowdstrike.operation_name: event.type
+        fallback: ["info"]
