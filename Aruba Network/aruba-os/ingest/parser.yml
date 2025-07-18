@@ -1,10 +1,17 @@
 name: aruba-os
 pipeline:
+  - name: parse_leef
+    external:
+      name: grok.match
+      properties:
+        pattern: "LEEF:%{NUMBER:version}\\|%{DATA:vendor}\\|%{DATA:product}\\|%{DATA:version}\\|%{INT:msg_id}\\|%{GREEDYDATA:message}"
+    filter: '{{"LEEF:" in original.message}}'
+
   - name: parsed_leef_event
     external:
       name: kv.parse-kv
       properties:
-        input_field: "'|'.join(original.message.split('|')[5:])"
+        input_field: "parse_leef.message.message"
         value_sep: "="
         output_field: message
         groups: true
@@ -253,12 +260,121 @@ stages:
           aruba.os.component: "{{ parsed_leef_event.message.get('component') }}"
           event.action: "{{ parsed_leef_event.message.get('action') }}"
           event.dataset: "{{ parsed_leef_event.message.cat }}"
-          event.category:
-            [
-              "{{parsed_leef_event.message.get('sub-cat')|lower|default('network')}}",
-            ]
-          event.type:
-            ["{{parsed_leef_event.message.get('level')|lower|default('info')}}"]
           event.reason: "{{ parsed_leef_event.message.description }}"
           "@timestamp": "{{ parsed_leef_date.date }}"
           source.ip: "{{ parsed_leef_event.message.src }}"
+          event.code: "{{ parse_leef.message.msg_id }}"
+
+      - translate:
+        dictionary:
+          1001: ["authentication"]
+          1002: ["authentication"]
+          1003: ["authentication"]
+          1004: ["authentication"]
+          1101: ["authentication"]
+          1102: ["authentication"]
+          1201: ["authentication"]
+          1202: ["authentication"]
+          1203: ["authentication"]
+          1301: ["authentication"]
+          1302: ["authentication"]
+          1303: ["authentication"]
+          2001: ["iam"]
+          2002: ["iam"]
+          2003: ["iam"]
+          3001: ["network"]
+          3002: ["network"]
+          3003: ["network"]
+          5001: ["host"]
+          5002: ["host"]
+          5003: ["host"]
+          5004: ["host"]
+          5005: ["host"]
+          6001: ["iam"]
+          6002: ["iam"]
+          6003: ["iam"]
+          6004: ["iam"]
+          6005: ["iam"]
+          6006: ["iam"]
+          6007: ["iam"]
+          7001: ["network"]
+          7002: ["network"]
+          7003: ["network"]
+          7004: ["network"]
+          7005: ["network"]
+          7006: ["network"]
+          9001: ["configuration"]
+          9002: ["configuration"]
+          9003: ["configuration"]
+          9004: ["configuration"]
+          11001: ["configuration"]
+          12001: ["configuration"]
+        mapping:
+          parse_leef.message.msg_id: event.category
+        filter: "{{ parse_leef.message.msg_id != None }}"
+
+      - translate:
+        dictionary:
+          1001: ["start"]
+          1002: ["end"]
+          1003: ["end"]
+          1004: ["info"]
+          1101: ["start"]
+          1102: ["end"]
+          1201: ["start"]
+          1202: ["end"]
+          1203: ["end"]
+          1301: ["start"]
+          1302: ["end"]
+          1303: ["end"]
+          2001: ["user"]
+          2002: ["user"]
+          2003: ["change"]
+          3001: ["start"]
+          3002: ["end"]
+          3003: ["info"]
+          5001: ["start"]
+          5002: ["end"]
+          5003: ["info"]
+          5004: ["start"]
+          5005: ["end"]
+          6001: ["creation"]
+          6002: ["change"]
+          6003: ["deletion"]
+          6004: ["user"]
+          6005: ["user"]
+          6006: ["user"]
+          6007: ["user"]
+          7001: ["connection"]
+          7002: ["end"]
+          7003: ["allowed"]
+          7004: ["denied"]
+          7005: ["info"]
+          7006: ["info"]
+          9001: ["info"]
+          9002: ["info"]
+          9003: ["info"]
+          9004: ["info"]
+          11001: ["change"]
+          12001: ["info"]
+        mapping:
+          parse_leef.message.msg_id: event.type
+        filter: "{{ parse_leef.message.msg_id != None }}"
+
+      - translate:
+        dictionary:
+          1002: "success"
+          1003: "failure"
+          1202: "success"
+          1203: "failure"
+          1302: "success"
+          1303: "failure"
+          2001: "success"
+          2002: "failure"
+          6006: "success"
+          7003: "success"
+          7004: "failure"
+        mapping:
+          parse_leef.message.msg_id: event.outcome
+        fallback: "unknown"
+        filter: "{{ parse_leef.message.msg_id != None }}"
