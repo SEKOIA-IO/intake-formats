@@ -8,6 +8,13 @@ pipeline:
     external:
       name: date.parse
       properties:
+        input_field: "{{json_event.message.DetectedDateTime}}"
+        output_field: datetime
+    filter: '{{json_event.message.get("DetectedDateTime") != None}}'
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
         input_field: "{{json_event.message.properties.Timestamp}}"
         output_field: datetime
     filter: '{{json_event.message.properties.get("Timestamp") != None}}'
@@ -104,6 +111,8 @@ pipeline:
     filter: '{{json_event.message.get("category") == "AdvancedHunting-IdentityQueryEvents"}}'
   - name: set_url_click_events
     filter: '{{json_event.message.get("category") == "AdvancedHunting-UrlClickEvents"}}'
+  - name: set_signin_fields
+    filter: '{{json_event.message.get("Activity") == "signin"}}'
 
 stages:
   set_common_fields:
@@ -672,3 +681,27 @@ stages:
           event.dataset: "identity_info"
           event.category: ["iam"]
           event.type: ["user"]
+
+  set_signin_fields:
+    actions:
+      - set:
+          source.ip: "{{json_event.message.IpAddress}}"
+          client.geo.city_name: "{{json_event.message.Location.city}}"
+          client.geo.continent_code: "{{json_event.message.Location.countryOrRegion}}"
+          action.properties.OperationName: "{{json_event.message.OperationName}}"
+          action.properties.office365.RiskEventType: "{{json_event.message.RiskEventType}}"
+          action.properties.office365.UserDisplayName: "{{json_event.message.UserDisplayName}}"
+          action.properties.user.risk.static_state: "{{json_event.message.RiskState}}"
+          user.risk.static_level: "{{json_event.message.RiskLevel}}"
+
+      - set:
+          user.email: "{{json_event.message.UserPrincipalName}}"
+        filter: '{{"@" in json_event.message.get("UserPrincipalName", "")}}'
+
+      - set:
+          user.name: "{{json_event.message.UserPrincipalName}}"
+        filter: '{{"@" not in json_event.message.get("UserPrincipalName", "")}}'
+
+      - set:
+          user_agent.original: '{{json_event.message.AdditionalInfo | selectattr("Key", "equalto", "userAgent") | map(attribute="Value") | first}}'
+        filter: '{{json_event.message.AdditionalInfo | length > 0}}'
