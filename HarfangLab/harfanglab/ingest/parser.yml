@@ -11,14 +11,14 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.last_seen}}"
+        input_field: "{{json_event.message.last_seen or json_event.message.lastseen}}"
         output_field: datetime
 
   - name: parse_first_seen
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.first_seen}}"
+        input_field: "{{json_event.message.first_seen or json_event.message.firstseen}}"
         output_field: datetime
 
   - name: parse_task_info
@@ -84,7 +84,7 @@ pipeline:
     filter: "{{json_event.message.log_type == 'threat'}}"
 
   - name: alert_process_info
-    filter: "{{json_event.message.alert_subtype == 'process'}}"
+    filter: "{{json_event.message.alert_subtype == 'process' or json_event.message.threat_type == 'commandline'}}"
 
   - name: investigation_info
     filter: "{{json_event.message.log_type == 'investigation'}}"
@@ -100,7 +100,6 @@ pipeline:
 
   - name: auditlog_info
     filter: "{{json_event.message.log_type == 'auditlog'}}"
-
   - name: agentlog_info
     filter: "{{json_event.message.log_type == 'agentlog'}}"
 
@@ -115,6 +114,9 @@ pipeline:
 
   - name: injectedthread_info
     filter: "{{json_event.message.log_type == 'injectedthread'}}"
+
+  - name: full_agent_info
+    filter: "{{json_event.message.log_type == 'agent'}}"
 
 stages:
   threat_info:
@@ -178,11 +180,17 @@ stages:
           host.domain: "{{json_event.message.agent.domainname}}"
           host.os.version: "{{json_event.message.agent.osversion}}"
           host.os.full: "{{json_event.message.agent.osproducttype}}"
+          host.os.type: "{{json_event.message.agent.ostype}}"
           harfanglab.groups: "{{json_event.message.groups}}"
           event.dataset: "{{json_event.message.log_type}}"
           user.roles: "{{ json_event.message.groups | map(attribute='name') | join(',') | replace('\n', '') | replace(' ', '') }}"
           organization.id: "{{json_event.message.tenant}}"
           url.original: "{{json_event.message.details_url_request.url}}"
+
+          action.properties.additional_info.additional_info1: "{{json_event.message.agent.additional_info.additional_info1}}"
+          action.properties.additional_info.additional_info2: "{{json_event.message.agent.additional_info.additional_info2}}"
+          action.properties.additional_info.additional_info3: "{{json_event.message.agent.additional_info.additional_info3}}"
+          action.properties.additional_info.additional_info4: "{{json_event.message.agent.additional_info.additional_info4}}"
 
       - set:
           harfanglab.agents: >
@@ -814,6 +822,17 @@ stages:
   authentication_info:
     actions:
       - set:
+          action.properties.AuthenticationPackageName: "{{json_event.message.windows.authentication_package_name}}"
+          action.properties.IpAddress: "{{json_event.message.windows.ip_address}}"
+          action.properties.IpPort: "{{json_event.message.windows.ip_port}}"
+          action.properties.LogonProcessName: "{{json_event.message.windows.logon_process_name}}"
+          action.properties.ProcessName: "{{json_event.message.windows.process_name}}"
+          action.properties.SubjectLogonId: "{{json_event.message.windows.source_logon_id}}"
+          action.properties.SubjectUserSid: "{{json_event.message.windows.source_sid}}"
+          action.properties.Status: "{{json_event.message.windows.status}}"
+          action.properties.TargetLogonId: "{{json_event.message.windows.target_logon_id}}"
+          action.properties.TargetUserSid: "{{json_event.message.windows.target_sid}}"
+          action.properties.WorkstationName: "{{json_event.message.windows.workstation_name}}"
           event.category: ["authentication"]
           event.type: >
             {% set type_value = ["info"] %}
@@ -898,6 +917,7 @@ stages:
           event.category: ["web"]
           event.type: ["access"]
           http.request.method: "{{json_event.message.request_method}}"
+          http.request.body.content: "{{json_event.message.request_content}}"
           http.response.status_code: "{{json_event.message.response_status_code}}"
           url.path: "{{json_event.message.request_path}}"
           user_agent.original: "{{json_event.message.user_agent}}"
@@ -978,3 +998,26 @@ stages:
           process.executable: "{{json_event.message.process_image}}"
           process.pid: "{{json_event.message.process_id}}"
           process.thread.id: "{{json_event.message.thread_id}}"
+
+  full_agent_info:
+    actions:
+      - set:
+          event.start: "{{parse_first_seen.datetime}}"
+          event.end: "{{parse_last_seen.datetime}}"
+          event.category: ["host"]
+          event.type: ["info"]
+          agent.id: "{{json_event.message.id}}"
+          agent.version: "{{json_event.message.version}}"
+          harfanglab.host.cpu.count: "{{json_event.message.cpu_count}}"
+          harfanglab.host.cpu.frequency: "{{json_event.message.cpu_frequency}}"
+          harfanglab.host.serial_number: "{{json_event.message.machine_serial}}"
+          harfanglab.host.total_memory: "{{json_event.message.total_memory}}"
+          host.architecture: "{{json_event.message.bitness}}"
+          host.name: "{{json_event.message.hostname}}"
+          host.os.full: "{{json_event.message.osproducttype}}"
+          host.os.type: "{{json_event.message.ostype}}"
+          host.os.version: "{{json_event.message.osversion}}"
+          host.os.platform: "{{json_event.message.os_platform}}"
+      - set:
+          host.ip: "{{json_event.message.ipaddress}}"
+        filter: "{{json_event.message.ipaddress | is_ipaddress}}"
