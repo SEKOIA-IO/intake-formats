@@ -78,6 +78,14 @@ pipeline:
         output_field: date
         timezone: "UTC"
 
+  - name: parsed_source_ip
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{ parsed_event.message.ui }}"
+        output_field: result
+        pattern: "%{DATA}%{IP:source_ip}%{GREEDYDATA}"
+
   - name: field_extraction
   - name: set_event_dataset
   #  commented for backward compatibility
@@ -241,6 +249,7 @@ stages:
           rule.ruleset: "{{parsed_event.message.applist or parsed_event.message.policytype}}"
           source.bytes: "{{parsed_event.message.sentbyte or parsed_event.message.out}}"
           source.domain: "{{parsed_event.message.shost}}"
+          source.ip: "{{parsed_source_ip.result.source_ip}}"
           source.mac: "{{parsed_event.message.srcmac or parsed_event.message.mac}}"
           source.nat.port: "{{parsed_event.message.sourceTranslatedPort}}"
           source.packets: "{{parsed_event.message.sentpkt or parsed_event.message.FTNTFGTsentpkt or parsed_event.message.FortinetFortiGatesentpkt or parsed_event.message.get('Packets Sent')}}"
@@ -295,6 +304,9 @@ stages:
       - set:
           http.request.method: "{{parsed_event.message.method or parsed_event.message.httpmethod}}"
         filter: "{{parsed_event.message.subtype not in ['webfilter', 'system']}}"
+
+      - set:
+          http.request.referrer: "{{parsed_event.message.http_referer}}"
 
       - set:
           file.name: "{{parsed_event.message.fname or parsed_event.message.url | basename}}"
