@@ -1,42 +1,41 @@
 name: radware-defensepro
 ignored_values: []
 pipeline:
-  - name: stage1
-    description: Parse received message
-    filter: ''
+  - name: parsing
+    description: Grok matching for Radware patterns
     external:
       name: grok.match
       properties:
         input_field: '{{original.message}}'
         output_field: message
-        pattern: >-
-          (%{DATA:DefensePro_date} %{DATA:DefensePro_time}
-          %{WORD:DefensePro_severity} %{INT:Radware_id}
-          %{DATA:DefensePro_category} "%{DATA:Radware_attack_name}"
-          %{WORD:Radware_protocol} %{IP:source_ip} %{INT:source_port}
-          %{IP:destination_ip} %{INT:destination_port}
-          %{INT:DefensePro_physical_port} %{DATA:Radware_context}
-          "%{DATA:DefensePro_policy_name}" %{DATA:DefensePro_attack_status}
-          %{INT:DefensePro_packet_count} %{INT:DefensePro_volume}
-          %{DATA:DefensePro_VLAN_tag} %{DATA:DefensePro_MPLS_RD}
-          %{DATA:DefensePro_MPLS_tag} %{WORD:DefensePro_risk}
-          %{DATA:DefensePro_action_name}
-          %{DATA:DefensePro_UniqueID})|(%{DATA:DefensePro_date}
-          %{DATA:DefensePro_time} %{WORD:DefensePro_severity} User radware
-          (logged in|successfully authenticated) via (%{DATA:login_type}
-          %{IP:login_ip}|%{DATA:login_type} \(IP:
-          %{IP:login_ip}\)))|(%{DATA:DefensePro_date} %{DATA:DefensePro_time}
-          %{WORD:DefensePro_severity} BDoS baseline learning is
-          (%{DATA:DefensePro_baseline_status}|%{DATA:DefensePro_baseline_status}
-          now) on inbound IPv4 traffic for policy
-          "%{DATA:DefensePro_policy_name}".)
-        custom_patterns: {}
-  - name: stage2
-    description: It assigns the value
-    filter: ''
-    external: null
+        pattern: '%{RADWARE_ATTACK}|%{RADWARE_BDOS}|%{RADWARE_LOGIN}'
+        custom_patterns:
+          RADWARE_ATTACK: >-
+            %{DATA:DefensePro_date} %{DATA:DefensePro_time}
+            %{WORD:DefensePro_severity} %{INT:Radware_id}
+            %{DATA:DefensePro_category} "%{DATA:Radware_attack_name}"
+            %{WORD:Radware_protocol} %{IP:source_ip} %{INT:source_port}
+            %{IP:destination_ip} %{INT:destination_port}
+            %{INT:DefensePro_physical_port} %{DATA:Radware_context}
+            "%{DATA:DefensePro_policy_name}" %{DATA:DefensePro_attack_status}
+            %{INT:DefensePro_packet_count} %{INT:DefensePro_volume}
+            %{DATA:DefensePro_VLAN_tag} %{DATA:DefensePro_MPLS_RD}
+            %{DATA:DefensePro_MPLS_tag} %{WORD:DefensePro_risk}
+            %{DATA:DefensePro_action_name} %{DATA:DefensePro_UniqueID}
+          RADWARE_BDOS: >-
+            %{DATA:DefensePro_date} %{DATA:DefensePro_time}
+            %{WORD:DefensePro_severity} BDoS baseline learning is
+            %{DATA:DefensePro_baseline_status} on inbound IPv4 traffic for
+            policy "%{DATA:DefensePro_policy_name}".
+          RADWARE_LOGIN: >-
+            %{DATA:DefensePro_date} %{DATA:DefensePro_time}
+            %{WORD:DefensePro_severity} User radware (logged in|successfully
+            authenticated) via (%{DATA:login_type}
+            %{IP:login_ip}|%{DATA:login_type} \(IP:%{IP:login_ip}\))
+  - name: fields
+    description: Set parsed fields
 stages:
-  stage2:
+  fields:
     actions:
       - set:
           login.ip: '{{stage1.message.login_ip}}'
@@ -56,7 +55,7 @@ stages:
           DefensePro.MPLS.tag: '{{stage1.message.DefensePro_MPLS_tag}}'
           DefensePro.VLAN.tag: '{{stage1.message.DefensePro_VLAN_tag}}'
           DefensePro.category: '{{stage1.message.DefensePro_category}}'
-          DefensePro_UniqueID: '{{stage1.message.DefensePro_UniqueID}}'
+          DefensePro.UniqueID: '{{stage1.message.DefensePro_UniqueID}}'
           Radware.attack.name: '{{stage1.message.Radware_attack_name}}'
           destination.address: '{{stage1.message.destination_ip}}'
           DefensePro.policy.name: '{{stage1.message.DefensePro_policy_name}}'
@@ -65,5 +64,4 @@ stages:
           DefensePro.physical.port: '{{stage1.message.DefensePro_physical_port}}'
           log.syslog.severity.name: '{{stage1.message.DefensePro_severity}}'
           DefensePro.baseline.status: '{{stage1.message.DefensePro_baseline_status}}'
-        filter: ''
         name: set
