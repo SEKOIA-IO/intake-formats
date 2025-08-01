@@ -1,0 +1,71 @@
+name: nozomi-cmc
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: set_common_fields
+
+  - name: set_health_fields
+    filter: "{{ 'HEALTH' in parsed_event.message.DeviceEventClassID }}"
+
+  - name: set_audit_fields
+    filter: "{{ 'AUDIT' in parsed_event.message.DeviceEventClassID }}"
+
+  - name: set_alert_fields
+    filter: "{{ 'HEALTH' not in parsed_event.message.DeviceEventClassID and 'AUDIT' not in parsed_event.message.DeviceEventClassID }}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "Nozomi"
+          observer.product: "Nozomi CMC"
+          event.module: "nozomi.cmc"
+          event.dataset: "{{ parsed_event.message.DeviceEventClassID }}"
+
+          event.outcome: "success"
+          event.type: ["info"]
+          event.reason: "{{ parsed_event.message.msg }}"
+          destination.ip: "{{ parsed_event.message.dst }}"
+          destination.port: "{{ parsed_event.message.dpt }}"
+          destination.mac: "{{ parsed_event.message.dmac }}"
+          source.ip: "{{ parsed_event.message.src }}"
+          source.mac: "{{ parsed_event.message.smac }}"
+          source.port: "{{ parsed_event.message.spt }}"
+
+          nozomi.cmc.version: "{{ parsed_event.message.DeviceVersion }}"
+
+      - set:
+          # Match only for severity of type int
+          event.severity: "{{ parsed_event.message.Severity }}"
+        filter: "{{ parsed_event.message.Severity | re_match('[1-9]|10') }}"
+
+  set_audit_fields:
+    actions:
+      - set:
+          event.category: ["session"]
+          source.user.name: "{{ parsed_event.message.suser }}"
+          user_agent.original: "{{ parsed_event.message.browser }}"
+
+  set_health_fields:
+    actions:
+      - set:
+          event.category: ["host"]
+
+  set_alert_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.type: ["indicator"]
+          event.category: ["malware"]
+          event.reason: "{{ parsed_event.message.Name }}"
+          network.transport: "{{ parsed_event.message.proto }}"
+
+          threat.technique.id:
+            ["{{ parsed_event.message.mitre_attack_techniques }}"]
+          threat.tactic.name:
+            ["{{ parsed_event.message.mitre_attack_tactics }}"]
+
+          host.ip: ["{{ parsed_event.message.dvc }}"]
+          host.hostname: "{{ parsed_event.message.dvchost }}"
