@@ -188,12 +188,77 @@ stages:
           event.dataset: "{{json_event.message.log_type}}"
           user.roles: "{{ json_event.message.groups | map(attribute='name') | join(',') | replace('\n', '') | replace(' ', '') }}"
           organization.id: "{{json_event.message.tenant}}"
-          url.original: "{{json_event.message.details_url_request.url}}"
+          url.original: "{{json_event.message.get('source_url') or json_event.message.details_url_request.url}}"
+          process.executable: "{{json_event.message.image_name or json_event.message.source_image or json_event.message.process_image_path}}"
+          process.pid: "{{json_event.message.pid}}"
+          process.command_line: "{{json_event.message.process_commandline}}"
+          action.properties.StackTrace: "{{json_event.message.stacktrace}}"
+          action.properties.EventId: "{{json_event.message.event_id}}"
+          action.properties.DesiredAccess: "{{json_event.message.desired_access_id}}"
+          action.properties.DesiredAccessStr: "{{json_event.message.desired_access_str}}"
+          action.properties.DeviceName: "{{json_event.message.device_name}}"
+          action.properties.SockType: "{{json_event.message.sock_type}}"
+          action.properties.Family: "{{json_event.message.family}}"
+          action.properties.TamperFlag: "{{json_event.message.tamper_flag}}"
+          action.properties.TamperFlagStr: "{{json_event.message.tamper_flag_as_str}}"
+          action.properties.ProcessEntrypointMemory: "{{json_event.message.process_entrypoint_memory}}"
+          action.properties.ProcessHeaderMemory: "{{json_event.message.process_header_memory}}"
+          action.properties.Access: "{{json_event.message.access}}"
+          action.properties.AccessStr: "{{json_event.message.access_str}}"
+          action.properties.IpAddresses: "{{json_event.message.ip_addresses}}"
+          action.name: "{{json_event.message.operation}}"
+          user.id: "{{json_event.message.user_sid}}"
+          file.name: "{{ json_event.message.get('process_entrypoint_file') or json_event.message.pe_info.get('original_filename')}}"
+          http.request.referrer: "{{json_event.message.referrer_url}}"
+          dns.question.type: "{{json_event.message.query_type}}"
+          dns.question.name: "{{json_event.message.requested_name}}"
 
           action.properties.additional_info.additional_info1: "{{json_event.message.agent.additional_info.additional_info1}}"
           action.properties.additional_info.additional_info2: "{{json_event.message.agent.additional_info.additional_info2}}"
           action.properties.additional_info.additional_info3: "{{json_event.message.agent.additional_info.additional_info3}}"
           action.properties.additional_info.additional_info4: "{{json_event.message.agent.additional_info.additional_info4}}"
+
+      - set:
+          user.name: >
+            {%- if '\\' not in json_event.message.user_name -%}
+              {{ json_event.message.username }}
+            {%- else -%}
+              {{ json_event.message.user_name.split('\\')[1] }}
+            {%- endif -%}
+          user.domain: >
+            {%- if '\\' in json_event.message.user_name -%}
+              {{ json_event.message.user_name.split('\\')[0] }}
+            {%- endif -%}
+        filter: "{{json_event.message.user_name != None}}"
+
+      - set:
+          action.properties.Query: "{{json_event.message.query}}"
+        filter: "{{json_event.message.kind == 'WmiFilterEvent'}}"
+
+      - set:
+          action.name: "{{json_event.message.event_type}}"
+          action.properties.ProductId: "{{json_event.message.product_id}}"
+          action.properties.VendorId: "{{json_event.message.vendor_id}}"
+          action.properties.ProductName: "{{json_event.message.product_name}}"
+          action.properties.VendorName: "{{json_event.message.vendor_name}}"
+          action.properties.DbProductName: "{{json_event.message.db_product_name}}"
+        filter: "{{json_event.message.product_id != None and json_event.message.vendor_id != ''}}"
+
+      - set:
+          source.ip: "{{json_event.message.address}}"
+          source.port: "{{json_event.message.port}}"
+          network.protocol: "{{json_event.message.transport_protocol}}"
+        filter: "{{json_event.message.address | is_ipaddress}}"
+
+      - set:
+          action.name: "{{json_event.message.pipe_operation}}"
+        filter: "{{json_event.message.pipe_operation != None}}"
+
+      - set:
+          url.original: '{{json_event.message.url}}'
+          http.request.method: '{{json_event.message.method}}'
+          user_agent.original: "{{json_event.message.user_agent}}"
+        filter: "{{json_event.message.url != None}}"
 
       - set:
           host.ip: ["{{json_event.message.agent.ipaddress}}"]
@@ -903,9 +968,6 @@ stages:
           event.category: ["network"]
           event.type: ["info"]
           process.pid: "{{json_event.message.pid}}"
-          process.executable: "{{json_event.message.process_image_path}}"
-          dns.question.type: "{{json_event.message.query_type}}"
-          dns.question.name: "{{json_event.message.requested_name}}"
 
           user.name: >
             {%- if '\\' not in json_event.message.username -%}
