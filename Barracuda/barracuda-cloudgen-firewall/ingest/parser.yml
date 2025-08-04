@@ -1,0 +1,298 @@
+name: barracuda-cloudgen-firewall
+pipeline:
+  - name: parsed_header
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{DATA:log_level}\\s+%{DATA:appliance_instance}\\s+%{GREEDYDATA:event}"
+
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_header.message.event}}"
+        output_field: message
+        pattern: "%{FIREWALL_ACTIVITY_LOG}|%{CONFIG_LOG}|%{AUTHSERVICE_LOG}|%{AUTH_ACCESS_LOG}|%{EVENT_LOG}|%{WATCHDOG_LOG}|%{FIREWALL_THREATS_LOG}|%{FIREWALL_LOG}|%{FIREWALL_USER_ACCOUNTING_LOG}"
+        custom_patterns:
+          # Firewall activity event
+          FIREWALL_ACTIVITY_LOG: '%{DATA:event_action}: %{DATA:event_type}\|%{DATA:network_transport}\|%{DATA:source_interface}\|%{DATA:source_ip}\|%{DATA:source_port}\|%{DATA:source_mac}\|%{DATA:destination_ip}\|%{DATA:destination_port}\|%{DATA:destination_service}\|%{DATA:destination_interface}\|%{DATA:rule}\|%{DATA:info}\|%{DATA:srcNAT}\|%{DATA:dstNAT}\|%{DATA:duration}\|%{DATA:count}\|%{DATA:receivedBytes}\|%{DATA:sentBytes}\|%{DATA:receivedPackets}\|%{DATA:sentPackets}\|%{DATA:user}\|%{DATA:protocol}\|%{DATA:application}\|%{DATA:target}\|%{DATA:content}\|%{DATA:urlcat}'
+
+          # Config event
+          CONFIG_LOG: "%{CONFIG_LOG_1}|%{CONFIG_LOG_2}|%{CONFIG_LOG_3}|%{CONFIG_LOG_4}|%{CONFIG_LOG_5}|%{CONFIG_LOG_6}"
+          CONFIG_LOG_1: "Session from %{IP:source_ip}:%{NUMBER:source_port} mode=%{NUMBER:mode_int}"
+          CONFIG_LOG_2: "challenge sent for %{DATA:hostname}_%{DATA:appliance_instance}"
+          CONFIG_LOG_3: "%{IP:source_ip}:%{NUMBER:source_port} login succeeded: %{DATA:hostname}_%{DATA:appliance_instance} Valid password and valid challenge"
+          CONFIG_LOG_4: "New Session GCSID_%{DATA:hostname}_%{DATA:appliance_instance}_(%{DATA}_%{DATA}_)?%{DATA:source_ip}_%{NUMBER:source_port}_%{NUMBER:session_id}"
+          CONFIG_LOG_5: 'Process: Session\(%{IP:source_ip}:%{NUMBER:source_port}\) exits normally'
+          CONFIG_LOG_6: '\[%{DATA:username}@%{DATA:source_ip}_%{NUMBER:source_port}\]\s+%{CONFIG_LOG_REASON:event_reason}'
+          CONFIG_LOG_REASON: "%{CONFIG_LOG_REASON_1}|%{CONFIG_LOG_REASON_2}|%{CONFIG_LOG_REASON_3}|%{GREEDYDATA}"
+          CONFIG_LOG_REASON_1: "Download File %{DATA:file_path} received size=%{NUMBER:file_size} mode=%{NUMBER:mode_int}"
+          CONFIG_LOG_REASON_2: "Commit operation: %{DATA:operation_int} Execute: %{DATA:execution_path}"
+          CONFIG_LOG_REASON_3: "Commit operation: %{DATA:operation_int} Copy: %{DATA:file_name} from %{DATA:file_location}"
+
+          # Control AuthService logs
+          AUTHSERVICE_LOG: "%{AUTHSERVICE_LOG_1}|%{AUTHSERVICE_LOG_2}|%{AUTHSERVICE_LOG_3}|%{AUTHSERVICE_LOG_4}"
+          AUTHSERVICE_LOG_1: 'Received %{DATA:int_users} users from %{DATA:dns_name} \(DC%{DATA:entry_number} IP = %{IP:dns_ip}\)\.'
+          AUTHSERVICE_LOG_2: "phibs: Authentication %{DATA:event_action} for peer=%{IP:source_ip} origin=%{DATA:source_name} server=%{DATA:server_type} service=%{DATA:service_name} box=%{DATA:box_name} %{DATA} user=%{USER:user_name}"
+          AUTHSERVICE_LOG_3: 'phibs: Authentication %{DATA:event_action} for peer=%{IP:source_ip} origin=%{DATA:source_name} server=%{DATA:server_type} service=%{DATA:service_name} box=%{DATA:box_name} %{USER:user_name}\|%{GREEDYDATA}'
+          AUTHSERVICE_LOG_4: "MSAD-Offline-Groups %{DATA:event_reason}"
+
+          # Auth access logs
+          AUTH_ACCESS_LOG: "%{AUTH_ACCESS_LOG_1}|%{AUTH_ACCESS_LOG_2}|%{AUTH_ACCESS_LOG_3}"
+          AUTH_ACCESS_LOG_1: 'LOGIN ATTEMPT: %{DATA:process_module}\[%{NUMBER:process_pid}\]: Login %{DATA:hostname}_%{DATA:appliance_instance} from %{IP:source_ip} : Allowed\.'
+          AUTH_ACCESS_LOG_2: '%{DATA:process_module}\[%{NUMBER:process_pid}\]: Session %{DATA:hostname}_%{DATA:appliance_instance}: Closed'
+          AUTH_ACCESS_LOG_3: "LOGIN ATTEMPT: Login from %{IP:source_ip}: Denied: %{DATA:error_reason}"
+
+          # Event logs
+          EVENT_LOG: "%{EVENT_LOG_1}|%{EVENT_LOG_2}|%{EVENT_LOG_3}"
+          EVENT_LOG_1: 'event: \[%{NUMBER:event_id}\] Insert Event from %{DATA:service_address} - \(%{DATA:event_class}\|%{NUMBER:internal_severity_code}\|%{DATA:service_name}\|%{NUMBER:sub_category_id}\|%{DATA:category}\|%{NUMBER:event_code}\|%{DESTINATION_WITH_PORT:destination_ip_or_host}\|%{DATA:hostname_worker_thread}\|%{DATA:internal_id}\|%{DATA:transport} %{DATA:host_source_ip}:%{DATA:host_source_port} \(%{DATA:interface}\) -> %{DESTINATION_WITH_PORT}\)'
+          EVENT_LOG_2: 'event: \[%{NUMBER:event_id}\] Drop Event from %{DATA:service_address} - \(%{DATA:event_class}\|%{NUMBER:internal_severity_code}\|%{DATA:service_name}\|%{NUMBER:sub_category_id}\|%{DATA:category}\|%{NUMBER:event_code}\|%{DESTINATION_WITH_PORT:destination_ip_or_host}\|%{DATA:hostname_worker_thread}\)'
+          EVENT_LOG_3: 'event: \[%{NUMBER:event_id}\] Send Event \(%{DATA:event_class}\|%{NUMBER:internal_severity_code}\|%{DATA:service_name}\|%{NUMBER:sub_category_id}\|%{DATA:category}\|%{NUMBER:event_code}\|%{DESTINATION_WITH_PORT:destination_ip_or_host}\|%{DATA:hostname_worker_thread}\) to Control Center %{DESTINATION_WITH_PORT:control_center_ip_or_host}'
+          DESTINATION_WITH_PORT: "%{DATA:destination_address}(:%{NUMBER:destination_port})?"
+
+          # Watchdog monitor logs
+          WATCHDOG_LOG: "%{WATCHDOG_LOG_1}|%{WATCHDOG_LOG_2}|%{WATCHDOG_LOG_3}|%{WATCHDOG_LOG_4}"
+          WATCHDOG_LOG_1: 'was able to ping process %{NUMBER:process_pid} \(%{DATA:process_path}\)\.'
+          WATCHDOG_LOG_2: 'still alive after %{DATA:int_interval} interval\(s\)'
+          WATCHDOG_LOG_3: "current load is %{DATA:load_average}"
+          WATCHDOG_LOG_4: 'currently there are %{DATA:memory_size} kB of free memory available \(%{DATA:buffered_size} buffered, %{DATA:cached_size}, cached\)'
+
+          # Firewall threats log
+          FIREWALL_THREATS_LOG: 'firewall: \[Request\] Allow:\s+%{DATA:request_type} %{DATA:request_policy} %{IP:source_ip} -> %{IP:destination_ip}:%{NUMBER:destination_port} \|\[%{DATA:detection_info}\]\|%{DATA:ips_categories}\|%{NUMBER:event_severity}\|%{DATA:ips_classification}'
+
+          # Firewall
+          FIREWALL_LOG: 'firewall: \[Timer\] SecurityEvent: \(Address-Port Scan\) %{INT:requests_int} unallowed requests for source IP %{IP:source_ip} within %{NUMBER} seconds'
+
+          # Firewall user accounting
+          FIREWALL_USER_ACCOUNTING_LOG: '%{DATA:event_type}\|%{DATA:appliance_instance}\|%{DATA:group_name}\|\|\|\|\|\|%{DATA:last_report_timestamp}\|%{DATA:last_acknowledgment_timestamp}\|%{INT:bytes_received}\|%{INT:bytes_sent}\|%{IP:client_ip}\|\|\|%{USER:client_username}'
+
+  - name: set_ecs_fields
+
+  - name: set_firewall_activity_fields
+    filter: "{{parsed_event.message.FIREWALL_ACTIVITY_LOG | length > 0}}"
+
+  - name: set_config_fields
+    filter: "{{parsed_event.message.CONFIG_LOG | length > 0}}"
+
+  - name: set_authservice_fields
+    filter: "{{parsed_event.message.AUTHSERVICE_LOG | length > 0}}"
+
+  - name: set_auth_access_fields
+    filter: "{{parsed_event.message.AUTH_ACCESS_LOG | length > 0}}"
+
+  - name: set_events_fields
+    filter: "{{parsed_event.message.EVENT_LOG | length > 0}}"
+
+  - name: set_watchdog_fields
+    filter: "{{parsed_event.message.WATCHDOG_LOG | length > 0}}"
+
+  - name: set_firewall_threats_fields
+    filter: "{{parsed_event.message.FIREWALL_THREATS_LOG | length > 0}}"
+
+  - name: set_firewall_fields
+    filter: "{{parsed_event.message.FIREWALL_LOG | length > 0}}"
+
+  - name: set_firewall_user_accounting_fields
+    filter: "{{parsed_event.message.FIREWALL_USER_ACCOUNTING_LOG | length > 0}}"
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          log.level: "{{parsed_header.message.log_level}}"
+          observer.type: "firewall"
+
+          event.category: ["network"]
+          event.type: ["info"]
+
+  set_firewall_activity_fields:
+    actions:
+      - set:
+          event.action: "{{parsed_event.message.event_action}}"
+
+          network.transport: "{{parsed_event.message.network_transport}}"
+          network.protocol: "{{parsed_event.message.protocol}}"
+
+          observer.ingress.interface.name: "{{parsed_event.message.source_interface}}"
+          observer.egress.interface.name: "{{parsed_event.message.destination_interface}}"
+
+          source.bytes: "{{parsed_event.message.sentBytes}}"
+          source.ip: "{{parsed_event.message.source_ip}}"
+          source.packets: "{{parsed_event.message.sentPackets}}"
+          source.port: "{{parsed_event.message.source_port}}"
+          source.mac: "{{parsed_event.message.source_mac}}"
+          source.nat.ip: "{{parsed_event.message.srcNAT}}"
+
+          destination.bytes: "{{parsed_event.message.receivedBytes}}"
+          destination.ip: "{{parsed_event.message.destination_ip}}"
+          destination.packets: "{{parsed_event.message.receivedPackets}}"
+          destination.port: "{{parsed_event.message.destination_port}}"
+          destination.nat.ip: "{{parsed_event.message.dstNAT}}"
+
+          service.target.name: "{{parsed_event.message.destination_service}}"
+
+          rule.name: "{{parsed_event.message.rule}}"
+          user.name: "{{parsed_event.message.user}}"
+
+      - set:
+          event.duration: "{{(parsed_event.message.duration | int) * 1000000}}" # convert from ms to ns
+        filter: "{{parsed_event.message.duration | int(-1) >= 0}}"
+
+  set_config_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+
+          source.ip: "{{parsed_event.message.source_ip}}"
+          source.port: "{{parsed_event.message.source_port}}"
+
+          host.name: "{{parsed_event.message.hostname}}"
+
+          user.name: "{{parsed_event.message.user}}"
+
+          file.name: "{{parsed_event.message.file_name}}"
+          file.path: "{{parsed_event.message.file_path}}"
+          file.size: "{{parsed_event.message.file_size}}"
+          file.directory: "{{parsed_event.message.file_location}}"
+
+          process.executable: "{{parsed_event.message.execution_path}}"
+
+          barracuda.mode.type: "{{parsed_event.message.mode_int}}"
+          barracuda.session.id: "{{parsed_event.message.session_id}}"
+          barracuda.commit.operation.id: "{{parsed_event.message.operation_int}}"
+
+          event.reason: "{{parsed_event.message.event_reason}}"
+
+  set_authservice_fields:
+    actions:
+      - set:
+          dns.question.name: "{{parsed_event.message.dns_name}}"
+          dns.answers.data: "{{parsed_event.message.dns_ip}}"
+          source.ip: "{{parsed_event.message.source_ip}}"
+          user.name: "{{parsed_event.message.user_name}}"
+          barracuda.server.type: "{{parsed_event.message.server_type}}"
+          barracuda.service.name: "{{parsed_event.message.service_name}}"
+          barracuda.box.name: "{{parsed_event.message.box_name}}"
+          event.reason: "{{parsed_event.message.event_reason}}"
+          event.category: ["authentication"]
+          event.type: ["info"]
+
+  set_auth_access_fields:
+    actions:
+      - set:
+          process.pid: "{{parsed_event.message.process_pid}}"
+          process.name: "{{parsed_event.message.process_module}}"
+          user.name: "{{parsed_event.message.hostname}}"
+
+          source.ip: "{{parsed_event.message.source_ip}}"
+          error.message: "{{parsed_event.message.error_reason}}"
+
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+
+      - set:
+          event.type: ["end"]
+        filter: "{{parsed_event.message.AUTH_ACCESS_LOG_2 | length > 0}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.AUTH_ACCESS_LOG_3 | length > 0}}"
+
+  set_events_fields:
+    actions:
+      - set:
+          service.address: "{{parsed_event.message.service_address}}"
+          service.name: "{{parsed_event.message.service_name}}"
+
+          source.port: "{{parsed_event.message.host_source_port}}"
+
+          destination.port: "{{parsed_event.message.destination_port}}"
+
+          network.transport: "{{parsed_event.message.transport}}"
+          network.ingress.interface: "{{parsed_event.message.interface}}"
+
+          process.thread.name: "{{parsed_event.message.hostname_worker_thread}}"
+
+          barracuda.event.category: "{{parsed_event.message.category}}"
+          barracuda.event.sub_category_id: "{{parsed_event.message.sub_category_id}}"
+          barracuda.event.class: "{{parsed_event.message.event_class}}"
+          barracuda.event.id: "{{parsed_event.message.event_id}}"
+          barracuda.event.internal_id: "{{parsed_event.message.internal_id}}"
+          barracuda.event.code: "{{parsed_event.message.event_code}}"
+
+          event.severity: "{{parsed_event.message.internal_severity_code}}"
+
+      - set:
+          source.address: "{{parsed_event.message.host_source_ip}}"
+        filter: "{{not (parsed_event.message.host_source_ip | is_ipaddress)}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.host_source_ip}}"
+        filter: "{{parsed_event.message.host_source_ip | is_ipaddress}}"
+
+      - set:
+          destination.address: "{{parsed_event.message.destination_address}}"
+        filter: "{{not (parsed_event.message.destination_address | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.destination_address}}"
+        filter: "{{parsed_event.message.destination_address | is_ipaddress}}"
+
+  set_watchdog_fields:
+    actions:
+      - set:
+          process.pid: "{{parsed_event.message.process_pid}}"
+          process.executable: "{{parsed_event.message.process_path}}"
+
+          barracuda.intervals_alive: "{{parsed_event.message.int_interval}}"
+          barracuda.load_average: "{{parsed_event.message.load_average}}"
+          barracuda.memory_size.total: "{{parsed_event.message.memory_size}}"
+          barracuda.memory_size.buffered: "{{parsed_event.message.buffered_size}}"
+          barracuda.memory_size.cached: "{{parsed_event.message.cached_size}}"
+
+          event.reason: "{{parsed_event.message.WATCHDOG_LOG}}"
+
+          event.category: ["process"]
+          event.type: ["info"]
+
+  set_firewall_threats_fields:
+    actions:
+      - set:
+          destination.ip: "{{parsed_event.message.destination_ip}}"
+          destination.port: "{{parsed_event.message.destination_port}}"
+          source.ip: "{{parsed_event.message.source_ip}}"
+
+          barracuda.request.type: "{{parsed_event.message.request_type}}"
+          barracuda.request.policy: "{{parsed_event.message.request_policy}}"
+          barracuda.detection.info: "{{parsed_event.message.detection_info}}"
+          barracuda.ips.categories: "{{parsed_event.message.ips_categories}}"
+          barracuda.ips.classification: "{{parsed_event.message.ips_classification}}"
+
+          event.category: ["network"]
+          event.type: ["allowed"]
+
+          event.severity: "{{parsed_event.message.event_severity}}"
+
+  set_firewall_fields:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.source_ip}}"
+          barracuda.unallowed_requests.count: "{{parsed_event.message.requests_int}}"
+
+  set_firewall_user_accounting_fields:
+    actions:
+      - set:
+          client.user.name: "{{parsed_event.message.client_username}}"
+
+          destination.bytes: "{{parsed_event.message.bytes_received}}"
+          source.bytes: "{{parsed_event.message.bytes_sent}}"
+
+          event.reason: "{{parsed_event.message.event_type}}"
+
+      - set:
+          client.ip: ["{{parsed_event.message.client_ip}}"]
+        filter: "{{parsed_event.message.client_ip | length > 0}}"
