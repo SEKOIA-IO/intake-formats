@@ -25,9 +25,16 @@ pipeline:
   - name: set_timestamp
   - name: set_event_data
   - name: parse_auth_log
+    filter: "{{ parsed_event.message.eventtype == 'auth_log' }}"
+
   - name: parse_admin_log
+    filter: "{{ parsed_event.message.eventtype == 'admin_log' }}"
+
   - name: parse_telephony_log
+    filter: "{{ parsed_event.message.eventtype == 'telephony_log' }}"
+
   - name: parse_offline_log
+    filter: "{{ parsed_event.message.eventtype == 'offline_log' }}"
 
 stages:
   set_timestamp:
@@ -41,11 +48,19 @@ stages:
           observer.vendor: "Duo"
           observer.product: "Duo Security"
 
+      - set:
+          event.outcome: "success"
+        filter: "{{ parsed_event.message.result == 'success' }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ parsed_event.message.get('result') != None and parsed_event.message.result != 'success' }}"
+
   parse_auth_log:
     actions:
       - set:
           event.category: ["authentication"]
-          event.type: ["info"]
+          event.type: ["start"]
           event.dataset: "auth_log"
           observer.hostname: "{{ parsed_event.message.host }}"
 
@@ -80,7 +95,18 @@ stages:
           duo.security.object: "{{ parsed_event.message.object }}"
           duo.security.telephony.phone_number: "{{ parse_description.description.device }}"
           event.action: "{{ parsed_event.message.action }}"
-        filter: "{{ parsed_event.message.eventtype == 'admin_log' }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: "{{ parsed_event.message.action == 'admin_login'}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{ parsed_event.message.action == 'admin_login_error'}}"
 
   parse_telephony_log:
     actions:
@@ -92,7 +118,6 @@ stages:
           event.reason: "{{ parsed_event.message.context }}"
           duo.security.telephony.type: "{{ parsed_event.message.type }}"
           duo.security.telephony.phone_number: "{{ parsed_event.message.phone }}"
-        filter: "{{ parsed_event.message.eventtype == 'telephony_log' }}"
 
   parse_offline_log:
     actions:
@@ -107,5 +132,3 @@ stages:
 
           user_agent.original: "{{ parse_description.description.user_agent }}"
           host.name: "{{ parse_description.description.hostname  }}"
-
-        filter: "{{ parsed_event.message.eventtype == 'offline_log' }}"
