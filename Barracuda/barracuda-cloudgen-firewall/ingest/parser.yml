@@ -97,6 +97,9 @@ pipeline:
   - name: set_firewall_user_accounting_fields
     filter: "{{parsed_event.message.FIREWALL_USER_ACCOUNTING_LOG | length > 0}}"
 
+  - name: set_rest_events_fields
+    filter: "{{final.event.category == null}}"
+
 stages:
   set_ecs_fields:
     actions:
@@ -104,12 +107,12 @@ stages:
           log.level: "{{parsed_header.message.log_level}}"
           observer.type: "firewall"
 
-          event.category: ["network"]
-          event.type: ["info"]
-
   set_firewall_activity_fields:
     actions:
       - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
           event.action: "{{parsed_event.message.event_action}}"
 
           network.transport: "{{parsed_event.message.network_transport}}"
@@ -143,8 +146,8 @@ stages:
   set_config_fields:
     actions:
       - set:
-          event.category: ["configuration"]
-          event.type: ["change"]
+          event.category: ["authentication"]
+          event.type: ["start"]
 
           source.ip: "{{parsed_event.message.source_ip}}"
           source.port: "{{parsed_event.message.source_port}}"
@@ -158,7 +161,7 @@ stages:
           file.size: "{{parsed_event.message.file_size}}"
           file.directory: "{{parsed_event.message.file_location}}"
 
-          process.executable: "{{parsed_event.message.execution_path}}"
+          process.command_line: "{{parsed_event.message.execution_path}}"
 
           barracuda.mode.type: "{{parsed_event.message.mode_int}}"
           barracuda.session.id: "{{parsed_event.message.session_id}}"
@@ -166,33 +169,69 @@ stages:
 
           event.reason: "{{parsed_event.message.event_reason}}"
 
+      - set:
+          event.category: ["session"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_1', '') | length > 0}}"
+
+      - set:
+          event.category: ["session"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_2', '') | length > 0}}"
+
+      - set:
+          event.category: ["session"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_4', '') | length > 0}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_5', '') | length > 0}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_REASON_1', '') | length > 0}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_REASON_3', '') | length > 0}}"
+
+      - set:
+          event.category: ["process"]
+          event.type: ["info"]
+        filter: "{{ parsed_event.message.get('CONFIG_LOG_REASON_2', '') | length > 0}}"
+
   set_authservice_fields:
     actions:
       - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+
           dns.question.name: "{{parsed_event.message.dns_name}}"
-          dns.answers.data: "{{parsed_event.message.dns_ip}}"
           source.ip: "{{parsed_event.message.source_ip}}"
           user.name: "{{parsed_event.message.user_name}}"
           barracuda.server.type: "{{parsed_event.message.server_type}}"
           barracuda.service.name: "{{parsed_event.message.service_name}}"
           barracuda.box.name: "{{parsed_event.message.box_name}}"
           event.reason: "{{parsed_event.message.event_reason}}"
-          event.category: ["authentication"]
-          event.type: ["info"]
+
+      - set:
+          dns.answers: '[{"data": "{{parsed_event.message.dns_ip}}", "name": "{{parsed_event.message.dns_name}}"}]'
+        filter: "{{parsed_event.message.dns_ip | is_ipaddress}}"
 
   set_auth_access_fields:
     actions:
       - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+
           process.pid: "{{parsed_event.message.process_pid}}"
           process.name: "{{parsed_event.message.process_module}}"
           user.name: "{{parsed_event.message.hostname}}"
 
           source.ip: "{{parsed_event.message.source_ip}}"
           error.message: "{{parsed_event.message.error_reason}}"
-
-          event.category: ["authentication"]
-          event.type: ["start"]
-          event.outcome: "success"
 
       - set:
           event.type: ["end"]
@@ -205,6 +244,9 @@ stages:
   set_events_fields:
     actions:
       - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
           service.address: "{{parsed_event.message.service_address}}"
           service.name: "{{parsed_event.message.service_name}}"
 
@@ -245,8 +287,11 @@ stages:
   set_watchdog_fields:
     actions:
       - set:
+          event.category: ["process"]
+          event.type: ["info"]
+
           process.pid: "{{parsed_event.message.process_pid}}"
-          process.executable: "{{parsed_event.message.process_path}}"
+          file.path: "{{parsed_event.message.process_path}}"
 
           barracuda.intervals_alive: "{{parsed_event.message.int_interval}}"
           barracuda.load_average: "{{parsed_event.message.load_average}}"
@@ -256,12 +301,12 @@ stages:
 
           event.reason: "{{parsed_event.message.WATCHDOG_LOG}}"
 
-          event.category: ["process"]
-          event.type: ["info"]
-
   set_firewall_threats_fields:
     actions:
       - set:
+          event.category: ["network"]
+          event.type: ["allowed"]
+
           destination.ip: "{{parsed_event.message.destination_ip}}"
           destination.port: "{{parsed_event.message.destination_port}}"
           source.ip: "{{parsed_event.message.source_ip}}"
@@ -272,20 +317,23 @@ stages:
           barracuda.ips.categories: "{{parsed_event.message.ips_categories}}"
           barracuda.ips.classification: "{{parsed_event.message.ips_classification}}"
 
-          event.category: ["network"]
-          event.type: ["allowed"]
-
           event.severity: "{{parsed_event.message.event_severity}}"
 
   set_firewall_fields:
     actions:
       - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
           source.ip: "{{parsed_event.message.source_ip}}"
           barracuda.unallowed_requests.count: "{{parsed_event.message.requests_int}}"
 
   set_firewall_user_accounting_fields:
     actions:
       - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
           client.user.name: "{{parsed_event.message.client_username}}"
 
           destination.bytes: "{{parsed_event.message.bytes_received}}"
@@ -296,3 +344,12 @@ stages:
       - set:
           client.ip: ["{{parsed_event.message.client_ip}}"]
         filter: "{{parsed_event.message.client_ip | length > 0}}"
+
+  set_rest_events_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          event.reason: "{{parsed_header.message.event}}"
