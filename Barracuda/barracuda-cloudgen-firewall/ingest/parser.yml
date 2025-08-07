@@ -60,7 +60,7 @@ pipeline:
           WATCHDOG_LOG_4: 'currently there are %{DATA:memory_size} kB of free memory available \(%{DATA:buffered_size} buffered, %{DATA:cached_size}, cached\)'
 
           # Firewall threats log
-          FIREWALL_THREATS_LOG: 'firewall: \[Request\] Allow:\s+%{DATA:request_type} %{DATA:request_policy} %{IP:source_ip} -> %{IP:destination_ip}:%{NUMBER:destination_port} \|\[%{DATA:detection_info}\]\|%{DATA:ips_categories}\|%{NUMBER:event_severity}\|%{DATA:ips_classification}'
+          FIREWALL_THREATS_LOG: 'firewall: \[Request\] %{DATA:event_type}:\s+%{DATA:request_type} %{DATA:request_policy} %{IP:source_ip} -> %{IP:destination_ip}:%{NUMBER:destination_port} \|\[%{DATA:detection_info}\]\|%{DATA:ips_categories}\|%{NUMBER:event_severity}\|%{DATA:ips_classification}'
 
           # Firewall
           FIREWALL_LOG: 'firewall: \[Timer\] SecurityEvent: \(Address-Port Scan\) %{INT:requests_int} unallowed requests for source IP %{IP:source_ip} within %{NUMBER} seconds'
@@ -206,6 +206,7 @@ stages:
       - set:
           event.category: ["authentication"]
           event.type: ["info"]
+          event.action: "{{parsed_event.message.event_action}}"
 
           dns.question.name: "{{parsed_event.message.dns_name}}"
           source.ip: "{{parsed_event.message.source_ip}}"
@@ -214,6 +215,14 @@ stages:
           barracuda.service.name: "{{parsed_event.message.service_name}}"
           barracuda.box.name: "{{parsed_event.message.box_name}}"
           event.reason: "{{parsed_event.message.event_reason}}"
+
+      - set:
+          event.type: ["start"]
+        filter: "{{ parsed_event.message.get('AUTHSERVICE_LOG_2', '') | length > 0}}"
+
+      - set:
+          event.type: ["start"]
+        filter: "{{ parsed_event.message.get('AUTHSERVICE_LOG_3', '') | length > 0}}"
 
       - set:
           dns.answers: '[{"data": "{{parsed_event.message.dns_ip}}", "name": "{{parsed_event.message.dns_name}}"}]'
@@ -318,6 +327,7 @@ stages:
           barracuda.ips.classification: "{{parsed_event.message.ips_classification}}"
 
           event.severity: "{{parsed_event.message.event_severity}}"
+          event.action: "{{parsed_event.message.event_type}}"
 
   set_firewall_fields:
     actions:
@@ -339,7 +349,7 @@ stages:
           destination.bytes: "{{parsed_event.message.bytes_received}}"
           source.bytes: "{{parsed_event.message.bytes_sent}}"
 
-          event.reason: "{{parsed_event.message.event_type}}"
+          event.action: "{{parsed_event.message.event_type}}"
 
       - set:
           client.ip: ["{{parsed_event.message.client_ip}}"]
