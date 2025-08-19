@@ -17,7 +17,7 @@ pipeline:
       properties:
         input_field: "{{pre_parsing.pre_message.raw_message}}"
         output_field: message
-        pattern: "%{GATEWAY_1}|%{GATEWAY_2}|%{TUNNEL_1}|%{TUNNEL_2}|%{TUNNEL_3}|%{TUNNEL_4}|%{TUNNEL_5}|%{CLIENT_CONNECTION_1}|%{CLIENT_CONNECTION_2}|%{CLIENT_CONNECTION_3}|%{CLIENT_CONNECTION_4}|%{TLS_INFO}|%{CLIENT_INFO_1}|%{CLIENT_INFO_2}|%{CLIENT_INFO_3}|%{LDAP_ERROR}|%{DEFAULT}"
+        pattern: "%{GATEWAY_1}|%{GATEWAY_2}|%{TUNNEL_1}|%{TUNNEL_2}|%{TUNNEL_3}|%{TUNNEL_4}|%{TUNNEL_5}|%{TUNNEL_6}|%{CLIENT_CONNECTION_1}|%{CLIENT_CONNECTION_2}|%{CLIENT_CONNECTION_3}|%{CLIENT_CONNECTION_4}|%{TLS_INFO}|%{CLIENT_INFO_1}|%{CLIENT_INFO_2}|%{CLIENT_INFO_3}|%{LDAP_ERROR}|%{CHANNEL_1}|%{RANDOM_1}|%{DEFAULT}"
         custom_patterns:
           GATEWAY_1: "%{DATA} IFACE=%{WORD:iface} HWADDR=%{MAC:hwadr}"
           GATEWAY_2: "net_%{DATA}: via %{IP} %{WORD} %{WORD:iface}"
@@ -26,6 +26,7 @@ pipeline:
           TUNNEL_3: "net_%{DATA}: %{IP}/%{NUMBER} %{WORD} %{IP:peer_ip} %{DATA}"
           TUNNEL_4: "net_%{DATA}: %{WORD} %{NUMBER} %{WORD} %{WORD:observer_interface}"
           TUNNEL_5: "net_%{DATA}_up: %{WORD} %{WORD:observer_interface} %{WORD}"
+          TUNNEL_6: "%{DATA:datetime} us=%{NUMBER} %{IP:client_ip}:%{NUMBER:client_port} TLS: %{DATA:event_reason} for username '%{DATA:user_name}'"
           CLIENT_CONNECTION_1: "%{DATA} %{IP:nat_ip} -> %{WORD:client_domain}/%{IP:client_ip}:%{NUMBER:client_port}"
           CLIENT_CONNECTION_2: "%{DATA} %{WORD:client_domain}/%{IP:client_ip}:%{NUMBER:client_port}: %{IP:nat_ip}"
           CLIENT_CONNECTION_3: "%{WORD:client_domain},%{IP:nat_ip},"
@@ -34,6 +35,10 @@ pipeline:
           CLIENT_INFO_1: "(%{USER:user_name}/)?%{IP:client_ip}:%{NUMBER:client_port} %{DATA:event_reason}"
           CLIENT_INFO_2: "%{DATA:event_reason}\\(\\), in='%{WORD:client_domain},%{IP:client_ip},'"
           CLIENT_INFO_3: "%{DATA:event_reason}: base=%{IP:client_ip} size=%{NUMBER}"
+
+          RANDOM_TLS: "%{DATA:tls_version}, cipher %{DATA} %{DATA:tls_cipher}, peer certificate: %{DATA:peer_certificate}, signature: %{DATA:signature}"
+          RANDOM_1: "%{WORD:random_type} %{DATA:user_name}/%{IP:client_ip}:%{NUMBER:client_port} %{DATA:event_info}: (%{RANDOM_TLS}|%{GREEDYDATA:kv_data})"
+
           DEFAULT: "%{DATA:event_reason}"
 
           LDAP_ERROR: "%{LDAP_ERROR_PASSWORD}|%{LDAP_ERROR_USER_NOT_FOUND}|%{LDAP_ERROR_BIND_FAILED}|%{LDAP_ERROR_BIND_FORBIDDEN}|%{LDAP_ERROR_UNABLE_TO_BIND}"
@@ -48,6 +53,9 @@ pipeline:
           LDAP_ERROR_UNABLE_TO_BIND: "%{LDAP_MESSAGE_UNABLE_TO_BIND:ldap_message} %{USERNAME:user_name}"
           LDAP_ERROR_USER_NOT_FOUND: '%{LDAP_MESSAGE_USER:ldap_message} "%{USERNAME:user_name}" was not found.'
 
+          CHANNEL_CIPHER: "Cipher '%{DATA:tls_cipher}' %{GREEDYDATA}"
+          CHANNEL_1: "%{DATA:datetime} us=%{NUMBER} %{IP:client_ip}:%{NUMBER:client_port} %{DATA} Data Channel: (%{CHANNEL_CIPHER:event_reason}|%{GREEDYDATA:event_reason})"
+
   - name: parse_ldap_kv
     filter: "{{parsed_event.message != None and parsed_event.message.ldap_kvs != None}}"
     external:
@@ -59,6 +67,16 @@ pipeline:
         value_sep: "="
         item_sep: ","
 
+  - name: parse_random_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.kv_data}}"
+        output_field: message
+        value_sep: "="
+        item_sep: ',\s'
+
   - name: parse_date
     external:
       name: date.parse
@@ -66,6 +84,15 @@ pipeline:
         input_field: "{{pre_parsing.pre_message.date}} {{pre_parsing.pre_message.time}}"
         output_field: datetime
     filter: "{{ pre_parsing.pre_message.date != None }}"
+
+  - name: parse_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.datetime}}" # Tue Aug 12 08:26:30 2025
+        output_field: datetime
+        format: "%a %b %d %H:%M:%S %Y"
+    filter: "{{ parsed_event.message.datetime != None }}"
 
   - name: set_common_fields
 
@@ -85,15 +112,25 @@ stages:
           client.port: "{{parsed_event.message.client_port}}"
           client.nat.ip: "{{parsed_event.message.nat_ip}}"
           client.domain: "{{parsed_event.message.client_domain}}"
+          client.geo.city_name: "{{parse_random_kv.message.L}}"
+
+          organization.name: "{{parse_random_kv.message.O}}"
 
           tls.version: "{{parsed_event.message.tls_version}}"
           tls.cipher: "{{parsed_event.message.tls_cipher}}"
+          tls.server.x509.signature_algorithm: "{{parsed_event.message.signature}}"
 
           observer.ingress.interface.name: "{{parsed_event.message.observer_interface}}"
           observer.egress.interface.name: "{{parsed_event.message.iface}}"
           observer.mac: "{{parsed_event.message.hwadr}}"
           observer.ip: "{{parsed_event.message.observer_ip}}"
+
           openvpn.peer.ip: "{{parsed_event.message.peer_ip}}"
+
+      - set:
+          tls.server.x509.public_key_algorithm: "{{parsed_event.message.peer_certificate.split(' ')[-1]}}"
+          tls.server.x509.public_key_size: "{{parsed_event.message.peer_certificate.split(' ')[0]}}"
+        filter: "{{parsed_event.message.peer_certificate != None}}"
 
       - set:
           user.name: "{{parsed_event.message.user_name}}"
