@@ -1,0 +1,307 @@
+name: siteminder
+pipeline:
+  - name: parsed_event
+    description: ''
+    filter: ''
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+        pattern: >-
+          %{WORD:lpszEvent}\s%{NOTSPACE:lpszHostName}\s\[%{GREEDYDATA:timestamp}\]\s\"%{IP:szClientIp}?
+          +(%{USER_UID:szUserName}|%{USERNAME:szUserName}|TGI:
+          %{NOTSPACE:szUserName}|%{NOT_DQUOTE:szUserName})?\"
+          +\"%{NOTSPACE:szAgentName}? +%{NOTSPACE:szAction}?
+          +%{NOT_BRACKETS:szResource}?\" +\[(%{NOTSPACE:szTransactionId})?\]
+          +\[%{NUMBER:nReason}?\] +(%{NOT_BRACKETS:szStatusMsg})?(( ?\[\])?)+
+        custom_patterns:
+          USER_UID: (((cn|uid|ou|o|dc|sn)=.[^ "]+)+)
+          NOT_DQUOTE: ([^"])+
+          NOT_BRACKETS: '[^\[\]]+'
+  - name: transaction_id_parsed
+    description: ''
+    filter: >-
+      {{parsed_event.message.szTransactionId is defined and 'idletime' in
+      parsed_event.message.szTransactionId}}
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{parsed_event.message.szTransactionId}}'
+        output_field: message
+        value_sep: '='
+        item_sep: ;
+  - name: set_observer_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: parsed_date
+    description: ''
+    filter: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.timestamp}}'
+        output_field: timestamp
+        format: '%d/%b/%Y:%H:%M:%S %z'
+        timezone: UTC
+  - name: set_event_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_good_practice_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_client_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_web_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_custom_fields
+    description: ''
+    filter: ''
+    external: null
+stages:
+  set_observer_fields:
+    actions:
+      - set:
+          observer.type: uam
+          observer.vendor: 'Broadcom '
+          observer.product: Siteminder
+          observer.hostname: '{{parsed_event.message.lpszHostName}}'
+        filter: ''
+        name: set
+  set_event_common_fields:
+    actions:
+      - set:
+          event.action: '{{parsed_event.message.lpszEvent}}'
+          event.reason: '{{parsed_event.message.nReason}}'
+          event.message: '{{parsed_event.message.szStatusMsg}}'
+        filter: ''
+        name: set
+      - dictionary:
+          '0': Sm_Api_Reason_None
+          '1': Sm_Api_Reason_PwMustChange
+          '2': Sm_Api_Reason_InvalidSession
+          '3': Sm_Api_Reason_RevokedSession
+          '4': "Sm_Api_Reason_ExpiredSession\t"
+          '5': Sm_Api_Reason_AuthLevelTooLow
+          '6': Sm_Api_Reason_UnknownUser
+          '7': Sm_Api_Reason_UserDisabled
+          '8': Sm_Api_Reason_InvalidSessionId
+          '9': Sm_Api_Reason_InvalidSessionIp
+          '10': Sm_Api_Reason_CertificateRevoked
+          '11': Sm_Api_Reason_CRLOutOfDate
+          '12': "Sm_Api_Reason_CertRevokedKeyCompromised\t"
+          '13': "Sm_Api_Reason_CertRevokedAffiliationChange\t"
+          '14': Sm_Api_Reason_CertOnHold
+          '15': Sm_Api_Reason_TokenCardChallenge
+          '16': Sm_Api_Reason_ImpersonatedUserNotInDir
+          '17': Sm_Api_Reason_Anonymous
+          '18': Sm_Api_Reason_PwWillExpire
+          '19': Sm_Api_Reason_PwExpired
+          '20': Sm_Api_Reason_ImmedPWChangeRequired
+          '21': Sm_Api_Reason_PWChangeFailed
+          '22': Sm_Api_Reason_BadPWChange
+          '23': Sm_Api_Reason_PWChangeAccepted
+          '24': Sm_Api_Reason_ExcessiveFailedLoginAttempts
+          '25': Sm_Api_Reason_AccountInactivity
+          '26': Sm_Api_Reason_NoRedirectConfigured
+          '27': Sm_Api_Reason_ErrorMessageIsRedirect
+          '28': Sm_Api_Reason_Next_Tokencode
+          '29': Sm_Api_Reason_New_PIN_Select
+          '30': Sm_Api_Reason_New_PIN_Sys_Tokencode
+          '31': Sm_Api_Reason_New_User_PIN_Tokencode
+          '32': Sm_Api_Reason_New_PIN_Accepted
+          '33': Sm_Api_Reason_Guest
+          '34': Sm_Api_Reason_PWSelfChange
+          '35': Sm_Api_Reason_ServerException
+          '36': Sm_Api_Reason_UnknownScheme
+          '37': Sm_Api_Reason_UnsupportedScheme
+          '38': Sm_Api_Reason_Misconfigured
+          '39': Sm_Api_Reason_BufferOverflow
+          '40': Sm_Api_Reason_SetPersistentSessionFailed
+          '41': Sm_Api_Reason_UserLogout
+          '42': Sm_Api_Reason_IdleSession
+          '43': Sm_Api_Reason_PolicyServerEnforcedTimeout
+          '44': Sm_Api_Reason_PolicyServerEnforcedIdle
+          '45': Sm_Api_Reason_ImpersonationNotAllowed
+          '46': Sm_Api_Reason_ImpersonationNotAllowedUser
+          '47': Sm_Api_Reason_FederationNoLoginID
+          '48': Sm_Api_Reason_FederationUserNotInDir
+          '49': Sm_Api_Reason_FederationInvalidMessage
+          '50': Sm_Api_Reason_FederationUnacceptedMessage
+          '51': Sm_Api_Reason_ADnativeUserDisabled
+        mapping:
+          event.reason: event.reason
+        filter: ''
+        name: translate
+  set_good_practice_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.kind: event
+          event.dataset: smaccess
+        filter: ''
+        name: set
+      - set:
+          event.category: '[''authentication'']'
+        filter: '{{''auth'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.category: '[''web'']'
+        filter: '{{final.event.category is not defined}}'
+        name: set
+      - set:
+          event.type: '[''access'']'
+        filter: >-
+          {{'web' in final.event.category and final.event.type is not defined
+          and (parsed_event.message.szAction|lower in
+          ['get','head','connect','options','trace'])}}
+        name: set
+      - set:
+          event.type: '[''creation'']'
+        filter: >-
+          {{'web' in final.event.category and final.event.type is not defined
+          and ('post' in parsed_event.message.szAction|lower)}}
+        name: set
+      - set:
+          event.type: '[''change'']'
+        filter: >-
+          {{'web' in final.event.category and final.event.type is not defined
+          and (parsed_event.message.szAction|lower in ['put','patch'])}}
+        name: set
+      - set:
+          event.type: '[''deletion'']'
+        filter: >-
+          {{'web' in final.event.category and final.event.type is not defined
+          and ('delete' in parsed_event.message.szAction|lower)}}
+        name: set
+      - set:
+          event.type: '[''allowed'']'
+        filter: >-
+          {{final.event.type is not defined and ('accept' in
+          final.event.action|lower or 'login' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '[''denied'']'
+        filter: >-
+          {{final.event.type is not defined and ('reject' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''allowed'']}}'
+        filter: >-
+          {{'allowed' not in final.event.type and final.event.type is defined
+          and ('accept' in final.event.action|lower or 'login' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''denied'']}}'
+        filter: >-
+          {{'denied' not in final.event.type and final.event.type is defined and
+          ('reject' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''access'']}}'
+        filter: >-
+          {{'web' in final.event.category and 'access' not in final.event.type
+          and final.event.type is defined and ('get' in
+          parsed_event.message.szAction|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''creation'']}}'
+        filter: >-
+          {{'web' in final.event.category and 'creation' not in final.event.type
+          and final.event.type is defined and ('post' in
+          parsed_event.message.szAction|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''change'']}}'
+        filter: >-
+          {{'web' in final.event.category and 'change' not in final.event.type
+          and final.event.type is defined and ('put' in
+          parsed_event.message.szAction|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''deletion'']}}'
+        filter: >-
+          {{'web' in final.event.category and 'deletion' not in final.event.type
+          and final.event.type is defined and ('delete' in
+          parsed_event.message.szAction|lower)}}
+        name: set
+      - set:
+          event.outcome: unknown
+        filter: '{{final.event.outcome is not defined}}'
+        name: set
+      - set:
+          event.type: '[''start'']'
+        filter: >-
+          {{final.event.type is not defined and ('login' in
+          final.event.action|lower or 'authaccept' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and final.event.type is defined and
+          ('login' in final.event.action|lower or 'authaccept' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '[''end'']'
+        filter: >-
+          {{final.event.type is not defined and 'logout' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{final.event.type + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'logout' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.outcome: failure
+        filter: '{{''reject'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.outcome: success
+        filter: >-
+          {{'accept' in final.event.outcome|lower or 'login' in
+          final.event.outcome|lower or 'logout' in final.event.outcome|lower}}
+        name: set
+      - set:
+          event.outcome: unknown
+        filter: '{{final.event.outcome is not defined}}'
+        name: set
+  set_client_common_fields:
+    actions:
+      - set:
+          client.ip: '{{parsed_event.message.szClientIp}}'
+          client.user.name: '{{parsed_event.message.szUserName}}'
+        filter: ''
+        name: set
+  set_web_fields:
+    actions:
+      - set:
+          url.path: '{{parsed_event.message.szResource}}'
+          http.request.method: '{{parsed_event.message.szAction}}'
+        filter: ''
+        name: set
+  set_custom_fields:
+    actions:
+      - set:
+          broadcom.siteminder.idle: '{{transaction_id_parsed.message.idletime}}'
+          broadcom.siteminder.maxtime: '{{transaction_id_parsed.message.maxtime}}'
+          broadcom.siteminder.authlevel: '{{transaction_id_parsed.message.authlevel}}'
+        filter: '{{transaction_id_parsed.message is defined}}'
+        name: set
+      - set:
+          broadcom.siteminder.agent.name: '{{parsed_event.message.szAgentName}}'
+          broadcom.siteminder.transaction.id: '{{parsed_event.message.szTransactionId}}'
+        filter: ''
+        name: set
