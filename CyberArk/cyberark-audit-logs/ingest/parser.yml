@@ -6,10 +6,19 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+    filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$")}}'
+
+  - name: parsed_event
+    external:
+      name: leef.parse-leef
+      properties:
+        input_field: "{{original.message.replace('\t ', '\t')}}"
+    filter: "{{'LEEF:' in original.message}}"
 
   - name: set_category_fields
   - name: set_common_fields
   - name: set_specific_fields
+  - name: set_leef_fields
 
 stages:
   set_category_fields:
@@ -42,7 +51,17 @@ stages:
           event.category: ["authentication"]
           event.type: ["start"]
           event.outcome: "success"
-        filter: "{{parsed_event.message.auditCode in ('IDP2009', )}}"
+        filter: "{{parsed_event.message.auditCode in ('IDP2009', ) or parsed_event.message.Action == 'Logon'}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{'file' in parsed_event.message.Action.lower()}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: "{{'connection' in parsed_event.message.Action.lower()}}"
 
   set_common_fields:
     actions:
@@ -109,7 +128,6 @@ stages:
       - set:
           source.geo.city_name: "{{parsed_event.message.customData.geoip_city_name}}"
           source.geo.country_name: "{{parsed_event.message.customData.geoip_country_name}}"
-          source.geo.country_iso_code: "{{parsed_event.message.customData.geoip_country_code}}"
           user_agent.name: "{{parsed_event.message.customData.request_browser_name}}"
           host.os.platform: "{{parsed_event.message.customData.request_device_os}}"
           user.target.id: "{{parsed_event.message.customData.user_id}}"
@@ -129,3 +147,21 @@ stages:
       - set:
           user.target.email: "{{parsed_event.message.customData.user_name}}"
         filter: "{{parsed_event.message.customData.user_name | length > 0 and  '@' in parsed_event.message.customData.user_name}}"
+
+  set_leef_fields:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
+      - set:
+          event.action: "{{parsed_event.message.Action}}"
+
+          user.name: "{{parsed_event.message.usrName}}"
+          source.user.name: "{{parsed_event.message.SourceUser}}"
+          user.target.name: "{{parsed_event.message.duser or parsed_event.message.TargetUser}}"
+
+          source.address: "{{parsed_event.message.shost}}"
+          destination.address: "{{parsed_event.message.dhost}}"
+
+          file.name: "{{parsed_event.message.File}}"

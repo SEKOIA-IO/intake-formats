@@ -84,6 +84,9 @@ pipeline:
   - name: scheduler_report_notification_event
     filter: '{{parsed_event.message.metadata.eventType == "ScheduledReportNotificationEvent"}}'
 
+  - name: api_activity_audit_event
+    filter: '{{parsed_event.message.metadata.eventType == "APIActivityAuditEvent"}}'
+
 stages:
   set_common_fields:
     actions:
@@ -106,9 +109,9 @@ stages:
         filter: "{{parsed_event.message.event.MACAddress != null}}"
 
       - set:
-          agent.id: "{{parsed_event.message.event.AgentIdString}}"
-          host.name: "{{parsed_event.message.event.ComputerName}}"
-          log.hostname: "{{parsed_event.message.event.ComputerName}}"
+          agent.id: "{{parsed_event.message.event.AgentIdString or parsed_event.message.event.AgentId}}"
+          host.name: "{{parsed_event.message.event.ComputerName or parsed_event.message.event.Hostname}}"
+          log.hostname: "{{parsed_event.message.event.ComputerName or parsed_event.message.event.Hostname}}"
           user.name: "{{parsed_event.message.event.UserName}}"
           event.kind: alert
           event.type: ["info"]
@@ -125,7 +128,7 @@ stages:
           process.command_line: "{{parsed_event.message.event.CommandLine}}"
           process.name: "{{parsed_event.message.event.FileName}}"
           process.working_directory: "{{parsed_event.message.event.FilePath}}"
-          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
+          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId or parsed_event.message.event.AggregateId}}"
           crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
           crowdstrike.pattern.disposition_flags: "{{ parsed_event.message.event.PatternDispositionFlags }}"
           crowdstrike.pattern.disposition_value: "{{ parsed_event.message.event.PatternDispositionValue }}"
@@ -134,6 +137,7 @@ stages:
           crowdstrike.process.grandparent.working_directory: "{{parsed_event.message.event.GrandparentImageFileName | dirname}}"
           crowdstrike.process.grandparent.command_line: "{{parsed_event.message.event.GrandparentCommandLine}}"
           crowdstrike.sensor_id: "{{parsed_event.message.event.SensorId}}"
+          crowdstrike.composite_id: "{{parsed_event.message.event.CompositeId}}"
           threat.indicator.name: "{{parsed_event.message.event.IOCValue}}"
           threat.technique.name: "{{parsed_event.message.event.Technique or parsed_event.message.event.Techniques}}"
           threat.technique.id: "{{parsed_event.message.event.TechniqueIds}}"
@@ -322,7 +326,7 @@ stages:
           crowdstrike.added_privilege: "{{ parsed_event.message.event.AddedPrivilege }}"
           crowdstrike.attempt_outcome: "{{ parsed_event.message.event.AttemptOutcome }}"
           crowdstrike.detect_description: "{{ parsed_event.message.event.DetectDescription }}"
-          crowdstrike.detect_name: "{{ parsed_event.message.event.DetectName }}"
+          crowdstrike.detect_name: "{{ parsed_event.message.event.DetectName or parsed_event.message.event.Name }}"
           crowdstrike.idp_policy_rule_trigger: "{{ parsed_event.message.event.IdpPolicyRuleTrigger }}"
           crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
           crowdstrike.previous_privileges: "{{ parsed_event.message.event.PreviousPrivileges }}"
@@ -337,7 +341,6 @@ stages:
           host.name: "{{ parsed_event.message.event.SourceEndpointHostName }}"
           event.action: "{{ parsed_event.message.event.IdpPolicyRuleAction }}"
           rule.name: "{{ parsed_event.message.event.IdpPolicyRuleName }}"
-          source.geo.country_iso_code: "{{ parsed_event.message.event.LocationCountryCode }}"
           source.ip: "{{ parsed_event.message.event.SourceEndpointIpAddress }}"
           threat.tactic.name: "{{ parsed_event.message.event.Tactic }}"
           threat.technique.name: "{{ parsed_event.message.event.Technique }}"
@@ -700,3 +703,42 @@ stages:
           user.id: "{{parsed_event.message.event.UserUUID}}"
           user.name: "{{parsed_event.message.event.UserID}}"
           file.name: "{{parsed_event.message.event.ExecutionMetadata.ReportFileName}}"
+
+  api_activity_audit_event:
+    actions:
+      - set:
+          crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
+          crowdstrike.customer_id: "{{parsed_event.message.event.Attributes.cid}}"
+          event.category: ["api"]
+          http.request.method: "{{parsed_event.message.event.Attributes.request_method}}"
+          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes}}"
+          http.response.status_code: "{{parsed_event.message.event.Attributes.status_code}}"
+          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces}}"
+          service.name: "{{parsed_event.message.event.ServiceName}}"
+          trace.id: "{{parsed_event.message.event.Attributes.trace_id}}"
+          url.query: "{{parsed_event.message.event.Attributes.request_query}}"
+          url.path: "{{parsed_event.message.event.Attributes.request_path}}"
+          user_agent.original: "{{parsed_event.message.event.Attributes.user_agent}}"
+      - set:
+          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes[1:-1]|join()}}"
+        filter: "{{parsed_event.message.event.Attributes.consumes | first == '[' and parsed_event.message.event.Attributes.consumes | last == ']'}}"
+      - set:
+          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces[1:-1]|join()}}"
+        filter: "{{parsed_event.message.event.Attributes.produces | first == '[' and parsed_event.message.event.Attributes.produces | last == ']'}}"
+      - set:
+          event.outcome: >
+            {%- if parsed_event.message.event.Success -%}
+              success
+            {%- else -%}
+              failure
+            {%- endif -%}
+        filter: '{{parsed_event.message.event.get("OperationName") == "logged"}}'
+      - set:
+          source.ip: "{{parsed_event.message.event.UserIp}}"
+        filter: "{{parsed_event.message.event.UserIp | is_ipaddress}}"
+      - translate:
+        dictionary:
+          "logged": ["access"]
+        mapping:
+          crowdstrike.operation_name: event.type
+        fallback: ["info"]
