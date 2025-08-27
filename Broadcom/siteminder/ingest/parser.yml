@@ -1,4 +1,4 @@
-name: siteminder
+name: broadcom-siteminder
 pipeline:
   - name: parsed_event
     description: ''
@@ -157,112 +157,49 @@ stages:
         filter: '{{final.event.category is not defined}}'
         name: set
       - set:
-          event.type: '[''access'']'
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
         filter: >-
-          {{'web' in final.event.category and final.event.type is not defined
-          and (parsed_event.message.szAction|lower in
+          {{'web' in final.event.category and
+          (parsed_event.message.szAction|lower in
           ['get','head','connect','options','trace'])}}
         name: set
       - set:
-          event.type: '[''creation'']'
+          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
         filter: >-
-          {{'web' in final.event.category and final.event.type is not defined
-          and ('post' in parsed_event.message.szAction|lower)}}
-        name: set
-      - set:
-          event.type: '[''change'']'
-        filter: >-
-          {{'web' in final.event.category and final.event.type is not defined
-          and (parsed_event.message.szAction|lower in ['put','patch'])}}
-        name: set
-      - set:
-          event.type: '[''deletion'']'
-        filter: >-
-          {{'web' in final.event.category and final.event.type is not defined
-          and ('delete' in parsed_event.message.szAction|lower)}}
-        name: set
-      - set:
-          event.type: '[''allowed'']'
-        filter: >-
-          {{final.event.type is not defined and ('accept' in
-          final.event.action|lower or 'login' in final.event.action|lower)}}
-        name: set
-      - set:
-          event.type: '[''denied'']'
-        filter: >-
-          {{final.event.type is not defined and ('reject' in
-          final.event.action|lower)}}
-        name: set
-      - set:
-          event.type: '{{final.event.type + [''allowed'']}}'
-        filter: >-
-          {{'allowed' not in final.event.type and final.event.type is defined
-          and ('accept' in final.event.action|lower or 'login' in
-          final.event.action|lower)}}
-        name: set
-      - set:
-          event.type: '{{final.event.type + [''denied'']}}'
-        filter: >-
-          {{'denied' not in final.event.type and final.event.type is defined and
-          ('reject' in final.event.action|lower)}}
-        name: set
-      - set:
-          event.type: '{{final.event.type + [''access'']}}'
-        filter: >-
-          {{'web' in final.event.category and 'access' not in final.event.type
-          and final.event.type is defined and ('get' in
+          {{'web' in final.event.category and ('post' in
           parsed_event.message.szAction|lower)}}
         name: set
       - set:
-          event.type: '{{final.event.type + [''creation'']}}'
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
         filter: >-
-          {{'web' in final.event.category and 'creation' not in final.event.type
-          and final.event.type is defined and ('post' in
+          {{'web' in final.event.category and
+          (parsed_event.message.szAction|lower in ['put','patch'])}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'web' in final.event.category and ('delete' in
           parsed_event.message.szAction|lower)}}
         name: set
       - set:
-          event.type: '{{final.event.type + [''change'']}}'
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
         filter: >-
-          {{'web' in final.event.category and 'change' not in final.event.type
-          and final.event.type is defined and ('put' in
-          parsed_event.message.szAction|lower)}}
-        name: set
-      - set:
-          event.type: '{{final.event.type + [''deletion'']}}'
-        filter: >-
-          {{'web' in final.event.category and 'deletion' not in final.event.type
-          and final.event.type is defined and ('delete' in
-          parsed_event.message.szAction|lower)}}
-        name: set
-      - set:
-          event.outcome: unknown
-        filter: '{{final.event.outcome is not defined}}'
-        name: set
-      - set:
-          event.type: '[''start'']'
-        filter: >-
-          {{final.event.type is not defined and ('login' in
-          final.event.action|lower or 'authaccept' in
-          final.event.action|lower)}}
-        name: set
-      - set:
-          event.type: '{{final.event.type + [''start'']}}'
-        filter: >-
-          {{'start' not in final.event.type and final.event.type is defined and
-          ('login' in final.event.action|lower or 'authaccept' in
-          final.event.action|lower)}}
-        name: set
-      - set:
-          event.type: '[''end'']'
-        filter: >-
-          {{final.event.type is not defined and 'logout' in
+          {{'accept' in final.event.action|lower or 'login' in
           final.event.action|lower}}
         name: set
       - set:
-          event.type: '{{final.event.type + [''end'']}}'
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: '{{''reject'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
         filter: >-
-          {{'end' not in final.event.type and 'logout' in
-          final.event.action|lower}}
+          {{'login' in final.event.action|lower or 'authaccept' in
+          final.event.action|lower or 'authreject' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: '{{''logout'' in final.event.action|lower}}'
         name: set
       - set:
           event.outcome: failure
@@ -273,8 +210,9 @@ stages:
         filter: >-
           {{'accept' in final.event.action|lower or ('login' in
           final.event.action|lower and final.event.reason ==
-          'Sm_Api_Reason_None' ) or( 'logout' in final.event.outcome|lower and
-          final.event.reason == 'Sm_Api_Reason_None' )}}
+          'Sm_Api_Reason_None' ) or ( 'logout' in final.event.action|lower and
+          (final.event.reason == 'Sm_Api_Reason_None' or final.event.reason ==
+          'Sm_Api_Reason_UserLogout'))}}
         name: set
       - set:
           event.outcome: unknown
