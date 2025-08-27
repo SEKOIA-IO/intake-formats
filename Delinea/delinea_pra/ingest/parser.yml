@@ -1,0 +1,82 @@
+name: delinea_pra
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parse_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.time}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.get('time') != None}}"
+
+  - name: parse_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.Date}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.get('Date') != None}}"
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+          event.reason: "{{parsed_event.message.msg or parsed_event.message.Action}}"
+          event.action: "{{parsed_event.message.get('Event type')}}"
+          error.message: "{{parsed_event.message.error}}"
+
+          observer.product: "Delinea PRA"
+          observer.vendor: "Delinea"
+
+          "@timestamp": "{{parse_time.datetime}}"
+          log.level: "{{parsed_event.message.level or parsed_event.message.Level}}"
+
+          host.id: "{{parsed_event.message.host_id}}"
+          host.os.type: "{{parsed_event.message.host_os}}"
+
+          delinea.pra.engine.id: "{{parsed_event.message.engine_id}}"
+          delinea.pra.site.id: "{{parsed_event.message.site_id}}"
+          delinea.pra.registration.id: "{{parsed_event.message.get('registration-id')}}"
+          process.parent.pid: "{{parsed_event.message.ppid}}"
+
+          url.original: "{{parsed_event.message.tenant_url}}"
+          host.name: "{{parsed_event.message.host}}"
+          network.transport: "{{parsed_event.message.network}}"
+
+          source.user.name: "{{parsed_event.message.who or parsed_event.message.get('Initiated by')}}"
+
+          destination.address: "{{parsed_event.message.Target}}"
+          source.address: "{{parsed_event.message.Source}}"
+
+      - set:
+          http.response.status_code: "{{parsed_event.message.http_status.split(' ') | first | int}}"
+        filter: "{{parsed_event.message.get('http_status') != None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.addr.split(':') | first}}"
+          source.port: "{{parsed_event.message.addr.split(':') | last | int}}"
+        filter: "{{':' in parsed_event.message.get('addr')}}"
+
+      - set:
+          host.ip: "{{parsed_event.message.addrs[0].get('IP')}}"
+        filter: "{{parsed_event.message.get('addrs', []) | length > 0}}"
+
+      - set:
+          tls.version: "{{parsed_event.message.tls_version.split(' ') | last}}"
+        filter: "{{parsed_event.message.get('tls_version') != None}}"
+
+      - set:
+          host.name: "{{parsed_event.message.host_port.split(':') | first}}"
+        #          host.port: "{{parsed_event.message.host_port.split(':') | last | int}}"
+        filter: "{{':' in parsed_event.message.get('host_port')}}"
