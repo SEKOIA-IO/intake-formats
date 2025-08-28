@@ -27,9 +27,9 @@ pipeline:
       properties:
         raise_errors: false
         input_field: parsed_event.message.description
-        pattern: "%{SEC_LOGIN_SUCCESS}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}"
+        pattern: "%{SEC_LOGIN}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}"
         custom_patterns:
-          SEC_LOGIN_SUCCESS: 'Login Success \[user: %{USERNAME:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\] at %{TIME} %{WORD} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
+          SEC_LOGIN: 'Login (Success|failed) \[user: %{DATA:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\]( \[Reason: %{DATA}\])? at %{TIME} %{WORD} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
           SYS_LOGIN_FAILURE: "Logging to host %{IP:destination_ip} port %{NUMBER:destination_port} failed"
           SYS_LOGOUT: 'User %{USERNAME:username} has exited tty session %{NUMBER:terminal}\(%{IP:source_ip}\)'
           SYS_TTY_EXPIRE_TIMER: '\(exec timer expired, tty %{NUMBER:terminal} \(%{IP:source_ip}\)\), user %{USERNAME:username}'
@@ -83,14 +83,29 @@ stages:
           destination.port: "{{parsed_description.message.destination_port}}"
           user.name: "{{parsed_description.message.username}}"
           network.vlan.id: "{{parsed_description.message.vlan}}"
+
+      - set:
+          event.category: ["authentication"]
+        filter: "{{parsed_event.message.mnemonic in ['LOGIN_FAILED', 'LOGIN_SUCCESS', 'LOGOUT', 'LOGGINGHOST_FAIL']}}"
+
       - translate:
         dictionary:
-          LOGIN_SUCCESS: ["access", "start"]
-          LOGOUT: ["access", "end"]
-          LOGGINGHOST_FAIL: ["access", "end"]
+          LOGIN_FAILED: ["start"]
+          LOGIN_SUCCESS: ["start"]
+          LOGOUT: ["end"]
+          LOGGINGHOST_FAIL: ["end"]
         mapping:
           parsed_event.message.mnemonic: event.type
         fallback: ["info"]
+
+      - translate:
+        dictionary:
+          LOGIN_FAILED: "failure"
+          LOGIN_SUCCESS: "success"
+          LOGOUT: "success"
+          LOGGINGHOST_FAIL: "failure"
+        mapping:
+          parsed_event.message.mnemonic: event.outcome
 
   set_cisco_fields:
     actions:
