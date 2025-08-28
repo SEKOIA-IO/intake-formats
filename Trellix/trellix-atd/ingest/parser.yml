@@ -1,0 +1,289 @@
+name: trellix-advanced-threat-defense
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    description: ''
+    filter: ''
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{original.message.strip()}}'
+        output_field: message
+  - name: set_observer_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: parsed_date
+    description: ''
+    filter: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.Timestamp}}'
+        output_field: timestamp
+        format: '%Y-%m-%d %H:%M:%S'
+        timezone: UTC
+  - name: set_event_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_good_practice_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_file_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_process_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_network_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_host_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_client_common_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: set_specific_fields
+    description: ''
+    filter: '{{parsed_event.message.Summary is defined}}'
+    external: null
+stages:
+  set_observer_fields:
+    actions:
+      - set:
+          observer.vendor: Trellix
+          observer.product: ATD
+        filter: ''
+        name: set
+  set_event_common_fields:
+    actions:
+      - set:
+          event.code: >-
+            {{parsed_event.message.eventID or parsed_event.message.EventID or
+            parsed_event.message.eventcode or parsed_event.message.eventCode}}
+          event.action: >-
+            {{parsed_event.message.action or parsed_event.message.Action or
+            parsed_event.message.Summary.Event_Type}}
+          event.reason: '{{parsed_event.message.reason}}'
+          event.severity: >-
+            {{parsed_event.message.severity or parsed_event.message.Severity or
+            parsed_event.message.sev}}
+        filter: ''
+        name: set
+      - set:
+          log.description: >-
+            {{parsed_event.message.msg or parsed_event.message.message or
+            parsed_event.message.Description}}
+        filter: ''
+        name: set
+  set_good_practice_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.kind: event
+        filter: ''
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{'login' in final.event.action|lower or 'logon' in
+          final.event.action|lower or 'authentication' in
+          final.event.action|lower or 'logout' in final.event.action|lower}}
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''admin'']}}'
+        filter: '{{''admin'' in parsed_event.message.Category|lower}}'
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''file'']}}'
+        filter: '{{''file'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'allow' in final.event.action|lower or 'allowed' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'deny' in final.event.action|lower or 'denied' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'delete' in final.event.action|lower or 'delete' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'disconnect' in final.event.action|lower or 'closed' in
+          final.event.action|lower or 'ended' in final.event.action|lower or
+          'logout' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{('connect' in final.event.action|lower and not 'disconnect' in
+          final.event.action|lower) or 'open' in final.event.action|lower or
+          'start' in final.event.action|lower or 'login' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.outcome: success
+        filter: >-
+          {{('success' in final.event.action|lower and not 'unsuccess' in
+          final.event.action|lower) or 'success' in
+          parsed_event.message.Result|lower}}
+        name: set
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'failed' in final.event.action|lower or 'failure' in
+          final.event.action|lower or 'fail' in final.event.action|lower or
+          'failure' in parsed_event.message.Result|lower}}
+        name: set
+      - set:
+          event.outcome: unknown
+        filter: '{{final.event.outcome is not defined}}'
+        name: set
+      - set:
+          event.type: '[''info'']'
+        filter: '{{final.event.type is not defined}}'
+        name: set
+  set_file_common_fields:
+    actions:
+      - set:
+          file.name: '{{parsed_event.message.Summary.Subject.Name}}'
+          file.size: '{{parsed_event.message.Summary.Subject.size}}'
+          file.type: '{{parsed_event.message.Summary.Subject.Type}}'
+          file.created: '{{parsed_event.message.Summary.Subject.Timestamp}}'
+          file.hash.md5: '{{parsed_event.message.Summary.Subject.md5}}'
+          file.hash.sha1: '{{parsed_event.message.Summary.Subject[''sha-1'']}}'
+          file.hash.sha256: '{{parsed_event.message.Summary.Subject[''sha-256'']}}'
+          file.parent.archive: '{{parsed_event.message.Summary.Subject.parent_archive}}'
+        filter: '{{parsed_event.message.Summary is defined}}'
+        name: set
+  set_process_common_fields:
+    actions:
+      - set:
+          process.name: >-
+            {{parsed_event.message.Summary.Processes | selectattr('Name') |
+            map(attribute='Name')|join(', ')}}
+        filter: '{{parsed_event.message.Summary is defined}}'
+        name: set
+  set_network_common_fields:
+    actions:
+      - set:
+          source.ip: '{{parsed_event.message.Summary[''Src IP'']}}'
+          destination.ip: '{{parsed_event.message.Summary[''Dst IP'']}}'
+        filter: '{{parsed_event.message.Summary is defined}}'
+        name: set
+  set_host_common_fields:
+    actions:
+      - set:
+          host.os.version: '{{parsed_event.message.Summary.OSversion}}'
+        filter: '{{parsed_event.message.Summary is defined}}'
+        name: set
+  set_client_common_fields:
+    actions:
+      - set:
+          client.user.id: '{{parsed_event.message.UserID}}'
+          client.user.name: '{{parsed_event.message.User}}'
+        filter: ''
+        name: set
+      - set:
+          client.ip: '{{parsed_event.message.Client}}'
+        filter: '{{parsed_event.message.Client | is_ipaddress}}'
+        name: set
+      - set:
+          client.domain: '{{parsed_event.message.Client|lower}}'
+        filter: '{{not (parsed_event.message.Client | is_ipaddress)}}'
+        name: set
+  set_specific_fields:
+    actions:
+      - set:
+          trellix.atd.ip: '{{parsed_event.message.Summary[''ATD IP'']}}'
+          trellix.atd.url: >-
+            {{parsed_event.message.Summary.Urls| selectattr('Url') |
+            map(attribute='Url')|join(', ')|lower}}
+          trellix.atd.verdict: '{{parsed_event.message.Summary.Verdict.Severity}}'
+          trellix.atd.submitter.name: '{{parsed_event.message.Summary.SubmitterName}}'
+          trellix.atd.submitter.type: '{{parsed_event.message.Summary.SubmitterType}}'
+          trellix.atd.verdict_reason: '{{parsed_event.message.Summary.Verdict.Description}}'
+          trellix.atd.engine.AM.malware.severity: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "Anti-Malware")|first).Severity}}
+          trellix.atd.engine.GWAM.malware.severity: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "Gateway Anti-Malware")|first).Severity}}
+          trellix.atd.engine.yara.malware.severity: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "YARA")|first).Severity}}
+          trellix.atd.engine.GTIFR.malware.severity: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "GTI File Reputation")|first).Severity}}
+          trellix.atd.engine.GTIUR.malware.severity: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "GTI URL Reputation")|first).Severity}}
+          trellix.atd.engine.sandbox.malware.severity: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "Sandbox")|first).Severity}}
+        filter: ''
+        name: set
+      - dictionary:
+          '0': unverified
+          '1': informational
+          '2': low
+          '3': medium
+          '4': high
+          '5': very high
+          '-1': clean
+          '-2': fail/unverified
+        mapping:
+          trellix.atd.verdict: trellix.atd.verdict
+          trellix.atd.engine.AM.malware.severity: trellix.atd.engine.AM.malware.severity
+          trellix.atd.engine.GWAM.malware.severity: trellix.atd.engine.GWAM.malware.severity
+          trellix.atd.engine.yara.malware.severity: trellix.atd.engine.yara.malware.severity
+          trellix.atd.engine.GTIFR.malware.severity: trellix.atd.engine.GTIFR.malware.severity
+          trellix.atd.engine.GTIUR.malware.severity: trellix.atd.engine.GTIUR.malware.severity
+          trellix.atd.engine.sandbox.malware.severity: trellix.atd.engine.sandbox.malware.severity
+        filter: ''
+        name: translate
+      - set:
+          trellix.atd.engine.AM.malware.name: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto",
+            "Anti-Malware")|selectattr("MalwareName","!=","---")|first).MalwareName}}
+          trellix.atd.engine.GWAM.malware.name: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "Gateway
+            Anti-Malware")|selectattr("MalwareName","!=","---")|first).MalwareName}}
+          trellix.atd.engine.yara.malware.name: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto",
+            "YARA")|selectattr("MalwareName","!=","---")|first).MalwareName}}
+          trellix.atd.engine.GTIFR.malware.name: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "GTI File
+            Reputation")|selectattr("MalwareName","!=","---")|first).MalwareName}}
+          trellix.atd.engine.GTIUR.malware.name: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto", "GTI URL
+            Reputation")|selectattr("MalwareName","!=","---")|first).MalwareName}}
+          trellix.atd.engine.sandbox.malware.name: >-
+            {{(parsed_event.message.Summary.Selectors|selectattr("Engine",
+            "equalto",
+            "Sandbox")|selectattr("MalwareName","!=","---")|first).MalwareName}}
+        filter: ''
+        name: set
