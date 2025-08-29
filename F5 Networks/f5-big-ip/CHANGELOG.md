@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 2025-07-17 - 1.0.2
+
+#### Changes
+
+- Update event outcome on Authentication category
+
 ### 2023-11-21 - 1.0.1
 
 #### Changes
