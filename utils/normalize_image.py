@@ -25,7 +25,7 @@ def transparent_background(image: Image, fuzz: int) -> Image:
     """
     Replace white background into transparent background
     """
-    x = np.asarray(image.convert('RGBA')).copy()
+    x = np.asarray(image.convert("RGBA")).copy()
 
     threshold = int(255 * (100 - fuzz) / 100)
 
@@ -34,12 +34,12 @@ def transparent_background(image: Image, fuzz: int) -> Image:
     g_m = g < threshold  # binary mask for green channel, True for all non white values
     b_m = b < threshold  # binary mask for blue channel, True for all non white values
 
-    # combine the three masks using the binary "or" operation 
+    # combine the three masks using the binary "or" operation
     # multiply the combined binary mask with the alpha channel
     a = a * ((r_m == 1) | (g_m == 1) | (b_m == 1))
 
-    # stack the img back together 
-    return Image.fromarray(np.dstack([r, g, b, a]), 'RGBA')
+    # stack the img back together
+    return Image.fromarray(np.dstack([r, g, b, a]), "RGBA")
 
 
 def resize_canvas(image: Image, canvas_width: int = 500, canvas_height: int = 500) -> Image:
@@ -114,7 +114,7 @@ def lighten_image(original: Image, size: int, max_iteration: int = 100) -> Image
         if current_size <= size:
             return image
 
-        ratio = (size / current_size)
+        ratio = size / current_size
         width, height = image.size
         image = image.resize((int(width * ratio), int(height * ratio)))
 
@@ -151,7 +151,7 @@ def cli_square_canvas(source: Path, destination: Path):
 @app.command("lighten_image")
 def cli_lighten_image(source: Path, destination: Path, size: int = 50000):
     """
-    Downsize the image until its weight is lesser than the supplied parameter 
+    Downsize the image until its weight is lesser than the supplied parameter
     """
     lighten_image(Image.open(source), size).save(destination)
 

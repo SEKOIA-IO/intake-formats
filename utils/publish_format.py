@@ -125,7 +125,6 @@ class Item:
         raise NotImplementedError
 
 
-
 @dataclass
 class Format(Item):
     parser: dict
@@ -428,7 +427,7 @@ def main(
     apikey: str,
     url: str = "https://app.sekoia.io",
     insecure: bool = False,
-    host: Optional[str] = None, #noqa: UP007
+    host: Optional[str] = None,  # noqa: UP007
     no_diff: bool = False,
 ):
     """
