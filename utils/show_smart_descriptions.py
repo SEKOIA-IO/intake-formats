@@ -43,7 +43,10 @@ class SmartDescriptionManager(IntakeTestManager):
 
                 if condition_value is not None:
                     if isinstance(parsed[condition_field], list):
-                        condition_value_set = set(item.strip() for item in condition_value.split(","))
+                        if isinstance(condition_value, list):
+                            condition_value_set = set(condition_value)
+                        else:
+                            condition_value_set = set(item.strip() for item in condition_value.split(","))
 
                         if len(parsed[condition_field]) == 0 or set(parsed[condition_field]) != condition_value_set:
                             all_conditions_are_met = False
