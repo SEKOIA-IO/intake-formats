@@ -21,6 +21,18 @@ pipeline:
         input_field: "{{parsed_event.message.UserName}}"
         output_field: user
         pattern: '%{GREEDYDATA:domain}\\%{GREEDYDATA:name}'
+  - name: parsed_description
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.Description}}"
+        output_field: desc
+        pattern: "%{CHECKPOINT_REMOVED}"
+        custom_patterns:
+          CHECKPOINT_REMOVED: 'Restore point for VM \''%{DATA:vm_name}\'' has been removed by user %{USER_WITH_GROUP}\.'
+          USER_WITH_GROUP: '(%{DATA:user_domain}\\%{DATA:user_name}|%{DATA:user_name})'
+
   - name: set_fields
 
 stages:
@@ -69,6 +81,12 @@ stages:
           veeam.protection.group.id: "{{parsed_event.message.ProtectionGroupID}}"
           veeam.protection.group.name: "{{parsed_event.message.ProtectionGroupName}}"
           veeam.vm.ref: "{{parsed_event.message.VmRef}}"
+      - set:
+          user.domain: "{{parsed_description.desc.user_domain}}"
+        filter: "{{parsed_description.desc.user_domain | length > 0}}"
+      - set:
+          user.name: "{{parsed_description.desc.user_name}}"
+        filter: "{{parsed_description.desc.user_name | length > 0}}"
       - set:
           host.ip:
             ["{{parsed_event.message.HostName or parsed_event.message.VmName}}"]
