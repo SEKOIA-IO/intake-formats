@@ -3,6 +3,7 @@ pipeline:
   - name: json_event
     external:
       name: json.parse-json
+
   - name: parse_data
     filter: "{{json_event.message.RecordType in (40, 64) and json_event.message.Data | length > 0}}"
     external:
@@ -10,6 +11,7 @@ pipeline:
       properties:
         input_field: "{{json_event.message.Data}}"
         output_field: ParsedData
+
   - name: parse_client_ip
     external:
       name: grok.match
@@ -19,6 +21,7 @@ pipeline:
         output_field: result
         pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?|\[%{IP:ip}\](:%{INT:port})?'
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+
   - name: parse_client_ip_address
     external:
       name: grok.match
@@ -67,6 +70,8 @@ pipeline:
     filter: "{{json_event.message.RecordType == 20}}"
   - name: parse_threat_intelligence_url
     filter: "{{json_event.message.RecordType == 41}}"
+  - name: parse_office_email
+    filter: "{{json_event.message.RecordType == 43}}"
 
 stages:
   set_common_fields:
@@ -79,6 +84,14 @@ stages:
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
           user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
+          office365.dprm: "{{parse_data.ParsedData.dprm}}"
+          office365.eop: "{{parse_data.ParsedData.eop}}"
+          office365.enmd: "{{parse_data.ParsedData.enmd}}"
+          office365.tdmn: "{{parse_data.ParsedData.tdmn}}"
+          office365.app: "{{parse_data.ParsedData.app}}"
+          office365.ofph: "{{parse_data.ParsedData.ofph}}"
+          office365.dn: "{{parse_data.ParsedData.dn}}"
+          office365.tfph: "{{parse_data.ParsedData.tfph}}"
 
       - set:
           user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
@@ -1044,3 +1057,12 @@ stages:
     actions:
       - set:
           url.original: "{{json_event.message.Url}}"
+
+  parse_office_email:
+    actions:
+      - set:
+          email.sender.address: "{{json_event.message.Sender}}"
+          email.subject: "{{json_event.message.ItemName}}"
+      - set:
+          email.to.address: "{{json_event.message.Receivers}}"
+        filter: '{{json_event.message.get("Receivers", []) != []}}'
