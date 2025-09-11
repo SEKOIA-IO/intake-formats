@@ -1,5 +1,5 @@
 name: microsoft-365-defender
-ignored_values: ["-"]
+ignored_values: ["-", "$"]
 pipeline:
   - name: json_event
     external:
@@ -38,6 +38,13 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{json_event.message.properties.RawEventData.Data}}"
+        output_field: "data"
+  - name: parse_auth_details
+    filter: '{{json_event.message.get("properties", {}).get("AuthenticationDetails") != None}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json_event.message.properties.AuthenticationDetails}}"
         output_field: "data"
   - name: set_common_fields
   - name: set_process_events
@@ -172,6 +179,8 @@ stages:
           action.properties.AccountUPN: "{{json_event.message.properties.AccountUpn}}"
           action.properties.InitiatingProcessSessionId: "{{json_event.message.properties.InitiatingProcessSessionId}}"
           action.properties.IsInitiatingProcessRemoteSession: "{{json_event.message.properties.IsInitiatingProcessRemoteSession}}"
+          action.properties.SourceComputerId: "{{json_event.message.properties.AdditionalFields.SourceComputerId}}"
+          action.properties.SourceComputerObjectGuid: "{{json_event.message.properties.AdditionalFields.SourceComputerObjectGuid}}"
           microsoft.defender.activity.objects: "{{json_event.message.properties.ActivityObjects}}"
           microsoft.defender.activity.type: "{{json_event.message.properties.ActivityType}}"
           microsoft.defender.alert.id: "{{json_event.message.properties.AlertId}}"
@@ -527,6 +536,10 @@ stages:
             {%- endif -%}
           action.properties.RemoteIPType: "{{json_event.message.properties.RemoteIPType}}"
           action.properties.IsLocalAdmin: "{{json_event.message.properties.IsLocalAdmin}}"
+      - set:
+          action.properties.RemoteDeviceName: "{{json_event.message.properties.RemoteDeviceName}}"
+        filter: '{{json_event.message.properties.get("RemoteDeviceName") != null}}'
+
   set_device_network_events_fields:
     actions:
       - set:
@@ -607,6 +620,13 @@ stages:
           action.properties.UserLevelAction: "{{json_event.message.properties.UserLevelAction}}"
           action.properties.UserLevelPolicy: "{{json_event.message.properties.UserLevelPolicy}}"
           action.properties.AuthenticationDetails: "{{json_event.message.properties.AuthenticationDetails}}"
+
+      - set:
+          microsoft.defender.email_auth.DKIM: "{{parse_auth_details.data.DKIM}}"
+          microsoft.defender.email_auth.DMARC: "{{parse_auth_details.data.DMARC}}"
+          microsoft.defender.email_auth.SPF: "{{parse_auth_details.data.SPF}}"
+          microsoft.defender.email_auth.CompAuth: "{{parse_auth_details.data.CompAuth}}"
+
       - translate:
         dictionary:
           "Inbound": "inbound"
