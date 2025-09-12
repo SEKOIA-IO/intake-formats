@@ -87,6 +87,10 @@ stages:
   set_ecs_fields:
     actions:
       - set:
+          message: >-
+            {{(parse_first_line is defined and
+            parse_first_line.message.http_method != None) or
+            parsed_event.message.method is defined}}
           url.full: '{{parsed_event.message.url}}'
           url.path: '{{parsed_event.message.requested_path}}'
           url.port: '{{parsed_event.message.url_port}}'
@@ -96,7 +100,7 @@ stages:
             {{parsed_event.message.rule_name or parsed_event.message.last_rule
             or parsed_event.message.ruleName}}
           '@timestamp': '{{parse_date.datetime}}'
-          event.code: '{{parsed_event.message.block_id}}'
+          event.code: '{{parsed_event.message.block_id or parsed_event.message.block_res}}'
           url.domain: '{{parsed_event.message.urlDomain}}'
           url.scheme: '{{parsed_event.message.uri_scheme}}'
           event.start: '{{parse_date_mcafee.datetime}}'
@@ -154,12 +158,14 @@ stages:
           and parsed_event.message.http_action != None}}
         name: set
       - set:
-          http.request.method: >-
-            {{parse_first_line.message.http_method or
-            parsed_event.message.method}}
+          http.request.method: '{{parse_first_line.message.http_method}}'
         filter: >-
-          {{(parse_first_line != None and parse_first_line.message.http_method
-          != None) or parsed_event.message.method is defined}}
+          {{parse_first_line is defined and parse_first_line.message.http_method
+          != None}}
+        name: set
+      - set:
+          http.request.method: '{{parsed_event.message.method}}'
+        filter: '{{parsed_event.message.method is defined}}'
         name: set
       - set:
           destination.ip: >-
@@ -290,7 +296,6 @@ stages:
         filter: >-
           {{parsed_event.message.block_res is defined and '0'
           ==parsed_event.message.block_res }}
-        name: set
         name: set
   set_mcafee_fields:
     actions:
