@@ -174,6 +174,25 @@ pipeline:
         pattern: >-
           %{GREEDYDATA} #NEWLINE#CN=%{USER:target}%{GREEDYDATA}Caller IP: #NEWLINE#%{IP:ip}:%{INT:port}
 
+  - name: parse_event_2500
+    filter: "{{json.event.Message != null and json.event.EventID == 2500}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.Message}}"
+        output_field: event
+        pattern: >-
+          \[%{DATA:system_id}\] %{DATA:action_name}, parameters '%{DATA:json_params}', result %{DATA:result}, process ID %{NUMBER:pid}
+
+  - name: parse_event_2500_json
+    filter: "{{parse_event_2500 != None and parse_event_2500.get('event', {}).get('json_params') != None}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_event_2500.event.json_params}}"
+        output_field: event
+
   - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
@@ -339,7 +358,7 @@ stages:
         set:
           "@timestamp": "{{json.event.UtcTime}}"
           file.name: "{{json.event.name}}"
-          process.command_line: "{{json.event.CommandLine}}"
+          process.command_line: "{{json.event.CommandLine or parse_event_2500_json.event.CommandLine}}"
           process.parent.command_line: "{{json.event.ParentCommandLine}}"
           action.record_id: "{{json.event.RecordNumber}}"
           action.type: "{{json.event.Channel}}"
@@ -373,7 +392,15 @@ stages:
           user.target.id: "{{json.event.TargetUserSid}}"
           host.name: "{{json.event.Hostname}}"
           host.hostname: "{{json.event.Hostname.split('.') | first}}"
-
+      - set:
+          url.domain: "{{json.event.url.split('/') | first}}"
+        filter: "{{json.event.url != null and not json.event.url.startswith('http')}}"
+      - set:
+          url.domain: "{{json.event.RemoteName.split('/') | first}}"
+        filter: "{{json.event.RemoteName != null and not json.event.RemoteName.startswith('http')}}"
+      - set:
+          url.domain: "{{json.event.Hostname.split('/') | first}}"
+        filter: "{{json.event.Hostname != null and not json.event.Hostname.startswith('http')}}"
       - set:
           package.name: "{{json.event.LmPackageName.split()|first}}"
           package.description: "LAN Manager package"
@@ -610,6 +637,10 @@ stages:
           process.id: "{{final.process.pid}}"
           process.thread.id: "{{json.event.ThreadID}}"
 
+      - set:
+          process.pid: "{{parse_event_2500.event.pid}}"
+        filter: "{{json.event.EventID == 2500}}"
+
   set_user:
     actions:
       - set:
@@ -637,7 +668,8 @@ stages:
       - set:
           user_agent.original: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "UserAgentString" in component%}{{component["UserAgentString"].strip()}}{% endif %}{% endfor %}
-
+          url.original: >
+            {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "RelyingParty" in component%}{{component["RelyingParty"]}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
 
   action_name:
