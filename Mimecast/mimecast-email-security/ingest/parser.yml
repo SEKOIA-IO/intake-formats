@@ -17,6 +17,22 @@ pipeline:
         value_sep: ":"
         item_sep: ","
 
+  - name: parse_spam_processing_detail
+    filter: "{{ 'spamProcessingDetail' in parse_event.message and parse_event.message.spamProcessingDetail != '' and not parse_event.message.spamProcessingDetail.startswith('\\\"') }}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_event.message.spamProcessingDetail.replace('\\\"','\"')}}"
+        output_field: details
+
+  - name: parse_spam_processing_detail
+    filter: "{{ 'spamProcessingDetail' in parse_event.message and parse_event.message.spamProcessingDetail != '' and parse_event.message.spamProcessingDetail.startswith('\\\"') }}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_event.message.spamProcessingDetail.split('\\\"')[1:-1]|join('\"')|replace('\\\\\"','\"')}}"
+        output_field: details
+
   - name: set_ecs_fields
 
 stages:
@@ -57,6 +73,7 @@ stages:
 
           mimecast.siem.scan_results: "{{parse_event.message.scanResults}}"
           mimecast.siem.subtype: "{{parse_event.message.subtype}}"
+          mimecast.siem.url_category: "{{parse_event.message.urlCategory}}"
 
           destination.ip: "{{parse_event.message.destinationIp}}"
           url.original: "{{parse_event.message.url}}"
@@ -115,3 +132,23 @@ stages:
       - set:
           url.original: "{{ parse_rejectioninfo.message.Url }}"
         filter: '{{ "Url" in parse_event.message.rejectionInfo}}'
+
+      - set:
+          mimecast.siem.spam_processing_detail: "{{parse_spam_processing_detail.details}}"
+        filter: '{{ "spamProcessingDetail" in parse_event.message and parse_event.message.spamProcessingDetail != "" and not parse_event.message.spamProcessingDetail.startswith("\\\"") }}'
+
+      - set:
+          source.user.domain: "{{parse_event.message.senderEnvelope.split('@')[-1].split('.')[0]}}"
+        filter: "{{parse_event.message.get('senderEnvelope') != None }}"
+
+      - set:
+          source.user.domain: "{{parse_event.message.senderHeader.split('@')[-1].split('.')[0]}}"
+        filter: "{{parse_event.message.get('senderHeader') != None }}"
+
+      - set:
+          user.target.domain: "{{parse_event.message.recipient.split('@')[-1].split('.')[0]}}"
+        filter: "{{parse_event.message.get('recipient') != None }}"
+
+      - set:
+          user.target.domain: "{{parse_event.message.recipients.split('@')[-1].split('.')[0]}}"
+        filter: "{{parse_event.message.get('recipients') != None }}"
