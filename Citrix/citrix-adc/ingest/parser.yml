@@ -16,9 +16,10 @@ pipeline:
         pattern: '(\"?\s*%{HEADER:header}\s+:\s+%{WORD:mode}\s+)?%{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :\s+%{GREEDYDATA:payload}\"?'
         custom_patterns:
           HEADER: '%{DATE_TIME:timestamp}(?:\s%{TIMEZONE})?\s+%{USERNAME:observer}\s%{USERNAME:s2}'
-          DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}"
+          DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}|%{DATE_TIME_DMY}"
           DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
+          DATE_TIME_DMY: "%{MONTHDAY:day}/%{MONTHNUM:month}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           TIMEZONE: "GMT"
     filter: "{{ not original.message.startswith('CEF') and not 'shell_command=' in original.message and not ' -> 'in original.message}}"
 
@@ -153,6 +154,9 @@ pipeline:
 
   - name: set_http_access_log_fields
     filter: "{{ parse_audit_http_access_logs.get('message') != None }}"
+
+  - name: set_aaatm_log_fields
+    filter: "{{ parse_audit_header.message.type == 'AAATM' }}"
 
 stages:
   set_cef_header_fields:
@@ -331,3 +335,13 @@ stages:
           user_agent.name: "{{ parse_audit_http_access_logs.message.user_agent.split('/')[0] }}"
           user_agent.version: "{{ parse_audit_http_access_logs.message.user_agent.split('/')[1] }}"
         filter: "{{ parse_audit_http_access_logs.message.user_agent != '-' }}"
+
+  set_aaatm_log_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          "@timestamp": "{{ parse_audit_timestamp.date }}"
+          observer.name: "{{ parse_audit_header.message.observer }}"
+          event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
+          event.reason: "{{parse_audit_header.message.payload[1:-1]}}"
