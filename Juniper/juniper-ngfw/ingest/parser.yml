@@ -1,0 +1,770 @@
+name: juniper-ngfw
+ignored_values: []
+pipeline:
+  - name: parsed_header
+    description: multi_format_handler
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{original.message.replace(''  '','' '')}}'
+        output_field: message
+        pattern: >-
+          %{STRUCTURED_DATA_FORMAT}|%{SYSTEM_LOG_FORMAT}|%{STANDARD_FORMAT}|%{COMMA_SEPARATED_FORMAT}|%{NO_FORMAT}
+        custom_patterns:
+          VERSION: ([0-9]+\.?)+
+          NOT_DASH: '[^-]+'
+          NOT_COLON: '[^\:]+'
+          NO_FORMAT: '%{GREEDYDATA:message}'
+          NOT_BRACKETS: '[^\[\]]+'
+          STANDARD_FORMAT: >-
+            (%{NOT_COLON:event_dataset}:
+            \%%{NOT_DASH}-%{INT:severity}-%{NOT_COLON:tag}:|%{NOT_COLON:event_dataset}:
+            %{NOT_COLON:tag}:|%{WORD:hostname}
+            %{NOT_COLON:tag}:|%{NOT_COLON:event_provider}\:)\s+%{GREEDYDATA:message}
+          SYSTEM_LOG_FORMAT: >-
+            %{NOT_BRACKETS:event_provider}\[%{NUMBER}\]\:(%{NOT_BRACKETS:process_name}\[%{NUMBER:process_id}\]:
+            %{GREEDYDATA:message}|\s%{GREEDYDATA:username}@%{IPORHOST:source_address}
+            as
+            %{GREEDYDATA:process_username}:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}-%{NOT_COLON:tag}\:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}\:\s%{JUNIPER_TAG_FORMAT:tag}\:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}\:\s%{GREEDYDATA:message}|\s%{JUNIPER_TAG_FORMAT:tag}\:
+            %{GREEDYDATA:message}|\s%{GREEDYDATA:message})
+          JUNIPER_TAG_FORMAT: '[A-Za-z_]+'
+          COMMA_SEPARATED_FORMAT: >-
+            %{NUMBER},%{GREEDYDATA:start},%{NUMBER},%{GREEDYDATA:event_provider},%{GREEDYDATA:action},%{NUMBER},%{GREEDYDATA:end},%{DATA},%{GREEDYDATA:tag},%{DATA},%{DATA},%{DATA},%{DATA},%{GREEDYDATA:log_level},\"%{GREEDYDATA:message}\",%{NUMBER},0x%{NUMBER},%{NUMBER},%{NUMBER},%{NUMBER},%{NUMBER},%{DATA},%{GREEDYDATA:hostname},%{NUMBER},%{NUMBER},%{TIMESTAMP_ISO8601:timestamp}
+          STRUCTURED_DATA_FORMAT: >-
+            %{NOTSPACE:event_dataset}\s%{NOTSPACE:junos_process_id}\s%{NOTSPACE:tag}\s\[(junos@[0-9]+\.%{VERSION:plateform}\s)?%{GREEDYDATA:variable_value_pairs}\](\s%{GREEDYDATA:end_message})?
+  - name: parsed_event
+    description: STRUCTURED_DATA_FORMAT parsing
+    filter: '{{ parsed_header.message.STRUCTURED_DATA_FORMAT != None }}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{parsed_header.message.variable_value_pairs.replace(''N/A'','''')}}'
+        output_field: message
+        value_sep: '='
+        item_sep: \s
+  - name: parsed_event
+    description: SYSTEM_LOG_FORMAT parsing by tag
+    filter: '{{parsed_header.message.SYSTEM_LOG_FORMAT != None}}'
+    external:
+      name: grok.case_match
+      properties:
+        input_field: '{{parsed_header.message.message}}'
+        output_field: message
+        pattern_key: '{{parsed_header.message.tag}}'
+        patterns:
+          UI_COMMIT: >-
+            User \'%{GREEDYDATA:process_username}\' requested
+            \'%{GREEDYDATA:process_command_line}\' operation \(comment:
+            %{GREEDYDATA}\)
+          UI_AUTH_EVENT: >-
+            Authenticated\suser\s\'%{GREEDYDATA:username}\'(\sassigned\sto\sclass\s\'%{GREEDYDATA:user_role}\'|\sat\spermission\slevel\s\'%{GREEDYDATA:user_role}\')
+          UI_LOAD_EVENT: >-
+            User \'%{GREEDYDATA:process_username}\' is performing a
+            \'%{GREEDYDATA:process_command_line}\'
+          UI_CHILD_START: Starting child '%{GREEDYDATA:process_name}'
+          UI_LOGIN_EVENT: >-
+            User \'%{NOT_QUOTE:username}\' login,(( class
+            \'%{NOT_QUOTE:user_role}\' (<%{GREEDYDATA}>)?\[%{INT}\],|
+            ssh-connection \'(%{IP:source_address} %{INT:source_port}
+            %{IP:destination_address} %{INT:destination_port}|)\',| client-mode
+            \'%{NOT_QUOTE:client_mode}\'$))+
+          UI_NETCONF_CMD: >-
+            User '%{GREEDYDATA:username}' used %{GREEDYDATA:client_mode} client
+            to run command '%{GREEDYDATA:process_command_line}'
+          UI_CHILD_EXITED: >-
+            Child exited: PID %{NUMBER:process_id}, status
+            %{INT:process_exit_code}, command '%{GREEDYDATA:process_name}'
+          UI_CHILD_STATUS: >-
+            Cleanup child '%{GREEDYDATA:process_name}', PID
+            %{NUMBER:process_id}, status %{INT:process_exit_code}
+          UI_LOGOUT_EVENT: User\s\'%{GREEDYDATA:username}\'\slogout
+          UI_CFG_AUDIT_SET: >-
+            User \'%{GREEDYDATA:process_username}\'
+            %{GREEDYDATA:process_command_line}:
+            (\[%{GREEDYDATA:process_args}\]|%{GREEDYDATA:file_path})(
+            %{GREEDYDATA})?
+          UI_CHILD_STOPPED: >-
+            Child stopped: PID %{NUMBER:process_id}, status
+            %{INT:process_exit_code}, command
+            '%{GREEDYDATA:process_command_line}'
+          UI_JUNOSCRIPT_CMD: >-
+            User\s\'%{GREEDYDATA:username}\'\sused\s%{GREEDYDATA:client_mode}\sclient\sto\srun\scommand\s\'%{GREEDYDATA:process_command_line}\'
+          UI_CFG_AUDIT_OTHER: >-
+            User \'%{GREEDYDATA:process_username}\'
+            %{GREEDYDATA:process_command_line}:
+            (\[%{GREEDYDATA:process_args}\]|%{GREEDYDATA:file_path})(
+            %{GREEDYDATA})?
+          UI_COMMIT_PROGRESS: 'Commit operation in progress: %{GREEDYDATA:message}'
+          UI_CMDLINE_READ_LINE: >-
+            User\s\'%{GREEDYDATA:username}\',?\scommand\s\'%{GREEDYDATA:process_command_line}\'
+        custom_patterns:
+          NOT_QUOTE: '[^'']+'
+  - name: parsed_event
+    description: SYSTEM_LOG_FORMAT parsing by event_provider
+    filter: '{{parsed_header.message.SYSTEM_LOG_FORMAT != None}}'
+    external:
+      name: grok.case_match
+      properties:
+        input_field: '{{parsed_header.message.message}}'
+        output_field: message
+        pattern_key: >-
+          {{parsed_header.message.event_provider.replace('/usr/sbin/','').replace('/usr/bin/','')}}
+        patterns:
+          cron: (%{CRON_CMD}|%{CRON_MAIL})
+          rshd: cmd=\'%{GREEDYDATA:process_command_line}\'
+          sshd: >-
+            (%{SSHD_ACTION_FROM_USER}|%{SSHD_ACTION_FROM_IP}|%{SSHD_FUNCTION_MESSAGES}|%{SSHD_ACTION_FOR_USER}|%{SSHD_ACTION_TO_IP}|%{SSHD_ACTION_BY}|%{SSHD_ERROR}|%{SSHD_CONFIGURATION_CHANGE_MESSAGE}|%{SSHD_ACTION_ON_BEHALF})
+          fetch: >-
+            fetch-secure:
+            %{WORD:network_protcol}://%{GREEDYDATA:username}@(%{IP:destination_address}|%{HOSTNAME:destination_domain}):%{NOT_COLON}:
+            %{GREEDYDATA:reason}
+          inetd: '%{GREEDYDATA:action}, status %{NUMBER:process_exit_code}'
+          rmopd: '%{NOT_COLON:action}\:%{GREEDYDATA}'
+          xntpd: NTP Server %{IP:destination_address} is Unreachable
+        custom_patterns:
+          CRON_CMD: >-
+            \(%{GREEDYDATA:process_username}\) %{CRON_CMD_FUNCTIONS:action}
+            \(\s*%{GREEDYDATA:process_command_line}\)
+          CRON_MAIL: >-
+            \(%{GREEDYDATA:process_username}\) %{CRON_FUNCTIONS:action} \(mailed
+            %{INT:sentbyte} bytes of output( but got status 0x%{INT:error_code}
+            )\)
+          NOT_COLON: '[^\:]+'
+          SSHD_ERROR: 'error\: (%{NOT_COLON}\: %{GREEDYDATA:error}|%{GREEDYDATA:error})'
+          SSHD_ACTIONS: >-
+            (?i)(Disconnected|Received disconnect|Failed password|Connection
+            closed|Connection reset|Accepted keyboard-interactive/pam|Accepted
+            password|Added|creating permissions file)
+          CRON_FUNCTIONS: (MAIL)
+          SSHD_ACTION_BY: >-
+            %{SSHD_ACTIONS:action} by(\sauthenticating)? (user
+            (\'%{GREEDYDATA:username}\'|%{GREEDYDATA:username})
+            %{IP:source_address} port %{INT:source_port}|user
+            (\'%{GREEDYDATA:username}\'|%{GREEDYDATA:username})
+            %{IP:source_address}|%{IP:source_address} port
+            %{INT:source_port}|%{IP:source_address})( \[?%{WORD}\])?
+          SSHD_FUNCTIONS: (?i)(unlink|sendmsg|rad_send_request)
+          SSHD_ACTION_TO_IP: '%{SSHD_FUNCTIONS:action} to %{IP:destination_address}%{GREEDYDATA}'
+          CRON_CMD_FUNCTIONS: (CMD)
+          SSHD_ACTION_FROM_IP: >-
+            %{SSHD_ACTIONS:action} from
+            (%{IP:source_address}|%{IP:source_address} port
+            %{INT:source_port})\: ?%{INT}\: %{GREEDYDATA:reason}
+          SSHD_ACTION_FOR_USER: >-
+            %{SSHD_ACTIONS:action} for (\'%{GREEDYDATA:username}\'
+            from|%{GREEDYDATA:username} from)( %{IP:source_address} port
+            %{INT:source_port} \[?%{WORD}\]?$| %{IP:source_address} port
+            %{INT:source_port}| %{IP:source_address}|$)
+          SSHD_ACTION_FROM_USER: >-
+            %{SSHD_ACTIONS:action} from(\sauthenticating)? user
+            ((\'%{GREEDYDATA:username}\'
+            %{IP:source_address}|%{GREEDYDATA:username} %{IP:source_address})
+            port %{INT:source_port}| %{IP:source_address})( \[%{WORD}\])?
+          SSHD_ACTION_ON_BEHALF: '%{SSHD_ACTIONS:action} on behalf of (pid\(%{INT:process_id}\))'
+          SSHD_FUNCTION_MESSAGES: '%{SSHD_FUNCTIONS:action}(\(\))?\: %{GREEDYDATA}'
+          SSHD_CONFIGURATION_CHANGE: '%{SSHD_ACTIONS} %{SSHD_CONFIGURATION_OBJECTS}'
+          SSHD_CONFIGURATION_OBJECTS: (radius server)
+          SSHD_CONFIGURATION_CHANGE_MESSAGE: >-
+            %{SSHD_CONFIGURATION_CHANGE:action}
+            (%{IP:configuration_ip}%{GREEDYDATA})
+  - name: parsed_event
+    description: STANDARD_LOG_FORMAT parsing
+    filter: '{{parsed_header.message.STANDARD_FORMAT != None}}'
+    external:
+      name: grok.case_match
+      properties:
+        input_field: '{{parsed_header.message.message}}'
+        output_field: message
+        pattern_key: '{{parsed_header.message.tag}}'
+        patterns:
+          RT_SCREEN_IP: >-
+            %{DATA:attack_name} source: %{IPV4:source_address}, destination:
+            %{IPV4:destination_address}, protocol-id: %{NUMBER:protocol_id},
+            zone name: %{DATA:source_zone_name}, interface name:
+            %{DATA:interface_name}, action: %{GREEDYDATA:action}
+          RT_SCREEN_TCP: >-
+            %{DATA:attack_name} source:
+            %{IPV4:source_address}:%{NUMBER:source_port}, destination:
+            %{IPV4:destination_address}:%{NUMBER:destination_port}, zone name:
+            %{DATA:source_zone_name}, interface name: %{DATA:interface_name},
+            action: %{GREEDYDATA:action}
+          RT_SCREEN_UDP: >-
+            %{DATA:attack_name} source:
+            %{IPV4:source_address}:%{NUMBER:source_port}, destination:
+            %{IPV4:destination_address}:%{NUMBER:destination_port}, zone name:
+            %{DATA:source_zone_name}, interface name: %{DATA:interface_name},
+            action: %{GREEDYDATA:action}
+          RT_SCREEN_ICMP: >-
+            %{DATA:attack_name} source: %{IPV4:source_address}, destination:
+            %{IPV4:destination_address}, zone name: %{DATA:source_zone_name},
+            interface name: %{DATA:interface_name}, action: %{GREEDYDATA:action}
+          SSHD_LOGIN_FAILED: >-
+            Login failed for user
+            (\'%{GREEDYDATA:username}\'|%{GREEDYDATA:username}) from host
+            \'%{IP:source_address}\'
+          RT_ALG_WRN_CFG_NEED: '%{GREEDYDATA:name} ALG %{GREEDYDATA:message}'
+          FLOW_REASSEMBLE_FAIL: >-
+            FCB ageout before all fragments arrive, source
+            %{IPV4:source_address} destination %{IPV4:destination_address} ipid
+            %{NUMBER:ipid} assembly-id %{GREEDYDATA:assembly_id}
+          RT_FLOW_SESSION_DENY: >-
+            session denied
+            %{IPV4:source_address}/%{NUMBER:source_port}->%{IPV4:destination_address}/%{NUMBER:destination_port}
+            0x%{DATA:connection_tag} %{DATA:service_name}
+            %{NUMBER:protocol_id}\(%{NUMBER:icmp_type}\) %{DATA:policy_name}
+            %{DATA:source_zone_name} %{DATA:destination_zone_name}
+            %{DATA:application} %{DATA:nested_application}
+            %{DATA:username}\(%{DATA:roles}\) %{DATA:packet_incoming_interface}
+            %{DATA:encrypted} %{DATA:reason} %{NUMBER:session_id}
+            %{DATA:application_category} %{DATA:application_sub_category}
+            %{DATA:application_risk} %{DATA:application_characteristics}
+            %{DATA:src_vrf_grp} %{DATA:dst_vrf_grp} %{DATA:source_tenant}
+            %{DATA:destination_service}((( %{DATA:user_type}
+            )?%{DATA:dst_identity_context_name}
+            %{DATA:dst_identity_context_roles})? %{DATA:source_country}
+            %{GREEDYDATA:destination_country})?
+          RT_FLOW_SESSION_CLOSE: >-
+            session closed %{DATA:reason}:
+            %{IPV4:source_address}/%{NUMBER:source_port}->%{IPV4:destination_address}/%{NUMBER:destination_port}
+            0x%{DATA:connection_tag} %{DATA:service_name}
+            %{IPV4:nat_source_address}/%{NUMBER:nat_source_port}->%{IPV4:nat_destination_address}/%{NUMBER:nat_destination_port}
+            0x%{DATA:nat_connection_tag} %{DATA:src_nat_rule_type}
+            %{DATA:src_nat_rule_name} %{DATA:dst_nat_rule_type}
+            %{DATA:dst_nat_rule_name} %{NUMBER:protocol_id} %{DATA:policy_name}
+            %{DATA:source_zone_name} %{DATA:destination_zone_name}
+            %{NUMBER:session_id}
+            %{NUMBER:packets_from_client}\(%{NUMBER:bytes_from_client}\)
+            %{NUMBER:packets_from_server}\(%{NUMBER:bytes_from_server}\)
+            %{NUMBER:elapsed_time} %{DATA:application}
+            %{DATA:nested_application} %{DATA:username}\(%{DATA:roles}\)
+            %{DATA:packet_incoming_interface} %{DATA:encrypted}
+            %{DATA:application_category} %{DATA:application_sub_category}
+            %{DATA:application_risk} %{DATA:application_characteristics}
+            %{DATA:secure_web_proxy_session_type} %{DATA:peer_session_id}
+            %{IPV4:peer_source_address}/%{NUMBER:peer_source_port}->%{IPV4:peer_destination_address}/%{NUMBER:peer_destination_port}
+            %{DATA:hostname} %{DATA:src_vrf_grp} %{DATA:dst_vrf_grp}
+            %{DATA:tunnel_inspection} %{DATA:tunnel_inspection_policy_set}
+            %{DATA:session_flag} %{DATA:source_tenant}
+            %{DATA:destination_service} %{DATA:user_type} %{GREEDYDATA}
+          WEBFILTER_URL_BLOCKED: >-
+            WebFilter: ACTION="%{DATA:action}"
+            (source-zone="%{DATA:source_zone}"
+            destination-zone="%{DATA:destination_zone}"
+            )?%{IPV4:source_address}\(%{NUMBER:source_port}\)->%{IPV4:destination_address}\(%{NUMBER:destination_port}\)
+            (SESSION_ID=%{DATA:session_id} )?(APPLICATION="%{DATA:application}"
+            )?(NESTED-APPLICATION="%{DATA:nested_application}"
+            )?CATEGORY="%{DATA:category}" REASON="%{DATA:reason}"
+            PROFILE="%{DATA:profile}"
+            URL=(%{URI:url}|%{URIPATH:url_path}|%{URIHOST:url_host})
+            (OBJ=%{URIPATH})? (username |USERNAME=)%{DATA:username} (roles
+            |ROLES=)%{NOTSPACE:roles}( application-sub-category
+            %{NOTSPACE:application_sub_category})?( urlcategory-risk
+            %{NOTSPACE:urlcategory_risk})?
+          RT_FLOW_SESSION_CREATE: >-
+            session created
+            %{IPV4:source_address}/%{NUMBER:source_port}->%{IPV4:destination_address}/%{NUMBER:destination_port}
+            0x%{DATA:connection_tag} %{DATA:service_name}
+            %{IPV4:nat_source_address}/%{NUMBER:nat_source_port}->%{IPV4:nat_destination_address}/%{NUMBER:nat_destination_port}
+            0x%{DATA:nat_connection_tag} %{DATA:src_nat_rule_type}
+            %{DATA:src_nat_rule_name} %{DATA:dst_nat_rule_type}
+            %{DATA:dst_nat_rule_name} %{NUMBER:protocol_id} %{DATA:policy_name}
+            %{DATA:source_zone_name} %{DATA:destination_zone_name}
+            %{NUMBER:session_id} %{DATA:username}\(%{DATA:roles}\)
+            %{DATA:packet_incoming_interface} %{DATA:application}
+            %{DATA:nested_application} %{DATA:encrypted}
+            %{DATA:application_category} %{DATA:application_sub_category}
+            %{DATA:application_risk} %{DATA:application_characteristics}
+            %{DATA:src_vrf_grp} %{DATA:dst_vrf_grp} %{DATA:tunnel_inspection}
+            %{DATA:tunnel_inspection_policy_set} %{DATA:source_tenant}
+            %{DATA:destination_service} %{DATA:dst_identity_context_name}
+            %{DATA:dst_identity_context_roles}%{GREEDYDATA}
+          WEBFILTER_URL_PERMITTED: >-
+            WebFilter: ACTION="%{DATA:action}"
+            (source-zone="%{DATA:source_zone}"
+            destination-zone="%{DATA:destination_zone}"
+            )?%{IPV4:source_address}\(%{NUMBER:source_port}\)->%{IPV4:destination_address}\(%{NUMBER:destination_port}\)
+            (SESSION_ID=%{DATA:session_id} )?(APPLICATION="%{DATA:application}"
+            )?(NESTED-APPLICATION="%{DATA:nested_application}"
+            )?CATEGORY="%{DATA:category}" REASON="%{DATA:reason}"
+            PROFILE="%{DATA:profile}"
+            URL=(%{URI:url}|%{URIPATH:url_path}|%{URIHOST:url_host})
+            (OBJ=%{URIPATH})? (username |USERNAME=)%{DATA:username} (roles
+            |ROLES=)%{NOTSPACE:roles}( application-sub-category
+            %{NOTSPACE:application_sub_category})?( urlcategory-risk
+            %{NOTSPACE:urlcategory_risk})?
+          ACCT_TRANSFER_FILE_FAILED: Error <%{INT:error_code}> %{GREEDYDATA:error}
+          ACCT_TRANSFER_FILE_FAILED_ITER: Error <%{INT:error_code}> %{GREEDYDATA:error}
+        custom_patterns: {}
+  - name: parsed_event
+    description: COMMA_SEPARATED_LOG_FORMAT parsing
+    filter: '{{parsed_header.message.COMMA_SEPARATED_FORMAT!= None}}'
+    external:
+      name: grok.case_match
+      properties:
+        input_field: '{{parsed_header.message.message}}'
+        output_field: message
+        pattern_key: '{{parsed_header.message.tag}}'
+        patterns:
+          general: (%{WEB_AUTH}|%{WEB_SESSION})
+          auth-success: >-
+            ((%{GREEDYDATA:service_name} )?authenticated for user
+            \'%{GREEDYDATA:username}\'\.( *(realm \'%{NOT_COMMA:realm}\'|auth
+            profile \'%{NOT_COMMA:auth_profile}\'|vsys
+            \'%{NOT_COMMA:vsys}\'|server profile
+            \'%{NOT_COMMA:server_profile}\'|server address
+            \'%{NOT_COMMA:destination_address}\'|auth protocol
+            \'%{NOT_COMMA:auth_protocol}\'|(admin)? role
+            \'%{NOT_COMMA:user_role}\'|From\:
+            %{IP:source_address})[,\.])+|Certificate validated for (user
+            \'%{GREEDYDATA:username}\'\. *From\: %{IP:source_ip}\.|user
+            \'%{GREEDYDATA:username}\'\.))
+          connect-ldap-sever: >-
+            ldap cfg %{GREEDYDATA} connected to server
+            (%{HOSTNAME:destination_domain}|%{IP:destination_address})\:%{INT:destination_port},
+            initiated by: %{IP:source_address}
+          tls-X509-validation-failed: >-
+            %{GREEDYDATA}Dest Addr:
+            (%{HOSTNAME:destination_domain}|%{IP:destination_address}),
+            Reason:%{GREEDYDATA:error}
+        custom_patterns:
+          WEB_AUTH: >-
+            User (%{GREEDYDATA:username} logged|\'%{GREEDYDATA:username}\'
+            logged) in via %{GREEDYDATA:service_name} from %{IP:source_address}
+            using (using %{WORD:network_protocol}|timed out)
+          NOT_COMMA: '[^,]+'
+          WEB_SESSION: >-
+            Session for (user %{GREEDYDATA:username}|user
+            \'%{GREEDYDATA:username}\') via %{GREEDYDATA:service_name} from
+            %{IP:source_address} (using %{WORD:network_protocol}|timed out)
+  - name: set_observer_fields
+  - name: parsed_date
+    description: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.timestamp}}'
+        output_field: timestamp
+        format: '%Y-%m-%d %H:%M:%S'
+        timezone: UTC
+  - name: parsed_date
+    description: ''
+    filter: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_header.message.timestamp}}'
+        output_field: timestamp
+        format: '%Y-%m-%dT%H:%M:%S.%f%z'
+        timezone: UTC
+  - name: set_event_common_fields
+  - name: set_good_practice_fields
+  - name: set_network_common_fields
+  - name: set_host_common_fields
+  - name: set_user_common_fields
+  - name: set_error_common_fields
+  - name: set_juniper_specific_fields
+  - name: set_service_fields
+  - name: set_process_common_fields
+  - name: set_file_common_fields
+  - name: set_default_fields
+stages:
+  set_observer_fields:
+    actions:
+      - set:
+          observer.vendor: Juniper Networks
+          observer.product: ngfw
+          observer.version: '{{parsed_header.plateform}}'
+        filter: ''
+        name: set
+      - set:
+          observer.egress.zone: >-
+            {{(parsed_event.message['destination-zone-name'] or
+            parsed_event.message.destination_zone_name)|default(None)}}
+          observer.ingress.zone: >-
+            {{(parsed_event.message['source-zone-name'] or
+            parsed_event.message.source_zone_name)|default(None)}}
+        filter: ''
+        name: set
+      - set:
+          observer.ingress.interface.name: >-
+            {{(parsed_event.message['interface-name'] or
+            parsed_event.message.interface_name)|default(None)}}
+        filter: ''
+        name: set
+  set_event_common_fields:
+    actions:
+      - set:
+          event.action: '{{parsed_header.message.tag}}'
+        filter: ''
+        name: set
+      - set:
+          event.reason: '{{parsed_event.message.reason}}'
+          event.dataset: '{{parsed_header.message.event_dataset}}'
+          event.duration: >-
+            {{parsed_event.message['elapsed-time'] or
+            parsed_event.message.elapsed_time}}
+          event.provider: >-
+            {{parsed_header.message.event_provider.replace('/usr/sbin/','').replace('/usr/bin/','')|lower}}
+          event.severity: >-
+            {{parsed_header.message.severity or parsed_event.message.Severity or
+            parsed_event.message.sev}}
+        filter: ''
+        name: set
+      - set:
+          log.description: '{{parsed_event.message.message}}'
+        filter: >-
+          {{parsed_event is defined and  parsed_event.message.message is
+          defined}}
+        name: set
+      - set:
+          log.description: '{{parsed_header.message.message}}'
+        filter: >-
+          {{(parsed_event is not defined) or (parsed_event is defined and
+          parsed_event.message.message is not defined)}}
+        name: set
+      - set:
+          event.action: '{{parsed_event.message.action}}'
+        filter: >-
+          {{final.event.action is not defined and parsed_event.message.action is
+          defined}}
+        name: set
+  set_good_practice_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.kind: event
+        filter: ''
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{'login' in final.event.action|lower or 'logon' in
+          final.event.action|lower or 'authentication' in
+          final.event.action|lower or 'logout' in final.event.action|lower or
+          'auth' in final.event.action|lower or 'logged in' in
+          final.log.description|lower or 'logged out' in
+          final.log.description|lower}}
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''admin'']}}'
+        filter: '{{''admin'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''file'']}}'
+        filter: '{{''file'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'allow' in final.event.action|lower or 'allowed' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'deny' in final.event.action|lower or 'denied' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
+        filter: >-
+          {{'creation' in final.event.action|lower or 'create' in
+          final.event.action|lower or 'added' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'delete' in final.event.action|lower or 'delete' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''session'']}}'
+        filter: >-
+          {{'session' in final.event.action|lower or (final.event.provider ==
+          'sshd' and final.event.action|lower in ["disconnected","connection
+          closed"])}}
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
+        filter: >-
+          {{'config' in final.event.action|lower or 'cfg' in
+          final.event.action|lower or (('session' not in final.event.type and
+          'authentication' not in final.event.category) and ('creation' in
+          final.event.type or 'deletion' in final.event.type or 'change' in
+          final.event.type))}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'disconnect' in final.event.action|lower or 'close' in
+          final.event.action|lower or 'ended' in final.event.action|lower or
+          'logout' in final.event.action|lower or 'exit' in
+          final.event.action|lower or 'stopped' in final.event.action|lower or
+          'logged out' in final.log.description|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'creation' not in final.event.type and ('end' not in
+          final.event.type and ('connect' in final.event.action|lower and not
+          'disconnect' in final.event.action|lower) or 'open' in
+          final.event.action|lower or 'start' in final.event.action|lower or
+          'login' in final.event.action|lower or 'authenticated' in
+          final.log.description|lower or 'session_create' in
+          final.event.action|lower or 'logged in' in final.log.description|lower
+          or 'auth-success' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.outcome: unknown
+        filter: '{{final.event.outcome is not defined}}'
+        name: set
+      - set:
+          event.outcome: success
+        filter: >-
+          {{('success' in final.event.action|lower and not 'unsuccess' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'failed' in final.event.action|lower or 'failure' in
+          final.event.action|lower or 'fail' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '[''info'']'
+        filter: '{{final.event.type is not defined}}'
+        name: set
+      - set:
+          event.kind: alert
+        filter: >-
+          {{final.event.dataset== 'RT_IDS' or 'INFECTED' in final.event.action
+          or 'DETECTED' in final.event.action}}
+        name: set
+  set_network_common_fields:
+    actions:
+      - set:
+          source.ip: >-
+            {{parsed_event.message.source_address or
+            parsed_event.message['source-address']}}
+          source.port: >-
+            {{parsed_event.message.source_port or parsed_event.message.srcport
+            or parsed_event.message['source-port']}}
+          destination.ip: >-
+            {{parsed_event.message.destination_address  or
+            parsed_event.message.dstip or
+            parsed_event.message['destination-address']}}
+          destination.port: >-
+            {{parsed_event.message.destination_port or
+            parsed_event.message.dstport or
+            parsed_event.message['destination-port']}}
+          destination.domain: '{{parsed_event.message.destination_domain}}'
+        filter: ''
+        name: set
+      - set:
+          source.bytes: >-
+            {{parsed_event.message.sentbyte or
+            parsed_event.message['bytes-from-client'] or
+            parsed_event.message.bytes_from_client}}
+          source.packets: >-
+            {{parsed_event.message['packets-from-client'] or
+            parsed_event.message.packets_from_client}}
+          destination.bytes: >-
+            {{parsed_event.message.rcvdbyte or
+            parsed_event.message['bytes-from-server'] or
+            parsed_event.message.bytes_from_server}}
+          destination.packets: >-
+            {{parsed_event.message['packets-from-server'] or
+            parsed_event.message.packets_from_server}}
+        filter: ''
+        name: set
+      - set:
+          network.application: >-
+            {{parsed_event.message['application'] or
+            parsed_event.message.application}}
+        filter: ''
+        name: set
+      - set:
+          observer.ingress.interface.name: >-
+            {{parsed_event.message['packet-incoming-interface'] or
+            parsed_event.message.packet_incoming_interface}}
+        filter: ''
+        name: set
+      - set:
+          source.nat.ip: >-
+            {{parsed_event.message['nat-source-address'] or
+            parsed_event.message.nat_source_address}}
+          source.nat.port: >-
+            {{parsed_event.message['nat-source-port'] or
+            parsed_event.message.nat_source_port}}
+          destination.nat.ip: >-
+            {{parsed_event.message['nat-destination-address'] or
+            parsed_event.message.nat_destination_address}}
+          destination.nat.port: >-
+            {{parsed_event.message['nat-destination-port'] or
+            parsed_event.message.nat_destination_port}}
+        filter: ''
+        name: set
+      - set:
+          network.protocol: '{{parsed_event.message.network_protcol}}'
+          network.iana_number: >-
+            {{parsed_event.message['protocol-id'] or
+            parsed_event.message.protocol_id}}
+        filter: ''
+        name: set
+      - set:
+          source.ip: '{{parsed_header.message.source_address}}'
+        filter: >-
+          {{parsed_header.message is defined and
+          parsed_header.message.source_address is defined}}
+        name: set
+  set_host_common_fields:
+    actions:
+      - set:
+          host.name: '{{parsed_header.message.hostname}}'
+        filter: ''
+        name: set
+  set_user_common_fields:
+    actions:
+      - set:
+          user.name: '{{parsed_event.message.username}}'
+          user.roles: '{{parsed_event.message.user_role}}'
+          user.domain: '{{parsed_event.message.realm}}'
+        filter: ''
+        name: set
+      - set:
+          user.name: '{{parsed_header.message.username}}'
+        filter: >-
+          {{parsed_header.message is defined and parsed_header.message.username
+          is defined}}
+        name: set
+  set_error_common_fields:
+    actions:
+      - set:
+          error.code: >-
+            {{parsed_event.message.error_code or
+            parsed_event.message.Error_code}}
+          error.message: '{{parsed_event.message.error or parsed_event.message.Error}}'
+        filter: ''
+        name: set
+  set_juniper_specific_fields:
+    actions:
+      - set:
+          juniper.ngfw.policy.name: >-
+            {{parsed_event.message['policy-name'] or
+            parsed_event.message.policy_name}}
+          juniper.ngfw.connection_tag: >-
+            {{parsed_event.message['connection-tag'] or
+            parsed_event.message.connection_tag}}
+          juniper.ngfw.flow.encrypted: >-
+            {%if (parsed_event.message.encrypted|lower) ==
+            'unknown'%}false{%elif (parsed_event.message.encrypted|lower) ==
+            'yes'%}True{%elif parsed_event.message.encrypted is
+            defined%}False{%endif%}
+          juniper.ngfw.nat.connection_tag: >-
+            {{parsed_event.message['nat-connection-tag'] or
+            parsed_event.message.nat_connection_tag}}
+          juniper.ngfw.source.nat.rule.name: >-
+            {{parsed_event.message['src-nat-rule-name'] or
+            parsed_event.message.src_nat_rule_name}}
+          juniper.ngfw.source.nat.rule.type: >-
+            {{parsed_event.message['src-nat-rule-type'] or
+            parsed_event.message.src_nat_rule_type}}
+          juniper.ngfw.destination.nat.rule.name: >-
+            {{parsed_event.message['dst-nat-rule-name'] or
+            parsed_event.message.dst_nat_rule_name}}
+          juniper.ngfw.destination.nat.rule.type: >-
+            {{parsed_event.message['dst-nat-rule-type'] or
+            parsed_event.message.dst_nat_rule_type}}
+        filter: >-
+          {{parsed_header.message is defined and
+          parsed_header.message.variable_value_pairs is defined}}
+        name: set
+      - set:
+          juniper.ngfw.client_mode: '{{parsed_event.message.client_mode|lower}}'
+          juniper.ngfw.application.name: '{{parsed_event.message[''application'']}}'
+          juniper.ngfw.application.risk: >-
+            {{parsed_event.message['application-risk'] or
+            parsed_event.message.application_risk}}
+          juniper.ngfw.application.category: >-
+            {{parsed_event.message['application-category'] or
+            parsed_event.message.application_category}}
+          juniper.ngfw.nested_application.name: >-
+            {{parsed_event.message['nested-application'] or
+            parsed_event.message.nested_application}}
+          juniper.ngfw.application.sub_category: >-
+            {{parsed_event.message['application-sub-category'] or
+            parsed_event.message.application_sub_category}}
+        filter: '{{parsed_event.message is mapping}}'
+        name: set
+      - set:
+          juniper.ngfw.ids.action.name: '{{parsed_event.message[''action''] or parsed_event.message.action}}'
+          juniper.ngfw.ids.attack.name: >-
+            {{parsed_event.message['attack-name'] or
+            parsed_event.message.attack_name}}
+        filter: '{{''IDS'' in final.event.dataset}}'
+        name: set
+      - set:
+          juniper.ngfw.tunnel.inspection: >-
+            {%if parsed_event.message['tunnel-inspection']|lower == 'on'
+            %}True{%elif parsed_event.message['tunnel-inspection'] is defined
+            %}False{%endif%}
+        filter: '{{parsed_event.message[''tunnel-inspection''] is defined}}'
+        name: set
+      - set:
+          juniper.ngfw.tunnel.inspection: >-
+            {%if parsed_event.message.tunnel_inspection|lower == 'on'
+            %}True{%elif parsed_event.message.tunnel_inspection is defined
+            %}False{%endif%}
+        filter: '{{parsed_event.message.tunnel_inspection is defined}}'
+        name: set
+  set_service_fields:
+    actions:
+      - set:
+          service.name: >-
+            {{parsed_event.message['service-name'] or
+            parsed_event.message.service_name}}
+        filter: ''
+        name: set
+  set_process_common_fields:
+    actions:
+      - set:
+          process.pid: '{{parsed_event.message.process_id}}'
+          process.args: '{{parsed_event.message.process_args}}'
+          process.name: '{{parsed_event.message.process_name}}'
+          process.exit_code: '{{parsed_event.message.process_exit_code}}'
+          process.user.name: '{{parsed_event.message.process_username}}'
+          process.command_line: '{{parsed_event.message.process_command_line}}'
+        filter: ''
+        name: set
+      - set:
+          process.user.name: '{{parsed_header.message.process_username}}'
+        filter: '{{parsed_header.message.process_username is defined}}'
+        name: set
+      - set:
+          process.name: '{{parsed_header.message.process_name}}'
+        filter: '{{parsed_header.message.process_name is defined}}'
+        name: set
+      - set:
+          process.pid: '{{parsed_header.message.process_id}}'
+        filter: '{{parsed_header.message.process_id is defined}}'
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''process'']}}'
+        filter: '{{final.process is defined}}'
+        name: set
+  set_file_common_fields:
+    actions:
+      - set:
+          file.path: '{{parsed_event.message.file_path}}'
+        filter: ''
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''file'']}}'
+        filter: '{{final.file is defined}}'
+        name: set
+  set_default_fields:
+    actions:
+      - set:
+          event.category: '[''network'']'
+        filter: '{{final.event.category is not defined}}'
+        name: set
