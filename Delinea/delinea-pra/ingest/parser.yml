@@ -7,6 +7,14 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  - name: parsed_notes
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parsed_event.message.notes}}"
+        output_field: message
+    filter: "{{parsed_event.message.get('notes') != None}}"
+
   - name: parse_time
     external:
       name: date.parse
@@ -23,7 +31,20 @@ pipeline:
         output_field: datetime
     filter: "{{parsed_event.message.get('Date') != None}}"
 
+  - name: parse_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.eventDateTime}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.get('eventDateTime') != None}}"
+
   - name: set_ecs_fields
+
+  # represent Delinea PRA fields that get from api.
+  # Check 'test_new_event.json' for the anonymized example event.
+  - name: set_delinea_pra_fields
+    filter: "{{parsed_event.message.get('eventMessageId') != None}}"
 
 stages:
   set_ecs_fields:
@@ -32,15 +53,16 @@ stages:
           event.category: ["network"]
           event.type: ["info"]
 
-          event.reason: "{{parsed_event.message.msg or parsed_event.message.Action}}"
-          event.action: "{{parsed_event.message.get('Event type')}}"
-          error.message: "{{parsed_event.message.error}}"
-
           observer.product: "Delinea PRA"
           observer.vendor: "Delinea"
 
           "@timestamp": "{{parse_time.datetime}}"
           log.level: "{{parsed_event.message.level or parsed_event.message.Level}}"
+
+          # All fields above are shared with events from Delinea PRA
+          event.reason: "{{parsed_event.message.msg or parsed_event.message.Action}}"
+          event.action: "{{parsed_event.message.get('Event type')}}"
+          error.message: "{{parsed_event.message.error}}"
 
           host.id: "{{parsed_event.message.host_id}}"
           host.os.type: "{{parsed_event.message.host_os}}"
@@ -78,5 +100,41 @@ stages:
 
       - set:
           host.name: "{{parsed_event.message.host_port.split(':') | first}}"
-        #          host.port: "{{parsed_event.message.host_port.split(':') | last | int}}"
         filter: "{{':' in parsed_event.message.get('host_port')}}"
+
+  set_delinea_pra_fields:
+    actions:
+      - set:
+          event.dataset: "{{parsed_event.message.service.type}}"
+          event.action: "{{parsed_event.message.eventType.name}}"
+
+          event.kind: "{{parsed_event.message.level}}"
+          event.reason: "{{parsed_event.message.displayMessage or parsed_notes.message.notes.eventDetails}}"
+          event.outcome: "{{parsed_notes.message.notes.eventLevel}}"
+          event.severity: "{{parsed_notes.message.notes.eventLevel}}"
+
+          observer.type: "{{parsed_event.message.service.type}}"
+          observer.version: "{{parsed_event.message.service.version}}"
+          observer.serial_number: "{{parsed_event.message.service.identifier}}"
+
+          source.ip: "{{parsed_event.message.source.host.network.ipAddress}}"
+          source.port: "{{parsed_event.message.source.host.network.port}}"
+          source.domain: "{{parsed_event.message.source.host.network.domain}}"
+          source.mac: "{{parsed_event.message.source.host.network.macAddress}}"
+          source.geo.city_name: "{{parsed_event.message.source.host.network.geo.cityName}}"
+          source.geo.country_iso_code: "{{parsed_event.message.source.host.network.geo.countryIsoCode}}"
+          source.geo.timezone: "{{parsed_event.message.source.host.network.geo.timeZone}}"
+
+          host.hostname: "{{parsed_event.message.source.host.machineName}}"
+          host.name: "{{parsed_event.message.source.name}}"
+          host.ip: "{{parsed_event.message.source.host.network.ipAddress}}"
+
+          network.transport: "{{parsed_event.message.source.host.network.addressType}}"
+
+          user.name: "{{parsed_event.message.actor.name}}"
+          user.full_name: "{{parsed_event.message.actor.displayName}}"
+          user.email: "{{parsed_event.message.actor.email}}"
+
+          destination.domain: "{{parsed_event.message.target.containerName}}"
+          destination.ip: "{{parsed_notes.message.notes.ipAddress}}"
+          destination.port: "{{parsed_event.message.target.host.network.port}}"
