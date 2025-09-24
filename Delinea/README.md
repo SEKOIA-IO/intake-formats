@@ -1,0 +1,7 @@
+# Delinea
+
+## Description
+Delinea is a cybersecurity company specializing in Privileged Access Management (PAM). Its platform helps organizations securely store and rotate sensitive credentials—such as passwords, SSH keys and certificates—in an encrypted vault, while controlling and auditing elevated access to critical systems. By brokering remote sessions (RDP, SSH, SFTP) without exposing underlying secrets, enforcing least-privilege policies and capturing detailed activity logs, Delinea enables enterprises to reduce risk, meet compliance mandates and gain full visibility into who accessed what and when. Available as a cloud service or on-premises appliance, it integrates with existing identity and security infrastructure to simplify the protection of high-value accounts across hybrid IT environments.
+
+## Intakes
+*
