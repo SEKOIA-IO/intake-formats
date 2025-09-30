@@ -1,0 +1,77 @@
+name: azure-entraid
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  # For signin events
+  - name: parsed_date
+    filter: '{{json_event.message.get("createdDateTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.createdDateTime}}"
+        output_field: date
+
+  # For audit events
+  - name: parsed_date
+    filter: '{{json_event.message.get("activityDateTime") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.activityDateTime}}"
+        output_field: date
+
+  - name: set_common_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.date}}"
+
+          cloud.provider: "Azure"
+          cloud.service.name: "Azure EntraId"
+
+          event.code: "{{json_event.message.status.errorCode}}"
+          error.message: "{{json_event.message.status.failureReason}}"
+          event.reason: "{{json_event.message.status.additionalDetails or json_event.message.resultReason}}"
+          event.dataset: "{{json_event.message.category}}"
+
+          event.provider: "{{json_event.message.resourceDisplayName or json_event.message.loggedByService}}"
+
+          trace.id: "{{json_event.message.correlationId or json_event.message.correlationId}}"
+
+          user.id: "{{json_event.message.userId or json_event.message.initiatedBy.user.id}}"
+          user.name: "{{json_event.message.userDisplayName or json_event.message.initiatedBy.user.displayName}}"
+          user.email: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName}}"
+
+          source.ip: "{{json_event.message.ipAddress or json_event.message.initiatedBy.user.ipAddress}}"
+          source.geo.city_name: "{{json_event.message.location.city}}"
+          source.geo.region_name: "{{json_event.message.location.state}}"
+          source.geo.country_iso_code: "{{json_event.message.location.countryOrRegion}}"
+          source.geo.location.lat: "{{json_event.message.location.geoCoordinates.latitude}}"
+          source.geo.location.lon: "{{json_event.message.location.geoCoordinates.longitude}}"
+
+          host.id: "{{json_event.message.deviceDetail.deviceId}}"
+          host.name: "{{json_event.message.deviceDetail.displayName}}"
+          host.os.name: "{{json_event.message.deviceDetail.operatingSystem}}"
+
+          user_agent.original: "{{json_event.message.deviceDetail.browser}}"
+
+          service.id: "{{json_event.message.appId}}"
+          service.name: "{{json_event.message.appDisplayName or json_event.message.loggedByService}}"
+
+          azure.entraid.properties.clientAppUsed: "{{json_event.message.clientAppUsed}}"
+          azure.entraid.properties.conditionalAccessStatus: "{{json_event.message.conditionalAccessStatus}}"
+          azure.entraid.properties.isInteractive: "{{json_event.message.isInteractive}}"
+          azure.entraid.properties.riskDetail: "{{json_event.message.riskDetail}}"
+          azure.entraid.properties.riskLevelAggregated: "{{json_event.message.riskLevelAggregated}}"
+          azure.entraid.properties.riskLevelDuringSignIn: "{{json_event.message.riskLevelDuringSignIn}}"
+          azure.entraid.properties.riskState: "{{json_event.message.riskState}}"
+          azure.entraid.properties.riskEventTypes: "{{json_event.message.riskEventTypes}}"
+          azure.entraid.properties.resourceId: "{{json_event.message.resourceId}}"
+          azure.entraid.properties.appliedConditionalAccessPolicies: "{{json_event.message.appliedConditionalAccessPolicies}}"
