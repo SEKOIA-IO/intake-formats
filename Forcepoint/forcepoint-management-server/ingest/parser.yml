@@ -1,0 +1,197 @@
+name: forcepoint-management-server
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+        value_sep: '='
+        item_sep: ','
+  - name: set_observer_fields
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.Timestamp}}'
+        output_field: timestamp
+        format: '%Y-%m-%d %H:%M:%S'
+        timezone: UTC
+  - name: set_event_common_fields
+  - name: parsed_details
+    external:
+      name: grok.case_match
+      properties:
+        input_field: '{{parsed_event.message.InfoMsg}}'
+        output_field: message
+        pattern_key: '{{final.event.action}}'
+        patterns:
+          stonegate.admin.login: >-
+            Login %{GREEDYDATA:outcome} for (user %{GREEDYDATA:username} in
+            domain %{GREEDYDATA:forcepoint_domain} with method
+            %{GREEDYDATA:authentication_method}|user %{GREEDYDATA:username} in
+            domain %{GREEDYDATA:forcepoint_domain}|user %{GREEDYDATA:username})
+          stonegate.admin.logout: >-
+            Logout %{GREEDYDATA:outcome} for (user %{GREEDYDATA:username} in
+            domain %{GREEDYDATA:forcepoint_domain} with method
+            %{GREEDYDATA:authentication_method} (\(%{GREEDYDATA:reason}\))?|user
+            %{GREEDYDATA:username} in domain
+            %{GREEDYDATA:forcepoint_domain}|user
+            %{GREEDYDATA:username}\s(\(%{GREEDYDATA:reason}\))\.?|user
+            %{GREEDYDATA:username})
+  - name: set_good_practice_fields
+  - name: set_network_common_fields
+  - name: set_user_common_fields
+  - name: set_forcepoint_common_fields
+stages:
+  set_observer_fields:
+    actions:
+      - set:
+          observer.ip: '{{parsed_event.message.NodeId}}'
+          observer.vendor: Forcepoint
+          observer.product: Forcepoint Management Server
+          observer.hostname: '{{parsed_event.message.CompId}}'
+        filter: ''
+        name: set
+  set_event_common_fields:
+    actions:
+      - set:
+          event.action: '{{parsed_event.message.TypeDescription}}'
+          event.reason: '{{parsed_event.message.reason}}'
+        filter: ''
+        name: set
+      - set:
+          log.description: '{{parsed_event.message.InfoMsg or parsed_event.message.message}}'
+        filter: ''
+        name: set
+  set_good_practice_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.kind: event
+        filter: ''
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{('login' in final.event.action|lower or 'logon' in
+          final.event.action|lower or 'authentication' in
+          final.event.action|lower or 'logout' in final.event.action|lower) or
+          ('login' in final.log.description|lower or 'logon' in
+          final.log.description|lower or 'authentication' in
+          final.log.description|lower or 'logout' in
+          final.log.description|lower)}}
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''admin'']}}'
+        filter: '{{''admin'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''process'']}}'
+        filter: >-
+          {{'stop' in final.event.action|lower or 'start' in
+          final.event.action|lower or 'pause' in final.event.action|lower}}
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''network'']}}'
+        filter: '{{''connection'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
+        filter: >-
+          {{'policy' in final.event.action|lower or 'object.' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''file'']}}'
+        filter: '{{''file'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'allow' in final.event.action|lower or 'allowed' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'deny' in final.event.action|lower or 'denied' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
+        filter: >-
+          {{'change' in final.event.action|lower or 'update' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'delete' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'disconnect' in final.event.action|lower or 'stop' in
+          final.event.action|lower or 'closed' in final.event.action|lower or
+          'ended' in final.event.action|lower or '.end' in
+          final.event.action|lower or 'logout' in final.event.action|lower or
+          'logout' in final.log.description|lower }}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{('connect' in final.event.action|lower and not 'disconnect' in
+          final.event.action|lower) or 'open' in final.event.action|lower or
+          'start' in final.event.action|lower or ('login' in
+          final.event.action|lower or 'login' in final.log.description|lower)}}
+        name: set
+      - set:
+          event.outcome: unknown
+        filter: '{{final.event.outcome is not defined}}'
+        name: set
+      - set:
+          event.outcome: success
+        filter: >-
+          {{('success' in parsed_event.message.Result|lower and not 'unsuccess'
+          in parsed_event.message.Result|lower)}}
+        name: set
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'failed' in parsed_event.message.Result|lower or 'failure' in
+          parsed_event.message.Result|lower or 'fail' in
+          parsed_event.message.Result|lower}}
+        name: set
+      - set:
+          event.type: '[''info'']'
+        filter: '{{final.event.type is not defined}}'
+        name: set
+      - set:
+          event.category: '[''host'']'
+        filter: '{{final.event.category is not defined}}'
+        name: set
+  set_network_common_fields:
+    actions:
+      - set:
+          source.ip: '{{parsed_event.message.ClientIpAddress}}'
+        filter: ''
+        name: set
+  set_user_common_fields:
+    actions:
+      - set:
+          user.name: '{{parsed_event.message.UserOriginator}}'
+          client.user.name: '{{parsed_details.message.username}}'
+        filter: ''
+        name: set
+  set_forcepoint_common_fields:
+    actions:
+      - set:
+          forcepoint.ms.domain: '{{parsed_details.message.forcepoint_domain}}'
+          forcepoint.ms.situation: '{{parsed_event.message.Situation}}'
+          forcepoint.ms.object.name: '{{parsed_event.message.ObjectName}}'
+          forcepoint.ms.sender_type: '{{parsed_event.message.SenderType}}'
+          forcepoint.ms.alert_severity: '{{parsed_event.message.AlertSeverity}}'
+          forcepoint.ms.authentication_method: '{{parsed_details.message.authentication_method}}'
+        filter: ''
+        name: set
