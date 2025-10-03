@@ -16,20 +16,24 @@ pipeline:
       properties:
         raise_errors: false
         input_field: parsed_event.message.description
-        pattern: "%{LINEPROTO}|%{LINK}"
+        pattern: "%{LINEPROTO}|%{LINK}|%{PM}|%{MAB}|%{SPANTREE}|%{SEC_VIOLATION}"
         custom_patterns:
           LINEPROTO: "Line protocol on Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
           LINK: "Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
-    filter: '{{parsed_event.message.facility in ["LINEPROTO", "LINK"]}}'
+          PM: "%{DATA:error_type} error detected on %{NOTSPACE:ifname}, putting %{DATA} in %{DATA:ifstate} state"
+          MAB: "Authentication failed for client (%{DATA}) on Interface %{NOTSPACE:ifname} AuditSessionID %{DATA:session_id}"
+          SPANTREE: "Received BPDU from bridge %{DATA:source_mac_addr} on port %{NOTSPACE:ifname} with BPDU Guard enabled. Disabling port."
+          SEC_VIOLATION: "Security violation occurred, caused by MAC address %{DATA:source_mac_addr} on port %{NOTSPACE:ifname}( attempting to access port %{DATA})?."
+    filter: '{{parsed_event.message.facility in ["LINEPROTO", "LINK", "PM", "MAB", "SPANTREE", "PORT_SECURITY"]}}'
   - name: parsed_description
     external:
       name: grok.match
       properties:
         raise_errors: false
         input_field: parsed_event.message.description
-        pattern: "%{SEC_LOGIN_SUCCESS}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}"
+        pattern: "%{SEC_LOGIN}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}"
         custom_patterns:
-          SEC_LOGIN_SUCCESS: 'Login Success \[user: %{USERNAME:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\] at %{TIME} %{WORD} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
+          SEC_LOGIN: 'Login (Success|failed) \[user: %{DATA:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\]( \[Reason: %{DATA}\])? at %{TIME} %{WORD} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
           SYS_LOGIN_FAILURE: "Logging to host %{IP:destination_ip} port %{NUMBER:destination_port} failed"
           SYS_LOGOUT: 'User %{USERNAME:username} has exited tty session %{NUMBER:terminal}\(%{IP:source_ip}\)'
           SYS_TTY_EXPIRE_TIMER: '\(exec timer expired, tty %{NUMBER:terminal} \(%{IP:source_ip}\)\), user %{USERNAME:username}'
@@ -83,19 +87,40 @@ stages:
           destination.port: "{{parsed_description.message.destination_port}}"
           user.name: "{{parsed_description.message.username}}"
           network.vlan.id: "{{parsed_description.message.vlan}}"
+
+      - set:
+          event.category: ["authentication"]
+        filter: "{{parsed_event.message.mnemonic in ['LOGIN_FAILED', 'LOGIN_SUCCESS', 'LOGOUT', 'LOGGINGHOST_FAIL'] or 'Authentication failed' in parsed_event.message.description}}"
+
       - translate:
         dictionary:
-          LOGIN_SUCCESS: ["access", "start"]
-          LOGOUT: ["access", "end"]
-          LOGGINGHOST_FAIL: ["access", "end"]
+          LOGIN_FAILED: ["start"]
+          LOGIN_SUCCESS: ["start"]
+          LOGOUT: ["end"]
+          LOGGINGHOST_FAIL: ["end"]
         mapping:
           parsed_event.message.mnemonic: event.type
         fallback: ["info"]
+
+      - translate:
+        dictionary:
+          LOGIN_FAILED: "failure"
+          LOGIN_SUCCESS: "success"
+          LOGOUT: "success"
+          LOGGINGHOST_FAIL: "failure"
+        mapping:
+          parsed_event.message.mnemonic: event.outcome
+
+      - set:
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{'Authentication failed' in parsed_event.message.description}}"
 
   set_cisco_fields:
     actions:
       - set:
           cisco.ios.event.facility: "{{parsed_event.message.facility}}"
+          cisco.ios.event.error_type: "{{parsed_description.message.error_type}}"
           cisco.ios.observer.interface.name: "{{parsed_description.message.ifname}}"
           cisco.ios.observer.terminal: "{{parsed_description.message.terminal}}"
       - set:
