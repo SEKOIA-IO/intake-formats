@@ -1,0 +1,220 @@
+name: cyberark-digital-vault
+pipeline:
+  - name: parsed_event
+    filter: '{{''LEEF:'' in original.message}}'
+    external:
+      name: leef.parse-leef
+      properties:
+        input_field: "{{original.message.replace('\t ', '\t')}}"
+        output_field: message
+  - name: extra_details_stage
+    filter: '{{parsed_event.message.ExtraDetails is defined}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: >-
+          {{parsed_event.message.ExtraDetails.replace('\;','$oxdPivwT$').replace(';','$HdQYoHsx$').replace('$oxdPivwT$','\\;')}}
+        output_field: message
+        value_sep: '='
+        item_sep: \$HdQYoHsx\$
+  - name: set_observer_fields
+  - name: set_event_common_fields
+  - name: set_good_practice_fields
+  - name: set_user_common_fields
+  - name: set_network_common_fields
+  - name: set_file_common_fields
+  - name: set_specific_fields
+  - name: extra_details_specific_fields
+    filter: '{{parsed_event.message.ExtraDetails is defined}}'
+  - name: set_defaults
+stages:
+  set_observer_fields:
+    actions:
+      - set:
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: '{{parsed_event.message.DeviceProduct}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+        filter: >-
+          {{original.message.startswith('LEEF') or
+          original.message.startswith('CEF')}}
+  set_event_common_fields:
+    actions:
+      - set:
+          event.action: '{{parsed_event.message.Action}}'
+      - set:
+          event.reason: '{{parsed_event.message.reason}}'
+          event.severity: '{{parsed_event.message.sev}}'
+          log.syslog.severity.code: '{{parsed_event.message.sev}}'
+      - set:
+          event.code: '{{parsed_event.message.DeviceEventClassID}}'
+      - set:
+          log.description: '{{parsed_event.message.EventMessage}}'
+      - dictionary:
+          '2': Critical
+          '3': Error
+          '6': Info
+        mapping:
+          log.syslog.severity.code: log.syslog.severity.name
+        filter: ''
+        name: translate
+  set_good_practice_fields:
+    actions:
+      - set:
+          event.kind: event
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{'login' in final.event.action|lower or 'logon' in
+          final.event.action|lower or 'authentication' in
+          final.event.action|lower or 'logout' in final.event.action|lower}}
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''file'']}}'
+        filter: '{{''file'' in final.event.action|lower}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: '{{''allow'' in final.event.action|lower}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'deny' in final.event.action|lower or 'denied' in
+          final.event.action|lower or final.event.code in ['0','3','5','6','9',
+          '10','11','12','13','14','16','17','25','26','28','29','30','34','35',
+          '40','41','42','43','46','47','48','49','55','56','63','65','770','72',
+          '74','76','77','82','85','87','90','92','96','97','100','101','132',
+          '133','134','135','46','147','148','150','152','153','154','155','156',
+          '157','158','159','160','161','162','163','164','165','166','167',
+          '168','169','171','172','173','174','175','176','177','178','179',
+          '186','191','193','196','197','206','207','208','214','215','216',
+          '222','225','226','227','228','237','238','243','244','250','253',
+          '255','260','261','262','263','269','271','284','306','307','314',
+          '315']}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
+        filter: >-
+          {{'add' in final.event.action|lower or 'create' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
+        filter: >-
+          {{'update' in final.event.action|lower or 'change' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'delete' in final.event.action|lower or 'remove' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''connection'']}}'
+        filter: '{{''connection'' in final.event.action|lower}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{('connect' in final.event.action|lower and not 'disconnect' in
+          final.event.action|lower) or 'open' in final.event.action|lower or
+          'start' in final.event.action|lower or 'login' in
+          final.event.action|lower or 'logon' in final.event.action|lower or
+          final.event.action|lower == 'user authentication'}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'disconnect' in final.event.action|lower or 'closed' in
+          final.event.action|lower or 'ended' in final.event.action|lower or
+          'logout' in final.event.action|lower}}
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''session'']}}'
+        filter: '{{''psm'' in final.event.action|lower}}'
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
+        filter: >-
+          {{'creation' in final.event.type|lower or 'change' in
+          final.event.type|lower or 'deletion' in final.event.type|lower}}
+      - set:
+          event.outcome: success
+        filter: >-
+          {{('success' in final.event.action|lower and not 'unsuccess' in
+          final.event.action|lower)}}
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'failed' in final.event.action|lower or 'failure' in 
+          final.event.action|lower or 'fail' in final.event.action|lower
+           or "denied" in final.event.type or final.event.code in ['4','38','57','60','102','103','104','116','117','130','137','142',
+           '248','249','280','281','297','298','301','303','320','333','336','338','339','345S','347S',
+           '349','350','352','353','360','362','365','366','369','371','373','375','377','379','381','386','409','413','415',
+           '417','419','421','423','425','430','431','433','435','440','442','444','464','472',
+           '474','475','476','478']}}
+
+  set_user_common_fields:
+    actions:
+      - set:
+          user.name: '{{parsed_event.message.usrName}}'
+          user.domain: '{{parsed_event.message.usrName.split(''@'')[1]}}'
+          source.user.name: '{{parsed_event.message.SourceUser}}'
+          source.user.domain: '{{parsed_event.message.SourceUser.split(''@'')[1]}}'
+          destination.user.name: '{{parsed_event.message.duser}}'
+          destination.user.domain: '{{parsed_event.message.duser.split(''@'')[1]}}'
+      - set:
+          user.target.name: '{{parsed_event.message.TargetUser}}'
+          user.target.domain: '{{parsed_event.message.TargetUser.split(''@'')[1]}}'
+      - set:
+          client.user.name: '{{parsed_event.message.OSUser}}'
+          client.user.domain: '{{parsed_event.message.OSUser.split(''@'')[1]}}'
+  set_network_common_fields:
+    actions:
+      - set:
+          destination.ip: '{{parsed_event.message.dhost}}'
+        filter: '{{parsed_event.message.dhost | is_ipaddress}}'
+      - set:
+          destination.domain: '{{parsed_event.message.dhost}}'
+        filter: '{{not (parsed_event.message.dhost | is_ipaddress)}}'
+      - set:
+          source.domain: '{{parsed_event.message.shost}}'
+        filter: '{{not (parsed_event.message.shost | is_ipaddress)}}'
+      - set:
+          source.ip: '{{parsed_event.message.shost}}'
+        filter: '{{parsed_event.message.shost | is_ipaddress}}'
+  set_file_common_fields:
+    actions:
+      - set:
+          file.name: '{{parsed_event.message.File}}'
+  set_specific_fields:
+    actions:
+      - set:
+          cyberark.vault.safe: '{{parsed_event.message.Safe}}'
+          cyberark.vault.reason: '{{ parsed_event.message.Reason}}'
+          cyberark.vault.Location: '{{ parsed_event.message.Location}}'
+          cyberark.vault.category: '{{parsed_event.message.Category}}'
+          cyberark.vault.GatewayStation: '{{ parsed_event.message.GatewayStation }}'
+  extra_details_specific_fields:
+    actions:
+      - set:
+          client.user.name: '{{extra_details_stage.message.username}}'
+          client.user.domain: '{{extra_details_stage.message.address}}'
+      - set:
+          source.ip: '{{extra_details_stage.message.SrcHost}}'
+          observer.ip: '{{parsed_event.message.dhost}}'
+          destination.ip: '{{extra_details_stage.message.DstHost}}'
+          event.duration: >
+            {%- set duration = extra_details_stage.message.SessionDuration-%}
+            {%- set hours = duration.split(':')[0]-%} {%- set minutes =
+            duration.split(':')[1]-%} {%- set seconds =
+            duration.split(':')[2]-%} {{(hours | int * 3600 + minutes | int * 60
+            + seconds | int) * 1_000_000_000}}
+          network.protocol: '{{extra_details_stage.message.Protocol}}'
+          cyberark.psm.server.id: '{{extra_details_stage.message.PSMID}}'
+          cyberark.psm.session.id: '{{extra_details_stage.message.SessionID}}'
+          cyberark.psm.application: >-
+            {{extra_details_stage.message.ApplicationType or
+            extra_details_stage.message.ConnectionComponentId}}
+          cyberark.psm.command_line: '{{extra_details_stage.message.Command}}'
+  set_defaults:
+    actions:
+      - set:
+          event.category: '[''iam'']'
+        filter: '{{final.event.category is not defined}}'
+      - set:
+          event.outcome: success
+        filter: '{{final.event.outcome is not defined}}'
+      - set:
+          event.type: '[''info'']'
+        filter: '{{final.event.type is not defined}}'
