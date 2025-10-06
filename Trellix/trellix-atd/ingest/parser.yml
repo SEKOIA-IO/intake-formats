@@ -8,7 +8,6 @@ pipeline:
         input_field: '{{original.message.strip()}}'
         output_field: message
   - name: set_observer_fields
-    external: null
   - name: parsed_date
     external:
       name: date.parse
@@ -18,8 +17,6 @@ pipeline:
         format: '%Y-%m-%d %H:%M:%S'
         timezone: UTC
   - name: parsed_date
-    description: ''
-    filter: ''
     external:
       name: date.parse
       properties:
@@ -41,7 +38,6 @@ stages:
       - set:
           observer.vendor: Trellix
           observer.product: ATD
-        name: set
   set_event_common_fields:
     actions:
       - set:
@@ -55,58 +51,48 @@ stages:
           event.severity: >-
             {{parsed_event.message.severity or parsed_event.message.Severity or
             parsed_event.message.sev}}
-        name: set
       - set:
           log.description: >-
             {{parsed_event.message.msg or parsed_event.message.message or
             parsed_event.message.Description}}
-        name: set
   set_good_practice_fields:
     actions:
       - set:
           '@timestamp': '{{parsed_date.timestamp}}'
           event.kind: event
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
         filter: >-
           {{'login' in final.event.action|lower or 'logon' in
           final.event.action|lower or 'authentication' in
           final.event.action|lower or 'logout' in final.event.action|lower}}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''admin'']}}'
         filter: '{{parsed_event.message.Category is defined and ''admin'' in parsed_event.message.Category|lower}}'
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''file'']}}'
         filter: '{{''file'' in final.event.action|lower}}'
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
         filter: >-
           {{'allow' in final.event.action|lower or 'allowed' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''denied'']}}'
         filter: >-
           {{'deny' in final.event.action|lower or 'denied' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
         filter: >-
           {{'delete' in final.event.action|lower or 'delete' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''end'']}}'
         filter: >-
           {{'disconnect' in final.event.action|lower or 'closed' in
           final.event.action|lower or 'ended' in final.event.action|lower or
           'logout' in final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''start'']}}'
         filter: >-
@@ -114,29 +100,24 @@ stages:
           final.event.action|lower) or 'open' in final.event.action|lower or
           'start' in final.event.action|lower or 'login' in
           final.event.action|lower}}
-        name: set
       - set:
           event.outcome: success
         filter: >-
           {{('success' in final.event.action|lower and not 'unsuccess' in
           final.event.action|lower) or 'success' in
           parsed_event.message.Result|lower}}
-        name: set
       - set:
           event.outcome: failure
         filter: >-
           {{'failed' in final.event.action|lower or 'failure' in
           final.event.action|lower or 'fail' in final.event.action|lower or
           'failure' in parsed_event.message.Result|lower}}
-        name: set
       - set:
           event.outcome: unknown
         filter: '{{final.event.outcome is not defined}}'
-        name: set
       - set:
           event.type: '[''info'']'
         filter: '{{final.event.type is not defined}}'
-        name: set
   set_file_common_fields:
     actions:
       - set:
@@ -147,37 +128,30 @@ stages:
           file.hash.sha1: '{{parsed_event.message.Summary.Subject[''sha-1'']}}'
           file.hash.sha256: '{{parsed_event.message.Summary.Subject[''sha-256'']}}'
         filter: '{{parsed_event.message.Summary is defined}}'
-        name: set
   set_network_common_fields:
     actions:
       - set:
           source.ip: '{{parsed_event.message.Summary[''Src IP'']}}'
         filter: '{{parsed_event.message.Summary is defined and (parsed_event.message.Summary[''Src IP''] | is_ipaddress)}}'
-        name: set
       - set:
           destination.ip: '{{parsed_event.message.Summary[''Dst IP'']}}'
         filter: '{{parsed_event.message.Summary is defined and (parsed_event.message.Summary[''Dst IP''] | is_ipaddress)}}'
-        name: set
   set_host_common_fields:
     actions:
       - set:
           host.os.version: '{{parsed_event.message.Summary.OSversion}}'
         filter: '{{parsed_event.message.Summary is defined}}'
-        name: set
   set_client_common_fields:
     actions:
       - set:
           client.user.id: '{{parsed_event.message.UserID}}'
           client.user.name: '{{parsed_event.message.User}}'
-        name: set
       - set:
           client.ip: '{{parsed_event.message.Client}}'
         filter: '{{parsed_event.message.Client | is_ipaddress}}'
-        name: set
       - set:
           client.domain: '{{parsed_event.message.Client|lower}}'
         filter: '{{not (parsed_event.message.Client | is_ipaddress)}}'
-        name: set
   set_specific_fields:
     actions:
       - set:
@@ -215,7 +189,6 @@ stages:
           trellix.atd.engine.sandbox.malware.severity: >-
             {{((parsed_event.message.Summary.Selectors|selectattr("Engine",
             "equalto", "Sandbox")|first).Severity)|default(None)}}
-        name: set
       - dictionary:
           '0': unverified
           '1': informational
@@ -259,4 +232,3 @@ stages:
             {{((parsed_event.message.Summary.Selectors|selectattr("Engine",
             "equalto",
             "Sandbox")|selectattr("MalwareName","!=","---")|first).MalwareName)|default(None)}}
-        name: set
