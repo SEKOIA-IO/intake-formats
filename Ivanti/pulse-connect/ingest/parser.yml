@@ -2,7 +2,6 @@ name: Pulse Connect Secure
 pipeline:
   - name: parsed_event
     description: syslog_format
-    filter: ''
     external:
       name: grok.match
       properties:
@@ -25,7 +24,6 @@ pipeline:
         value_sep: '='
         item_sep: \s
   - name: parsed_date
-    description: ''
     filter: '{{parsed_event.message.time is not number}}'
     external:
       name: date.parse
@@ -35,7 +33,6 @@ pipeline:
         format: '%Y-%m-%d %H:%M:%S'
         timezone: UTC
   - name: parsed_date
-    description: ''
     filter: '{{parsed_event.message.time is number}}'
     external:
       name: date.parse
@@ -45,7 +42,6 @@ pipeline:
         format: timestamp
         timezone: UTC
   - name: parsed_end_message
-    description: ''
     filter: >-
       {{parsed_event.message is defined and parsed_event.message.message is
       defined}}
@@ -120,12 +116,7 @@ pipeline:
             User Accounts
             modified\.\s%{WORDS:action}\s(%{NOTSPACE:target_userdomain}\\)?%{USERNAME:target_username}(/%{GREEDYDATA:target_groupname})?\sfrom\sauthentication\sserver\s%{GREEDYDATA:auth_server}
   - name: field_extraction
-    description: ''
-    filter: ''
-    external: null
   - name: msg_parsing
-    description: ''
-    filter: ''
     external:
       name: grok.case_match
       properties:
@@ -160,21 +151,10 @@ pipeline:
         custom_patterns:
           HOST_ADDRESS: '%{IP:host_ip}|%{HOSTNAME:host_name}'
   - name: details_extraction
-    description: ''
-    filter: ''
-    external: null
   - name: set_end_message_fields
-    description: ''
     filter: '{{parsed_event.message.message is defined}}'
-    external: null
   - name: set_good_practice_fields
-    description: ''
-    filter: ''
-    external: null
   - name: set_custom_fields
-    description: ''
-    filter: ''
-    external: null
 stages:
   field_extraction:
     actions:
@@ -198,16 +178,12 @@ stages:
           observer.hostname: '{{parsed_event.message.host_name}}'
           destination.domain: '{{parsed_event.message.dstname}}'
           network.forwarded_ip: '{{parsed_event.message.fw}}'
-        filter: ''
-        name: set
       - set:
           source.ip: '{{parsed_event.message.src}}'
         filter: '{{parsed_event.message.src | is_ipaddress}}'
-        name: set
       - set:
           destination.ip: '{{parsed_event.message.dst}}'
         filter: '{{parsed_event.message.dst | is_ipaddress}}'
-        name: set
   details_extraction:
     actions:
       - set:
@@ -217,26 +193,20 @@ stages:
           user.name: '{{msg_parsing.details.user}}'
           event.reason: '{{msg_parsing.details.reason}}'
           destination.port: '{{msg_parsing.details.dst_port}}'
-        filter: ''
-        name: set
       - set:
           source.ip: '{{msg_parsing.details.src}}'
         filter: '{{msg_parsing.details.src | is_ipaddress}}'
-        name: set
       - set:
           destination.ip: '{{msg_parsing.details.dst}}'
         filter: '{{msg_parsing.details.dst | is_ipaddress}}'
-        name: set
       - set:
           host.ip:
             - '{{msg_parsing.details.host_ip}}'
         filter: '{{msg_parsing.details.host_ip | is_ipaddress}}'
-        name: set
       - set:
           host.mac:
             - '{{msg_parsing.details.host_mac}}'
         filter: '{{msg_parsing.details.host_mac != null}}'
-        name: set
   set_end_message_fields:
     actions:
       - set:
@@ -249,12 +219,8 @@ stages:
           user.target.domain: '{{parsed_end_message.message.target_userdomain}}'
           client.user.group.name: '{{parsed_end_message.message.client_groupname}}'
           user.target.group.name: '{{parsed_end_message.message.target_groupname}}'
-        filter: ''
-        name: set
       - set:
           event.action: '{{parsed_end_message.message.action}}'
-        filter: ''
-        name: set
       - set:
           source.ip: '{{parsed_end_message.message.source_ip}}'
           source.port: '{{parsed_end_message.message.source_port}}'
@@ -270,19 +236,13 @@ stages:
           http.request.method: '{{parsed_end_message.message.http_request_method}}'
           http.response.status_code: '{{parsed_end_message.message.http_return_code}}'
           observer.ingress.interface.name: '{{parsed_end_message.message.interface}}'
-        filter: ''
-        name: set
       - set:
           url.path: '{{parsed_end_message.message.urlpath}}'
           event.reason: '{{parsed_end_message.message.reason}}'
           url.original: '{{parsed_end_message.message.url}}'
-        filter: ''
-        name: set
       - set:
           error.code: '{{parsed_end_message.message.error_code}}'
           error.message: '{{parsed_end_message.message.error_message}}'
-        filter: ''
-        name: set
   set_good_practice_fields:
     actions:
       - set:
@@ -291,17 +251,14 @@ stages:
           {{'success' in final.event.action|lower or 'succeed' in
           final.event.action|lower or 'webrequest ok' in
           final.event.action|lower}}
-        name: set
       - set:
           event.outcome: failure
         filter: >-
           {{'fail' in final.event.action|lower or 'unable' in
           final.event.action|lower or final.event.code == 'AUT23457'}}
-        name: set
       - set:
           event.outcome: unknown
         filter: '{{final.event.outcome is not defined}}'
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
         filter: >-
@@ -310,14 +267,12 @@ stages:
           final.event.action|lower or 'logout' in final.event.action|lower or (
           'connect' in final.event.action|lower and not 'connection' in
           final.event.action|lower) or 'AUT23457' in final.event.code}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''start'']}}'
         filter: >-
           {{'login' in final.event.action|lower or 'start' in 
           final.event.action|lower or 'authentication' in
           final.event.action|lower or 'connected' in final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''end'']}}'
         filter: >-
@@ -329,33 +284,26 @@ stages:
           (' end' in final.event.action|lower and not 'pending' in
           final.event.action|lower and not 'sending' in
           final.event.action|lower)}}
-        name: set
       - set:
           log.description: '{{parsed_event.message.message}}'
-        filter: ''
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''session'']}}'
         filter: >-
           {{'session' in final.log.description|lower and not 'authentication' in
           final.event.category|lower}}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''web'']}}'
         filter: '{{''webrequest'' in final.event.action|lower}}'
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''access'']}}'
         filter: >-
           {{('web' in final.event.category and final.http.request.method|lower
           in ['get','head','connect','options','trace'])}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''creation'']}}'
         filter: >-
           {{'added' in final.event.action|lower or ('web' in
           final.event.category and 'post' in final.http.request.method|lower)}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''change'']}}'
         filter: >-
@@ -363,49 +311,40 @@ stages:
           final.event.action|lower and not 'exchange' in
           final.event.action|lower) or ('web' in final.event.category and
           final.http.request.method|lower in ['put','patch'] )}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
         filter: >-
           {{'remove' in final.event.action|lower or 'delete' in
           final.event.action|lower or ('web' in final.event.category and
           final.http.request.method|lower in ['delete'] )}}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''network'']}}'
         filter: >-
           {{('connection' in parsed_event.message.message|lower and not 'number of' in parsed_event.message.message|lower) or ('connection'
           in parsed_event.message.msg|lower and not 'number of' in parsed_event.message.msg|lower) or 'sending' in parsed_event.message.msg|lower}}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
         filter: >-
           {{'session' not in final.event.category and ('creation' in
           final.event.type or 'change' in final.event.type or 'deletion' in
           final.event.type) }}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''host'']}}'
         filter: >-
           {{final.user.name == 'System' or 'AUT24803' in final.event.code or
           'AUT24804' in final.event.code }}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''info'']}}'
         filter: '{{final.event.type is not defined}}'
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''network'']}}'
         filter: '{{final.event.category is not defined}}'
-        name: set
       - set:
           network.direction: inbound
         filter: '{{''download'' in final.event.action|lower}}'
-        name: set
       - set:
           network.direction: outbound
         filter: '{{''upload'' in final.event.action|lower}}'
-        name: set
   set_custom_fields:
     actions:
       - set:
@@ -418,17 +357,13 @@ stages:
           ivanti.connect_secure.integrity_check.matched_files: '{{parsed_end_message.message.matched_files}}'
           ivanti.connect_secure.integrity_check.detected_files: '{{parsed_end_message.message.detected_files}}'
           ivanti.connect_secure.integrity_check.mismatched_files: '{{parsed_end_message.message.mismatched_files}}'
-        filter: ''
-        name: set
       - set:
           ivanti.connect_secure.authentication.stage: primary
         filter: >-
           {{'primary' in parsed_event.message.message|lower and 'authentication'
           in parsed_event.message.message|lower}}
-        name: set
       - set:
           ivanti.connect_secure.authentication.stage: secondary
         filter: >-
           {{'secondary' in parsed_event.message.message|lower and
           'authentication' in parsed_event.message.message|lower}}
-        name: set
