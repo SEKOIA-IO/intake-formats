@@ -1,9 +1,7 @@
 name: skyhigh-secure-web-gateway
-ignored_values: null
 pipeline:
   - name: parse_leef
     description: not_standard_leef_1_0
-    filter: ''
     external:
       name: grok.match
       properties:
@@ -24,7 +22,6 @@ pipeline:
           LEEF:2.0|{{parse_leef.message.vendor}}|{{parse_leef.message.vendor_product}}|{{parse_leef.message.vendor_product_version}}|{{parse_leef.message.eventID}}|x7c|{{parse_leef.message.message}}
         output_field: message
   - name: parsed_event
-    description: ''
     filter: '{{parse_leef.message is not mapping}}'
     external:
       name: kv.parse-kv
@@ -34,7 +31,6 @@ pipeline:
         value_sep: '='
         item_sep: \s
   - name: parse_date
-    description: ''
     filter: '{{parsed_event.message.request_timestamp_epoch != null}}'
     external:
       name: date.parse
@@ -44,7 +40,6 @@ pipeline:
         format: timestamp
         timezone: UTC
   - name: parse_date
-    description: ''
     filter: '{{parsed_event.message.devTime != null}}'
     external:
       name: date.parse
@@ -54,7 +49,6 @@ pipeline:
         format: timestamp
         timezone: UTC
   - name: parse_date_mcafee
-    description: ''
     filter: '{{parsed_event.message.date != null}}'
     external:
       name: date.parse
@@ -64,7 +58,6 @@ pipeline:
         format: null
         timezone: UTC
   - name: parse_first_line
-    description: ''
     filter: '{{parsed_event.message.http_request_first_line != null}}'
     external:
       name: grok.match
@@ -76,13 +69,7 @@ pipeline:
           URL: >-
             (?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})
   - name: set_ecs_fields
-    description: ''
-    filter: ''
-    external: null
   - name: set_mcafee_fields
-    description: ''
-    filter: ''
-    external: null
 stages:
   set_ecs_fields:
     actions:
@@ -141,30 +128,24 @@ stages:
           http.response.status_code: >-
             {{parsed_event.message.http_status_code or
             parsed_event.message.httpStatus}}
-        filter: ''
-        name: set
       - set:
           file.size: '{{parsed_event.message.filesize}}'
         filter: >-
           {{parsed_event.message.filesize is defined and
           parsed_event.message.filesize != '-'}}
-        name: set
       - set:
           http.request.method: '{{parsed_event.message.http_action}}'
         filter: >-
           {{(not parse_first_line or not parse_first_line.message.http_method)
           and parsed_event.message.http_action != None}}
-        name: set
       - set:
           http.request.method: '{{parse_first_line.message.http_method}}'
         filter: >-
           {{parse_first_line is defined and parse_first_line.message.http_method
           != None}}
-        name: set
       - set:
           http.request.method: '{{parsed_event.message.method}}'
         filter: '{{parsed_event.message.method is defined}}'
-        name: set
       - set:
           destination.ip: >-
             {{parsed_event.message.destination_ip or
@@ -172,23 +153,19 @@ stages:
         filter: >-
           {{parsed_event.message.destination_ip | is_ipaddress or
           parsed_event.message.connection| is_ipaddress}}
-        name: set
       - set:
           source.nat.ip: '{{parsed_event.message.source_ip}}'
         filter: >-
           {{parsed_event.message.client_ip != null and
           parsed_event.message.source_ip | is_ipaddress}}
-        name: set
       - set:
           source.ip: '{{parsed_event.message.client_ip}}'
         filter: >-
           {{parsed_event.message.client_ip != null and
           parsed_event.message.client_ip | is_ipaddress}}
-        name: set
       - set:
           source.ip: '{{parsed_event.message.source_ip}}'
         filter: '{{parsed_event.message.client_ip == null}}'
-        name: set
       - set:
           url.full: >-
             {{parsed_event.message.uri_scheme}}://{{parsed_event.message.requested_host}}{{parsed_event.message.requested_path}}
@@ -198,7 +175,6 @@ stages:
           parsed_event.message.uri_scheme != null and
           parsed_event.message.requested_host!= null and
           parsed_event.message.requested_path != null}}
-        name: set
       - set:
           user_agent.original: >-
             {{parsed_event.message.user_agent or
@@ -209,40 +185,34 @@ stages:
           parsed_event.message.user_agent != "-" and
           parsed_event.message.user_agent != "") or
           parsed_event.message.userAgent is defined}}
-        name: set
       - set:
           url.original: '{{parse_first_line.message.url}}'
         filter: >-
           {{parse_first_line.message.http_method != "CONNECT" and
           parse_first_line.message.url.startswith("http")}}
-        name: set
       - set:
           url.port: '{{parse_first_line.message.POSINT}}'
           url.domain: '{{parse_first_line.message.HOSTNAME}}'
           destination.port: '{{parse_first_line.message.POSINT}}'
         filter: '{{parse_first_line.message.http_method == "CONNECT"}}'
-        name: set
       - set:
           user.name: '{{parsed_event.message.username or parsed_event.message.usrName}}'
         filter: >-
           {{(parsed_event.message.username != null and
           parsed_event.message.username != "-" and parsed_event.message.username
           != "") or parsed_event.message.usrName is defined}}
-        name: set
       - set:
           http.request.referrer: '{{parsed_event.message.http_referrer}}'
         filter: >-
           {{parsed_event.message.http_referrer != null and
           parsed_event.message.http_referrer != "-" and
           parsed_event.message.http_referrer != ""}}
-        name: set
       - set:
           http.response.mime_type: '{{parsed_event.message.media_type}}'
         filter: >-
           {{parsed_event.message.media_type != null and
           parsed_event.message.media_type != "-" and
           parsed_event.message.media_type != ""}}
-        name: set
       - dictionary:
           '0': allowed
           '1': error
@@ -252,14 +222,12 @@ stages:
           '81': denied
         mapping:
           event.code: event.action
-        filter: ''
         name: translate
       - dictionary:
           DENIED: denied
           OBSERVED: allowed
         mapping:
           parsed_event.message.result: event.action
-        filter: ''
         name: translate
       - set:
           event.type:
@@ -269,7 +237,6 @@ stages:
         filter: >-
           {{ parsed_event.message.block_id == "0" or set_ecs_fields.event.type
           == ["allowed"] or parsed_event.message.result == "OBSERVED"}}
-        name: set
       - set:
           event.type:
             - connection
@@ -278,23 +245,19 @@ stages:
         filter: >-
           {{set_ecs_fields.event.type == ["denied"] or
           parsed_event.message.result == "DENIED"}}
-        name: set
       - set:
           source.ip: '{{parsed_event.message.src}}'
         filter: '{{parsed_event.message.src|is_ipaddress}}'
-        name: set
       - set:
           event.action: denied
         filter: >-
           {{parsed_event.message.block_res is defined and '0'
           !=parsed_event.message.block_res }}
-        name: set
       - set:
           event.action: allowed
         filter: >-
           {{parsed_event.message.block_res is defined and '0'
           ==parsed_event.message.block_res }}
-        name: set
   set_mcafee_fields:
     actions:
       - set:
@@ -308,73 +271,60 @@ stages:
             {{parsed_event.message.url_reputation_code or
             parsed_event.message.ScoreTieReputation}}
           skyhighsecurity.application.reputation: '{{parsed_event.message.application_reputation}}'
-        filter: ''
-        name: set
       - set:
           skyhighsecurity.url.categories: '{{parsed_event.message.url_categories.split(", ")}}'
         filter: '{{parsed_event.message.url_categories is defined}}'
-        name: set
       - set:
           skyhighsecurity.url.categories: '{{parsed_event.message.urlCategories.split(", ")}}'
         filter: '{{parsed_event.message.urlCategories is defined}}'
-        name: set
       - set:
           skyhighsecurity.url.categories: '["Not Categorized"]'
         filter: '{{parsed_event.message.urlCategories is not defined and parsed_event.message.url_categories is not defined }}'
-        name: set
       - set:
           skyhighsecurity.application.name: '{{parsed_event.message.application_name}}'
         filter: >-
           {{parsed_event.message.application_name != null and
           parsed_event.message.application_name != "-" and
           parsed_event.message.application_name != ""}}
-        name: set
       - set:
           skyhighsecurity.viruses: '{{parsed_event.message.virus_names.split(", ")}}'
         filter: >-
           {{parsed_event.message.virus_names != null and
           parsed_event.message.virus_names != "-" and
           parsed_event.message.virus_names != ""}}
-        name: set
       - set:
           skyhighsecurity.viruses: '{{parsed_event.message.virusName.split(", ")}}'
         filter: >-
           {{parsed_event.message.virusName != null and
           parsed_event.message.virusName != "-" and
           parsed_event.message.virusName != ""}}
-        name: set
       - dictionary:
           f: 'false'
           t: 'true'
         mapping:
           parsed_event.message.dlp: skyhighsecurity.dlp
-        filter: ''
         name: translate
       - dictionary:
           f: 'false'
           t: 'true'
         mapping:
           parsed_event.message.rbi: skyhighsecurity.rbi
-        filter: ''
         name: translate
       - dictionary:
           f: 'false'
           t: 'true'
         mapping:
           parsed_event.message.av_scanned_up: skyhighsecurity.av_scanned_up
-        filter: ''
         name: translate
       - dictionary:
           f: 'false'
           t: 'true'
         mapping:
           parsed_event.message.av_scanned_down: skyhighsecurity.av_scanned_down
-        filter: ''
         name: translate
       - dictionary:
           f: 'false'
           t: 'true'
         mapping:
           parsed_event.message.ssl_scanned: skyhighsecurity.ssl_scanned
-        filter: ''
         name: translate
