@@ -1,5 +1,4 @@
 name: juniper-ngfw
-ignored_values: []
 pipeline:
   - name: parsed_header
     description: multi_format_handler
@@ -294,7 +293,6 @@ pipeline:
             %{NOTSPACE:urlcategory_risk})?
           ACCT_TRANSFER_FILE_FAILED: Error <%{INT:error_code}> %{GREEDYDATA:error}
           ACCT_TRANSFER_FILE_FAILED_ITER: Error <%{INT:error_code}> %{GREEDYDATA:error}
-        custom_patterns: {}
   - name: parsed_event
     description: COMMA_SEPARATED_LOG_FORMAT parsing
     filter: '{{parsed_header.message.COMMA_SEPARATED_FORMAT!= None}}'
@@ -338,7 +336,6 @@ pipeline:
             %{IP:source_address} (using %{WORD:network_protocol}|timed out)
   - name: set_observer_fields
   - name: parsed_date
-    description: ''
     external:
       name: date.parse
       properties:
@@ -347,8 +344,6 @@ pipeline:
         format: '%Y-%m-%d %H:%M:%S'
         timezone: UTC
   - name: parsed_date
-    description: ''
-    filter: ''
     external:
       name: date.parse
       properties:
@@ -374,8 +369,6 @@ stages:
           observer.vendor: Juniper Networks
           observer.product: ngfw
           observer.version: '{{parsed_header.plateform}}'
-        filter: ''
-        name: set
       - set:
           observer.egress.zone: >-
             {{(parsed_event.message['destination-zone-name'] or
@@ -383,20 +376,14 @@ stages:
           observer.ingress.zone: >-
             {{(parsed_event.message['source-zone-name'] or
             parsed_event.message.source_zone_name)|default(None)}}
-        filter: ''
-        name: set
       - set:
           observer.ingress.interface.name: >-
             {{(parsed_event.message['interface-name'] or
             parsed_event.message.interface_name)|default(None)}}
-        filter: ''
-        name: set
   set_event_common_fields:
     actions:
       - set:
           event.action: '{{parsed_header.message.tag}}'
-        filter: ''
-        name: set
       - set:
           event.reason: '{{parsed_event.message.reason}}'
           event.dataset: '{{parsed_header.message.event_dataset}}'
@@ -408,33 +395,26 @@ stages:
           event.severity: >-
             {{parsed_header.message.severity or parsed_event.message.Severity or
             parsed_event.message.sev}}
-        filter: ''
-        name: set
       - set:
           log.description: '{{parsed_event.message.message}}'
         filter: >-
           {{parsed_event is defined and  parsed_event.message.message is
           defined}}
-        name: set
       - set:
           log.description: '{{parsed_header.message.message}}'
         filter: >-
           {{(parsed_event is not defined) or (parsed_event is defined and
           parsed_event.message.message is not defined)}}
-        name: set
       - set:
           event.action: '{{parsed_event.message.action}}'
         filter: >-
           {{final.event.action is not defined and parsed_event.message.action is
           defined}}
-        name: set
   set_good_practice_fields:
     actions:
       - set:
           '@timestamp': '{{parsed_date.timestamp}}'
           event.kind: event
-        filter: ''
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
         filter: >-
@@ -444,46 +424,38 @@ stages:
           'auth' in final.event.action|lower or 'logged in' in
           final.log.description|lower or 'logged out' in
           final.log.description|lower}}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''admin'']}}'
         filter: '{{''admin'' in final.event.action|lower}}'
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''file'']}}'
         filter: '{{''file'' in final.event.action|lower}}'
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
         filter: >-
           {{'allow' in final.event.action|lower or 'allowed' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''denied'']}}'
         filter: >-
           {{'deny' in final.event.action|lower or 'denied' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''creation'']}}'
         filter: >-
           {{'creation' in final.event.action|lower or 'create' in
           final.event.action|lower or 'added' in final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
         filter: >-
           {{'delete' in final.event.action|lower or 'delete' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''session'']}}'
         filter: >-
           {{'session' in final.event.action|lower or (final.event.provider ==
           'sshd' and final.event.action|lower in ["disconnected","connection
           closed"])}}
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
         filter: >-
@@ -492,7 +464,6 @@ stages:
           'authentication' not in final.event.category) and ('creation' in
           final.event.type or 'deletion' in final.event.type or 'change' in
           final.event.type))}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''end'']}}'
         filter: >-
@@ -501,7 +472,6 @@ stages:
           'logout' in final.event.action|lower or 'exit' in
           final.event.action|lower or 'stopped' in final.event.action|lower or
           'logged out' in final.log.description|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''start'']}}'
         filter: >-
@@ -513,33 +483,27 @@ stages:
           final.log.description|lower or 'session_create' in
           final.event.action|lower or 'logged in' in final.log.description|lower
           or 'auth-success' in final.event.action|lower)}}
-        name: set
       - set:
           event.outcome: unknown
         filter: '{{final.event.outcome is not defined}}'
-        name: set
       - set:
           event.outcome: success
         filter: >-
           {{('success' in final.event.action|lower and not 'unsuccess' in
           final.event.action|lower)}}
-        name: set
       - set:
           event.outcome: failure
         filter: >-
           {{'failed' in final.event.action|lower or 'failure' in
           final.event.action|lower or 'fail' in final.event.action|lower}}
-        name: set
       - set:
           event.type: '[''info'']'
         filter: '{{final.event.type is not defined}}'
-        name: set
       - set:
           event.kind: alert
         filter: >-
           {{final.event.dataset== 'RT_IDS' or 'INFECTED' in final.event.action
           or 'DETECTED' in final.event.action}}
-        name: set
   set_network_common_fields:
     actions:
       - set:
@@ -558,8 +522,6 @@ stages:
             parsed_event.message.dstport or
             parsed_event.message['destination-port']}}
           destination.domain: '{{parsed_event.message.destination_domain}}'
-        filter: ''
-        name: set
       - set:
           source.bytes: >-
             {{parsed_event.message.sentbyte or
@@ -575,20 +537,14 @@ stages:
           destination.packets: >-
             {{parsed_event.message['packets-from-server'] or
             parsed_event.message.packets_from_server}}
-        filter: ''
-        name: set
       - set:
           network.application: >-
             {{parsed_event.message['application'] or
             parsed_event.message.application}}
-        filter: ''
-        name: set
       - set:
           observer.ingress.interface.name: >-
             {{parsed_event.message['packet-incoming-interface'] or
             parsed_event.message.packet_incoming_interface}}
-        filter: ''
-        name: set
       - set:
           source.nat.ip: >-
             {{parsed_event.message['nat-source-address'] or
@@ -602,41 +558,31 @@ stages:
           destination.nat.port: >-
             {{parsed_event.message['nat-destination-port'] or
             parsed_event.message.nat_destination_port}}
-        filter: ''
-        name: set
       - set:
           network.protocol: '{{parsed_event.message.network_protcol}}'
           network.iana_number: >-
             {{parsed_event.message['protocol-id'] or
             parsed_event.message.protocol_id}}
-        filter: ''
-        name: set
       - set:
           source.ip: '{{parsed_header.message.source_address}}'
         filter: >-
           {{parsed_header.message is defined and
           parsed_header.message.source_address is defined}}
-        name: set
   set_host_common_fields:
     actions:
       - set:
           host.name: '{{parsed_header.message.hostname}}'
-        filter: ''
-        name: set
   set_user_common_fields:
     actions:
       - set:
           user.name: '{{parsed_event.message.username}}'
           user.roles: '{{parsed_event.message.user_role}}'
           user.domain: '{{parsed_event.message.realm}}'
-        filter: ''
-        name: set
       - set:
           user.name: '{{parsed_header.message.username}}'
         filter: >-
           {{parsed_header.message is defined and parsed_header.message.username
           is defined}}
-        name: set
   set_error_common_fields:
     actions:
       - set:
@@ -644,8 +590,6 @@ stages:
             {{parsed_event.message.error_code or
             parsed_event.message.Error_code}}
           error.message: '{{parsed_event.message.error or parsed_event.message.Error}}'
-        filter: ''
-        name: set
   set_juniper_specific_fields:
     actions:
       - set:
@@ -678,7 +622,6 @@ stages:
         filter: >-
           {{parsed_header.message is defined and
           parsed_header.message.variable_value_pairs is defined}}
-        name: set
       - set:
           juniper.ngfw.client_mode: '{{parsed_event.message.client_mode|lower}}'
           juniper.ngfw.application.name: '{{parsed_event.message[''application'']}}'
@@ -695,36 +638,30 @@ stages:
             {{parsed_event.message['application-sub-category'] or
             parsed_event.message.application_sub_category}}
         filter: '{{parsed_event.message is mapping}}'
-        name: set
       - set:
           juniper.ngfw.ids.action.name: '{{parsed_event.message[''action''] or parsed_event.message.action}}'
           juniper.ngfw.ids.attack.name: >-
             {{parsed_event.message['attack-name'] or
             parsed_event.message.attack_name}}
         filter: '{{''IDS'' in final.event.dataset}}'
-        name: set
       - set:
           juniper.ngfw.tunnel.inspection: >-
             {%if parsed_event.message['tunnel-inspection']|lower == 'on'
             %}True{%elif parsed_event.message['tunnel-inspection'] is defined
             %}False{%endif%}
         filter: '{{parsed_event.message[''tunnel-inspection''] is defined}}'
-        name: set
       - set:
           juniper.ngfw.tunnel.inspection: >-
             {%if parsed_event.message.tunnel_inspection|lower == 'on'
             %}True{%elif parsed_event.message.tunnel_inspection is defined
             %}False{%endif%}
         filter: '{{parsed_event.message.tunnel_inspection is defined}}'
-        name: set
   set_service_fields:
     actions:
       - set:
           service.name: >-
             {{parsed_event.message['service-name'] or
             parsed_event.message.service_name}}
-        filter: ''
-        name: set
   set_process_common_fields:
     actions:
       - set:
@@ -734,37 +671,27 @@ stages:
           process.exit_code: '{{parsed_event.message.process_exit_code}}'
           process.user.name: '{{parsed_event.message.process_username}}'
           process.command_line: '{{parsed_event.message.process_command_line}}'
-        filter: ''
-        name: set
       - set:
           process.user.name: '{{parsed_header.message.process_username}}'
         filter: '{{parsed_header.message.process_username is defined}}'
-        name: set
       - set:
           process.name: '{{parsed_header.message.process_name}}'
         filter: '{{parsed_header.message.process_name is defined}}'
-        name: set
       - set:
           process.pid: '{{parsed_header.message.process_id}}'
         filter: '{{parsed_header.message.process_id is defined}}'
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''process'']}}'
         filter: '{{final.process is defined}}'
-        name: set
   set_file_common_fields:
     actions:
       - set:
           file.path: '{{parsed_event.message.file_path}}'
-        filter: ''
-        name: set
       - set:
           event.category: '{{(final.event.category|default([])) + [''file'']}}'
         filter: '{{final.file is defined}}'
-        name: set
   set_default_fields:
     actions:
       - set:
           event.category: '[''network'']'
         filter: '{{final.event.category is not defined}}'
-        name: set
