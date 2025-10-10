@@ -21,9 +21,9 @@ pipeline:
       properties:
         input_field: "{{pre_parsed_event.pre_message.reason_with_kv}}"
         output_field: message
-        pattern: "%{REASON_ONLY:reason}|(%{PRE_REASON:reason}(\\s+%{GREEDYDATA:kv})?)|%{GREEDYDATA:kv}"
+        pattern: "%{REASON_ONLY:reason}|(%{PRE_REASON:reason}(\\s*%{GREEDYDATA:kv})?)|%{GREEDYDATA:kv}"
         custom_patterns:
-          PRE_REASON: "(%{NOT_KV_DATA}: %{NOT_KV_DATA:reason},)|(%{NOT_KV_DATA:reason}:)|(%{NOT_KV_DATA:reason},)"
+          PRE_REASON: "((%{MAC:host_mac}|%{NOT_KV_DATA}):%{NOT_KV_DATA:reason}\\\\,)|(%{NOT_KV_DATA}: %{NOT_KV_DATA:reason},)|(%{NOT_KV_DATA:reason}:)|(%{NOT_KV_DATA:reason},)"
           REASON_ONLY: "%{NOT_KV_DATA}:: %{NOT_KV_DATA}"
           NOT_KV_DATA: "[^=]*?"
 
@@ -46,6 +46,16 @@ pipeline:
         output_field: result
         value_sep: "="
         item_sep: ","
+
+  - name: parsed_kv_sentence
+    filter: '{{"=" in pre_parsed_event.pre_message.reason_with_kv and "\\," in pre_parsed_event.pre_message.reason_with_kv}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parsed_event.message.kv.replace('\\\\, ', '*PLACEHOLDER*').replace('\\\\,','*,*').replace('*PLACEHOLDER*', '\\\\, ')}}"
+        output_field: result
+        value_sep: "="
+        item_sep: "*,*"
 
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
@@ -88,11 +98,19 @@ stages:
           event.category: ["network"]
           event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason") or parsed_event.message.get("reason").strip()}}'
           cisco.ise.network_calling_station.id: '{{parsed_kv_sentence.result.get("Error Message")}}'
+          host.name: '{{parsed_kv_sentence.result.get("host-name")}}'
+          host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System') or parsed_kv_sentence.result.get('OperatingSystem')}}"
           user.name: '{{parsed_kv_sentence.result.get("AdminName") or parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("Calling Station Id") or parsed_kv_sentence.result.get("UserName")}}'
           source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
           source.ip: '{{parsed_kv_sentence.result.get("AdminIPAddress") or parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAS-IP-Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address") or parsed_kv_sentence.result.get("EndpointIPAddress")}}'
+          tls.client.x509.issuer.common_name: "{{parsed_kv_sentence.result.get('Issuer').split('CN=')[1].split('\\\\')[0]}}"
+          tls.client.x509.issuer.organization: "{{parsed_kv_sentence.result.get('Issuer').split('O=')[1].split('\\\\')[0]}}"
+          tls.client.x509.issuer.country: "{{parsed_kv_sentence.result.get('Issuer').split('C=')[1].split('\\\\')[0]}}"
+          tls.client.x509.issuer.locality: "{{parsed_kv_sentence.result.get('Issuer').split('L=')[1].split('\\\\')[0]}}"
+          tls.client.x509.issuer.organizational_unit: "{{parsed_kv_sentence.result.get('Issuer').split('OU=')[1].split('\\\\')[0]}}"
           destination.ip: '{{parsed_kv_sentence.result.get("DestinationIPAddress")}}'
           destination.port: '{{parsed_kv_sentence.result.get("DestinationPort")}}'
+          dns.question.registered_domain: '{{parsed_kv_sentence.result.get("AD-Host-DNS-Domain")}}'
           network.protocol: '{{parsed_kv_sentence.result.get("Protocol")}}'
         filter: '{{"Configuration" not in parsed_event.message.reason }}'
 
@@ -123,6 +141,10 @@ stages:
       - set:
           source.mac: '{{parsed_kv_sentence.result["Calling-Station-ID"] | to_mac_address}}'
         filter: '{{parsed_kv_sentence.result.get("Calling-Station-ID") != None }}'
+
+      - set:
+          source.mac: "{{parsed_event.message.host_mac | to_mac_address}}"
+        filter: '{{parsed_event.message.get("host_mac") != None }}'
 
       - set:
           destination.ip: '{{parsed_kv_sentence.result["Called-Station-ID"] }}'
@@ -192,8 +214,8 @@ stages:
         filter: "{{'failure' in parsed_kv_sentence.result.get('MESSAGE', '')}}"
 
       - set:
-          cisco.ise.dhcp.message_type: "{{parsed_kv_sentence.result.get('dhcp-message-type')}}"
+          cisco.ise.dhcp.message_type: "{{parsed_kv_sentence.result.get('dhcp-message-type') or parsed_kv_sentence.result.get('op')}}"
+          cisco.ise.dhcp.parameter_request_list: "{{parsed_kv_sentence.result.get('dhcp-parameter-request-list')}}"
           cisco.ise.dhcp.requested_address: "{{parsed_kv_sentence.result.get('dhcp-requested-address')}}"
-          rule.id: "{{parsed_kv_sentence.result.get('EndPointPolicyID')}}"
+          rule.id: "{{parsed_kv_sentence.result.get('EndPointPolicyID') or parsed_kv_sentence.result.get('MatchedPolicyID')}}"
           rule.name: "{{parsed_kv_sentence.result.get('EndpointPolicy')}}"
-          host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System')}}"
