@@ -1,0 +1,198 @@
+name: forcepoint-ngfw
+pipeline:
+  - name: parsed_event
+    filter: '{{original.message.startswith(''LEEF'')}}'
+    external:
+      name: leef.parse-leef
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+  - name: parsed_event
+    filter: '{{parsed_event is not mapping}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+        value_sep: '='
+        item_sep: ','
+  - name: set_observer_fields
+  - name: parsed_date
+    filter: '{{parsed_event.message.devTimeFormat == "MMM dd yyyy HH:mm:ss"}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.devTime}}'
+        output_field: timestamp
+        format: '%b %d %Y %H:%M:%S'
+        timezone: UTC
+  - name: parsed_date
+    filter: '{{parsed_event.message.devTimeFormat is not defined}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.devTime}}'
+        output_field: timestamp
+        format: '%Y-%m-%d %H:%M:%S'
+        timezone: UTC
+  - name: set_event_common_fields
+  - name: set_good_practice_fields
+  - name: detailed_parsed_message
+    filter: '{{final.event.message is defined}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{final.event.message}}'
+        output_field: message
+        pattern: '%{command_history}|%{dhcp_reply}|%{dhcp_request}|%{vpn_trigger}'
+        custom_patterns:
+          dhcp_reply: >-
+            Message type
+            %{WORD}\.\sXID\:\s0x%{NOTSPACE:xid}\.\sRelay\sip\s%{IP:dhcp_relay_ip}\.\sServer\sID\:\s%{IP:server_id}\.\sDNS\:\s%{IP:dns_ip}\.
+          vpn_trigger: >-
+            VPN\strigger\sipv[4-6]\(%{IP:source_ip}\)\s\-\>\sipv[4-6]\(%{IP:destination_ip}\)\,\stunnel\s%{GREEDYDATA:tunnel_id}
+          dhcp_request: >-
+            Message type %{WORD}\.\sXID\:\s0x%{NOTSPACE:xid}\.\sRelay\sip\s%{IP:dhcp_relay_ip}\.\sRelayed\sto\s%{IP:server_id}(\.\sServer\sID\:\s%{IP:server_id})?\.\sHostname\:\s%{GREEDYDATA:hostname}\.
+          command_history: >-
+            (%{GREEDYDATA:tty}\s)?(HISTORY|history)\:\sPID\\=%{NUMBER:pid}\sUID\\=%{NUMBER:uid}\sUSER\\=%{USERNAME:process_user}\s%{GREEDYDATA:command_line}
+  - name: set_network_common_fields
+  - name: set_host_common_fields
+  - name: set_user_common_fields
+  - name: set_process_common_fields
+  - name: set_custom_fields
+  - name: set_default_values
+stages:
+  set_observer_fields:
+    actions:
+      - set:
+          observer.type: firewall
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: '{{parsed_event.message.DeviceProduct}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+        filter: '{{original.message.startswith(''LEEF'')}}'
+  set_event_common_fields:
+    actions:
+      - set:
+          event.action: '{{parsed_event.message.DeviceEventClassID}}'
+          event.reason: '{{parsed_event.message.originalSituation}}'
+          event.message: '{{parsed_event.message.msg or parsed_event.message.message}}'
+          event.severity: >-
+            {{parsed_event.message.severity or parsed_event.message.Severity or
+            parsed_event.message.sev}}
+  set_good_practice_fields:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.kind: event
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{'login' in final.event.action|lower or 'logon' in
+          final.event.action|lower or 'authentication' in
+          final.event.action|lower or 'logout' in final.event.action|lower or
+          'auth' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'allow' in final.event.action|lower or 'allowed' in
+          final.event.action|lower  or 'permit' in final.event.action|lower or
+          parsed_event.message.action|lower in ["allow","permit"]}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'deny' in final.event.action|lower or 'denied' in
+          final.event.action|lower or 'discard' in final.event.action|lower or
+          parsed_event.message.action|lower in ["discard","refuse"]}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''connection'']}}'
+        filter: '{{''connection'' in final.event.action|lower}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'delete' in parsed_event.message.DeviceEventClassID|lower or
+          'delete' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'open' in final.event.action|lower or 'start' in
+          final.event.action|lower or 'open' in final.event.action|lower or
+          'started' in final.event.action|lower or 'start' in
+          final.event.action|lower or 'login' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'closed' in final.event.action|lower or 'closed' in
+          final.event.action|lower or 'ended' in final.event.action|lower or 'logout' in final.event.action|lower}}
+      - set:
+          event.outcome: success
+        filter: >-
+          {{('success' in final.event.action|lower and not 'unsuccess' in
+          final.event.action|lower)}}
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'failed' in final.event.action|lower or 'failure' in
+          final.event.action|lower or 'fail' in final.event.action|lower or
+          'failure' in final.event.action|lower}}
+  set_network_common_fields:
+    actions:
+      - set:
+          source.ip: '{{parsed_event.message.src}}'
+          source.mac: '{{parsed_event.message.srcMAC}}'
+          source.port: '{{parsed_event.message.srcPort}}'
+          source.nat.ip: '{{parsed_event.message.srcPostNAT}}'
+          destination.ip: '{{parsed_event.message.dst}}'
+          source.nat.port: '{{parsed_event.message.srcPostNATPort}}'
+          destination.port: '{{parsed_event.message.dstPort}}'
+          destination.nat.ip: '{{parsed_event.message.dstPostNAT}}'
+          network.iana_number: '{{parsed_event.message.proto}}'
+          destination.nat.port: '{{parsed_event.message.dstPostNATPort}}'
+  set_host_common_fields:
+    actions:
+      - set:
+          host.name: '{{parsed_event.message.sender}}'
+  set_user_common_fields:
+    actions:
+      - set:
+          user.name: '{{parsed_event.message.usrName}}'
+  set_process_common_fields:
+    actions:
+      - set:
+          process.pid: '{{detailed_parsed_message.message.pid}}'
+          process.command_line: '{{detailed_parsed_message.message.command_line}}'
+          process.user.name: '{{detailed_parsed_message.message.process_user}}'
+        filter: '{{detailed_parsed_message.message is defined}}'
+      - set:
+          process.name: >-
+            {{parsed_event.message.process or parsed_event.message.processName
+            or parsed_event.message.ProcessName}}
+          process.user.id: '{{detailed_parsed_message.message.uid}}'
+          process.thread.id: >-
+            {{parsed_event.message.ThreadID or parsed_event.message.threadID or
+            parsed_event.message.process.thread.id}}
+  set_custom_fields:
+    actions:
+      - set:
+          forcepoint.firewall.dhcp.dns: '{{detailed_parsed_message.message.dns_ip}}'
+        filter: '{{detailed_parsed_message.message is defined and detailed_parsed_message.message.dns_ip|is_ipaddress}}'
+      - set:
+          forcepoint.firewall.dhcp.relay: '{{detailed_parsed_message.message.dhcp_relay_ip}}'
+        filter: '{{detailed_parsed_message.message is defined and detailed_parsed_message.message.dhcp_relay_ip|is_ipaddress}}'
+      - set:
+          forcepoint.firewall.dhcp.server: '{{detailed_parsed_message.message.server_id}}'
+        filter: '{{detailed_parsed_message.message is defined and detailed_parsed_message.message.server_id|is_ipaddress}}'
+      - set:
+          forcepoint.firewall.dhcp.hostname: '{{detailed_parsed_message.message.hostname}}'
+          forcepoint.firewall.vpn.tunnel_id: '{{detailed_parsed_message.message.tunnel_id}}'
+        filter: '{{detailed_parsed_message.message is defined}}'
+  set_default_values:
+    actions:
+      - set:
+          event.category: '[''network'']'
+        filter: '{{final.event.category is not defined}}'
+      - set:
+          event.type: '[''info'']'
+        filter: '{{final.event.type is not defined}}'
+      - set:
+          event.outcome: unknown
+        filter: '{{final.event.outcome is not defined}}'
