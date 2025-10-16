@@ -1,0 +1,140 @@
+name: forcepoint-ngfw
+pipeline:
+  - name: parsed_event
+    filter: "{{ original.message.startswith('CEF:') }}"
+    external:
+      name: cef.parse-cef
+
+  - name: parsed_event
+    filter: "{{ original.message.startswith('LEEF:') }}"
+    external:
+      name: leef.parse-leef
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.get('rt') or parsed_event.message.get('devTime')}}"
+        output_field: datetime
+
+  - name: parse_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.msg}}"
+        output_field: message
+        pattern: "%{DHCP_1}|%{DHCP_2}|%{VPN_1}|%{HISTORY}|%{OTHER}"
+        custom_patterns:
+          DHCP_1: "Message type %{DATA:dhcp_type}. XID: %{DATA:xid}. Relay ip %{IP:dhcp_relay_ip}. Relayed to %{IP:relayed_to}. Server ID: %{IP:server_id}. Hostname: %{DATA:hostname}."
+          DHCP_2: "Message type %{DATA:dhcp_type}. XID: %{DATA:xid}. Relay ip %{IP:dhcp_relay_ip}. Server ID: %{IP:server_id}. DNS: %{IP:dns_ip}."
+          VPN_1: 'VPN trigger ipv4\\(%{IP:vpn_src_ip}\\) -> ipv4\\(%{IP:vpn_dst_ip}\\), tunnel %{DATA:tunnel_id}'
+          HISTORY: 'HISTORY: PID\\=%{DATA:pid} UID\\=%{DATA:uid} USER\\=%{DATA:process_user} %{DATA:command_line}'
+          OTHER: "%{DATA:reason}"
+
+  - name: set_cef_fields
+    filter: "{{ original.message.startswith('CEF:') }}"
+
+  - name: set_leef_fields
+    filter: "{{ original.message.startswith('LEEF:') }}"
+
+  - name: set_fields
+
+stages:
+  set_cef_fields:
+    actions:
+      - set:
+          # was SignatureId or EventTypeId in spec but those fields are not present
+          event.code: "{{parsed_event.message.DeviceEventClassID}}"
+          event.action: "{{parsed_event.message.Name}}"
+          event.outcome: "{{parsed_event.message.act}}"
+          # instead of observer.id
+          device.id: "{{parsed_event.message.deviceExternalId}}"
+
+  set_leef_fields:
+    actions:
+      - set:
+          event.action: "{{parsed_event.message.DeviceEventClassID}}"
+          observer.name: "{{parsed_event.message.sender}}"
+          event.outcome: "{{parsed_event.message.action}}"
+
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.type: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+
+          observer.hostname: "{{parsed_event.message.dvchost}}"
+          observer.ingress.interface.name: "{{parsed_event.message.deviceInboundInterface}}"
+          observer.egress.interface.name: "{{parsed_event.message.deviceOutboundInterface}}"
+
+          event.severity: "{{parsed_event.message.Severity}}"
+          event.module: "{{parsed_event.message.deviceFacility}}"
+
+          event.reason: "{{parse_message.message.reason}}"
+
+          network.transport: "{{parsed_event.message.proto}}"
+          network.application: "{{parsed_event.message.app}}"
+
+          source.nat.port: "{{parsed_event.message.sourceTranslatedPort}}"
+          source.port: "{{parsed_event.message.spt}}"
+          source.mac: "{{parsed_event.message.srcMAC}}"
+
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.nat.port: "{{parsed_event.message.destinationTranslatedPort}}"
+
+          user.name: "{{parsed_event.message.usrName}}"
+
+          forcepoint.firewall.rule.id: "{{parsed_event.message.cs1}}"
+          forcepoint.firewall.rule.nat_id: "{{parsed_event.message.cs2}}"
+          forcepoint.firewall.dhcp.type: "{{parse_message.message.dhcp_type}}"
+          forcepoint.firewall.dhcp.dns: "{{parse_message.message.dns_ip}}"
+          forcepoint.firewall.dhcp.relay: "{{parse_message.message.dhcp_relay_ip}}"
+          forcepoint.firewall.dhcp.server: "{{parse_message.message.server_id}}"
+          forcepoint.firewall.dhcp.hostname: "{{parse_message.message.hostname}}"
+          forcepoint.firewall.vpn.tunnel_id: "{{parse_message.message.tunnel_id}}"
+
+          event.category: ["network"]
+          event.type: ["info"]
+
+          # No threadId in events
+          process.pid: "{{parse_message.message.pid}}"
+          process.user.name: "{{parse_message.message.process_user}}"
+          process.user.id: "{{parse_message.message.uid}}"
+          process.command_line: "{{parse_message.message.command_line}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.sourceTranslatedAddress}}"
+        filter: "{{parsed_event.message.sourceTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.destinationTranslatedAddress}}"
+        filter: "{{parsed_event.message.destinationTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          observer.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc | is_ipaddress}}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+        filter: "{{ final.event.action.lower().startswith('connection') }}"
+
+      - set:
+          event.category: ["process"]
+        filter: "{{ 'command' in final.event.action.lower() }}"
+
+      - set:
+          event.category: ["file"]
+        filter: "{{ 'file' in final.event.action.lower() }}"
+
