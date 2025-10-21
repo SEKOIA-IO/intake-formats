@@ -25,6 +25,22 @@ pipeline:
         output_field: date
     filter: "{{parsed_leef_event.message.devTime != None}}"
 
+  - name: parsed_lldp_event
+    external:
+      name: grok.match
+      properties:
+        pattern: "Event\\|%{NUMBER:lldp_code}\\|%{WORD}\\|%{WORD}\\|%{DATA}\\|%{MESSAGE:description}"
+        custom_patterns:
+          MESSAGE: "%{LLDP103}|%{LLDP10456}|%{LLDP107}|%{LLDP108}|%{LLDP109}|%{LLDP110}|%{LLDP113}|%{GREEDYDATA}"
+          LLDP103: "Configured LLDP tx-timer to %{NUMBER:tx_timer}"
+          LLDP10456: "LLDP neighbor (%{MAC:mac_src}|%{DATA:chassis_id}) (added|deleted|updated) on %{DATA:interface}"
+          LLDP107: "Configured LLDP Management IP %{IP:lldp_mgmt_ip}"
+          LLDP108: "Configured LLDP tx-hold to %{DATA:tx_hold}"
+          LLDP109: "Configured LLDP tx-delay to %{DATA:tx_delay}"
+          LLDP110: "Configured LLDP reinit-delay to %{DATA:reinit_delay}"
+          LLDP113: "PVID mismatch on %{DATA:interface} pvid = %{DATA:pvid}, Neighbor (%{MAC:mac_src}|%{DATA:chassis_id}) port_id = %{DATA:ninterface} pvid = %{DATA:npvid}"
+    filter: '{{ "LLDP" in original.message }}'
+
   - name: parse_message
     external:
       name: grok.match
@@ -34,7 +50,7 @@ pipeline:
           CLI: 'cli\[%{NUMBER}\]: <%{NUMBER:code}> <%{WORD}> %{DATA} <%{IP:src_ip} %{MAC:src_mac}>\s*%{GREEDYDATA:syslog_payload}'
           SYSLOG: '<%{NUMBER:code}> <%{NUMBER}> (<%{WORD}> )?<%{WORD} %{IP:src_ip}>\s*(%{WORD}:\s*)?\s*%{GREEDYDATA:syslog_payload}'
           DEFAULT: '%{DATA:prefix}\:\s*%{USERNAME:obs}\s*\:\s*%{GREEDYDATA:payload}\s*'
-    filter: '{{"LEEF:" not in original.message}}'
+    filter: '{{"LEEF:" not in original.message and "LLDP" not in original.message}}'
 
   - name: parse_syslog_message
     external:
@@ -135,6 +151,9 @@ pipeline:
 
   - name: set_leef_fields
     filter: '{{"LEEF:" in original.message}}'
+
+  - name: set_lldp_fields
+    filter: '{{ "LLDP" in original.message }}'
 
 stages:
   set_syslog_fields:
@@ -378,3 +397,15 @@ stages:
           parse_leef.message.msg_id: event.outcome
         fallback: "unknown"
         filter: "{{ parse_leef.message.msg_id != None }}"
+
+  set_lldp_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "lldp"
+          event.reason: "{{ parsed_lldp_event.message.description }}"
+          event.code: "{{ parsed_lldp_event.message.lldp_code }}"
+          host.name: "{{ parsed_lldp_event.message.chassis_id }}"
+          observer.ingress.interface.name: "{{ parsed_lldp_event.message.interface }}"
+          source.mac: "{{ parsed_lldp_event.message.mac_src }}"
