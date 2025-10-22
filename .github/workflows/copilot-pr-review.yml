@@ -1,0 +1,273 @@
+name: Copilot PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  copilot-review:
+    name: Request Copilot Review
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v42
+        with:
+          files: |
+            **/*.yml
+            **/*.yaml
+            **/*.py
+            **/README.md
+            **/_meta/**
+
+      - name: Analyze Changes
+        id: analyze
+        run: |
+          echo "## Changed Intake Formats" > analysis.md
+          echo "" >> analysis.md
+          
+          # Extract vendor/product from changed files
+          vendors=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+            grep -oP '^[^/]+/[^/]+' | sort -u || echo "")
+          
+          if [ -n "$vendors" ]; then
+            echo "The following intake formats were modified:" >> analysis.md
+            echo "" >> analysis.md
+            echo "$vendors" | while read format; do
+              echo "- \`$format\`" >> analysis.md
+            done
+          else
+            echo "No intake formats were directly modified." >> analysis.md
+          fi
+          
+          echo "" >> analysis.md
+          echo "## Changed File Types" >> analysis.md
+          echo "" >> analysis.md
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+            grep -oE '\.[^.]+$' | sort | uniq -c | \
+            awk '{print "- " $2 " files: " $1}' >> analysis.md || \
+            echo "- No specific file types detected" >> analysis.md
+          
+          # Save analysis for next step
+          echo "analysis<<EOF" >> $GITHUB_OUTPUT
+          cat analysis.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check for Required Files
+        id: check-files
+        run: |
+          issues=""
+          warnings=""
+          
+          # Get list of modified vendor/product directories
+          vendors=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+            grep -oP '^[^/]+/[^/]+' | sort -u || echo "")
+          
+          if [ -n "$vendors" ]; then
+            echo "$vendors" | while read format; do
+              vendor=$(echo "$format" | cut -d'/' -f1)
+              product=$(echo "$format" | cut -d'/' -f2)
+              
+              # Skip if it's a _meta directory
+              if [ "$product" = "_meta" ]; then
+                continue
+              fi
+              
+              # Check for README in vendor directory
+              if [ ! -f "$vendor/README.md" ]; then
+                warnings="$warnings\n- Missing \`$vendor/README.md\`"
+              fi
+              
+              # Check for _meta directory
+              if [ ! -d "$vendor/_meta" ]; then
+                warnings="$warnings\n- Missing \`$vendor/_meta/\` directory"
+              fi
+              
+              # Check for test files
+              if ! find "$format" -name "*test*.py" -o -name "*test*.yml" | grep -q .; then
+                warnings="$warnings\n- No test files found in \`$format\`"
+              fi
+            done
+          fi
+          
+          if [ -n "$warnings" ]; then
+            echo "warnings<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$warnings" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "warnings=No issues detected" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Scan for Sensitive Information (CRITICAL)
+        id: security-scan
+        run: |
+          security_issues=""
+          
+          # Get all changed test files
+          test_files=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+            tr ' ' '\n' | grep -iE '(test|example|sample).*\.(py|json|txt|yml|yaml|log)$' || echo "")
+          
+          if [ -z "$test_files" ]; then
+            echo "No test files changed"
+            echo "security_issues=No test files in this PR" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "Scanning test files for sensitive information..."
+          
+          for file in $test_files; do
+            if [ ! -f "$file" ]; then
+              continue
+            fi
+            
+            echo "Checking $file..."
+            
+            # Check for potential real email addresses (not example.com/test.com/example.org)
+            real_emails=$(grep -ioE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' "$file" | \
+              grep -viE '@(example\.(com|org|net)|test\.(com|org)|localhost|domain\.com|email\.com|mail\.com)' | \
+              head -n 5 || echo "")
+            
+            if [ -n "$real_emails" ]; then
+              security_issues="$security_issues\n🚨 **CRITICAL** - \`$file\` contains potential real email addresses:\n"
+              echo "$real_emails" | while read email; do
+                if [ -n "$email" ]; then
+                  security_issues="$security_issues  - \`$email\` - Replace with user@example.com\n"
+                fi
+              done
+            fi
+            
+            # Check for potential API keys/tokens (common patterns)
+            api_patterns=$(grep -ioE '(api[_-]?key|token|secret|password)["\s:=]+[a-zA-Z0-9+/=_-]{20,}' "$file" | \
+              grep -viE '(xxxx|example|test|fake|dummy|redacted|sample)' | head -n 3 || echo "")
+            
+            if [ -n "$api_patterns" ]; then
+              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` may contain API keys or tokens (line contains 'api_key' or 'token' with long strings)\n"
+              security_issues="$security_issues  - Please verify these are anonymized (use 'xxxxxxxxxxxx' or 'FAKE_TOKEN_123')\n"
+            fi
+            
+            # Check for potential real IP addresses (not TEST-NET ranges or private ranges)
+            real_ips=$(grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' "$file" | \
+              grep -vE '^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.|0\.0\.0\.0|255\.255\.255)' | \
+              sort -u | head -n 5 || echo "")
+            
+            if [ -n "$real_ips" ]; then
+              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains IP addresses that should use TEST-NET ranges:\n"
+              echo "$real_ips" | while read ip; do
+                if [ -n "$ip" ]; then
+                  security_issues="$security_issues  - \`$ip\` - Use 192.0.2.x, 198.51.100.x, or 203.0.113.x\n"
+                fi
+              done
+            fi
+            
+            # Check for potential JWT tokens (three base64 segments)
+            jwt_patterns=$(grep -oE 'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+' "$file" | head -n 2 || echo "")
+            
+            if [ -n "$jwt_patterns" ]; then
+              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains what looks like JWT tokens\n"
+              security_issues="$security_issues  - Verify these are fake/anonymized tokens\n"
+            fi
+            
+            # Check for common PII patterns (phone numbers)
+            phone_patterns=$(grep -oE '(\+?[0-9]{1,3}[-.\s]?)?(\([0-9]{3}\)|[0-9]{3})[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}' "$file" | \
+              grep -v '555-0' | head -n 3 || echo "")
+            
+            if [ -n "$phone_patterns" ]; then
+              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains phone number patterns\n"
+              security_issues="$security_issues  - Use test numbers like +1-555-0100\n"
+            fi
+          done
+          
+          if [ -n "$security_issues" ]; then
+            echo "security_issues<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$security_issues" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "security_issues=✅ No obvious sensitive information detected in test files" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR with Analysis
+        uses: actions/github-script@v7
+        if: github.event.action == 'opened'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const analysis = `${{ steps.analyze.outputs.analysis }}`;
+            const warnings = `${{ steps.check-files.outputs.warnings }}`;
+            const securityIssues = `${{ steps.security-scan.outputs.security_issues }}`;
+            
+            let body = `## 🤖 Copilot Automated Review\n\n`;
+            body += `${analysis}\n\n`;
+            
+            // Security issues section (CRITICAL - show first)
+            body += `## 🔒 Security Scan - Sensitive Information Check\n\n`;
+            body += `**⚠️ IMPORTANT**: This is a public repository. All test data must be anonymized.\n\n`;
+            body += `${securityIssues}\n\n`;
+            
+            if (securityIssues.includes('🚨') || securityIssues.includes('⚠️')) {
+              body += `### ❌ Action Required\n\n`;
+              body += `Sensitive information was detected in test files. Please:\n`;
+              body += `1. Review each flagged item above\n`;
+              body += `2. Replace with anonymized data as suggested\n`;
+              body += `3. Use standard test domains: example.com, example.org, test.com\n`;
+              body += `4. Use TEST-NET IP ranges: 192.0.2.x, 198.51.100.x, 203.0.113.x\n`;
+              body += `5. Push updated changes\n\n`;
+              body += `**This PR cannot be merged until all sensitive data is removed.**\n\n`;
+            }
+            
+            if (warnings && warnings !== 'No issues detected') {
+              body += `## ⚠️ Other Potential Issues Detected\n\n${warnings}\n\n`;
+            }
+            
+            body += `## 📋 Contribution Checklist\n\n`;
+            body += `Please ensure your PR meets the following requirements:\n\n`;
+            body += `- [ ] **No sensitive information** in test files (emails, passwords, API keys, real IPs, PII)\n`;
+            body += `- [ ] Test data is properly anonymized (use example.com, TEST-NET IPs, fake credentials)\n`;
+            body += `- [ ] Code is linted with Prettier\n`;
+            body += `- [ ] Parser test coverage is at least 75%\n`;
+            body += `- [ ] Logo files included for new modules/formats\n`;
+            body += `- [ ] README.md files present and updated\n`;
+            body += `- [ ] Smart-descriptions provided for new formats\n\n`;
+            body += `## 🔍 Next Steps\n\n`;
+            body += `GitHub Copilot can help you with:\n`;
+            body += `- **Security review**: Tag @copilot to scan for additional sensitive data\n`;
+            body += `- **Anonymization help**: Ask Copilot to suggest anonymized replacements\n`;
+            body += `- **Code review**: Request specific review feedback\n`;
+            body += `- **Test suggestions**: Ask Copilot to suggest additional test cases\n\n`;
+            body += `For more details, see the [Contribution Guidelines](../CONTRIBUTING.md).\n`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Request Copilot Review
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              // Request a Copilot review for the PR
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+                reviewers: ['copilot']
+              });
+              console.log('Successfully requested Copilot review');
+            } catch (error) {
+              console.log('Could not request Copilot review (this is optional):', error.message);
+            }
