@@ -38,7 +38,8 @@ When reviewing a pull request, please check and comment on the following:
 - **Variables**: Check that smart-descriptions use appropriate variables from parsed data
 
 ### 6. Contribution Guidelines
-- **Linting**: Verify code is formatted with Prettier
+- **Linting**: Verify the parser is formatted with Prettier
+- **Linting**: Verify smart-descriptions, tests files, manifest are formatted with `utils/linter.py`, with the command line `poetry run python linter.py check --changes` and the working directory as `utils/`
 - **Dependencies**: Check that new dependencies are properly documented
 - **Breaking Changes**: Flag any changes that might break existing integrations
 
