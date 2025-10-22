@@ -75,7 +75,7 @@ When a new pull request is created, please:
    - Non-standard directory structure
    - Formatting issues (suggest running Prettier)
 
-5. **Suggest Improvements**
+6. **Suggest Improvements**
    - Recommend additional test cases
    - Suggest better field mappings
    - Propose documentation enhancements
@@ -125,7 +125,7 @@ When a new pull request is created, please:
    - Inconsistent YAML indentation
    - Mixed line endings
 
-4. **Documentation Gaps**
+5. **Documentation Gaps**
    - Unclear or missing descriptions
    - No smart-descriptions for new formats
    - Incomplete taxonomy documentation
