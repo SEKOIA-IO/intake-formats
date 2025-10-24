@@ -18,13 +18,6 @@ pipeline:
         output_field: event
     filter: '{{original.message.startswith(":{") == False}}'
 
-  - name: parsed_event_time
-    external:
-      name: date.parse
-      properties:
-        input_field: "{{json.event.EventTime}}"
-        output_field: datetime
-
   - name: parsed_message_kv
     description: "Extract fields from Message field"
     filter: "{{json.event.Message != null and '<?xml' not in json.event.Message}}"
@@ -180,6 +173,25 @@ pipeline:
         output_field: event
         pattern: >-
           %{GREEDYDATA} #NEWLINE#CN=%{USER:target}%{GREEDYDATA}Caller IP: #NEWLINE#%{IP:ip}:%{INT:port}
+
+  - name: parse_event_2500
+    filter: "{{json.event.Message != null and json.event.EventID == 2500}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.Message}}"
+        output_field: event
+        pattern: >-
+          \[%{DATA:system_id}\] %{DATA:action_name}, parameters '%{DATA:json_params}', result %{DATA:result}, process ID %{NUMBER:pid}
+
+  - name: parse_event_2500_json
+    filter: "{{parse_event_2500 != None and parse_event_2500.get('event', {}).get('json_params') != None}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_event_2500.event.json_params}}"
+        output_field: event
 
   - name: delete_process_name
   - name: main_stage
@@ -344,9 +356,9 @@ stages:
     actions:
       - name: set
         set:
-          "@timestamp": "{{json.event.UtcTime or parsed_event_time.datetime}}"
+          "@timestamp": "{{json.event.UtcTime}}"
           file.name: "{{json.event.name}}"
-          process.command_line: "{{json.event.CommandLine}}"
+          process.command_line: "{{json.event.CommandLine or parse_event_2500_json.event.CommandLine}}"
           process.parent.command_line: "{{json.event.ParentCommandLine}}"
           action.record_id: "{{json.event.RecordNumber}}"
           action.type: "{{json.event.Channel}}"
@@ -380,7 +392,12 @@ stages:
           user.target.id: "{{json.event.TargetUserSid}}"
           host.name: "{{json.event.Hostname}}"
           host.hostname: "{{json.event.Hostname.split('.') | first}}"
-
+      - set:
+          url.domain: "{{json.event.url.split('/') | first}}"
+        filter: "{{json.event.url != null and not json.event.url.startswith('http')}}"
+      - set:
+          url.domain: "{{json.event.RemoteName.split('/') | first}}"
+        filter: "{{json.event.RemoteName != null and not json.event.RemoteName.startswith('http')}}"
       - set:
           package.name: "{{json.event.LmPackageName.split()|first}}"
           package.description: "LAN Manager package"
@@ -402,8 +419,231 @@ stages:
   set_action_properties:
     actions:
       - set:
-          action.properties: "{{json.event}}"
+          action.properties.AccessList: "{{json.event.AccessList}}"
+          action.properties.AccessMask: "{{json.event.AccessMask}}"
+          action.properties.AccessReason: "{{json.event.AccessReason}}"
+          action.properties.AccountName: "{{json.event.AccountName}}"
+          action.properties.AccountType: "{{json.event.AccountType}}"
+          action.properties.ActionName: "{{json.event.ActionName}}"
+          action.properties.Adapter: "{{json.event.Adapter}}"
+          action.properties.AdapterName: "{{json.event.AdapterName}}"
+          action.properties.AdapterSuffixName: "{{json.event.AdapterSuffixName}}"
+          action.properties.AllowedToDelegateTo: "{{json.event.AllowedToDelegateTo}}"
+          action.properties.ApiCallerName: "{{json.event.ApiCallerName}}"
+          action.properties.Application: "{{json.event.Application}}"
+          action.properties.AttributeLDAPDisplayName: "{{json.event.AttributeLDAPDisplayName}}"
+          action.properties.AttributeValue: "{{json.event.AttributeValue}}"
+          action.properties.AuditPolicyChanges: "{{json.event.AuditPolicyChanges}}"
+          action.properties.Auth: "{{json.event.Auth}}"
+          action.properties.AuthenticationAlgorithm: "{{json.event.AuthenticationAlgorithm}}"
+          action.properties.AuthenticationPackageName: "{{json.event.AuthenticationPackageName}}"
+          action.properties.AuthenticationProvider: "{{json.event.AuthenticationProvider}}"
+          action.properties.AuthenticationServer: "{{json.event.AuthenticationServer}}"
+          action.properties.AuthenticationType: "{{json.event.AuthenticationType}}"
+          action.properties.CVEID: "{{json.event.CVEID}}"
+          action.properties.CallTrace: "{{json.event.CallTrace}}"
+          action.properties.CallerProcessName: "{{json.event.CallerProcessName}}"
+          action.properties.Category: "{{json.event.Category}}"
+          action.properties.CertIssuerName: "{{json.event.CertIssuerName}}"
+          action.properties.CertSerialNumber: "{{json.event.CertSerialNumber}}"
+          action.properties.CertThumbprint: "{{json.event.CertThumbprint}}"
+          action.properties.Cipher: "{{json.event.Cipher}}"
+          action.properties.CipherAlgorithm: "{{json.event.CipherAlgorithm}}"
+          action.properties.ClassName: "{{json.event.ClassName}}"
+          action.properties.ClientAddress: "{{json.event.ClientAddress}}"
+          action.properties.ClientIPAddress: "{{json.event.ClientIPAddress}}"
+          action.properties.ClientName: "{{json.event.ClientName}}"
+          action.properties.ComputerName: "{{json.event.ComputerName}}"
+          action.properties.ConfigurationFileHash: "{{json.event.ConfigurationFileHash}}"
+          action.properties.DCName: "{{json.event.DCName}}"
+          action.properties.Destination: "{{json.event.Destination}}"
+          action.properties.DestinationDRA: "{{json.event.DestinationDRA}}"
+          action.properties.Details: "{{json.event.Details}}"
+          action.properties.Device: "{{json.event.Device}}"
+          action.properties.DeviceDescription: "{{json.event.DeviceDescription}}"
+          action.properties.DeviceInstance: "{{json.event.DeviceInstance}}"
+          action.properties.DeviceInstanceId: "{{json.event.DeviceInstanceId}}"
+          action.properties.DeviceName: "{{json.event.DeviceName}}"
+          action.properties.DisplayName: "{{json.event.DisplayName}}"
+          action.properties.DnsServerList: "{{json.event.DnsServerList}}"
+          action.properties.Domain: "{{json.event.Domain}}"
+          action.properties.DomainPeer: "{{json.event.DomainPeer}}"
+          action.properties.DriverName: "{{json.event.DriverName}}"
+          action.properties.EAPType: "{{json.event.EAPType}}"
+          action.properties.EndUSN: "{{json.event.EndUSN}}"
+          action.properties.EventType: "{{json.event.EventType}}"
+          action.properties.ExtensibleModulePath: "{{json.event.ExtensibleModulePath}}"
+          action.properties.FailureName: "{{json.event.FailureName}}"
+          action.properties.FileList: "{{json.event.FileList}}"
+          action.properties.GrantedAccess: "{{json.event.GrantedAccess}}"
+          action.properties.HandleId: "{{json.event.HandleId}}"
+          action.properties.Hash: "{{json.event.Hash}}"
+          action.properties.HiveName: "{{json.event.HiveName}}"
+          action.properties.HomeDirectory: "{{json.event.HomeDirectory}}"
+          action.properties.IOCTL: "{{json.event.IOCTL}}"
+          action.properties.Id: "{{json.event.Id}}"
+          action.properties.ImageLoaded: "{{json.event.ImageLoaded}}"
+          action.properties.ImagePath: "{{json.event.ImagePath}}"
+          action.properties.InstanceName: "{{json.event.InstanceName}}"
+          action.properties.InterfaceDescription: "{{json.event.InterfaceDescription}}"
+          action.properties.InterfaceGuid: "{{json.event.InterfaceGuid}}"
+          action.properties.IpAddress: "{{json.event.IpAddress}}"
+          action.properties.IpPort: "{{json.event.IpPort}}"
+          action.properties.Ipaddress: "{{json.event.Ipaddress}}"
+          action.properties.Issuer: "{{json.event.Issuer}}"
+          action.properties.KeyFilePath: "{{json.event.KeyFilePath}}"
+          action.properties.KeyLength: "{{json.event.KeyLength}}"
+          action.properties.KeyName: "{{json.event.KeyName}}"
+          action.properties.KeyType: "{{json.event.KeyType}}"
+          action.properties.Keywords: "{{json.event.Keywords}}"
+          action.properties.Library: "{{json.event.Library}}"
+          action.properties.LocalMAC: "{{json.event.LocalMAC}}"
+          action.properties.LocalMac: "{{json.event.LocalMac}}"
+          action.properties.LocalName: "{{json.event.LocalName}}"
+          action.properties.LogonProcessName: "{{json.event.LogonProcessName}}"
+          action.properties.LogonType: "{{json.event.LogonType}}"
+          action.properties.MemberName: "{{json.event.MemberName}}"
+          action.properties.MemberSid: "{{json.event.MemberSid}}"
+          action.properties.MessageNumber: "{{json.event.MessageNumber}}"
+          action.properties.MessageTotal: "{{json.event.MessageTotal}}"
+          action.properties.MinimumPasswordLength: "{{json.event.MinimumPasswordLength}}"
+          action.properties.MinimumPasswordLengthAudit: "{{json.event.MinimumPasswordLengthAudit}}"
+          action.properties.NAME: "{{json.event.NAME}}"
+          action.properties.NASIdentifier: "{{json.event.NASIdentifier}}"
+          action.properties.NASPort: "{{json.event.NASPort}}"
+          action.properties.NASPortType: "{{json.event.NASPortType}}"
+          action.properties.NamingContext: "{{json.event.NamingContext}}"
+          action.properties.NetworkPolicyName: "{{json.event.NetworkPolicyName}}"
+          action.properties.NewName: "{{json.event.NewName}}"
+          action.properties.NewSd: "{{json.event.NewSd}}"
+          action.properties.NewTargetUserName: "{{json.event.NewTargetUserName}}"
+          action.properties.ObjectClass: "{{json.event.ObjectClass}}"
+          action.properties.ObjectDN: "{{json.event.ObjectDN}}"
+          action.properties.ObjectGUID: "{{json.event.ObjectGUID}}"
+          action.properties.ObjectName: "{{json.event.ObjectName}}"
+          action.properties.ObjectServer: "{{json.event.ObjectServer}}"
+          action.properties.ObjectType: "{{json.event.ObjectType}}"
+          action.properties.ObjectValueName: "{{json.event.ObjectValueName}}"
+          action.properties.OldSd: "{{json.event.OldSd}}"
+          action.properties.OldTargetUserName: "{{json.event.OldTargetUserName}}"
+          action.properties.OpcodeValue: "{{json.event.OpcodeValue}}"
+          action.properties.Operation: "{{json.event.Operation}}"
+          action.properties.OperationType: "{{json.event.OperationType}}"
+          action.properties.PHYType: "{{json.event.PHYType}}"
+          action.properties.PID: "{{json.event.PID}}"
+          action.properties.ParentDeviceInstanceId: "{{json.event.ParentDeviceInstanceId}}"
+          action.properties.Path: "{{json.event.Path}}"
+          action.properties.Payload: "{{json.event.Payload}}"
+          action.properties.ParentImage: "{{json.event.ParentImage}}"
+          action.properties.PipeName: "{{json.event.PipeName}}"
+          action.properties.PolicyName: "{{json.event.PolicyName}}"
+          action.properties.PreAuthType: "{{json.event.PreAuthType}}"
+          action.properties.PrivilegeList: "{{json.event.PrivilegeList}}"
+          action.properties.ProcessGuid: "{{json.event.ProcessGuid}}"
+          action.properties.ProcessPath: "{{json.event.ProcessPath}}"
+          action.properties.ProcessPid: "{{json.event.ProcessPid}}"
+          action.properties.Properties: "{{json.event.Properties}}"
+          action.properties.ProviderGuid: "{{json.event.ProviderGuid}}"
+          action.properties.ProxyPolicyName: "{{json.event.ProxyPolicyName}}"
+          action.properties.RelativeTargetName: "{{json.event.RelativeTargetName}}"
+          action.properties.RelaxMinimumPasswordLengthLimits: "{{json.event.RelaxMinimumPasswordLengthLimits}}"
+          action.properties.ResetCount: "{{json.event.ResetCount}}"
+          action.properties.ResetReason: "{{json.event.ResetReason}}"
+          action.properties.ReturnCode: "{{json.event.ReturnCode}}"
+          action.properties.RunspaceId: "{{json.event.RunspaceId}}"
+          action.properties.SSID: "{{json.event.SSID}}"
+          action.properties.SamAccountName: "{{json.event.SamAccountName}}"
+          action.properties.ScriptBlockId: "{{json.event.ScriptBlockId}}"
+          action.properties.ScriptBlockText: "{{json.event.ScriptBlockText}}"
+          action.properties.ScriptPath: "{{json.event.ScriptPath}}"
+          action.properties.Service: "{{json.event.Service}}"
+          action.properties.ServiceAccount: "{{json.event.ServiceAccount}}"
+          action.properties.ServiceName: "{{json.event.ServiceName}}"
+          action.properties.ServicePrincipalNames: "{{json.event.ServicePrincipalNames}}"
+          action.properties.ServiceSid: "{{json.event.ServiceSid}}"
+          action.properties.ServiceStartType: "{{json.event.ServiceStartType}}"
+          action.properties.ServiceType: "{{json.event.ServiceType}}"
+          action.properties.SessionID: "{{json.event.SessionID}}"
+          action.properties.Severity: "{{json.event.Severity}}"
+          action.properties.ShareLocalPath: "{{json.event.ShareLocalPath}}"
+          action.properties.ShareName: "{{json.event.ShareName}}"
+          action.properties.SidHistory: "{{json.event.SidHistory}}"
+          action.properties.Signature: "{{json.event.Signature}}"
+          action.properties.SignatureStatus: "{{json.event.SignatureStatus}}"
+          action.properties.Signed: "{{json.event.Signed}}"
+          action.properties.Source: "{{json.event.Source}}"
+          action.properties.SourceDRA: "{{json.event.SourceDRA}}"
+          action.properties.SourceImage: "{{json.event.SourceImage}}"
+          action.properties.SourceName: "{{json.event.SourceName}}"
+          action.properties.SourceProcessId: "{{json.event.SourceProcessId}}"
+          action.properties.StartAddress: "{{json.event.StartAddress}}"
+          action.properties.StartType: "{{json.event.StartType}}"
+          action.properties.StartUSN: "{{json.event.StartUSN}}"
+          action.properties.Status: "{{json.event.Status}}"
+          action.properties.StopTime: "{{json.event.StopTime}}"
+          action.properties.SubStatus: "{{json.event.SubStatus}}"
+          action.properties.SubjectDomainName: "{{json.event.SubjectDomainName}}"
+          action.properties.SubjectLogonId: "{{json.event.SubjectLogonId}}"
+          action.properties.SubjectUserName: "{{json.event.SubjectUserName}}"
+          action.properties.SubjectUserSid: "{{json.event.SubjectUserSid}}"
+          action.properties.TargetDomainName: "{{json.event.TargetDomainName}}"
+          action.properties.TargetFilename: "{{json.event.TargetFilename}}"
+          action.properties.TargetImage: "{{json.event.TargetImage}}"
+          action.properties.TargetInfo: "{{json.event.TargetInfo}}"
+          action.properties.TargetLogonId: "{{json.event.TargetLogonId}}"
+          action.properties.TargetObject: "{{json.event.TargetObject}}"
+          action.properties.TargetOutboundDomainName: "{{json.event.TargetOutboundDomainName}}"
+          action.properties.TargetOutboundUserName: "{{json.event.TargetOutboundUserName}}"
+          action.properties.TargetProcessId: "{{json.event.TargetProcessId}}"
+          action.properties.TargetServerName: "{{json.event.TargetServerName}}"
+          action.properties.TargetSid: "{{json.event.TargetSid}}"
+          action.properties.TargetUserName: "{{json.event.TargetUserName}}"
+          action.properties.TargetUserSid: "{{json.event.TargetUserSid}}"
+          action.properties.Task: "{{json.event.Task}}"
+          action.properties.TaskContentNew: "{{json.event.TaskContentNew}}"
+          action.properties.TaskName: "{{json.event.TaskName}}"
+          action.properties.TicketEncryptionType: "{{json.event.TicketEncryptionType}}"
+          action.properties.TicketOptions: "{{json.event.TicketOptions}}"
+          action.properties.TimeSource: "{{json.event.TimeSource}}"
+          action.properties.Type: "{{json.event.Type}}"
+          action.properties.User: "{{json.event.User}}"
+          action.properties.UserContext: "{{json.event.UserContext}}"
+          action.properties.UserName: "{{json.event.UserName}}"
+          action.properties.UserPrincipalName: "{{json.event.UserPrincipalName}}"
+          action.properties.UserSid: "{{json.event.UserSid}}"
+          action.properties.Volume: "{{json.event.Volume}}"
+          action.properties.VolumeGuid: "{{json.event.VolumeGuid}}"
+          action.properties.VolumeName: "{{json.event.VolumeName}}"
+          action.properties.VsmPolicy: "{{json.event.VsmPolicy}}"
+          action.properties.Workstation: "{{json.event.Workstation}}"
+          action.properties.WorkstationName: "{{json.event.WorkstationName}}"
+          action.properties.WritePhase: "{{json.event.WritePhase}}"
+          action.properties.Zone: "{{json.event.Zone}}"
+          action.properties.bytesTransferred: "{{json.event.bytesTransferred}}"
+          action.properties.cfgattr: "{{json.event.cfgattr}}"
+          action.properties.cfgpath: "{{json.event.cfgpath}}"
+          action.properties.desc: "{{json.event.desc}}"
+          action.properties.devname: "{{json.event.devname}}"
+          action.properties.fid_UsbDevice: "{{json.event.fid_UsbDevice}}"
+          action.properties.fid_bcdDevice: "{{json.event.fid_bcdDevice}}"
+          action.properties.fid_idProduct: "{{json.event.fid_idProduct}}"
+          action.properties.fid_idVendor: "{{json.event.fid_idVendor}}"
+          action.properties.job: "{{json.event.job}}"
+          action.properties.jobTitle: "{{json.event.jobTitle}}"
+          action.properties.param1: "{{json.event.param1}}"
+          action.properties.param2: "{{json.event.param2}}"
+          action.properties.param3: "{{json.event.param3}}"
+          action.properties.param4: "{{json.event.param4}}"
+          action.properties.param5: "{{json.event.param5}}"
+          action.properties.param6: "{{json.event.param6}}"
+          action.properties.param7: "{{json.event.param7}}"
+          action.properties.param8: "{{json.event.param8}}"
+          action.properties.param9: "{{json.event.param9}}"
+          action.properties.server: "{{json.event.server}}"
+          action.properties.ui: "{{json.event.ui}}"
+          action.properties.updateGuid: "{{json.event.updateGuid}}"
 
+      - set:
           action.properties.Accesses: "{{ network_object.event.Accesses.replace('#NEWLINE#', '\\r\\n').replace('#NEWLINE2#', '\\n') }}" # issue with this multi-line field
 
           action.properties.Attributes: "{{json.event.Attributes}}"
@@ -442,6 +682,7 @@ stages:
           action.properties.SentUpdateServer: '{{ json.event.get("Sent UpdateServer") }}'
           action.properties.ServiceFileName: '{{ json.event.get("Service File Name") or json.event.ServiceFileName }}'
           action.properties.StatusInformation: '{{ json.event.get("Status Information") }}'
+          action.properties.Subject: '{{ json.event.get("Subject") }}'
 
           action.properties.BytesTotal: "{{json.event.bytesTotal}}"
           action.properties.ConfigurationFile: "{{ json.event.Configuration }}"
@@ -616,6 +857,10 @@ stages:
           process.id: "{{final.process.pid}}"
           process.thread.id: "{{json.event.ThreadID}}"
 
+      - set:
+          process.pid: "{{parse_event_2500.event.pid}}"
+        filter: "{{json.event.EventID == 2500}}"
+
   set_user:
     actions:
       - set:
@@ -643,7 +888,8 @@ stages:
       - set:
           user_agent.original: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "UserAgentString" in component%}{{component["UserAgentString"].strip()}}{% endif %}{% endfor %}
-
+          url.original: >
+            {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "RelyingParty" in component%}{{component["RelyingParty"]}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
 
   action_name:
@@ -1199,23 +1445,23 @@ stages:
         filter: "{{source_ip_ip_address.event.ip | is_ipaddress}}"
 
       - set:
-          source.address: "{{json.event.SourceIp}}"
+          source.address: "{{json.event.SourceIp.removeprefix('::ffff:')}}"
         filter: "{{json.event.SourceIp | is_ipaddress}}"
 
       - set:
-          source.address: "{{json.event.IpAddress}}"
+          source.address: "{{json.event.IpAddress.removeprefix('::ffff:')}}"
         filter: "{{json.event.IpAddress | is_ipaddress}}"
 
       - set:
-          source.address: "{{source.ip}}"
+          source.address: "{{source.ip.removeprefix('::ffff:')}}"
         filter: "{{json.event.IpAddress | is_ipaddress and final.source.ip != null }}"
 
       - set:
-          source.address: "{{json.event.SourceHostname}}"
+          source.address: "{{json.event.SourceHostname.removeprefix('::ffff:')}}"
         filter: "{{json.event.SourceHostname | is_ipaddress}}"
 
       - set:
-          source.address: "{{json_event.message.SourceAddr}}"
+          source.address: "{{json_event.message.SourceAddr.removeprefix('::ffff:')}}"
         filter: "{{json.event.SourceAddr | is_ipaddress}}"
 
   set_network_policy_fields:

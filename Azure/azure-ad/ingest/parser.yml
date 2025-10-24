@@ -78,8 +78,14 @@ stages:
           azuread.properties.deviceDetail.isManaged: "{{parsed_event.message.properties.deviceDetail.isManaged}}"
           azuread.properties.deviceDetail.trustType: "{{parsed_event.message.properties.deviceDetail.trustType}}"
           azuread.properties.original_transfer_method: "{{parsed_event.message.properties.originalTransferMethod}}"
-          azuread.properties.session_id: "{{parsed_event.message.properties.sessionId}}"
+          azuread.properties.session_id: "{{parsed_event.message.properties.sessionId or parsed_event.message.properties.C_Sid}}"
           azuread.properties.userPrincipalObjectID: "{{parsed_event.message.properties.UserPrincipalObjectID}}"
+          azuread.properties.authenticationRequirement: "{{parsed_event.message.properties.authenticationRequirement}}"
+          azuread.properties.uniqueTokenIdentifier: "{{parsed_event.message.properties.uniqueTokenIdentifier or parsed_event.message.properties.signInActivityId}}"
+          azuread.properties.userType: "{{parsed_event.message.properties.userType}}"
+          azuread.properties.tokenIssuerType: "{{parsed_event.message.properties.tokenIssuerType}}"
+          azuread.properties.incomingTokenType: "{{parsed_event.message.properties.incomingTokenType}}"
+          azuread.properties.resourceId: "{{parsed_event.message.properties.resourceId}}"
 
       - set:
           azuread.properties.network_location.network_type: "{{(parsed_event.message.properties.networkLocationDetails | first).networkType}}"
@@ -96,16 +102,22 @@ stages:
       - translate:
         dictionary:
           "SignInLogs": ["authentication"]
+          "NonInteractiveUserSignInLogs": ["authentication"]
         mapping:
           parsed_event.message.category: event.category
         fallback: ["iam"]
+
+      - set:
+          azuread.properties.oauth_scope_info: >
+            {%- for item in parsed_event.message.properties.authenticationProcessingDetails -%}
+              {%- if item.key == 'Oauth Scope Info' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
 
   read_message_properties_location_geoCoordinates:
     actions:
       - set:
           source.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
           source.geo.region_name: "{{ parsed_event.message.properties.location.state }}"
-          source.geo.country_iso_code: "{{ parsed_event.message.location}}"
 
       - set:
           source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
@@ -119,7 +131,7 @@ stages:
           service.name: '{{ parsed_event.message.resourceDisplayName or "Azure Active Directory"}}'
           action.name: "{{parsed_event.message.operationName}}"
           event.action: "{{parsed_event.message.operationName}}"
-          user.id: "{{ parsed_event.message.userId}}"
+          user.id: "{{ parsed_event.message.userId or parsed_event.message.properties.userId}}"
           user.name: "{{ parsed_event.message.userPrincipalName}}"
           user_agent.original: "{{ parsed_event.message.userAgent}}"
           log.level: "{{parsed_event.message.Level}}"
@@ -199,10 +211,8 @@ stages:
           azuread.detectedDateTime: "{{parsed_event.message.detectedDateTime}}"
           azuread.lastUpdatedDateTime: "{{parsed_event.message.lastUpdatedDateTime}}"
           azuread.additionalInfo: "{{parsed_event.message.additionalInfo}}"
-          azuread.tokenIssuerType: "{{parsed_event.message.tokenIssuerType}}"
           azuread.resourceTenantId: "{{parsed_event.message.resourceTenantId}}"
           azuread.homeTenantId: "{{parsed_event.message.homeTenantId}}"
-          azuread.userType: "{{parsed_event.message.userType}}"
           azuread.crossTenantAccessType: "{{parsed_event.message.crossTenantAccessType}}"
           azuread.authenticationRequirementPolicies: "{{parsed_event.message.authenticationRequirementPolicies}}"
           azuread.authenticationRequirement: "{{parsed_event.message.authenticationRequirement}}"
@@ -212,9 +222,6 @@ stages:
           azuread.autonomousSystemNumber: "{{parsed_event.message.autonomousSystemNumber}}"
           azuread.privateLinkDetails: "{{parsed_event.message.privateLinkDetails}}"
           azuread.ssoExtensionVersion: "{{parsed_event.message.ssoExtensionVersion}}"
-          azuread.uniqueTokenIdentifier: "{{parsed_event.message.uniqueTokenIdentifier}}"
-          azuread.incomingTokenType: "{{parsed_event.message.incomingTokenType}}"
-          azuread.authenticationProtocol: "{{parsed_event.message.authenticationProtocol}}"
 
       - set:
           action.target: "user"
@@ -256,7 +263,7 @@ stages:
       - set:
           user.id: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalId}}"
           user.name: "{{ parsed_event.message.properties.initiatedBy.app.displayName}}"
-          action.target: "user"
+          action.target: "application"
         filter: "{{parsed_event.message.properties.initiatedBy.app != null}}"
 
   log_type_auditlogs:
