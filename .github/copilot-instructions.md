@@ -122,7 +122,7 @@ When a new pull request is created, please:
    - Tests don't cover error cases
 
 4. **Formatting Problems**
-   - Not linted with Prettier
+   - Not linted with Prettier or the linter script
    - Inconsistent YAML indentation
    - Mixed line endings
 
