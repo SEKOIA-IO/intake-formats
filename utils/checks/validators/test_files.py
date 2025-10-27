@@ -63,13 +63,13 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
             event_category_readable = False
 
             if "type" in event:
-                if type(event["type"]) != list:
+                if not isinstance(event["type"], list):
                     result.errors.append(f"event.type is not a list in a test {test_path.relative_to(INTAKES_PATH)}")
                 else:
                     event_type_readable = True
 
             if "category" in event:
-                if type(event["category"]) != list:
+                if not isinstance(event["category"], list):
                     result.errors.append(f"event.category is not a list in test {test_path.relative_to(INTAKES_PATH)}")
                 else:
                     event_category_readable = True
