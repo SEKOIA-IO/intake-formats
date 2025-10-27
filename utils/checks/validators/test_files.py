@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from . import INTAKES_PATH, Validator
+from .anonymization import AnonymizationValidator
 from .constants import CheckResult, TestFile
 from .parser import check_event_category_to_type_mapping
 
@@ -25,11 +26,20 @@ class TestFileValidator(Validator):
                 result.errors.append("no test found")
             return
 
+        # Initialize anonymization validator
+        anonymization_validator = AnonymizationValidator(
+            config=AnonymizationValidator.get_anonymization_config(args),
+            exceptions=AnonymizationValidator.get_anonymization_exceptions(args),
+            strict=getattr(args, "anonymization_strict", False),
+            lenient=getattr(args, "anonymization_lenient", False),
+        )
+
         for test_path in test_paths:
             check_test_file(
                 test_path=test_path,
                 ignore_event_fieldset_errors=args.ignore_event_fieldset_errors,
                 result=result,
+                anonymization_validator=anonymization_validator,
             )
 
 
@@ -43,13 +53,23 @@ def find_tests(tests_path: Path) -> list[Path]:
     return result
 
 
-def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result: CheckResult) -> None:
+def check_test_file(
+    test_path: Path,
+    ignore_event_fieldset_errors: bool,
+    result: CheckResult,
+    anonymization_validator: AnonymizationValidator,
+) -> None:
     try:
         with open(test_path, "rt") as file:
             test_content = json.load(file)
 
-        test_parsed = TestFile.model_validate(test_content)
+        # Anonymization Checks
+        anonymization_errors = anonymization_validator.validate_content(test_content, test_path)
+        for error in anonymization_errors:
+            result.errors.append(str(error))
 
+        # Existing Checks
+        test_parsed = TestFile.model_validate(test_content)
         test_time_stamp = test_parsed.expected.get("@timestamp")
         re_rfc3339 = re.compile(r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$")
 
