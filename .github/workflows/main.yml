@@ -40,5 +40,56 @@ jobs:
           poetry install --only main
 
       - name: Checking modules & formats
+        id: checks
         run: |
-          poetry run python checks --changes --ignore_event_fieldset_errors --ignore_missing_parsers --ignore_missing_tests --ignore_empty_descriptions
+          poetry run python checks --changes --json --ignore_event_fieldset_errors --ignore_missing_parsers --ignore_missing_tests --ignore_empty_descriptions > /tmp/checks_output.json 2>&1
+        continue-on-error: true
+
+      - name: Post PR comment
+        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const fileContent = fs.readFileSync('/tmp/checks_output.json', 'utf8');
+            let body = '### :warning: Intake Format Checks Failed\n\n';
+
+            try {
+                const results = JSON.parse(fileContent);
+
+                if (results.modules.length > 0) {
+                    body += '#### Module Errors\n\n';
+                    for (const module of results.modules) {
+                        body += `*   **${module.path}**\n`;
+                        for (const error of module.errors) {
+                            body += `    *   ${error}\n`;
+                        }
+                    }
+                }
+
+                if (results.formats.length > 0) {
+                    body += '\n#### Format Errors\n\n';
+                    for (const format of results.formats) {
+                        body += `*   **${format.path}**\n`;
+                        for (const error of format.errors) {
+                            body += `    *   ${error}\n`;
+                        }
+                    }
+                }
+            } catch (e) {
+                body += 'An error occurred while parsing the check results.\n\n';
+                body += '<details>\n<summary>Raw output</summary>\n\n';
+                body += '```\n' + fileContent + '\n```\n\n</details>';
+            }
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail workflow if checks failed
+        if: steps.checks.outcome == 'failure'
+        run: exit 1
