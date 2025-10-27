@@ -26,7 +26,7 @@ All test data, sample logs, and example files **MUST be completely anonymized** 
 - john.doe@test.com
 - admin@localhost
 
-**Standard test domains**: `example.com`, `example.org`, `example.net`, `test.com`, `localhost`
+**Standard test domains**: `example.com`, `example.org`, `example.net`, `test.com`, `localhost`,  `hostname`, `mycorp.com`, `mycorp.org`, `mycorp.net`
 
 ### 2. IP Addresses ✅
 
@@ -44,6 +44,7 @@ All test data, sample logs, and example files **MUST be completely anonymized** 
 - 172.16.0.x to 172.31.0.x (private range)
 - 192.168.0.x (private range)
 - 127.0.0.1 (localhost)
+- 1.2.3.4, 5.6.7.8, 3.4.5.6, 4.3.2.1, 8.7.6.5 (obviously fake)
 
 ### 3. Passwords & API Keys ✅
 
