@@ -35,7 +35,9 @@
 
 ### Required for All PRs
 
-- [ ] Code has been linted with Prettier (`npx prettier --write .`)
+- [ ] Code has been linted
+    - [ ] with the linter for manifest, smart-descriptions, and test files (`poetry run python linter.py check --changes` in utils/)
+    - [ ] with Prettier for the parser code files (`npx prettier --write <module>/<format>/ingest/parser.yml`)
 - [ ] All CI/CD checks pass
 - [ ] Changes follow the contribution guidelines in `CONTRIBUTING.md`
 
