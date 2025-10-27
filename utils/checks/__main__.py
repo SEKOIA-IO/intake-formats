@@ -207,18 +207,18 @@ def main():
         check_format_results.extend(check_module_formats(check_module_result, intake_formats, args))
     check_format_uuids_and_slugs(check_format_results)
 
-    in_error = False
-    module_errors = []
-    for res in check_module_results:
-        if len(res.errors) > 0:
-            in_error = True
-            module_errors.append(res)
+    def collect_errors(results):
+        error_results = []
+        error_flag = False
+        for res in results:
+            if len(res.errors) > 0:
+                error_flag = True
+                error_results.append(res)
+        return error_results, error_flag
 
-    format_errors = []
-    for res in check_format_results:
-        if len(res.errors) > 0:
-            in_error = True
-            format_errors.append(res)
+    module_errors, module_in_error = collect_errors(check_module_results)
+    format_errors, format_in_error = collect_errors(check_format_results)
+    in_error = module_in_error or format_in_error
 
     if args.json:
         results = {
