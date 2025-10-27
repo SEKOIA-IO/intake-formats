@@ -26,7 +26,8 @@ All test data, sample logs, and example files **MUST be completely anonymized** 
 - john.doe@test.com
 - admin@localhost
 
-**Standard test domains**: `example.com`, `example.org`, `example.net`, `test.com`, `localhost`,  `hostname`, `mycorp.com`, `mycorp.org`, `mycorp.net`
+**Standard test domains (RFC 2606)**: `example.com`, `example.org`, `example.net`, `*.test`, `*.invalid`,  `*.example`
+**Project-specific example domains** (not RFC standards, for anonymization only): `mycorp.com`, `mycorp.org`, `mycorp.net`, `localhost`, `hostname`, `test.com`, `test.org`, `test.net`
 
 ### 2. IP Addresses ✅
 
