@@ -2,6 +2,7 @@ import argparse
 import os
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 from validators.constants import CheckResult
@@ -168,6 +169,7 @@ def main():
         action="store_true",
         help="Ignore empty, but existing descriptions",
     )
+    parser.add_argument("--json", action="store_true", help="Output results in JSON format")
     args = parser.parse_args()
 
     modules = find_modules(INTAKES_PATH)
@@ -197,34 +199,60 @@ def main():
         modules = list(changed_modules)
         intake_formats = list(changed_formats)
 
-    in_error = False
-
     check_module_results = [check_module(INTAKES_PATH / module, args) for module in modules]
     check_module_uuids_and_slugs(check_module_results)
-
-    print(
-        f"🔎 {len(check_module_results)} module(s) found: %s"
-        % ",".join([str(module).replace(str(INTAKES_PATH), "") for module in modules])
-    )
-    for res in check_module_results:
-        if len(res.errors) > 0:
-            in_error = True
-            module_name = res.options.get("path").relative_to(INTAKES_PATH)
-            for error in res.errors:
-                print(f"Module: {module_name} Error: {error}")
 
     check_format_results = []
     for check_module_result in check_module_results:
         check_format_results.extend(check_module_formats(check_module_result, intake_formats, args))
     check_format_uuids_and_slugs(check_format_results)
 
-    print(
-        f"🔎 {len(check_format_results)} format(s) found: %s"
-        % ",".join([item.options.get("path").name for item in check_format_results])
-    )
+    in_error = False
+    module_errors = []
+    for res in check_module_results:
+        if len(res.errors) > 0:
+            in_error = True
+            module_errors.append(res)
+
+    format_errors = []
     for res in check_format_results:
         if len(res.errors) > 0:
             in_error = True
+            format_errors.append(res)
+
+    if args.json:
+        results = {
+            "modules": [
+                {
+                    "path": str(res.options.get("path").relative_to(INTAKES_PATH)),
+                    "errors": res.errors,
+                }
+                for res in module_errors
+            ],
+            "formats": [
+                {
+                    "path": str(res.options.get("path").relative_to(INTAKES_PATH)),
+                    "errors": res.errors,
+                }
+                for res in format_errors
+            ],
+        }
+        print(json.dumps(results, indent=2))
+    else:
+        print(
+            f"🔎 {len(check_module_results)} module(s) found: %s"
+            % ",".join([str(module).replace(str(INTAKES_PATH), "") for module in modules])
+        )
+        for res in module_errors:
+            module_name = res.options.get("path").relative_to(INTAKES_PATH)
+            for error in res.errors:
+                print(f"Module: {module_name} Error: {error}")
+
+        print(
+            f"🔎 {len(check_format_results)} format(s) found: %s"
+            % ",".join([item.options.get("path").name for item in check_format_results])
+        )
+        for res in format_errors:
             format_path = res.options.get("path").relative_to(INTAKES_PATH)
             for error in res.errors:
                 print(f"Format: {format_path} Error: {error}")
