@@ -15,10 +15,11 @@ pipeline:
         output_field: message
         pattern: '(\"?\s*%{HEADER:header}\s+:\s+%{WORD:mode}\s+)?%{WORD:type} %{WORD:message_type} %{NUMBER:n1} %{NUMBER:n2} :\s+%{GREEDYDATA:payload}\"?'
         custom_patterns:
-          HEADER: '%{DATE_TIME:timestamp}(?:\s%{TIMEZONE})?\s+%{USERNAME:observer}\s%{USERNAME:s2}'
-          DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}"
+          HEADER: '%{DATE_TIME:timestamp}(?:\s%{TIMEZONE})?\s+%{DATA:observer}\s%{DATA:s2}'
+          DATE_TIME: "%{DATE_TIME_YMD}|%{DATE_TIME_MDY}|%{DATE_TIME_DMY}"
           DATE_TIME_YMD: "%{YEAR:year}/%{MONTHNUM:month}/%{MONTHDAY:day}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           DATE_TIME_MDY: "%{MONTHNUM:month}/%{MONTHDAY:day}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
+          DATE_TIME_DMY: "%{MONTHDAY:day}/%{MONTHNUM:month}/%{YEAR:year}:%{HOUR:hour}:%{MINUTE:minute}:%{SECOND:second}"
           TIMEZONE: "GMT"
     filter: "{{ not original.message.startswith('CEF') and not 'shell_command=' in original.message and not ' -> 'in original.message}}"
 
@@ -127,6 +128,16 @@ pipeline:
         format: "%d/%b/%Y:%H:%M:%S %z"
         output_field: date
 
+  - name: parse_audit_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_audit_header.message.payload}}"
+        output_field: message
+        pattern: '"?%{AUTH_REJECTED}"?'
+        custom_patterns:
+          AUTH_REJECTED: 'Authentication is rejected for %{DATA:user_name} \(client ip \: %{IP:src_ip}\s+,\s+vserver ip\: %{IP:dst_ip}\s+\).*'
+
   - name: set_audit_log_fields
     filter: '{{not original.message.startswith("CEF") and parse_audit_header.message.type not in ["AAATM"]}}'
 
@@ -138,6 +149,9 @@ pipeline:
 
   - name: set_sslvpn_freeform_log_fields
     filter: "{{ parse_audit_header.message.type in ['SSLVPN'] and parse_audit_header.message.message_type == 'Message' }}"
+
+  - name: set_aaa_message_log_fields
+    filter: "{{ parse_audit_header.message.type == 'AAA' and parse_audit_header.message.message_type == 'Message'}}"
 
   - name: set_ssl_log_fields
     filter: "{{ parse_audit_header.message.type == 'SSLLOG' }}"
@@ -153,6 +167,9 @@ pipeline:
 
   - name: set_http_access_log_fields
     filter: "{{ parse_audit_http_access_logs.get('message') != None }}"
+
+  - name: set_aaatm_log_fields
+    filter: "{{ parse_audit_header.message.type == 'AAATM' }}"
 
 stages:
   set_cef_header_fields:
@@ -273,6 +290,26 @@ stages:
           event.outcome: "failure"
         filter: "{{ parse_audit_header.message.type.lower() == 'aaa' and parse_audit_header.message.message_type.lower() == 'login_failed' }}"
 
+  set_aaa_message_log_fields:
+    actions:
+      - set:
+          citrix.adc.message: '{{parse_audit_header.message.payload.strip(''"'')}}'
+          user.name: "{{parse_audit_message.message.user_name}}"
+
+      - set:
+          source.ip: "{{parse_audit_message.message.src_ip}}"
+        filter: "{{parse_audit_message.message.src_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parse_audit_message.message.dst_ip}}"
+        filter: "{{parse_audit_message.message.dst_ip | is_ipaddress}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parse_audit_message.message.get('AUTH_REJECTED') != None}}"
+
   set_ssl_log_fields:
     actions:
       - set:
@@ -291,6 +328,10 @@ stages:
       - set:
           event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
           event.reason: "{{parse_audit_header.message.payload}}"
+
+      - set:
+          event.reason: '{{parse_audit_header.message.payload.strip(''"'')}}'
+        filter: '{{parse_audit_header.message.payload.startswith(''"'') and parse_audit_header.message.payload.endswith(''"'')}}'
 
       - set:
           event.reason: "{{ parse_audit_sslvpn_logs.message.reason }}"
@@ -331,3 +372,13 @@ stages:
           user_agent.name: "{{ parse_audit_http_access_logs.message.user_agent.split('/')[0] }}"
           user_agent.version: "{{ parse_audit_http_access_logs.message.user_agent.split('/')[1] }}"
         filter: "{{ parse_audit_http_access_logs.message.user_agent != '-' }}"
+
+  set_aaatm_log_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          "@timestamp": "{{ parse_audit_timestamp.date }}"
+          observer.name: "{{ parse_audit_header.message.observer }}"
+          event.dataset: "audit_{{ parse_audit_header.message.type | lower}}"
+          event.reason: "{{parse_audit_header.message.payload[1:-1]}}"

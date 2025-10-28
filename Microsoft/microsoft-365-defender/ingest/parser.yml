@@ -1,5 +1,5 @@
 name: microsoft-365-defender
-ignored_values: ["-"]
+ignored_values: ["-", "$"]
 pipeline:
   - name: json_event
     external:
@@ -26,7 +26,7 @@ pipeline:
         input_field: "{{json_event.message.properties.LoggedOnUsers}}"
         output_field: "users"
   - name: parse_additional_fields
-    filter: '{{json_event.message.get("category") in ["AdvancedHunting-AlertEvidence","AdvancedHunting-DeviceNetworkEvents","AdvancedHunting-DeviceProcessEvents"] and json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
+    filter: '{{json_event.message.get("category") in ["AdvancedHunting-AlertEvidence","AdvancedHunting-DeviceNetworkEvents","AdvancedHunting-DeviceProcessEvents","AdvancedHunting-DeviceEvents"] and json_event.message.get("properties", {}).get("AdditionalFields") | length > 0}}'
     external:
       name: json.parse-json
       properties:
@@ -38,6 +38,13 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{json_event.message.properties.RawEventData.Data}}"
+        output_field: "data"
+  - name: parse_auth_details
+    filter: '{{json_event.message.get("properties", {}).get("AuthenticationDetails") != None}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json_event.message.properties.AuthenticationDetails}}"
         output_field: "data"
   - name: set_common_fields
   - name: set_process_events
@@ -172,6 +179,8 @@ stages:
           action.properties.AccountUPN: "{{json_event.message.properties.AccountUpn}}"
           action.properties.InitiatingProcessSessionId: "{{json_event.message.properties.InitiatingProcessSessionId}}"
           action.properties.IsInitiatingProcessRemoteSession: "{{json_event.message.properties.IsInitiatingProcessRemoteSession}}"
+          action.properties.SourceComputerId: "{{json_event.message.properties.AdditionalFields.SourceComputerId}}"
+          action.properties.SourceComputerObjectGuid: "{{json_event.message.properties.AdditionalFields.SourceComputerObjectGuid}}"
           microsoft.defender.activity.objects: "{{json_event.message.properties.ActivityObjects}}"
           microsoft.defender.activity.type: "{{json_event.message.properties.ActivityType}}"
           microsoft.defender.alert.id: "{{json_event.message.properties.AlertId}}"
@@ -211,7 +220,7 @@ stages:
           destination.ip: "{{json_event.message.properties.DestinationIPAddress}}"
         filter: '{{json_event.message.properties.get("DestinationIPAddress")  | is_ipaddress}}'
       - set:
-          url.original: "{{json_event.message.properties.RemoteUrl.split('uri=')[1:]|join('uri=')}}"
+          url.original: "{{json_event.message.properties.RemoteUrl.split('uri=')[0]}}{{json_event.message.properties.RemoteUrl.split('uri=')[1:]|join('uri=')}}"
         filter: '{{json_event.message.properties.get("RemoteUrl", "").startswith("http") or json_event.message.properties.get("RemoteUrl", "").startswith("uri")}}'
       - set:
           email.to.address: '["{{json_event.message.properties.RecipientEmailAddress}}"]'
@@ -452,6 +461,31 @@ stages:
           event.dataset: "device_events"
           event.category: ["host"]
           action.properties.RemoteDeviceName: "{{json_event.message.properties.RemoteDeviceName}}"
+      - set:
+          device.manufacturer: "{{parse_additional_fields.fields.Manufacturer}}"
+        filter: '{{ json_event.message.properties.ActionType == "UsbDriveMounted" and parse_additional_fields.fields.Manufacturer != null}}'
+      - set:
+          action.properties.DeviceSerialNumber: "{{parse_additional_fields.fields.SerialNumber}}"
+        filter: '{{ json_event.message.properties.ActionType == "UsbDriveMounted" and parse_additional_fields.fields.SerialNumber != null}}'
+      - set:
+          volume.bus_type: "{{parse_additional_fields.fields.BusType}}"
+        filter: '{{ json_event.message.properties.ActionType == "UsbDriveMounted" and parse_additional_fields.fields.BusType != null}}'
+      - set:
+          volume.product_name: "{{parse_additional_fields.fields.ProductName}}"
+        filter: '{{ json_event.message.properties.ActionType == "UsbDriveMounted" and parse_additional_fields.fields.ProductName != null}}'
+      - set:
+          volume.dos_name: "{{parse_additional_fields.fields.DriveLetter}}"
+        filter: '{{ json_event.message.properties.ActionType == "UsbDriveMounted" and parse_additional_fields.fields.DriveLetter != null}}'
+      - set:
+          device.id: "{{parse_additional_fields.fields.DeviceId}}"
+        filter: '{{ json_event.message.properties.ActionType == "PnpDeviceConnected" and parse_additional_fields.fields.DeviceId != null}}'
+      - set:
+          device.model.name: "{{parse_additional_fields.fields.DeviceDescription}}"
+        filter: '{{ json_event.message.properties.ActionType == "PnpDeviceConnected" and parse_additional_fields.fields.DeviceDescription != null}}'
+      - set:
+          device.manufacturer: "{{parse_additional_fields.fields.VendorIds[0]}}"
+        filter: '{{ json_event.message.properties.ActionType == "PnpDeviceConnected" and parse_additional_fields.fields.VendorIds != null}}'
+
   set_device_file_certificate_info_fields:
     actions:
       - set:
@@ -527,6 +561,10 @@ stages:
             {%- endif -%}
           action.properties.RemoteIPType: "{{json_event.message.properties.RemoteIPType}}"
           action.properties.IsLocalAdmin: "{{json_event.message.properties.IsLocalAdmin}}"
+      - set:
+          action.properties.RemoteDeviceName: "{{json_event.message.properties.RemoteDeviceName}}"
+        filter: '{{json_event.message.properties.get("RemoteDeviceName") != null}}'
+
   set_device_network_events_fields:
     actions:
       - set:
@@ -607,6 +645,13 @@ stages:
           action.properties.UserLevelAction: "{{json_event.message.properties.UserLevelAction}}"
           action.properties.UserLevelPolicy: "{{json_event.message.properties.UserLevelPolicy}}"
           action.properties.AuthenticationDetails: "{{json_event.message.properties.AuthenticationDetails}}"
+
+      - set:
+          microsoft.defender.email_auth.DKIM: "{{parse_auth_details.data.DKIM}}"
+          microsoft.defender.email_auth.DMARC: "{{parse_auth_details.data.DMARC}}"
+          microsoft.defender.email_auth.SPF: "{{parse_auth_details.data.SPF}}"
+          microsoft.defender.email_auth.CompAuth: "{{parse_auth_details.data.CompAuth}}"
+
       - translate:
         dictionary:
           "Inbound": "inbound"
