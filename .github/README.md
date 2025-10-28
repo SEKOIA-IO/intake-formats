@@ -42,7 +42,7 @@ An automated workflow that triggers when a pull request is opened or updated. It
 2. **Launch copilot**: Start using Copilot in your IDE (e.g., VSCode) to get suggestions as you code.
 3. **Enter the following prompt** to get assistance based on the custom instructions:
    ```
-   @workspace Please run the anonymization checks describe in .github/copilot-instructions.md and run the scan on all modified modules
+   @workspace Please run the anonymization checks described in .github/copilot-instructions.md and run the scan on all modified modules
    ```
 4. **Help the agent**: Provide context or specify which formats you want to focus on:
    ```
