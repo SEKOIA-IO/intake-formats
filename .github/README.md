@@ -44,7 +44,7 @@ An automated workflow that triggers when a pull request is opened or updated. It
    ```
    @workspace Please run the anonymization checks describe in .github/copilot-instructions.md and run the scan on all modified modules
    ```
-4. **Help the agent**: Provide context or specify wich formats you want to focus on:
+4. **Help the agent**: Provide context or specify which formats you want to focus on:
    ```
    @workspace Please focus on Vendor/product/parser.py and tests/test_parser.py
    ```
