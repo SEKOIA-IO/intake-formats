@@ -18,7 +18,9 @@ class MetaValidator(Validator):
         if not module_meta_dir.is_dir():
             result.errors.append(
                 ValidationError(
-                    message="Meta directory is missing", file_path=str(module_meta_dir.relative_to(INTAKES_PATH))
+                    message="Meta directory is missing",
+                    file_path=str(module_meta_dir.relative_to(INTAKES_PATH)),
+                    code="meta_missing",
                 )
             )
             return

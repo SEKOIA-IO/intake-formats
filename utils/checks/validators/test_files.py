@@ -18,7 +18,9 @@ class TestFileValidator(Validator):
             if not args.ignore_missing_tests:
                 result.errors.append(
                     ValidationError(
-                        message="tests folder does not exist", file_path=str(test_folder.relative_to(INTAKES_PATH))
+                        message="tests folder does not exist",
+                        file_path=str(test_folder.relative_to(INTAKES_PATH)),
+                        code="tests_missing",
                     )
                 )
             return
@@ -27,7 +29,8 @@ class TestFileValidator(Validator):
         if len(test_paths) == 0:
             if not args.ignore_missing_tests:
                 result.errors.append(
-                    ValidationError(message="no test found", file_path=str(test_folder.relative_to(INTAKES_PATH)))
+                    ValidationError(message="no test found", file_path=str(test_folder.relative_to(INTAKES_PATH))),
+                    code="tests_missing",
                 )
             return
 
@@ -62,7 +65,9 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
         if test_time_stamp and not re.match(re_rfc3339, test_time_stamp):
             result.errors.append(
                 ValidationError(
-                    message="Incorrect @timestamp in the test", file_path=str(test_path.relative_to(INTAKES_PATH))
+                    message="Incorrect @timestamp in the test",
+                    file_path=str(test_path.relative_to(INTAKES_PATH)),
+                    code="test_timestamp_incorrect",
                 )
             )
 
@@ -76,7 +81,9 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
                 if type(event["type"]) != list:
                     result.errors.append(
                         ValidationError(
-                            message="event.type is not a list", file_path=str(test_path.relative_to(INTAKES_PATH))
+                            message="event.type is not a list",
+                            file_path=str(test_path.relative_to(INTAKES_PATH)),
+                            code="test_event_type_incorrect",
                         )
                     )
                 else:
@@ -86,7 +93,9 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
                 if type(event["category"]) != list:
                     result.errors.append(
                         ValidationError(
-                            message="event.category is not a list", file_path=str(test_path.relative_to(INTAKES_PATH))
+                            message="event.category is not a list",
+                            file_path=str(test_path.relative_to(INTAKES_PATH)),
+                            code="test_event_category_incorrect",
                         )
                     )
                 else:
@@ -101,6 +110,7 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
                         ValidationError(
                             message="`event.type` does not match the type associated to the `event.category`",
                             file_path=str(test_path.relative_to(INTAKES_PATH)),
+                            code="test_event_category_type_mismatch",
                         )
                     )
 
@@ -109,6 +119,7 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
                 ValidationError(
                     message="No event.category and event.type declared as `expected`",
                     file_path=str(test_path.relative_to(INTAKES_PATH)),
+                    code="test_event_fields_missing",
                 )
             )
 
@@ -118,5 +129,6 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
                 message="test exists, but cannot be loaded",
                 file_path=str(test_path.relative_to(INTAKES_PATH)),
                 error=str(any_error),
+                code="test_invalid",
             )
         )

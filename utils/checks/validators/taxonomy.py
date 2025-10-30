@@ -39,6 +39,7 @@ def check_taxonomy_file(
                 ValidationError(
                     message="No format taxonomy found. Please create _meta/fields.yml",
                     file_path=str(taxonomy_file_path.relative_to(INTAKES_PATH)),
+                    code="taxonomy_missing",
                 )
             )
 
@@ -60,6 +61,7 @@ def check_taxonomy_file(
                 message="Taxonomy file cannot be loaded",
                 file_path=str(taxonomy_file_path.relative_to(INTAKES_PATH)),
                 error=str(any_error),
+                code="taxonomy_invalid",
             )
         )
         exists_but_failed = True

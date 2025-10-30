@@ -106,6 +106,7 @@ class TestFile(BaseModel):
 
 class ValidationError(BaseModel):
     message: str
+    code: str
     file_path: str
     error: str | None = None
 
@@ -115,6 +116,7 @@ class ValidationError(BaseModel):
     def __str__(self) -> str:
         representation = [
             self.message,
+            f"code=`{self.code}`",
         ]
         if self.file_path:
             representation.append(f"file_path=`{self.file_path}`")

@@ -9,6 +9,7 @@ from .constants import CheckResult, ValidationError
 
 class DataSourceValidationError(ValidationError):
     message: str
+    code: str
     file_path: str
     data_source: str
 
@@ -32,6 +33,7 @@ class ManifestDataSourcesValidator(Validator):
                 ValidationError(
                     message="no data sources found in the manifest file",
                     file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                    code="data_sources_missing",
                 )
             )
             return
@@ -49,6 +51,7 @@ class ManifestDataSourcesValidator(Validator):
                         message="Data source is not supported",
                         file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
                         data_source=data_source,
+                        code="data_source_unsupported",
                     )
                 )
             return

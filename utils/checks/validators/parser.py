@@ -21,6 +21,7 @@ from .constants import (
 
 class ParserFieldError(ValidationError):
     message: str
+    code: str
     file_path: str
     field_name: str
 
@@ -37,7 +38,9 @@ class ParserValidator(Validator):
             if not args.ignore_missing_parsers:
                 result.errors.append(
                     ValidationError(
-                        message="Parser file does not exist", file_path=str(parser_file.relative_to(INTAKES_PATH))
+                        message="Parser file does not exist",
+                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                        code="parser_missing",
                     )
                 )
 
@@ -55,6 +58,7 @@ class ParserValidator(Validator):
                     message="parser file exists but cannot be loaded",
                     file_path=str(parser_file.relative_to(INTAKES_PATH)),
                     error=str(any_error),
+                    code="parser_invalid",
                 )
             )
             return
@@ -125,6 +129,7 @@ def check_format_parser(
                     message="Custom field needs to be defined in _meta/fields.yml",
                     file_path=str(parser_file.relative_to(INTAKES_PATH)),
                     field_name=field,
+                    code="parser_field_undeclared",
                 )
             )
 
@@ -138,6 +143,7 @@ def check_format_parser(
                         message="Required field was not set",
                         file_path=str(parser_file.relative_to(INTAKES_PATH)),
                         field_name=field,
+                        code="parser_field_required_missing",
                     )
                 )
 
@@ -145,7 +151,9 @@ def check_format_parser(
             if not check_event_category_or_type(field_assignments["event.category"]):
                 result.errors.append(
                     ValidationError(
-                        message="event.category is not a list", file_path=str(parser_file.relative_to(INTAKES_PATH))
+                        message="event.category is not a list",
+                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                        code="parser_event_category_not_list",
                     )
                 )
 
@@ -153,7 +161,9 @@ def check_format_parser(
             if not check_event_category_or_type(field_assignments["event.type"]):
                 result.errors.append(
                     ValidationError(
-                        message="event.type is not a list", file_path=str(parser_file.relative_to(INTAKES_PATH))
+                        message="event.type is not a list",
+                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                        code="parser_event_type_not_list",
                     )
                 )
 

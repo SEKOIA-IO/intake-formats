@@ -28,7 +28,9 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
     if not manifest_file_path.is_file():
         result.errors.append(
             ValidationError(
-                message="manifest file is missing", file_path=str(manifest_file_path.relative_to(INTAKES_PATH))
+                message="manifest file is missing",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_missing",
             )
         )
         return
@@ -44,6 +46,7 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
                 message="manifest file cannot be loaded",
                 file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
                 error=str(any_error),
+                code="manifest_invalid",
             )
         )
         return
@@ -57,6 +60,7 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
             ValidationError(
                 message="no uuid found in the manifest file",
                 file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_uuid_missing",
             )
         )
 
@@ -70,6 +74,7 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
             ValidationError(
                 message="no name found in the manifest file",
                 file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_name_missing",
             )
         )
 
@@ -83,6 +88,7 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
             ValidationError(
                 message="no slug found in the manifest file",
                 file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_slug_missing",
             )
         )
 
@@ -91,6 +97,7 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
             ValidationError(
                 message="incorrect slug in the manifest file",
                 file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_slug_incorrect",
             )
         )
 
@@ -103,12 +110,15 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
             ValidationError(
                 message="no description found in the manifest file",
                 file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_description_missing",
             )
         )
 
     elif not args.ignore_empty_descriptions and len(manifest_content.get("description")) == 0:
         result.errors.append(
             ValidationError(
-                message="description is found, but empty", file_path=str(manifest_file_path.relative_to(INTAKES_PATH))
+                message="description is found, but empty",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_description_empty",
             )
         )

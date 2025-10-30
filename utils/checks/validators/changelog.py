@@ -13,5 +13,9 @@ class ChangelogValidator(Validator):
         changelog_path = format_path / "CHANGELOG.md"
         if not changelog_path.is_file():
             result.errors.append(
-                ValidationError(message="CHANGELOG.md does not exist", file_path=str(changelog_path.relative_to(INTAKES_PATH)))
+                ValidationError(
+                    message="CHANGELOG.md does not exist",
+                    code="changelog_missing",
+                    file_path=str(changelog_path.relative_to(INTAKES_PATH)),
+                )
             )

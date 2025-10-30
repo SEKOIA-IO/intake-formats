@@ -40,14 +40,20 @@ def check_logo_image(image_path: Path, result: CheckResult) -> None:
 
     if not image_path.is_file():
         result.errors.append(
-            ValidationError(message="Logo is missing", file_path=str(image_path.relative_to(INTAKES_PATH)))
+            ValidationError(
+                message="Logo is missing", file_path=str(image_path.relative_to(INTAKES_PATH)), code="logo_missing"
+            )
         )
         return
 
     image = Image.open(image_path)
     if image.format != "PNG":
         result.errors.append(
-            ValidationError(message="Logo is not in PNG format", file_path=str(image_path.relative_to(INTAKES_PATH)))
+            ValidationError(
+                message="Logo is not in PNG format",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_not_png",
+            )
         )
 
     if image.width != image.height:
@@ -55,20 +61,25 @@ def check_logo_image(image_path: Path, result: CheckResult) -> None:
             ValidationError(
                 message=f"Logo is not square - {image.width}x{image.height}px",
                 file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_not_square",
             )
         )
 
     if not has_transparency(image):
         result.errors.append(
             ValidationError(
-                message="Logo background is not transparent", file_path=str(image_path.relative_to(INTAKES_PATH))
+                message="Logo background is not transparent",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_no_transparency",
             )
         )
 
     if os.path.getsize(image_path) > 50 * 1024:
         result.errors.append(
             ValidationError(
-                message="Logo file weights more than 50 KiB", file_path=str(image_path.relative_to(INTAKES_PATH))
+                message="Logo file weights more than 50 KiB",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_too_large",
             )
         )
 
