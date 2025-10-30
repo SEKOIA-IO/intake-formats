@@ -3,8 +3,8 @@ import os
 
 import yaml
 
-from . import Validator
-from .constants import CheckResult, CustomField
+from . import Validator, INTAKES_PATH
+from .constants import CheckResult, CustomField, ValidationError
 
 
 class TaxonomyValidator(Validator):
@@ -35,7 +35,12 @@ def check_taxonomy_file(
 
     if not os.path.isfile(taxonomy_file_path):
         if not for_module:
-            result.errors.append("No format taxonomy found. Please create _meta/fields.yml")
+            result.errors.append(
+                ValidationError(
+                    message="No format taxonomy found. Please create _meta/fields.yml",
+                    file_path=str(taxonomy_file_path.relative_to(INTAKES_PATH)),
+                )
+            )
 
         return None, exists_but_failed
 
@@ -50,7 +55,13 @@ def check_taxonomy_file(
         taxonomy_content = {item_key: CustomField(**item_value) for item_key, item_value in taxonomy.items()}
 
     except Exception as any_error:
-        result.errors.append(f"Taxonomy file cannot be loaded (`{any_error}`)")
+        result.errors.append(
+            ValidationError(
+                message="Taxonomy file cannot be loaded",
+                file_path=str(taxonomy_file_path.relative_to(INTAKES_PATH)),
+                error=str(any_error),
+            )
+        )
         exists_but_failed = True
 
         return None, exists_but_failed

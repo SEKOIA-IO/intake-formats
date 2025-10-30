@@ -225,14 +225,14 @@ def main():
             "modules": [
                 {
                     "path": str(res.options["path"].relative_to(INTAKES_PATH)),
-                    "errors": res.errors,
+                    "errors": [dict(error) for error in res.errors],
                 }
                 for res in module_errors
             ],
             "formats": [
                 {
                     "path": str(res.options["path"].relative_to(INTAKES_PATH)),
-                    "errors": res.errors,
+                    "errors": [dict(error) for error in res.errors],
                 }
                 for res in format_errors
             ],
