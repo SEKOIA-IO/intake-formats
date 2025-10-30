@@ -110,7 +110,7 @@ class ValidationError(BaseModel):
     file_path: str
     error: str | None = None
 
-    def __dict__(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return self.model_dump(exclude_none=True, exclude_unset=True)
 
     def __str__(self) -> str:

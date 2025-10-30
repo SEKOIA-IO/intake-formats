@@ -147,25 +147,25 @@ def check_format_parser(
                     )
                 )
 
-        if "event.category" in field_assignments:
-            if not check_event_category_or_type(field_assignments["event.category"]):
-                result.errors.append(
-                    ValidationError(
-                        message="event.category is not a list",
-                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
-                        code="parser_event_category_not_list",
-                    )
+        if "event.category" in field_assignments and not check_event_category_or_type(
+            field_assignments["event.category"]
+        ):
+            result.errors.append(
+                ValidationError(
+                    message="event.category is not a list",
+                    file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                    code="parser_event_category_not_list",
                 )
+            )
 
-        if "event.type" in field_assignments:
-            if not check_event_category_or_type(field_assignments["event.type"]):
-                result.errors.append(
-                    ValidationError(
-                        message="event.type is not a list",
-                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
-                        code="parser_event_type_not_list",
-                    )
+        if "event.type" in field_assignments and not check_event_category_or_type(field_assignments["event.type"]):
+            result.errors.append(
+                ValidationError(
+                    message="event.type is not a list",
+                    file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                    code="parser_event_type_not_list",
                 )
+            )
 
     return result
 
