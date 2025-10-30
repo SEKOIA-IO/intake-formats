@@ -8,10 +8,12 @@ pipeline:
         output_field: pre_message
         pattern: "%{KV_MESSAGE_WIDTH_DATETIME}|%{KV_MESSAGE}|%{WITH_HEADER}"
         custom_patterns:
-          KV_MESSAGE_WIDTH_DATETIME: "%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER} %{WORD:severity}\\s+%{GREEDYDATA:reason_with_kv}"
-          KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}\\s+%{GREEDYDATA:reason_with_kv}"
+          KV_MESSAGE_WIDTH_DATETIME: '(%{SUB_PREFIX})?\s*%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER} %{WORD:severity}\s*%{GREEDYDATA:reason_with_kv}'
+          KV_MESSAGE: '%{NUMBER} %{NUMBER} %{NUMBER}\s*%{GREEDYDATA:reason_with_kv}'
           WITH_HEADER: "%{NOT_KV_DATA:status}:\\s+%{GREEDYDATA:reason_with_kv}"
 
+          # For start like `Oct 27 14:29:31 HOST-01 CISE_Failed_Attempts`
+          SUB_PREFIX: "%{DATA} %{HOSTNAME:hostname} %{WORD:event_type}"
           NOT_KV_DATA: "[^=]*?"
           DATETIME: "%{YEAR}-%{MONTHNUM}-%{MONTHDAY}[T ]%{HOUR}:?%{MINUTE}(?::?%{SECOND})? %{ISO8601_TIMEZONE}"
 
@@ -78,6 +80,14 @@ stages:
           observer.vendor: Cisco
           observer.product: "Cisco ISE"
           event.type: ["info"]
+          cisco.ise.type: "{{pre_parsed_event.pre_message.event_type}}"
+          cisco.ise.identity_policy.matched_rule: '{{parsed_kv_sentence.result.get("IdentityPolicyMatchedRule")}}'
+          cisco.ise.network.device_name: '{{parsed_kv_sentence.result.get("NetworkDeviceName")}}'
+
+      - set:
+          cisco.ise.step_data.code: '{{parsed_kv_sentence.result.StepData.split("=")[0]}}'
+          cisco.ise.step_data.message: '{{parsed_kv_sentence.result.StepData.split("=")[1]}}'
+        filter: '{{parsed_kv_sentence.result.get("StepData") != None and "=" in parsed_kv_sentence.result.get("StepData")}}'
 
   set_configuration_fields:
     actions:
