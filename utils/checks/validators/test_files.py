@@ -29,8 +29,11 @@ class TestFileValidator(Validator):
         if len(test_paths) == 0:
             if not args.ignore_missing_tests:
                 result.errors.append(
-                    ValidationError(message="no test found", file_path=str(test_folder.relative_to(INTAKES_PATH))),
-                    code="tests_missing",
+                    ValidationError(
+                        message="no test found",
+                        file_path=str(test_folder.relative_to(INTAKES_PATH)),
+                        code="tests_missing",
+                    )
                 )
             return
 
