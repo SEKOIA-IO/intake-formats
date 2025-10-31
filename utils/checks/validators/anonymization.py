@@ -305,9 +305,6 @@ PROCESS_FIELDS = [
 class AnonymizationError(ValidationError):
     """Represents an anonymization error found in a file."""
 
-    message: str
-    code: str
-    file_path: str
     field_path: str
     value: Any
     data_type: str
@@ -366,8 +363,10 @@ class AnonymizationValidator:
             try:
                 with open(file_path, "r") as f:
                     return json.load(f)
-            except Exception:
-                pass  # Silently fail
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                # If the config file is missing or invalid, return empty config.
+                # This is acceptable as the rest of the code can handle missing/empty config.
+                pass
         return {}
 
     @classmethod
@@ -465,7 +464,7 @@ class AnonymizationValidator:
         Returns:
             bool: True if the IP address is properly anonymized, False otherwise.
         """
-        # Check for special case of
+        # Check for special case of "0.0.0.0" (null/any address, often used as a placeholder or in test data)
         if ip_str == "0.0.0.0":
             return True
 
@@ -1000,50 +999,7 @@ class AnonymizationValidator:
         results = set()
         parts = path.split(".")
 
-        def traverse(obj: Any, remaining_parts: List[str], current_path: str = ""):
-            """
-            Recursively traverse the data structure to find values at the specified path.
-
-            Args:
-                obj (Any): The current object being traversed.
-                remaining_parts (List[str]): The remaining parts of the path to traverse.
-                current_path (str): The current full path being constructed.
-            """
-            # Base case: no more parts to traverse
-            if not remaining_parts:
-                if obj is not None and obj != "":
-                    # Handle lists
-                    if isinstance(obj, list):
-                        for item in obj:
-                            if item is not None and item != "" and not isinstance(item, (list, dict)):
-                                results.add((current_path.lstrip("."), item))
-                    # Single value
-                    elif not isinstance(obj, (list, dict)):
-                        results.add((current_path.lstrip("."), obj))
-                return
-
-            # Continue traversal
-            part = remaining_parts[0]
-            rest = remaining_parts[1:]
-
-            # Traverse dictionaries
-            if isinstance(obj, dict):
-                if part in obj:
-                    new_path = f"{current_path}.{part}" if current_path else part
-                    traverse(obj[part], rest, new_path)
-                for key, value in obj.items():
-                    new_path = f"{current_path}.{key}" if current_path else key
-                    if key == part:
-                        traverse(value, rest, new_path)
-                    elif isinstance(value, (dict, list)):
-                        traverse(value, remaining_parts, new_path)
-            # Traverse lists
-            elif isinstance(obj, list):
-                for i, item in enumerate(obj):
-                    array_path = f"{current_path}[{i}]"
-                    traverse(item, remaining_parts, array_path)
-
-        traverse(data, parts)
+        traverse(data, parts, results)
         return list(results)
 
     def validate_content(self, test_content: dict, file_path: Path) -> List[AnonymizationError]:
@@ -1282,3 +1238,48 @@ class URN:
 
         # If no match, return None
         return None
+
+
+def traverse(obj: Any, remaining_parts: List[str], results: set, current_path: str = ""):
+    """
+    Recursively traverse the data structure to find values at the specified path.
+
+    Args:
+        obj (Any): The current object being traversed.
+        remaining_parts (List[str]): The remaining parts of the path to traverse.
+        results (set): A set to store the found (path, value) tuples.
+        current_path (str): The current full path being constructed.
+    """
+    # Base case: no more parts to traverse
+    if not remaining_parts:
+        if obj is not None and obj != "":
+            # Handle lists
+            if isinstance(obj, list):
+                for item in obj:
+                    if item is not None and item != "" and not isinstance(item, (list, dict)):
+                        results.add((current_path.lstrip("."), item))
+            # Single value
+            elif not isinstance(obj, (list, dict)):
+                results.add((current_path.lstrip("."), obj))
+        return
+
+    # Continue traversal
+    part = remaining_parts[0]
+    rest = remaining_parts[1:]
+
+    # Traverse dictionaries
+    if isinstance(obj, dict):
+        if part in obj:
+            new_path = f"{current_path}.{part}" if current_path else part
+            traverse(obj[part], rest, results, new_path)
+        for key, value in obj.items():
+            new_path = f"{current_path}.{key}" if current_path else key
+            if key == part:
+                traverse(value, rest, results, new_path)
+            elif isinstance(value, (dict, list)):
+                traverse(value, remaining_parts, results, new_path)
+    # Traverse lists
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            array_path = f"{current_path}[{i}]"
+            traverse(item, remaining_parts, results, array_path)
