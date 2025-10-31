@@ -5,7 +5,7 @@ from pathlib import Path
 
 from . import INTAKES_PATH, Validator
 from .anonymization import AnonymizationValidator
-from .constants import CheckResult, TestFile
+from .constants import CheckResult, TestFile, ValidationError
 from .parser import check_event_category_to_type_mapping
 
 
@@ -20,13 +20,25 @@ class TestFileValidator(Validator):
         test_folder = format_path / "tests"
         if not test_folder.exists():
             if not args.ignore_missing_tests:
-                result.errors.append("tests folder does not exist")
+                result.errors.append(
+                    ValidationError(
+                        message="tests folder does not exist",
+                        file_path=str(test_folder.relative_to(INTAKES_PATH)),
+                        code="tests_missing",
+                    )
+                )
             return
 
         test_paths = find_tests(test_folder)
         if len(test_paths) == 0:
             if not args.ignore_missing_tests:
-                result.errors.append("no test found")
+                result.errors.append(
+                    ValidationError(
+                        message="no test found",
+                        file_path=str(test_folder.relative_to(INTAKES_PATH)),
+                        code="tests_missing",
+                    )
+                )
             return
 
         # Initialize anonymization validator
@@ -77,7 +89,13 @@ def check_test_file(
         re_rfc3339 = re.compile(r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$")
 
         if test_time_stamp and not re.match(re_rfc3339, test_time_stamp):
-            result.errors.append(f"Incorrect @timestamp in the test {test_path}")
+            result.errors.append(
+                ValidationError(
+                    message="Incorrect @timestamp in the test",
+                    file_path=str(test_path.relative_to(INTAKES_PATH)),
+                    code="test_timestamp_incorrect",
+                )
+            )
 
         if "event" in test_parsed.expected and not ignore_event_fieldset_errors:
             event = test_parsed.expected["event"]
@@ -87,13 +105,25 @@ def check_test_file(
 
             if "type" in event:
                 if not isinstance(event["type"], list):
-                    result.errors.append(f"event.type is not a list in a test {test_path.relative_to(INTAKES_PATH)}")
+                    result.errors.append(
+                        ValidationError(
+                            message="event.type is not a list",
+                            file_path=str(test_path.relative_to(INTAKES_PATH)),
+                            code="test_event_type_incorrect",
+                        )
+                    )
                 else:
                     event_type_readable = True
 
             if "category" in event:
                 if not isinstance(event["category"], list):
-                    result.errors.append(f"event.category is not a list in test {test_path.relative_to(INTAKES_PATH)}")
+                    result.errors.append(
+                        ValidationError(
+                            message="event.category is not a list",
+                            file_path=str(test_path.relative_to(INTAKES_PATH)),
+                            code="test_event_category_incorrect",
+                        )
+                    )
                 else:
                     event_category_readable = True
 
@@ -103,13 +133,28 @@ def check_test_file(
                 )
                 if not check_mapping:
                     result.errors.append(
-                        f"`event.type` does not match the type associated to the `event.category` in {test_path.relative_to(INTAKES_PATH)}"
+                        ValidationError(
+                            message="`event.type` does not match the type associated to the `event.category`",
+                            file_path=str(test_path.relative_to(INTAKES_PATH)),
+                            code="test_event_category_type_mismatch",
+                        )
                     )
 
         elif not ignore_event_fieldset_errors:
             result.errors.append(
-                f"No event.category and event.type declared as `expected` in {test_path.relative_to(INTAKES_PATH)}"
+                ValidationError(
+                    message="No event.category and event.type declared as `expected`",
+                    file_path=str(test_path.relative_to(INTAKES_PATH)),
+                    code="test_event_fields_missing",
+                )
             )
 
     except Exception as any_error:
-        result.errors.append(f"test {test_path} exists, but cannot be loaded (`{any_error}`)")
+        result.errors.append(
+            ValidationError(
+                message="test exists, but cannot be loaded",
+                file_path=str(test_path.relative_to(INTAKES_PATH)),
+                error=str(any_error),
+                code="test_invalid",
+            )
+        )
