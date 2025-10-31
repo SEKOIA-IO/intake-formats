@@ -643,9 +643,9 @@ class AnonymizationValidator:
 
         # Check against accepted test organization patterns
         test_orgs = [
-            r"^Test\s+(Corp|Corporation|Company|Inc|LLC)$",
-            r"^Example\s+(Corp|Corporation|Company|Inc|LLC)$",
-            r"^ACME\s+(Corp|Corporation)?$",
+            r"^Test(\s+(Corp\.?|Corporation|Company|Inc\.?|LLC))?$",
+            r"^Example(\s+(Corp\.?|Corporation|Company|Inc\.?|LLC))?$",
+            r"^ACME(\s+(Corp\.?|Corporation))?$",
             "Example Organization",
             "Test Organization",
         ]
