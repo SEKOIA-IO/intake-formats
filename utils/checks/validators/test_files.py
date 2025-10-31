@@ -10,8 +10,11 @@ from .parser import check_event_category_to_type_mapping
 
 
 class TestFileValidator(Validator):
-    @classmethod
-    def validate(cls, result: CheckResult, args: argparse.Namespace) -> None:
+    def __init__(self, args: argparse.Namespace) -> None:
+        self._config = AnonymizationValidator.get_anonymization_config(args)
+        self._exceptions = AnonymizationValidator.get_anonymization_exceptions(args)
+
+    def validate(self, result: CheckResult, args: argparse.Namespace) -> None:
         format_path: Path = result.options["path"]
 
         test_folder = format_path / "tests"
@@ -28,8 +31,8 @@ class TestFileValidator(Validator):
 
         # Initialize anonymization validator
         anonymization_validator = AnonymizationValidator(
-            config=AnonymizationValidator.get_anonymization_config(args),
-            exceptions=AnonymizationValidator.get_anonymization_exceptions(args),
+            config=self._config,
+            exceptions=self._exceptions,
             strict=getattr(args, "anonymization_strict", False),
             lenient=getattr(args, "anonymization_lenient", False),
         )

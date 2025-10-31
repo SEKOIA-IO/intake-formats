@@ -378,8 +378,7 @@ class AnonymizationValidator:
     @classmethod
     def get_anonymization_config(cls, args: argparse.Namespace) -> Dict:
         if cls._anonymization_config is None:
-            config_path = getattr(args, "anonymization_config", None)
-            if config_path:
+            if config_path := getattr(args, "anonymization_config", None):
                 cls._anonymization_config = cls._load_json_file(Path(config_path))
             else:
                 cls._anonymization_config = cls._load_json_file(INTAKES_PATH / ".anonymization-config.json")
@@ -394,12 +393,23 @@ class AnonymizationValidator:
     def is_field_excluded(self, field_path: str) -> bool:
         """
         Check if a field path is excluded from validation.
+
+        Args:
+            field_path (str): The field path to check.
+        Returns:
+            bool: True if the field is excluded, False otherwise.
         """
         return field_path in self.exclude_fields
 
     def is_value_excepted(self, field_path: str, value: Any) -> bool:
         """
         Check if a specific value for a field path is excepted from validation.
+
+        Args:
+            field_path (str): The field path to check.
+            value (Any): The value to check.
+        Returns:
+            bool: True if the value is excepted, False otherwise.
         """
         # Check against accepted generic values
         if str(value).lower() in ACCEPTED_GENERIC_VALUES:
@@ -412,6 +422,11 @@ class AnonymizationValidator:
     def validate_ipv4(self, ip_str: str) -> bool:
         """
         Validate if an IPv4 address is in accepted anonymized ranges.
+
+        Args:
+            ip_str (str): The IPv4 address to validate.
+        Returns:
+            bool: True if the IPv4 address is properly anonymized, False otherwise.
         """
         try:
             # Check against specific accepted addresses first
@@ -428,6 +443,11 @@ class AnonymizationValidator:
     def validate_ipv6(self, ip_str: str) -> bool:
         """
         Validate if an IPv6 address is in accepted anonymized ranges.
+
+        Args:
+            ip_str (str): The IPv6 address to validate.
+        Returns:
+            bool: True if the IPv6 address is properly anonymized, False otherwise.
         """
         try:
             # Check against specific accepted addresses first
@@ -444,6 +464,11 @@ class AnonymizationValidator:
     def validate_ip(self, ip_str: str) -> bool:
         """
         Validate if an IP address is in accepted anonymized ranges.
+
+        Args:
+            ip_str (str): The IP address to validate.
+        Returns:
+            bool: True if the IP address is properly anonymized, False otherwise.
         """
         # Check for special case of
         if ip_str == "0.0.0.0":
@@ -455,6 +480,11 @@ class AnonymizationValidator:
     def validate_domain(self, domain: str) -> bool:
         """
         Validate if a domain matches accepted anonymized patterns.
+
+        Args:
+            domain (str): The domain to validate.
+        Returns:
+            bool: True if the domain is properly anonymized, False otherwise.
         """
         # Check against accepted patterns
         for pattern in ACCEPTED_DOMAINS:
@@ -463,29 +493,34 @@ class AnonymizationValidator:
 
         # Check against custom patterns from config
         custom_patterns = self.config.get("custom_patterns", {}).get("domains", [])
-        for pattern in custom_patterns:
-            if re.match(pattern, domain, re.IGNORECASE):
-                return True
-
-        return False
+        return any(re.match(pattern, domain, re.IGNORECASE) for pattern in custom_patterns)
 
     def validate_username(self, username: str) -> bool:
         """
         Validate if a username matches accepted anonymized patterns.
+
+        Args:
+            username (str): The username to validate.
+        Returns:
+            bool: True if the username is properly anonymized, False otherwise.
         """
         # Check against accepted usernames
         for pattern in ACCEPTED_USERNAMES:
-            if re.match(pattern, str(username), re.IGNORECASE):
+            if re.match(pattern, username, re.IGNORECASE):
                 return True
 
         # Check against custom patterns from config
         custom_patterns = self.config.get("custom_patterns", {}).get("usernames", [])
         for pattern in custom_patterns:
-            if re.match(pattern, str(username), re.IGNORECASE):
+            if re.match(pattern, username, re.IGNORECASE):
                 return True
 
         # Check against accepted session IDs
         if username.strip() in ACCEPTED_SESSION_IDS:
+            return True
+
+        # Check if the account id is a numeric id and that is a repeated digit string
+        if re.fullmatch(r"\d+", username) and all(c == username[0] for c in username):
             return True
 
         return False
@@ -493,6 +528,11 @@ class AnonymizationValidator:
     def validate_email(self, email: str) -> bool:
         """
         Validate if an email uses an accepted anonymized domain or username.
+
+        Args:
+            email (str): The email address to validate.
+        Returns:
+            bool: True if the email is properly anonymized, False otherwise.
         """
         # Check for presence of '@' symbol
         if "@" not in email:
@@ -515,14 +555,16 @@ class AnonymizationValidator:
             return True
 
         # Check account part against accepted username patterns
-        for pattern in ACCEPTED_USERNAMES:
-            if re.match(pattern, str(account), re.IGNORECASE):
-                return True
-        return False
+        return any(re.match(pattern, account, re.IGNORECASE) for pattern in ACCEPTED_USERNAMES)
 
     def validate_url(self, url: str) -> bool:
         """
         Validate if a URL uses an accepted anonymized domain.
+
+        Args:
+            url (str): The URL to validate.
+        Returns:
+            bool: True if the URL is properly anonymized, False otherwise.
         """
         # Extract domain from URL
         domain_match = re.search(r"://([^/:]+)", url)
@@ -543,6 +585,11 @@ class AnonymizationValidator:
     def validate_mac(self, mac: str) -> bool:
         """
         Validate if a MAC address is a locally administered address.
+
+        Args:
+            mac (str): The MAC address to validate.
+        Returns:
+            bool: True if the MAC address is properly anonymized, False otherwise.
         """
         # Normalize MAC address by removing non-alphanumeric characters
         normalized_mac = "".join(filter(str.isalnum, mac)).lower()
@@ -561,17 +608,23 @@ class AnonymizationValidator:
     def validate_phone(self, phone: str) -> bool:
         """
         Validate if a phone number matches accepted anonymized formats.
+
+        Args:
+            phone (str): The phone number to validate.
+        Returns:
+            bool: True if the phone number is properly anonymized, False otherwise.
         """
         # Check against accepted phone formats
-        for pattern in ACCEPTED_PHONE_FORMATS:
-            if re.match(pattern, phone):
-                return True
-
-        return False
+        return any(re.match(pattern, phone) for pattern in ACCEPTED_PHONE_FORMATS)
 
     def validate_geo(self, location: str) -> bool:
         """
         Validate if geographic data is anonymized.
+
+        Args:
+            location (str): The geographic location to validate.
+        Returns:
+            bool: True if the geographic data is properly anonymized, False otherwise.
         """
         # In strict mode, only allow specific test values or accepted generic values
         if self.strict:
@@ -582,6 +635,12 @@ class AnonymizationValidator:
     def validate_org(self, org_name: str, field_path: str) -> bool:
         """
         Validate if organization name is anonymized.
+
+        Args:
+            org_name (str): The organization name to validate.
+            field_path (str): The field path indicating the organization field.
+        Returns:
+            bool: True if the organization name is properly anonymized, False otherwise.
         """
         # Specific check for org ID
         if field_path.endswith(".id"):
@@ -595,15 +654,16 @@ class AnonymizationValidator:
             "Example Organization",
             "Test Organization",
         ]
-        for pattern in test_orgs:
-            if re.fullmatch(pattern, org_name, re.IGNORECASE):
-                return True
-
-        return not self.strict
+        return next(any(re.fullmatch(pattern, org_name, re.IGNORECASE) for pattern in test_orgs), not self.strict)
 
     def validate_file_path(self, path: str) -> bool:
         """
         Validate if a file path contains sensitive user directory information.
+
+        Args:
+            path (str): The file path to validate.
+        Returns:
+            bool: True if the file path is properly anonymized, False otherwise.
         """
         # Check for sensitive user directory patterns
         sensitive_patterns = [
@@ -616,21 +676,32 @@ class AnonymizationValidator:
         for pattern in sensitive_patterns:
             match = pattern.search(path)
             if match:
-                user = match.group(1)
-                if self.validate_username(user):
-                    return True
+                user = match[1]
+                if not self.validate_username(user):
+                    return False
 
         return True
 
     def validate_uuid(self, value: str) -> bool:
         """
         Validate if a UUID matches the accepted anonymized UUID.
+
+        Args:
+            value (str): The UUID value to validate.
+        Returns:
+            bool: True if the UUID is properly anonymized, False otherwise.
         """
         return value == ACCEPTED_UUID
 
     def validate_hash(self, value: str, field_path: str) -> bool:
         """
         Validate if a hash value matches the accepted anonymized hash.
+
+        Args:
+            value (str): The hash value to validate.
+            field_path (str): The field path indicating the hash type.
+        Returns:
+            bool: True if the hash is properly anonymized, False otherwise.
         """
         # Determine hash type from field path
         hash_type = field_path.split(".")[-1]
@@ -644,6 +715,11 @@ class AnonymizationValidator:
     def validate_session_id(self, value: str) -> bool:
         """
         Validate if a session ID matches accepted anonymized patterns.
+
+        Args:
+            value (str): The session ID value to validate.
+        Returns:
+            bool: True if the session ID is properly anonymized, False otherwise.
         """
         # Check against accepted session IDs
         if str(value).strip() in ACCEPTED_SESSION_IDS:
@@ -667,6 +743,11 @@ class AnonymizationValidator:
     def validate_arn(self, arn_str: str) -> bool:
         """
         Validate if an AWS ARN matches accepted anonymized patterns.
+
+        Args:
+            arn_str (str): The ARN string to validate.
+        Returns:
+            bool: True if the ARN is properly anonymized, False otherwise.
         """
         # Parse the ARN
         arn = ARN.parse(arn_str)
@@ -680,24 +761,27 @@ class AnonymizationValidator:
             return False
 
         # For IAM or User ARNs, validate username
-        if arn.service == "iam" and arn.resource_type == "user":
-            if not self.validate_username(arn.resource_id):
-                return False
+        if arn.service == "iam" and arn.resource_type == "user" and not self.validate_username(arn.resource_id):
+            return False
 
         # For S3 ARNs, validate bucket name
         if arn.service == "s3" and arn.resource_id == "example-bucket":
             return True
 
         # For EC2 Instance ARNs, validate instance ID
-        if arn.service == "ec2" and arn.resource_type == "instance":
-            if arn.resource_id == "i-11111111111111":
-                return True
+        if arn.service == "ec2" and arn.resource_type == "instance" and arn.resource_id == "i-11111111111111":
+            return True
 
         return False
 
     def validate_azure_subscription(self, resource_id: str) -> bool:
         """
         Validate if an Azure resource ID matches accepted anonymized patterns.
+
+        Args:
+            resource_id (str): The Azure resource ID to validate.
+        Returns:
+            bool: True if the resource ID is properly anonymized, False otherwise.
         """
         # Parse the Azure subscription resource ID
         subscription = AzureSubscription.parse(resource_id)
@@ -711,11 +795,11 @@ class AnonymizationValidator:
             return False
 
         # Check the resource group
-        if not subscription.resource_group in ACCEPTED_GENERIC_VALUES:
+        if subscription.resource_group not in ACCEPTED_GENERIC_VALUES:
             return False
 
         # Check the resource provider
-        if not subscription.resource_name in ACCEPTED_GENERIC_VALUES:
+        if subscription.resource_name not in ACCEPTED_GENERIC_VALUES:
             return False
 
         return True
@@ -723,6 +807,11 @@ class AnonymizationValidator:
     def validate_urn(self, urn_str: str) -> bool:
         """
         Validate if a URN matches accepted anonymized patterns.
+
+        Args:
+            urn_str (str): The URN string to validate.
+        Returns:
+            bool: True if the URN is properly anonymized, False otherwise.
         """
         # Parse the URN
         urn = URN.parse(urn_str)
@@ -748,8 +837,8 @@ class AnonymizationValidator:
             if not match:
                 return False
 
-            resource_type = match.group("type")
-            resource_id = match.group("id")
+            resource_type = match["type"]
+            resource_id = match["id"]
 
             # For anonymous access, return True
             if resource_type == "anon":
@@ -773,99 +862,110 @@ class AnonymizationValidator:
     def validate_account_id(self, value: str, field_path: str) -> bool:
         """
         Validate if an account identifier matches accepted anonymized patterns.
-        """
-        value_str = str(value)
 
+        Args:
+            value (str): The account identifier value to validate.
+            field_path (str): The field path indicating the type of account identifier.
+        Returns:
+            bool: True if the account identifier is properly anonymized, False otherwise.
+        """
         # Check against accepted generic values
-        if value_str.strip().lower() in ACCEPTED_GENERIC_VALUES:
+        if value.strip().lower() in ACCEPTED_GENERIC_VALUES:
             return True
 
         # Check against accepted session IDs
-        if value_str.strip() in ACCEPTED_SESSION_IDS:
+        if value.strip() in ACCEPTED_SESSION_IDS:
             return True
 
         # Check specific field paths for known accepted values
         if "accountId" in field_path:
-            return value_str == "123456789012"
+            return value == "123456789012"
         if "principalId" in field_path:
-            return value_str == "ABCDEFGHIJKLMN1234567"
+            return value == "ABCDEFGHIJKLMN1234567"
         if "accessKeyId" in field_path:
-            return value_str == "AKIAIOSFODNN7EXAMPLE"
+            return value == "AKIAIOSFODNN7EXAMPLE"
         if "project.id" in field_path:
-            return value_str == "my-project"
+            return value == "my-project"
         if "instance.id" in field_path:
-            return value_str == "my-instance"
+            return value == "my-instance"
 
         # Check for AWS ARN
-        if "arn" in value_str:
-            return self.validate_arn(value_str)
+        if "arn" in value:
+            return self.validate_arn(value)
 
         # Check for Azure resource ID
-        if "resourceId" in field_path or "/subscriptions/" in value_str.lower():
-            return self.validate_azure_subscription(value_str)
+        if "resourceId" in field_path or "/subscriptions/" in value.lower():
+            return self.validate_azure_subscription(value)
 
-        if "urn" in value_str.lower():
-            return self.validate_urn(value_str)
+        if "urn" in value.lower():
+            return self.validate_urn(value)
 
         # Check for UUIDs in specific fields
         if "subscriptionId" in field_path or "tenantId" in field_path:
-            return self.validate_uuid(value_str)
+            return self.validate_uuid(value)
 
         # Check for session IDs
         if "Sid" in field_path or "sid" in field_path:
-            return self.validate_session_id(value_str)
+            return self.validate_session_id(value)
 
         # Check if the account id is an email
-        if re.fullmatch(r"[^@]+@[^@]+\.[^@]+", value_str):
-            return self.validate_email(value_str)
+        if re.fullmatch(r"[^@]+@[^@]+\.[^@]+", value):
+            return self.validate_email(value)
 
         # Check if the account id is an UUID
-        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value_str, re.IGNORECASE):
-            return self.validate_uuid(value_str)
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value, re.IGNORECASE):
+            return self.validate_uuid(value)
 
         # Check if the account id is a numeric id and that is a repeated digit string
-        if re.fullmatch(r"\d+", value_str):
-            if all(c == value_str[0] for c in value_str):
-                return True
+        if re.fullmatch(r"\d+", value) and all(c == value[0] for c in value):
+            return True
 
-        return self.validate_username(value_str)
+        return self.validate_username(value)
 
     def validate_token(self, value: str, field_path: str) -> bool:
         """
         Validate if a token matches accepted anonymized patterns.
-        """
-        value_str = str(value)
 
+        Args:
+            value (str): The token value to validate.
+            field_path (str): The field path indicating the type of token.
+        Returns:
+            bool: True if the token is properly anonymized, False otherwise.
+        """
         # Check for API keys
         if "api_key" in field_path.lower():
-            return value_str == "ABCD-1234-EFGH-5678-IJKL"
+            return value == "ABCD-1234-EFGH-5678-IJKL"
 
         # Check for session tokens
         if "sessionToken" in field_path:
-            return value_str == "FQoGZXIvYXdzEJr//////////wEaDGV4YW1wbGVUb2tlbg=="
+            return value == "FQoGZXIvYXdzEJr//////////wEaDGV4YW1wbGVUb2tlbg=="
 
         # Check for OAuth tokens
-        if value_str.startswith("ya29."):
-            return value_str == "ya29.A0ARrdaM-EXAMPLETOKEN"
+        if value.startswith("ya29."):
+            return value == "ya29.A0ARrdaM-EXAMPLETOKEN"
 
         # Check for JWT tokens
-        if value_str.startswith("eyJ"):
-            return value_str.startswith("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
+        if value.startswith("eyJ"):
+            return value.startswith("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
         return False
 
     def validate_certificate(self, value: str, field_path: str) -> bool:
         """
         Validate if a certificate or related field matches accepted anonymized patterns.
-        """
-        value_str = str(value)
 
+        Args:
+            value (str): The certificate or related field value to validate.
+            field_path (str): The field path indicating the type of certificate data.
+        Returns:
+            bool: True if the certificate data is properly anonymized, False otherwise.
+        """
         # Check for PEM certificate
         if field_path.endswith(".certificate"):
-            return value_str.startswith("-----BEGIN CERTIFICATE-----")
+            return value.startswith("-----BEGIN CERTIFICATE-----")
 
         # Check for fingerprint
         if "fingerprint" in field_path:
-            return value_str == "3A:5B:7C:9D:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD"
+            return value == "3A:5B:7C:9D:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD"
 
         # Check for cipher suites
         if "cipher" in field_path:
@@ -873,23 +973,34 @@ class AnonymizationValidator:
 
         # Check for x509 subject
         if "x509" in field_path:
-            return "CN=example.com" in value_str
+            return "CN=example.com" in value
 
         return False
 
     def validate_process_info(self, value: str) -> bool:
         """
         Validate if process information contains sensitive data.
+
+        Args:
+            value (str): The process information to validate.
+        Returns:
+            bool: True if the process information is properly anonymized, False otherwise.
         """
         # Check for sensitive user directory patterns
         if "C:\\Users\\" in value or "/home/" in value or "/Users/" in value:
             return self.validate_file_path(value)
 
-        return False
+        return True
 
     def get_nested_value(self, data: Any, path: str) -> list[tuple[str, Any]]:
         """
         Retrieve all values from nested dictionaries/lists based on a dot-separated path.
+
+        Args:
+            data (Any): The nested data structure (dicts/lists).
+            path (str): The dot-separated path to the desired value.
+        Returns:
+            list[tuple[str, Any]]: A list of tuples containing the full path and the corresponding value.
         """
         results = set()
         parts = path.split(".")
@@ -897,6 +1008,11 @@ class AnonymizationValidator:
         def traverse(obj: Any, remaining_parts: List[str], current_path: str = ""):
             """
             Recursively traverse the data structure to find values at the specified path.
+
+            Args:
+                obj (Any): The current object being traversed.
+                remaining_parts (List[str]): The remaining parts of the path to traverse.
+                current_path (str): The current full path being constructed.
             """
             # Base case: no more parts to traverse
             if not remaining_parts:
@@ -938,6 +1054,12 @@ class AnonymizationValidator:
     def validate_content(self, test_content: dict, file_path: Path) -> List[ValidationError]:
         """
         Validate the anonymization of sensitive data in the provided test content.
+
+        Args:
+            test_content (dict): The test content to validate.
+            file_path (Path): The path to the test file (for error reporting).
+        Returns:
+            List[ValidationError]: A list of validation errors found.
         """
         errors = []
 
@@ -1002,7 +1124,7 @@ class AnonymizationValidator:
                     else:
                         is_valid = validator_func(value)
 
-                    if value and not is_valid:
+                    if value is not None and value != "" and not is_valid:
                         errors.append(ValidationError(str_file_path, full_path, value, data_type, reason))
         return errors
 
@@ -1024,6 +1146,11 @@ class ARN:
     def extract_resource(cls, resource: str) -> tuple[str | None, str | None]:
         """
         Extract resource type and resource ID from the resource part of the ARN.
+
+        Args:
+            resource (str): The resource part of the ARN.
+        Returns:
+            tuple[str | None, str | None]: A tuple containing the resource type and resource ID
         """
         # If resource uses slash separator
         if "/" in resource:
@@ -1041,6 +1168,11 @@ class ARN:
     def parse(cls, arn_str: str) -> Optional["ARN"]:
         """
         Parse an AWS ARN string into its components.
+
+        Args:
+            arn_str (str): The ARN string to parse.
+        Returns:
+            Optional[ARN]: An ARN object if parsing is successful, None otherwise.
         """
         # Define ARN regex pattern
         pattern = (
@@ -1052,12 +1184,12 @@ class ARN:
 
         # If match is found, extract components
         if match:
-            resource_type, resource_id = cls.extract_resource(match.group("resource"))
+            resource_type, resource_id = cls.extract_resource(match["resource"])
             return cls(
-                partition=match.group("partition"),
-                service=match.group("service"),
-                region=match.group("region"),
-                account_id=match.group("account_id"),
+                partition=match["partition"],
+                service=match["service"],
+                region=match["region"],
+                account_id=match["account_id"],
                 resource_type=resource_type,
                 resource_id=resource_id,
             )
@@ -1082,6 +1214,11 @@ class AzureSubscription:
     def parse(cls, resource_id: str) -> Optional["AzureSubscription"]:
         """
         Parse an Azure resource ID string into its components.
+
+        Args:
+            resource_id (str): The Azure resource ID string to parse.
+        Returns:
+            Optional[AzureSubscription]: An AzureSubscription object if parsing is successful, None otherwise.
         """
         # Define Azure resource ID regex pattern
         pattern = (
@@ -1095,11 +1232,11 @@ class AzureSubscription:
         # If match is found, extract components
         if match:
             return cls(
-                subscription_id=match.group("subscription_id"),
-                resource_group=match.group("resource_group"),
-                resource_provider=match.group("resource_provider"),
-                resource_type=match.group("resource_type"),
-                resource_name=match.group("resource_name"),
+                subscription_id=match["subscription_id"],
+                resource_group=match["resource_group"],
+                resource_provider=match["resource_provider"],
+                resource_type=match["resource_type"],
+                resource_name=match["resource_name"],
             )
 
         # If no match, return None
@@ -1119,6 +1256,11 @@ class URN:
     def parse(cls, urn_str: str) -> Optional["URN"]:
         """
         Parse a URN string into its components.
+
+        Args:
+            urn_str (str): The URN string to parse.
+        Returns:
+            Optional[URN]: A URN object if parsing is successful, None otherwise.
         """
         # Define URN regex pattern
         pattern = r"^urn:(?P<nid>[^:]+):(?P<nss>.+)$"
@@ -1129,8 +1271,8 @@ class URN:
         # If match is found, extract components
         if match:
             return cls(
-                nid=match.group("nid"),
-                nss=match.group("nss"),
+                nid=match["nid"],
+                nss=match["nss"],
             )
 
         # If no match, return None
