@@ -23,6 +23,3 @@ class Validator(ABC):
         """
         raise NotImplementedError
 
-    def __class_getitem__(cls, item):
-        # This allows the class to be used directly in validator lists
-        return cls

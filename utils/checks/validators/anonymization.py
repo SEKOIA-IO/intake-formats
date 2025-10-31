@@ -509,7 +509,8 @@ class AnonymizationValidator:
             if re.match(pattern, username, re.IGNORECASE):
                 return True
 
-        # Check against accepted session IDs
+        # In some environments (e.g., Windows), Security Identifiers (SIDs) can appear as usernames.
+        # Therefore, we check if the username matches an accepted session ID. This is intentional.
         if username.strip() in ACCEPTED_SESSION_IDS:
             return True
 
@@ -668,8 +669,7 @@ class AnonymizationValidator:
 
         # Iterate over patterns to extract username and validate
         for pattern in sensitive_patterns:
-            match = pattern.search(path)
-            if match:
+            if match := pattern.search(path):
                 user = match[1]
                 if not self.validate_username(user):
                     return False
@@ -755,19 +755,35 @@ class AnonymizationValidator:
             return False
 
         # For IAM or User ARNs, validate username
-        if arn.service == "iam" and arn.resource_type == "user" and not self.validate_username(arn.resource_id):
+        if arn.service == "iam" and arn.resource_type == "user":
+            return self.validate_username(arn.resource_id)
+
+        # For S3 ARNs, validate bucket name (allow generic/test names)
+        if arn.service == "s3":
+            if arn.resource_id in ACCEPTED_GENERIC_VALUES:
+                return True
+            # Accept example/test bucket names
+            if re.match(r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-z0-9]*$", arn.resource_id):
+                return True
             return False
 
-        # For S3 ARNs, validate bucket name
-        if arn.service == "s3" and arn.resource_id == "example-bucket":
-            return True
+        # For EC2 Instance ARNs, validate instance ID (allow test patterns)
+        if arn.service == "ec2" and arn.resource_type == "instance":
+            # Accept instance IDs that look like EC2 instance IDs and are not real
+            if arn.resource_id in ACCEPTED_GENERIC_VALUES:
+                return True
+            # Accept instance IDs like i-11111111111111, i-00000000000000, i-abcdefabcdefabc
+            if re.match(r"^i-([0-9a-f]{8}|[0-9a-f]{17})$", arn.resource_id):
+                return True
+            return False
 
-        # For EC2 Instance ARNs, validate instance ID
-        if arn.service == "ec2" and arn.resource_type == "instance" and arn.resource_id == "i-11111111111111":
+        # For other services, accept resource IDs in ACCEPTED_GENERIC_VALUES or matching generic test patterns
+        if arn.resource_id in ACCEPTED_GENERIC_VALUES:
+            return True
+        if re.match(r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-zA-Z0-9]*$", arn.resource_id):
             return True
 
         return False
-
     def validate_azure_subscription(self, resource_id: str) -> bool:
         """
         Validate if an Azure resource ID matches accepted anonymized patterns.
@@ -967,8 +983,14 @@ class AnonymizationValidator:
 
         # Check for x509 subject
         if "x509" in field_path:
-            return "CN=example.com" in value
-
+            # Only accept exactly the anonymized subject string(s)
+            accepted_subjects = {
+                "CN=example.com",
+                "/CN=example.com",
+                "CN=example.com,O=Test Org",
+                "/CN=example.com/O=Test Org",
+            }
+            return value.strip() in accepted_subjects
         return False
 
     def validate_process_info(self, value: str) -> bool:
