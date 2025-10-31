@@ -8,9 +8,6 @@ from .constants import CheckResult, ValidationError
 
 
 class DataSourceValidationError(ValidationError):
-    message: str
-    code: str
-    file_path: str
     data_source: str
 
     def __str__(self) -> str:
