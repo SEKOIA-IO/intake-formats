@@ -654,7 +654,7 @@ class AnonymizationValidator:
             "Example Organization",
             "Test Organization",
         ]
-        return next(any(re.fullmatch(pattern, org_name, re.IGNORECASE) for pattern in test_orgs), not self.strict)
+        return any(re.fullmatch(pattern, org_name, re.IGNORECASE) for pattern in test_orgs) or not self.strict
 
     def validate_file_path(self, path: str) -> bool:
         """
