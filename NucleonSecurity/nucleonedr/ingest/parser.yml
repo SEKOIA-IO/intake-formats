@@ -1,0 +1,128 @@
+name: edr-ecs-core-basic
+ignored_values: null
+
+pipeline:
+  - name: json
+    external:
+      name: json.parse-json
+  - name: ts
+    external:
+      name: date.parse
+      properties:
+        input_field: json.message.timestamp
+        output_field: ts
+        timezone: UTC
+  - name: base
+  - name: exec_stage
+  - name: net_stage
+  - name: file_read
+  - name: file_change
+  - name: file_delete
+  - name: openproc_stage
+
+stages:
+  base:
+    actions:
+      - set:
+          "@timestamp": "{{ ts.ts }}"
+          agent.id: "{{ json.message.authenticator }}"
+          agent.name: "nucleon-edr"
+          event.code: "{{ json.message.policy }}"
+          event.kind: "event"
+          event.dataset: "nucleon_edr"
+          host.name: "{{ json.message.hostname }}"
+          host.hostname: "{{ json.message.hostname }}"
+          host.os.full: "{{ json.message.os }}"
+          user.name: "{{ json.message.user }}"
+          process.pid: "{{ json.message.pid }}"
+          process.parent.pid: "{{ json.message.ppid }}"
+          process.executable: "{{ json.message.process_path }}"
+          process.command_line: "{{ json.message.command }}"
+          process.hash.md5: "{{ json.message.process_md5 }}"
+          process.hash.sha1: "{{ json.message.process_sha1 }}"
+          process.hash.sha256: "{{ json.message.process_sha256 }}"
+          process.code_signature.subject_name: "{{ json.message.process_signature }}"
+          process.code_signature.valid: "{{ (json.message.process_signed == 2) | default(false) }}"
+
+  exec_stage:
+    actions:
+      - set:
+          event.category: "process"
+          event.type: "start"
+          file.path: "{{ json.message.file_path[0] }}"
+          file.size: "{{ json.message.file_size }}"
+          file.hash.md5: "{{ json.message.file_md5 }}"
+          file.hash.sha1: "{{ json.message.file_sha1 }}"
+          file.hash.sha256: "{{ json.message.file_sha256 }}"
+          file.code_signature.subject_name: "{{ json.message.file_signature }}"
+          file.code_signature.valid: "{{ (json.message.file_signed == 2) | default(false) }}"
+        filter: "{{ json.message.type == 'execute' }}"
+
+
+  net_stage:
+    actions:
+      - set:
+          event.category: "network"
+          event.type: "connection"
+          network.transport: "{{ json.message.protocol }}"
+          source.ip: "{{ json.message.source_ip }}"
+          source.port: "{{ json.message.source_port }}"
+          destination.ip: "{{ json.message.destination_ip }}"
+          destination.port: "{{ json.message.destination_port }}"
+    filter: "{{ json.message.type == 'network' }}"
+
+  file_read:
+    actions:
+      - set:
+          event.category: "file"
+          event.type: "access"
+          file.path: "{{ json.message.file_path[0] }}"
+          file.size: "{{ json.message.file_size }}"
+          file.hash.md5: "{{ json.message.file_md5 }}"
+          file.hash.sha1: "{{ json.message.file_sha1 }}"
+          file.hash.sha256: "{{ json.message.file_sha256 }}"
+          file.code_signature.subject_name: "{{ json.message.file_signature }}"
+          file.code_signature.valid: "{{ (json.message.file_signed == 2) | default(false) }}"
+    filter: "{{ json.message.type == 'read' }}"
+
+  file_change:
+    actions:
+      - set:
+          event.category: "file"
+          event.type: "change"
+          file.path: "{{ json.message.file_path[0] }}"
+          file.size: "{{ json.message.file_size }}"
+          file.hash.md5: "{{ json.message.file_md5 }}"
+          file.hash.sha1: "{{ json.message.file_sha1 }}"
+          file.hash.sha256: "{{ json.message.file_sha256 }}"
+          file.code_signature.subject_name: "{{ json.message.file_signature }}"
+          file.code_signature.valid: "{{ (json.message.file_signed == 2) | default(false) }}"
+    filter: "{{ json.message.type in ['write','rename'] }}"
+
+  file_delete:
+    actions:
+      - set:
+          event.category: "file"
+          event.type: "deletion"
+          file.path: "{{ json.message.file_path[0] }}"
+          file.size: "{{ json.message.file_size }}"
+          file.hash.md5: "{{ json.message.file_md5 }}"
+          file.hash.sha1: "{{ json.message.file_sha1 }}"
+          file.hash.sha256: "{{ json.message.file_sha256 }}"
+          file.code_signature.subject_name: "{{ json.message.file_signature }}"
+          file.code_signature.valid: "{{ (json.message.file_signed == 2) | default(false) }}"
+    filter: "{{ json.message.type == 'delete' }}"
+
+  openproc_stage:
+    actions:
+      - set:
+          event.category: "process"
+          event.type: "info"
+          file.path: "{{ json.message.file_path[0] }}"
+          file.size: "{{ json.message.file_size }}"
+          file.hash.md5: "{{ json.message.file_md5 }}"
+          file.hash.sha1: "{{ json.message.file_sha1 }}"
+          file.hash.sha256: "{{ json.message.file_sha256 }}"
+          file.code_signature.subject_name: "{{ json.message.file_signature }}"
+          file.code_signature.valid: "{{ (json.message.file_signed == 2) | default(false) }}"
+    filter: "{{ json.message.type == 'open_process' }}"
