@@ -80,8 +80,8 @@ def check_test_file(
 
         # Anonymization Checks
         anonymization_errors = anonymization_validator.validate_content(test_content, test_path)
-        for error in anonymization_errors:
-            result.errors.append(str(error))
+        if anonymization_errors:
+            result.errors.extend(anonymization_errors)
 
         # Existing Checks
         test_parsed = TestFile.model_validate(test_content)

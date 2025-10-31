@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import INTAKES_PATH
+from .constants import ValidationError
 
 
 # Constants for accepted generic anonymized values
@@ -301,22 +302,16 @@ PROCESS_FIELDS = [
 ]
 
 
-class ValidationError:
-    """Represents a validation error found in a file."""
+class AnonymizationError(ValidationError):
+    """Represents an anonymization error found in a file."""
 
-    def __init__(
-        self,
-        file_path: str,
-        field_path: str,
-        value: Any,
-        data_type: str,
-        reason: str,
-    ):
-        self.file_path = file_path
-        self.field_path = field_path
-        self.value = value
-        self.data_type = data_type
-        self.reason = reason
+    message: str
+    code: str
+    file_path: str
+    field_path: str
+    value: Any
+    data_type: str
+    reason: str
 
     def __str__(self):
         return (
@@ -1051,7 +1046,7 @@ class AnonymizationValidator:
         traverse(data, parts)
         return list(results)
 
-    def validate_content(self, test_content: dict, file_path: Path) -> List[ValidationError]:
+    def validate_content(self, test_content: dict, file_path: Path) -> List[AnonymizationError]:
         """
         Validate the anonymization of sensitive data in the provided test content.
 
@@ -1125,7 +1120,17 @@ class AnonymizationValidator:
                         is_valid = validator_func(value)
 
                     if value is not None and value != "" and not is_valid:
-                        errors.append(ValidationError(str_file_path, full_path, value, data_type, reason))
+                        errors.append(
+                            AnonymizationError(
+                                message="Anonymization Error",
+                                code="anonymization_missing",
+                                file_path=str_file_path,
+                                field_path=full_path,
+                                value=value,
+                                data_type=data_type,
+                                reason=reason,
+                            )
+                        )
         return errors
 
 
