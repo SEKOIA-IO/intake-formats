@@ -4,7 +4,17 @@ import functools
 import yaml
 
 from . import INTAKES_PATH, Validator
-from .constants import CheckResult
+from .constants import CheckResult, ValidationError
+
+
+class DataSourceValidationError(ValidationError):
+    message: str
+    code: str
+    file_path: str
+    data_source: str
+
+    def __str__(self) -> str:
+        return f"{self.message}: '{self.data_source}'"
 
 
 class ManifestDataSourcesValidator(Validator):
@@ -19,7 +29,13 @@ class ManifestDataSourcesValidator(Validator):
 
         format_data_sources = manifest_content.get("data_sources")
         if not format_data_sources:
-            result.errors.append("no data sources found in the manifest file")
+            result.errors.append(
+                ValidationError(
+                    message="no data sources found in the manifest file",
+                    file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                    code="data_sources_missing",
+                )
+            )
             return
 
         unsupported_data_sources = (
@@ -30,7 +46,14 @@ class ManifestDataSourcesValidator(Validator):
         ]
         if len(unsupported_data_sources_labels) > 0:
             for data_source in unsupported_data_sources_labels:
-                result.errors.append(f"Data source `{data_source}` is not supported")
+                result.errors.append(
+                    DataSourceValidationError(
+                        message="Data source is not supported",
+                        file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                        data_source=data_source,
+                        code="data_source_unsupported",
+                    )
+                )
             return
 
 
