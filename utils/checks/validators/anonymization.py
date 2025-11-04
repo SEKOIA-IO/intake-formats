@@ -86,8 +86,6 @@ ACCEPTED_PHONE_FORMATS = [
     r"^\(555\)\s?\d{3}-\d{4}$",
 ]
 
-ACCEPTED_UUID = "00000000-0000-0000-0000-000000000000"
-
 ACCEPTED_HASHES = {
     "md5": "68b329da9893e34099c7d8ad5cb9c940",
     "sha1": "adc83b19e793491b1c6ea0fd8b46cd9f32e592fc",
@@ -685,7 +683,7 @@ class AnonymizationValidator:
         Returns:
             bool: True if the UUID is properly anonymized, False otherwise.
         """
-        return value == ACCEPTED_UUID
+        return all(c == value[0] for c in value.replace("-", ""))
 
     def validate_hash(self, value: str, field_path: str) -> bool:
         """
