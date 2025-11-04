@@ -204,6 +204,13 @@ stages:
             {%- endfor -%}
 
       - set:
+          azuread.properties.newDisplayName: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRole.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+
+      - set:
           source.ip: "{{parsed_event.message.ipAddress}}"
         filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
 
@@ -247,11 +254,25 @@ stages:
         filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
 
       - set:
+          azuread.properties.appId: >
+            {%- for item in parsed_event.message.properties.additionalDetails -%}
+              {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+
+      - set:
           user_agent.original: >
             {%- for item in parsed_additional_info.message -%}
               {%- if item.Key == 'userAgent' -%}{{ item.Value }}{%- endif -%}
             {%- endfor -%}
 
+      - set:
+          user_agent.original: >
+            {%- for item in parsed_event.message.properties.additionalDetails -%}
+              {%- if item.key == 'User-Agent' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{final.user_agent.original == null}}"
+
+      - set:
           azuread.properties.riskReasons: >
             {%- for item in parsed_additional_info.message -%}
               {%- if item.Key == 'riskReasons' -%}{{ item.Value }}{%- endif -%}
@@ -305,6 +326,9 @@ stages:
           azuread.properties.targetDevicePrincipalName: "{{parsed_event.message.properties.targetResources[0].devicePrincipalName}}"
           azuread.properties.targetDeviceDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
         filter: '{{ parsed_event.message.properties.targetResources|length == 1 and parsed_event.message.properties.targetResources[0].type == "Device"}}'
+      - set:
+          azuread.properties.targetServicePrincipalDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
+        filter: '{{ parsed_event.message.properties.targetResources|length == 1 and parsed_event.message.properties.targetResources[0].type == "ServicePrincipal"}}'
 
       - set:
           action.properties: []
