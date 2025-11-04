@@ -22,4 +22,3 @@ class Validator(ABC):
         Subclasses should implement this method.
         """
         raise NotImplementedError
-
