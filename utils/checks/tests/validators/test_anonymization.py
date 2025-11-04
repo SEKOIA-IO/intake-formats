@@ -87,6 +87,7 @@ class TestAnonymizationValidator:
             ("ANONYMOUS_LOGON", True),
             ("111111", True),
             ("2222", True),
+            ("00000000-0000-0000-0000-000000000000", True),
             ("edouard", False),
             ("my-user", False),
         ],
