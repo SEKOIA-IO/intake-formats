@@ -45,94 +45,79 @@ jobs:
           poetry run python checks --changes --json --ignore_event_fieldset_errors --ignore_missing_parsers --ignore_missing_tests --ignore_empty_descriptions > /tmp/checks_output.json
         continue-on-error: true
 
+      - name: Prepare PR comment
+        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
+        id: prepare-comment
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+
+          with open('/tmp/checks_output.json', 'r') as f:
+              fileContent = f.read()
+
+          MAX_COMMENT_LENGTH = 65000
+          body = '### :warning: Intake Format Checks Failed\n\n'
+
+          try:
+              results = json.loads(fileContent)
+
+              if results.get('modules'):
+                  body += '#### Module Errors\n\n'
+                  for module in results['modules']:
+                      body += f"*   **{module['path']}**\n"
+                      for error in module['errors']:
+                          body += f"    *   {error['message']}"
+                          body += f" - code: `{error['code']}`"
+                          body += f" - file: `{error['file_path']}`"
+                          if 'error' in error:
+                              body += f" - {error['error']}"
+                          body += '\n'
+
+              if results.get('formats'):
+                  body += '\n#### Format Errors\n\n'
+                  for format_item in results['formats']:
+                      body += f"*   **{format_item['path']}**\n"
+                      for error in format_item['errors']:
+                          body += f"    *   {error['message']}"
+                          body += f" - code: `{error['code']}`"
+                          body += f" - file: `{error['file_path']}`"
+                          if 'error' in error:
+                              body += f" - {error['error']}"
+                          if 'data_source' in error:
+                              body += f" - data source: `{error['data_source']}`"
+                          if 'field_name' in error:
+                              body += f" - field: `{error['field_name']}`"
+                          body += '\n'
+          except Exception as e:
+              body += 'An error occurred while parsing the check results.\n\n'
+              body += f'Error details: {str(e)}\n\n'
+              body += '<details>\n<summary>Raw output</summary>\n\n'
+              body += '```\n' + fileContent + '\n```\n\n</details>'
+
+          if len(body) > MAX_COMMENT_LENGTH:
+              truncated = body[:MAX_COMMENT_LENGTH - 100]
+              lastNewline = truncated.rfind('\n')
+              if lastNewline > 0:
+                  truncated = truncated[:lastNewline]
+              codeBlockMatches = truncated.count('```')
+              if codeBlockMatches % 2 != 0:
+                  truncated += '\n```'
+              body = truncated + '\n\n... (comment truncated due to length)'
+
+          # Write to GitHub output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('body<<EOF\n')
+              f.write(body)
+              f.write('\nEOF\n')
+          EOF
+
       - name: Post PR comment
         if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
-        uses: actions/github-script@v6
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const fileContent = fs.readFileSync('/tmp/checks_output.json', 'utf8');
-            const MAX_COMMENT_LENGTH = 65000;
-            let body = '### :warning: Intake Format Checks Failed\n\n';
-
-            try {
-                const results = JSON.parse(fileContent);
-
-                if (results.modules.length > 0) {
-                    body += '#### Module Errors\n\n';
-                    for (const module of results.modules) {
-                        body += `*   **${module.path}**\n`;
-                        for (const error of module.errors) {
-                            body += `    *   ${error.message}`;
-                            body += ` - code: \`${error.code}\``;
-                            body += ` - file: \`${error.file_path}\``;
-                            if (error.error) {
-                                body += ` - ${error.error}`;
-                            }
-                            body += '\n';
-                        }
-                    }
-                }
-
-                if (results.formats.length > 0) {
-                    body += '\n#### Format Errors\n\n';
-                    for (const format of results.formats) {
-                        body += `*   **${format.path}**\n`;
-                        for (const error of format.errors) {
-                            body += `    *   ${error.message}`;
-                            body += ` - code: \`${error.code}\``;
-                            body += ` - file: \`${error.file_path}\``;
-                            if (error.error) {
-                                body += ` - ${error.error}`;
-                            }
-                            if (error.data_source) {
-                              body += ` - data source: \`${error.data_source}\``;
-                            }
-                            if (error.field_name) {
-                              body += ` - field: \`${error.field_name}\``;
-                            }
-                            if (error.data_type) {
-                              body += ` - data type: \`${error.data_type}\``;
-                            }
-                            if (error.value) {
-                              body += ` - value: \`${error.value}\``;
-                            }
-                            if (error.reason) {
-                              body += ` - reason: \`${error.reason}\``;
-                            }
-                            body += '\n';
-                        }
-                    }
-                }
-            } catch (e) {
-                body += 'An error occurred while parsing the check results.\n\n';
-                body += '<details>\n<summary>Raw output</summary>\n\n';
-                body += '```\n' + fileContent + '\n```\n\n</details>';
-            }
-
-            if (body.length > MAX_COMMENT_LENGTH) {
-                // Truncate at the last newline before the limit to avoid cutting in the middle of a list item
-                let truncated = body.substring(0, MAX_COMMENT_LENGTH - 100);
-                const lastNewline = truncated.lastIndexOf('\n');
-                if (lastNewline > 0) {
-                    truncated = truncated.substring(0, lastNewline);
-                }
-                // Count occurrences of code block markers
-                const codeBlockMatches = (truncated.match(/```/g) || []).length;
-                // If odd number, we have an unclosed code block, so close it
-                if (codeBlockMatches % 2 !== 0) {
-                    truncated += '\n```';
-                }
-                body = truncated + '\n\n... (comment truncated due to length)';
-            }
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.prepare-comment.outputs.body }}
 
       - name: Fail workflow if checks failed
         if: steps.checks.outcome == 'failure'
