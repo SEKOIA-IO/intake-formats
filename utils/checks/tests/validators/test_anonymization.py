@@ -233,6 +233,7 @@ class TestAnonymizationValidator:
                 "email.attachments.file.hash.sha512",
                 True,
             ),
+            ("11111111111111111111111111111111", "file.hash.md5", True),
             ("d41d8cd98f00b204e9800998ecf8427e", "file.hash.md5", False),
             ("da39a3ee5e6b4b0d3255bfef95601890afd80709", "file.hash.sha1", False),
         ],
