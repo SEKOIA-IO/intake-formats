@@ -520,6 +520,10 @@ class AnonymizationValidator:
         if self.validate_email(username):
             return True
 
+        # Check for UUID format
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", username, re.IGNORECASE):
+            return self.validate_uuid(username)
+
         return False
 
     def validate_email(self, email: str) -> bool:
