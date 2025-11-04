@@ -4,13 +4,17 @@ import re
 from pathlib import Path
 
 from . import INTAKES_PATH, Validator
+from .anonymization import AnonymizationValidator
 from .constants import CheckResult, TestFile, ValidationError
 from .parser import check_event_category_to_type_mapping
 
 
 class TestFileValidator(Validator):
-    @classmethod
-    def validate(cls, result: CheckResult, args: argparse.Namespace) -> None:
+    def __init__(self, args: argparse.Namespace) -> None:
+        self._config = AnonymizationValidator.get_anonymization_config(args)
+        self._exceptions = AnonymizationValidator.get_anonymization_exceptions(args)
+
+    def validate(self, result: CheckResult, args: argparse.Namespace) -> None:
         format_path: Path = result.options["path"]
 
         test_folder = format_path / "tests"
@@ -37,11 +41,20 @@ class TestFileValidator(Validator):
                 )
             return
 
+        # Initialize anonymization validator
+        anonymization_validator = AnonymizationValidator(
+            config=self._config,
+            exceptions=self._exceptions,
+            strict=getattr(args, "anonymization_strict", False),
+            lenient=getattr(args, "anonymization_lenient", False),
+        )
+
         for test_path in test_paths:
             check_test_file(
                 test_path=test_path,
                 ignore_event_fieldset_errors=args.ignore_event_fieldset_errors,
                 result=result,
+                anonymization_validator=anonymization_validator,
             )
 
 
@@ -55,13 +68,23 @@ def find_tests(tests_path: Path) -> list[Path]:
     return result
 
 
-def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result: CheckResult) -> None:
+def check_test_file(
+    test_path: Path,
+    ignore_event_fieldset_errors: bool,
+    result: CheckResult,
+    anonymization_validator: AnonymizationValidator,
+) -> None:
     try:
         with open(test_path, "rt") as file:
             test_content = json.load(file)
 
-        test_parsed = TestFile.model_validate(test_content)
+        # Anonymization Checks
+        anonymization_errors = anonymization_validator.validate_content(test_content, test_path)
+        if anonymization_errors:
+            result.errors.extend(anonymization_errors)
 
+        # Existing Checks
+        test_parsed = TestFile.model_validate(test_content)
         test_time_stamp = test_parsed.expected.get("@timestamp")
         re_rfc3339 = re.compile(r"^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d+)?))(Z|[\+-]\d{2}:\d{2})?)$")
 
@@ -81,7 +104,7 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
             event_category_readable = False
 
             if "type" in event:
-                if type(event["type"]) != list:
+                if not isinstance(event["type"], list):
                     result.errors.append(
                         ValidationError(
                             message="event.type is not a list",
@@ -93,7 +116,7 @@ def check_test_file(test_path: Path, ignore_event_fieldset_errors: bool, result:
                     event_type_readable = True
 
             if "category" in event:
-                if type(event["category"]) != list:
+                if not isinstance(event["category"], list):
                     result.errors.append(
                         ValidationError(
                             message="event.category is not a list",

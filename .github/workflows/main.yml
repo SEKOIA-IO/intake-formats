@@ -88,6 +88,12 @@ jobs:
                               body += f" - data source: `{error['data_source']}`"
                           if 'field_name' in error:
                               body += f" - field: `{error['field_name']}`"
+                          if 'data_type' in error:
+                              body += f" - data type: `{error['data_type']}`"
+                          if 'value' in error:
+                              body += f" - value: `{error['value']}`"
+                          if 'reason' in error:
+                              body += f" - reason: `{error['reason']}`"
                           body += '\n'
           except Exception as e:
               body += 'An error occurred while parsing the check results.\n\n'
@@ -112,12 +118,23 @@ jobs:
               f.write('\nEOF\n')
           EOF
 
+      - name: Find Comment
+        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Intake Format Checks Failed
+
       - name: Post PR comment
         if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: ${{ steps.prepare-comment.outputs.body }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          replace: true
 
       - name: Fail workflow if checks failed
         if: steps.checks.outcome == 'failure'
