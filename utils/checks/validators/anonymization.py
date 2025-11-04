@@ -11,7 +11,7 @@ from .constants import ValidationError
 
 
 # Constants for accepted generic anonymized values
-ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "N/A", "-", "integration", "test"}
+ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "n/a", "-", "integration", "test"}
 
 
 # Constants for accepted anonymized values
@@ -363,7 +363,7 @@ class AnonymizationValidator:
             try:
                 with open(file_path, "r") as f:
                     return json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError):
                 # If the config file is missing or invalid, return empty config.
                 # This is acceptable as the rest of the code can handle missing/empty config.
                 pass
@@ -760,17 +760,19 @@ class AnonymizationValidator:
 
         # For S3 ARNs, validate bucket name (allow generic/test names)
         if arn.service == "s3":
-            if arn.resource_id in ACCEPTED_GENERIC_VALUES:
+            if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
                 return True
             # Accept example/test bucket names
-            if re.match(r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-z0-9]*$", arn.resource_id):
+            if re.match(
+                r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-z0-9]*$", arn.resource_id
+            ):
                 return True
             return False
 
         # For EC2 Instance ARNs, validate instance ID (allow test patterns)
         if arn.service == "ec2" and arn.resource_type == "instance":
             # Accept instance IDs that look like EC2 instance IDs and are not real
-            if arn.resource_id in ACCEPTED_GENERIC_VALUES:
+            if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
                 return True
             # Accept instance IDs like i-11111111111111, i-00000000000000, i-abcdefabcdefabc
             if re.match(r"^i-([0-9a-f]{8}|[0-9a-f]{17})$", arn.resource_id):
@@ -778,12 +780,15 @@ class AnonymizationValidator:
             return False
 
         # For other services, accept resource IDs in ACCEPTED_GENERIC_VALUES or matching generic test patterns
-        if arn.resource_id in ACCEPTED_GENERIC_VALUES:
+        if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
             return True
-        if re.match(r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-zA-Z0-9]*$", arn.resource_id):
+        if re.match(
+            r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-zA-Z0-9]*$", arn.resource_id
+        ):
             return True
 
         return False
+
     def validate_azure_subscription(self, resource_id: str) -> bool:
         """
         Validate if an Azure resource ID matches accepted anonymized patterns.
@@ -805,11 +810,17 @@ class AnonymizationValidator:
             return False
 
         # Check the resource group
-        if subscription.resource_group not in ACCEPTED_GENERIC_VALUES:
+        if (
+            subscription.resource_group is not None
+            and subscription.resource_group.lower() not in ACCEPTED_GENERIC_VALUES
+        ):
             return False
 
         # Check the resource provider
-        if subscription.resource_name not in ACCEPTED_GENERIC_VALUES:
+        if (
+            subscription.resource_group is not None
+            and subscription.resource_name.lower() not in ACCEPTED_GENERIC_VALUES
+        ):
             return False
 
         return True
