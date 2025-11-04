@@ -11,7 +11,7 @@ from .constants import ValidationError
 
 
 # Constants for accepted generic anonymized values
-ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "n/a", "-", "integration", "test"}
+ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "n/a", "-", "integration", "test", "demo"}
 
 
 # Constants for accepted anonymized values
@@ -764,11 +764,24 @@ class AnonymizationValidator:
         if arn.service == "s3":
             if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
                 return True
+
             # Accept example/test bucket names
             if re.match(
                 r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-z0-9]*$", arn.resource_id
             ):
                 return True
+
+            return False
+
+        if arn.service == "sts":
+            # For STS ARNs, validate assumed-role patterns
+            if arn.resource_type == "assumed-role":
+                parts = arn.resource_id.split("/")
+
+                if len(parts) >= 2:
+                    role_name = parts[1]
+                    return self.validate_username(role_name)
+
             return False
 
         # For EC2 Instance ARNs, validate instance ID (allow test patterns)
@@ -784,6 +797,7 @@ class AnonymizationValidator:
         # For other services, accept resource IDs in ACCEPTED_GENERIC_VALUES or matching generic test patterns
         if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
             return True
+
         if re.match(
             r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-zA-Z0-9]*$", arn.resource_id
         ):
@@ -853,6 +867,10 @@ class AnonymizationValidator:
 
         # Check for the spo nid type (Microsoft SharePoint)
         if urn.nid == "spo":
+            # For anonymous access, return True
+            if urn.nss == "anon":
+                return True
+
             # Extract type and id from nss
             match = re.match(r"^(?P<type>[^:#]+)[:#](?P<id>.+)$", urn.nss)
 
@@ -863,14 +881,10 @@ class AnonymizationValidator:
             resource_type = match["type"]
             resource_id = match["id"]
 
-            # For anonymous access, return True
-            if resource_type == "anon":
-                return True
-
             # For guest resource, validate the hash
             if resource_type == "guest":
                 # Validate the resource ID as a hash
-                resource_id_match = re.match(r"hash:(?P<hash>[0-9a-zA-Z]+)", resource_id)
+                resource_id_match = re.match(r"hash#(?P<hash>[0-9a-zA-Z]+)", resource_id)
 
                 # If no match, return False
                 if not resource_id_match:
@@ -878,7 +892,7 @@ class AnonymizationValidator:
 
                 # Validate the hash
                 resource_hash = resource_id_match.group("hash")
-                return self.validate_hash(resource_hash, "urn.spo.resource_id")
+                return self.validate_hash(resource_hash, "urn.spo.resource_id.md5")
 
         return False
 
@@ -906,11 +920,24 @@ class AnonymizationValidator:
         if "principalId" in field_path:
             return value == "ABCDEFGHIJKLMN1234567"
         if "accessKeyId" in field_path:
-            return value == "AKIAIOSFODNN7EXAMPLE"
+            # Shorten AWS Access Key ID for validation
+            if value[:4] in ("ABIA", "ACCA", "AKIA", "ASIA", "AGPA", "AIDA", "ANPA", "AROA", "ANVA", "APKA", "ASCA"):
+                value = value[4:]
+
+            # Check for repeated character pattern
+            return all(part == value[0] for part in value)
         if "project.id" in field_path:
             return value == "my-project"
         if "instance.id" in field_path:
-            return value == "my-instance"
+            # Accept test instance name
+            if value == "my-instance":
+                return True
+
+            # Accept instance IDs like i-11111111111111, i-000000000
+            if re.match(r"^i-([0-9a-f]{8}|[0-9a-f]{17})$", value):
+                return True
+
+            return False
 
         # Check for AWS ARN
         if "arn" in value:

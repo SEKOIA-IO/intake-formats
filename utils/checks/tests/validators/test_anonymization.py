@@ -240,6 +240,124 @@ class TestAnonymizationValidator:
     def test_validate_hash(self, validator, value, field_path, expected):
         assert validator.validate_hash(value, field_path) == expected
 
+    @pytest.mark.parametrize(
+        "value, field_path, expected",
+        [
+            ("demo", "account.id", True),
+            ("S-1-5-3", "account.id", True),
+            ("123456789012", "accountId", True),
+            ("john.doe@example.org", "account.id", True),
+            ("11111111-1111-1111-1111-111111111111", "account.id", True),
+            ("11111111111111", "account.id", True),
+            ("ABCDEFGHIJKLMN1234567", "principalId", True),
+            ("AKIA1111111111111111", "accessKeyId", True),
+            ("my-project", "project.id", True),
+            ("my-instance", "instance.id", True),
+            ("i-00000000000000000", "cloud.instance.id", True),
+            ("ASIA1111111111111", "aws.cloudtrail.user_identity.accessKeyId", True),
+            ("AAAAA", "aws.cloudtrail.user_identity.accessKeyId", True),
+            ("arn:aws:iam::111111111111:user/john.doe", "aws.cloudtrail.user_identity.arn", True),
+            ("arn:aws:iam::111111111111:user/root", "aws.cloudtrail.user_identity.arn", True),
+            ("arn:aws:sns:us-east-1:111111111111:example-sns-topic-name", "aws.cloudtrail.user_identity.arn", True),
+            (
+                "arn:aws:sts::1111111111:assumed-role/role/1111111111111111111111111",
+                "aws.cloudtrail.user_identity.arn",
+                True,
+            ),
+            (
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-111111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                "azuread.subscriptionId",
+                True,
+            ),
+            ("urn:uuid:11111111-1111-1111-1111-111111111111", "account.id", True),
+            ("urn:ucode:2222222222222222", "account.id", True),
+            ("urn:spo:anon", "account.id", True),
+            ("urn:spo:guest:hash#68b329da9893e34099c7d8ad5cb9c940", "account.id", True),
+            ("MyPrincipalID12345", "principalId", False),
+            ("AKIAIOSFODNN7EXAMPLE", "accessKeyId", False),
+            ("project-austin", "project.id", False),
+            ("instance-valerian", "instance.id", False),
+            ("arn:aws:iam::111111111111:user/catherine", "aws.cloudtrail.user_identity.arn", False),
+            (
+                "/SUBSCRIPTIONS/123e4567-e89b-12d3-a456-426614174000/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                "azuread.subscriptionId",
+                False,
+            ),
+            (
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-111111111111/RESOURCEGROUPS/ResourceGroup/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                "azuread.subscriptionId",
+                False,
+            ),
+            (
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-111111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/VAULT",
+                "azuread.subscriptionId",
+                False,
+            ),
+            ("urn:uuid:123e4567-e89b-12d3-a456-426614174000", "account.id", False),
+            ("urn:spo:guest:hash#aSPngX3nlOfknaGB", "account.id", False),
+            ("random-account-id", "account.id", False),
+            ("bitcoin@nasdaq.org", "account.id", False),
+            ("123e4567-e89b-12d3-a456-426614174000", "account.id", False),
+            ("12342134642", "account.id", False),
+        ],
+    )
+    def test_validate_account_id(self, validator, value, field_path, expected):
+        assert validator.validate_account_id(value, field_path) == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("arn:aws:iam::111111111111:user/john.doe", True),
+            ("arn:aws:iam::111111111111:user/root", True),
+            ("arn:aws:sns:us-east-1:111111111111:example-sns-topic-name", True),
+            (
+                "arn:aws:sts::1111111111:assumed-role/role/1111111111111111111111111",
+                True,
+            ),
+            ("arn:aws:iam::111111111111:user/catherine", False),
+        ],
+    )
+    def test_validate_arn(self, validator, value, expected):
+        assert validator.validate_arn(value) == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-1111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                True,
+            ),
+            (
+                "/SUBSCRIPTIONS/123e4567-e89b-12d3-a456-426614174000/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                False,
+            ),
+            (
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-1111111111/RESOURCEGROUPS/ResourceGroup/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                False,
+            ),
+            (
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-1111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/VAULT",
+                False,
+            ),
+        ],
+    )
+    def test_validate_azure_subscription(self, validator, value, expected):
+        assert validator.validate_azure_subscription(value) == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("urn:uuid:11111111-1111-1111-1111-1111111111", True),
+            ("urn:ucode:2222222222222222", True),
+            ("urn:spo:anon", True),
+            ("urn:spo:guest:hash#68b329da9893e34099c7d8ad5cb9c940", True),
+            ("urn:uuid:123e4567-e89b-12d3-a456-426614174000", False),
+            ("urn:spo:guest:hash#aSPngX3nlOfknaGB", False),
+        ],
+    )
+    def test_validate_urn(self, validator, value, expected):
+        assert validator.validate_urn(value) == expected
+
     def test_get_nested_value(self, validator):
         data = {
             "source": {"ip": "1.2.3.4", "port": 123},
