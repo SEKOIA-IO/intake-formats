@@ -1,0 +1,40 @@
+name: Comment PRs
+
+on:
+  workflow_run:
+    workflows: ["Copilot PR Review"]
+    types:
+      - completed
+
+jobs:
+  comment_prs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: pr_comment.md
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Prepare PR comment-author
+        id: prepare-comment
+        run: |
+          COMMENT_CONTENT=$(cat pr_comment.md)
+          echo "::set-output name=body::${COMMENT_CONTENT}"
+
+      - name: Find Comment
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.workflow_run.pull_requests[0].number }}
+          comment-author: github-actions[bot]
+          body-includes: Copilot Automated Review
+
+      - name: Comment on PR with Analysis
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
+        with:
+          issue-number: ${{ github.event.workflow_run.pull_requests[0].number}}
+          body: ${{ steps.prepare-comment.outputs.body }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
