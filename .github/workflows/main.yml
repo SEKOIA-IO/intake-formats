@@ -40,5 +40,102 @@ jobs:
           poetry install --only main
 
       - name: Checking modules & formats
+        id: checks
         run: |
-          poetry run python checks --changes --ignore_event_fieldset_errors --ignore_missing_parsers --ignore_missing_tests --ignore_empty_descriptions
+          poetry run python checks --changes --json --ignore_event_fieldset_errors --ignore_missing_parsers --ignore_missing_tests --ignore_empty_descriptions > /tmp/checks_output.json
+        continue-on-error: true
+
+      - name: Prepare PR comment
+        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
+        id: prepare-comment
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+
+          with open('/tmp/checks_output.json', 'r') as f:
+              fileContent = f.read()
+
+          MAX_COMMENT_LENGTH = 65000
+          body = '### :warning: Intake Format Checks Failed\n\n'
+
+          try:
+              results = json.loads(fileContent)
+
+              if results.get('modules'):
+                  body += '#### Module Errors\n\n'
+                  for module in results['modules']:
+                      body += f"*   **{module['path']}**\n"
+                      for error in module['errors']:
+                          body += f"    *   {error['message']}"
+                          body += f" - code: `{error['code']}`"
+                          body += f" - file: `{error['file_path']}`"
+                          if 'error' in error:
+                              body += f" - {error['error']}"
+                          body += '\n'
+
+              if results.get('formats'):
+                  body += '\n#### Format Errors\n\n'
+                  for format_item in results['formats']:
+                      body += f"*   **{format_item['path']}**\n"
+                      for error in format_item['errors']:
+                          body += f"    *   {error['message']}"
+                          body += f" - code: `{error['code']}`"
+                          body += f" - file: `{error['file_path']}`"
+                          if 'error' in error:
+                              body += f" - {error['error']}"
+                          if 'data_source' in error:
+                              body += f" - data source: `{error['data_source']}`"
+                          if 'field_name' in error:
+                              body += f" - field: `{error['field_name']}`"
+                          if 'data_type' in error:
+                              body += f" - data type: `{error['data_type']}`"
+                          if 'value' in error:
+                              body += f" - value: `{error['value']}`"
+                          if 'reason' in error:
+                              body += f" - reason: `{error['reason']}`"
+                          body += '\n'
+          except Exception as e:
+              body += 'An error occurred while parsing the check results.\n\n'
+              body += f'Error details: {str(e)}\n\n'
+              body += '<details>\n<summary>Raw output</summary>\n\n'
+              body += '```\n' + fileContent + '\n```\n\n</details>'
+
+          if len(body) > MAX_COMMENT_LENGTH:
+              truncated = body[:MAX_COMMENT_LENGTH - 100]
+              lastNewline = truncated.rfind('\n')
+              if lastNewline > 0:
+                  truncated = truncated[:lastNewline]
+              codeBlockMatches = truncated.count('```')
+              if codeBlockMatches % 2 != 0:
+                  truncated += '\n```'
+              body = truncated + '\n\n... (comment truncated due to length)'
+
+          # Write to GitHub output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('body<<EOF\n')
+              f.write(body)
+              f.write('\nEOF\n')
+          EOF
+
+      - name: Find Comment
+        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Intake Format Checks Failed
+
+      - name: Post PR comment
+        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.prepare-comment.outputs.body }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          replace: true
+
+      - name: Fail workflow if checks failed
+        if: steps.checks.outcome == 'failure'
+        run: exit 1
