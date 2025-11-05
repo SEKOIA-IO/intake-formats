@@ -86,17 +86,17 @@ jobs:
               
               # Check for README in vendor directory
               if [ ! -f "$vendor/README.md" ]; then
-                warnings="$warnings\n- Missing \`$vendor/README.md\`"
+                warnings="$warnings\n- Missing '$vendor/README.md'"
               fi
               
               # Check for _meta directory
               if [ ! -d "$vendor/_meta" ]; then
-                warnings="$warnings\n- Missing \`$vendor/_meta/\` directory"
+                warnings="$warnings\n- Missing '$vendor/_meta/' directory"
               fi
               
               # Check for test files
               if ! find "$format" -name "*test*.yml" | grep -q .; then
-                warnings="$warnings\n- No test files found in \`$format\`"
+                warnings="$warnings\n- No test files found in '$format'"
               fi
             done
           fi
@@ -139,10 +139,10 @@ jobs:
               head -n 5 || echo "")
             
             if [ -n "$real_emails" ]; then
-              security_issues="$security_issues\n🚨 **CRITICAL** - \`$file\` contains potential real email addresses:\n"
+              security_issues="$security_issues\n🚨 **CRITICAL** - '$file' contains potential real email addresses:\n"
               echo "$real_emails" | while read email; do
                 if [ -n "$email" ]; then
-                  security_issues="$security_issues  - \`$email\` - Replace with user@example.com\n"
+                  security_issues="$security_issues  - '$email' - Replace with user@example.com\n"
                 fi
               done
             fi
@@ -152,7 +152,7 @@ jobs:
               grep -viE '(xxxx|example|test|fake|dummy|redacted|sample)' | head -n 3 || echo "")
             
             if [ -n "$api_patterns" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` may contain API keys or tokens (line contains 'api_key' or 'token' with long strings)\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' may contain API keys or tokens (line contains 'api_key' or 'token' with long strings)\n"
               security_issues="$security_issues  - Please verify these are anonymized (use 'xxxxxxxxxxxx' or 'FAKE_TOKEN_123')\n"
             fi
             
@@ -162,10 +162,10 @@ jobs:
               sort -u | head -n 5 || echo "")
             
             if [ -n "$real_ips" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains IP addresses that should use TEST-NET ranges:\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' contains IP addresses that should use TEST-NET ranges:\n"
               echo "$real_ips" | while read ip; do
                 if [ -n "$ip" ]; then
-                  security_issues="$security_issues  - \`$ip\` - Use 192.0.2.x, 198.51.100.x, or 203.0.113.x\n"
+                  security_issues="$security_issues  - '$ip' - Use 192.0.2.x, 198.51.100.x, or 203.0.113.x\n"
                 fi
               done
             fi
@@ -174,7 +174,7 @@ jobs:
             jwt_patterns=$(grep -oE 'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+' "$file" | head -n 2 || echo "")
             
             if [ -n "$jwt_patterns" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains what looks like JWT tokens\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' contains what looks like JWT tokens\n"
               security_issues="$security_issues  - Verify these are fake/anonymized tokens\n"
             fi
             
@@ -183,7 +183,7 @@ jobs:
               grep -vE '555-0[0-1][0-9]{2}' | head -n 3 || echo "")
             
             if [ -n "$phone_patterns" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains phone number patterns\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' contains phone number patterns\n"
               security_issues="$security_issues  - Use test numbers like +1-555-0100\n"
             fi
           done
@@ -288,12 +288,23 @@ jobs:
           cat /tmp/pr_comment.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Find Comment
+        if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'synchronize'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Copilot Automated Review
+
       - name: Comment on PR with Analysis
         if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'synchronize'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: ${{ steps.prepare-comment.outputs.body }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
 
       - name: Request Copilot Review
         uses: actions/github-script@v7

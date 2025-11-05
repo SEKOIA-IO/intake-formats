@@ -20,9 +20,6 @@ from .constants import (
 
 
 class ParserFieldError(ValidationError):
-    message: str
-    code: str
-    file_path: str
     field_name: str
 
     def __str__(self) -> str:
