@@ -143,6 +143,7 @@ stages:
           office365.audit.object_id: "{{json_event.message.ObjectId}}"
           office365.virus_info: "{{json_event.message.VirusInfo}}"
           office365.virus_vendor: "{{json_event.message.VirusVendor}}"
+          office365.context.authentication_type: "{{json_event.message.AuthenticationType}}"
       - set:
           office365.operation.properties: >
             {
@@ -186,6 +187,7 @@ stages:
           office365.context.client.id: "{{json_event.message.AppAccessContext.ClientAppId}}"
           office365.context.client.name: "{{json_event.message.AppAccessContext.ClientAppName}}"
           office365.context.correlation.id: "{{json_event.message.AppAccessContext.CorrelationId}}"
+          azuread.properties.uniqueTokenIdentifier: "{{json_event.message.AppAccessContext.UniqueTokenId}}"
         filter: '{{json_event.message.get("AppAccessContext") != None}}'
 
       - translate:
@@ -397,15 +399,19 @@ stages:
             ]
 
           email.attachments: >
-            [
-              {%- if json_event.message.AffectedItems != None -%}
-                {%- for email in json_event.message.AffectedItems -%}
-                  {%- for file in email.Attachments.split("; ") -%}
-                    {"file":{ "name": "{{ file.rsplit(" (", 1)[0] | basename }}", "size": "{{ file.rsplit(" (", 1)[1].strip('b)') }}" }},
-                  {%- endfor -%}
+            {%- set attachments = [] -%}
+            {%- if json_event.message.AffectedItems != None -%}
+              {%- for email in json_event.message.AffectedItems -%}
+                {%- for file in email.Attachments.split("; ") -%}
+                  {%- set file_name = file.rsplit(" (", 1)[0] | basename -%}
+                  {%- set file_size = file.rsplit(" (", 1)[1].strip('b)') | int -%}
+                  {%- set item = {"file": {"name": file_name, "size": file_size}} -%}
+                  {%- set attachments = attachments.append(item) -%}
                 {%- endfor -%}
-              {%- endif -%}
-            ]
+              {%- endfor -%}
+            {%- endif -%}
+            {{ attachments }}
+
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
@@ -996,6 +1002,16 @@ stages:
           office365.alert.source: "{{json_event.message.Source}}"
           office365.alert.status: "{{json_event.message.Status}}"
           rule.id: "{{json_event.message.PolicyId}}"
+
+      - set:
+          event.start: "{{parse_data.ParsedData.ts}}"
+          event.end: "{{parse_data.ParsedData.te}}"
+          event.reason: "{{parse_data.ParsedData.ad}}"
+          event.url: "{{parse_data.ParsedData.alk}}"
+          rule.reference: "{{parse_data.ParsedData.plk}}"
+          rule.category: "{{parse_data.ParsedData.mat}}"
+          office365.alert.display_name: "{{parse_data.ParsedData.an}}"
+        filter: "{{json_event.message.Source == 'Cloud App Security'}}"
 
       - set:
           source.user.email: "{{parse_data.ParsedData.f3u}}"
