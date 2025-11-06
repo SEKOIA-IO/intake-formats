@@ -783,8 +783,9 @@ class AnonymizationValidator:
                 parts = arn.resource_id.split("/")
 
                 if len(parts) >= 2:
-                    role_name = parts[1]
-                    return self.validate_username(role_name)
+                    role_name = parts[0]
+                    session_name = parts[1]
+                    return self.validate_username(role_name) and self.validate_username(session_name)
 
             return False
 
@@ -925,11 +926,11 @@ class AnonymizationValidator:
             return value == "ABCDEFGHIJKLMN1234567"
         if "accessKeyId" in field_path:
             # Shorten AWS Access Key ID for validation
-            if value[:4] in ("ABIA", "ACCA", "AKIA", "ASIA", "AGPA", "AIDA", "ANPA", "AROA", "ANVA", "APKA", "ASCA"):
+            if len(value) >= 4 and value[:4] in ("ABIA", "ACCA", "AKIA", "ASIA", "AGPA", "AIDA", "ANPA", "AROA", "ANVA", "APKA", "ASCA"):
                 value = value[4:]
 
             # Check for repeated character pattern
-            return all(part == value[0] for part in value)
+            return len(value) > 0 and all(part == value[0] for part in value)
         if "project.id" in field_path:
             return value == "my-project"
         if "instance.id" in field_path:
