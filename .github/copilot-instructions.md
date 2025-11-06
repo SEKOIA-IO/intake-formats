@@ -21,7 +21,6 @@ When reviewing a pull request, please check and comment on the following:
 - **Logo Files**: Confirm that new modules and formats include logo files (PNG/SVG)
 
 ### 3. Testing Requirements
-- **Test Coverage**: Verify that parser tests cover at least 75% of the code
 - **Test Files**: Check for presence of test files in the intake directory
 - **Sample Data**: Ensure test files include representative sample data
 - **Edge Cases**: Look for tests covering edge cases and error handling
@@ -87,7 +86,6 @@ When a new pull request is created, please:
 - Directory structure follows: `Vendor/README.md`, `Vendor/_meta/`, `Vendor/vendor-product/`
 - All required files present: parser, tests, metadata, logos
 - Smart-descriptions provide meaningful event summaries
-- Test coverage meets 75% minimum threshold
 
 ### For Parser Updates
 - Changes maintain backward compatibility
@@ -117,7 +115,6 @@ When a new pull request is created, please:
    - Any PII that could identify real individuals
 
 3. **Testing Issues**
-   - Test coverage below 75%
    - No test files for new parsers
    - Tests don't cover error cases
 

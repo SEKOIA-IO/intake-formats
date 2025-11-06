@@ -45,7 +45,7 @@ jobs:
             echo "The following intake formats were modified:" >> analysis.md
             echo "" >> analysis.md
             echo "$vendors" | while read format; do
-              echo "- \`$format\`" >> analysis.md
+              echo "- '$format'" >> analysis.md
             done
           else
             echo "No intake formats were directly modified." >> analysis.md
@@ -86,17 +86,17 @@ jobs:
               
               # Check for README in vendor directory
               if [ ! -f "$vendor/README.md" ]; then
-                warnings="$warnings\n- Missing \`$vendor/README.md\`"
+                warnings="$warnings\n- Missing '$vendor/README.md'"
               fi
               
               # Check for _meta directory
               if [ ! -d "$vendor/_meta" ]; then
-                warnings="$warnings\n- Missing \`$vendor/_meta/\` directory"
+                warnings="$warnings\n- Missing '$vendor/_meta/' directory"
               fi
               
               # Check for test files
               if ! find "$format" -name "*test*.yml" | grep -q .; then
-                warnings="$warnings\n- No test files found in \`$format\`"
+                warnings="$warnings\n- No test files found in '$format'"
               fi
             done
           fi
@@ -139,10 +139,10 @@ jobs:
               head -n 5 || echo "")
             
             if [ -n "$real_emails" ]; then
-              security_issues="$security_issues\n🚨 **CRITICAL** - \`$file\` contains potential real email addresses:\n"
+              security_issues="$security_issues\n🚨 **CRITICAL** - '$file' contains potential real email addresses:\n"
               echo "$real_emails" | while read email; do
                 if [ -n "$email" ]; then
-                  security_issues="$security_issues  - \`$email\` - Replace with user@example.com\n"
+                  security_issues="$security_issues  - '$email' - Replace with user@example.com\n"
                 fi
               done
             fi
@@ -152,7 +152,7 @@ jobs:
               grep -viE '(xxxx|example|test|fake|dummy|redacted|sample)' | head -n 3 || echo "")
             
             if [ -n "$api_patterns" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` may contain API keys or tokens (line contains 'api_key' or 'token' with long strings)\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' may contain API keys or tokens (line contains 'api_key' or 'token' with long strings)\n"
               security_issues="$security_issues  - Please verify these are anonymized (use 'xxxxxxxxxxxx' or 'FAKE_TOKEN_123')\n"
             fi
             
@@ -162,10 +162,10 @@ jobs:
               sort -u | head -n 5 || echo "")
             
             if [ -n "$real_ips" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains IP addresses that should use TEST-NET ranges:\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' contains IP addresses that should use TEST-NET ranges:\n"
               echo "$real_ips" | while read ip; do
                 if [ -n "$ip" ]; then
-                  security_issues="$security_issues  - \`$ip\` - Use 192.0.2.x, 198.51.100.x, or 203.0.113.x\n"
+                  security_issues="$security_issues  - '$ip' - Use 192.0.2.x, 198.51.100.x, or 203.0.113.x\n"
                 fi
               done
             fi
@@ -174,7 +174,7 @@ jobs:
             jwt_patterns=$(grep -oE 'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+' "$file" | head -n 2 || echo "")
             
             if [ -n "$jwt_patterns" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains what looks like JWT tokens\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' contains what looks like JWT tokens\n"
               security_issues="$security_issues  - Verify these are fake/anonymized tokens\n"
             fi
             
@@ -183,7 +183,7 @@ jobs:
               grep -vE '555-0[0-1][0-9]{2}' | head -n 3 || echo "")
             
             if [ -n "$phone_patterns" ]; then
-              security_issues="$security_issues\n⚠️ **WARNING** - \`$file\` contains phone number patterns\n"
+              security_issues="$security_issues\n⚠️ **WARNING** - '$file' contains phone number patterns\n"
               security_issues="$security_issues  - Use test numbers like +1-555-0100\n"
             fi
           done
@@ -196,67 +196,115 @@ jobs:
             echo "security_issues=✅ No obvious sensitive information detected in test files" >> $GITHUB_OUTPUT
           fi
 
-      - name: Comment on PR with Analysis
-        uses: actions/github-script@v7
+      - name: Prepare PR comment
         if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'synchronize'
+        id: prepare-comment
+        run: |
+          analysis="${{ steps.analyze.outputs.analysis }}"
+          warnings="${{ steps.check-files.outputs.warnings }}"
+          security_issues="${{ steps.security-scan.outputs.security_issues }}"
+          
+          # Use defaults if empty
+          analysis="${analysis:-No analysis available}"
+          warnings="${warnings:-No issues detected}"
+          security_issues="${security_issues:-No test files in this PR}"
+          
+          # Build comment body
+          cat > /tmp/pr_comment.md << 'COMMENT_EOF'
+          ## 🤖 Copilot Automated Review
+
+          COMMENT_EOF
+          
+          echo "$analysis" >> /tmp/pr_comment.md
+          echo "" >> /tmp/pr_comment.md
+          
+          # Security issues section (CRITICAL - show first)
+          cat >> /tmp/pr_comment.md << 'COMMENT_EOF'
+
+          ## 🔒 Security Scan - Sensitive Information Check
+
+          **⚠️ IMPORTANT**: This is a public repository. All test data must be anonymized.
+
+          COMMENT_EOF
+          
+          echo "$security_issues" >> /tmp/pr_comment.md
+          echo "" >> /tmp/pr_comment.md
+          
+          # Check for security issues
+          if echo "$security_issues" | grep -qE '🚨|⚠️'; then
+            cat >> /tmp/pr_comment.md << 'COMMENT_EOF'
+
+          ### ❌ Action Required
+
+          Sensitive information was detected in test files. Please:
+          1. Review each flagged item above
+          2. Replace with anonymized data as suggested
+          3. Use standard test domains: example.com, example.org, test.com
+          4. Use TEST-NET IP ranges: 192.0.2.x, 198.51.100.x, 203.0.113.x
+          5. Push updated changes
+
+          **This PR cannot be merged until all sensitive data is removed.**
+
+          COMMENT_EOF
+          fi
+          
+          # Add warnings if present
+          if [ "$warnings" != "No issues detected" ]; then
+            echo "" >> /tmp/pr_comment.md
+            echo "## ⚠️ Other Potential Issues Detected" >> /tmp/pr_comment.md
+            echo "" >> /tmp/pr_comment.md
+            echo "$warnings" >> /tmp/pr_comment.md
+            echo "" >> /tmp/pr_comment.md
+          fi
+          
+          # Add checklist
+          cat >> /tmp/pr_comment.md << 'COMMENT_EOF'
+
+          ## 📋 Contribution Checklist
+
+          Please ensure your PR meets the following requirements:
+
+          - [ ] **No sensitive information** in test files (emails, passwords, API keys, real IPs, PII)
+          - [ ] Test data is properly anonymized (use example.com, TEST-NET IPs, fake credentials)
+          - [ ] Code is linted with Prettier
+          - [ ] Parser test coverage is at least 75%
+          - [ ] Logo files included for new modules/formats
+          - [ ] README.md files present and updated
+          - [ ] Smart-descriptions provided for new formats
+
+          ## 🔍 Next Steps
+
+          GitHub Copilot can help you with:
+          - **Security review**: Tag @copilot to scan for additional sensitive data
+          - **Anonymization help**: Ask Copilot to suggest anonymized replacements
+          - **Code review**: Request specific review feedback
+          - **Test suggestions**: Ask Copilot to suggest additional test cases
+
+          For more details, see the [Contribution Guidelines](../CONTRIBUTING.md).
+          COMMENT_EOF
+          
+          # Save to GitHub output
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/pr_comment.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Find Comment
+        if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'synchronize'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        id: find-comment
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const analysis = process.env.ANALYSIS || 'No analysis available';
-            const warnings = process.env.WARNINGS || 'No issues detected';
-            const securityIssues = process.env.SECURITY_ISSUES || 'No test files in this PR';
-            
-            let body = '## 🤖 Copilot Automated Review\n\n';
-            body += analysis + '\n\n';
-            
-            // Security issues section (CRITICAL - show first)
-            body += '## 🔒 Security Scan - Sensitive Information Check\n\n';
-            body += '**⚠️ IMPORTANT**: This is a public repository. All test data must be anonymized.\n\n';
-            body += securityIssues + '\n\n';
-            
-            if (securityIssues.includes('🚨') || securityIssues.includes('⚠️')) {
-              body += '### ❌ Action Required\n\n';
-              body += 'Sensitive information was detected in test files. Please:\n';
-              body += '1. Review each flagged item above\n';
-              body += '2. Replace with anonymized data as suggested\n';
-              body += '3. Use standard test domains: example.com, example.org, test.com\n';
-              body += '4. Use TEST-NET IP ranges: 192.0.2.x, 198.51.100.x, 203.0.113.x\n';
-              body += '5. Push updated changes\n\n';
-              body += '**This PR cannot be merged until all sensitive data is removed.**\n\n';
-            }
-            
-            if (warnings && warnings !== 'No issues detected') {
-              body += '## ⚠️ Other Potential Issues Detected\n\n' + warnings + '\n\n';
-            }
-            
-            body += '## 📋 Contribution Checklist\n\n';
-            body += 'Please ensure your PR meets the following requirements:\n\n';
-            body += '- [ ] **No sensitive information** in test files (emails, passwords, API keys, real IPs, PII)\n';
-            body += '- [ ] Test data is properly anonymized (use example.com, TEST-NET IPs, fake credentials)\n';
-            body += '- [ ] Code is linted with Prettier\n';
-            body += '- [ ] Parser test coverage is at least 75%\n';
-            body += '- [ ] Logo files included for new modules/formats\n';
-            body += '- [ ] README.md files present and updated\n';
-            body += '- [ ] Smart-descriptions provided for new formats\n\n';
-            body += '## 🔍 Next Steps\n\n';
-            body += 'GitHub Copilot can help you with:\n';
-            body += '- **Security review**: Tag @copilot to scan for additional sensitive data\n';
-            body += '- **Anonymization help**: Ask Copilot to suggest anonymized replacements\n';
-            body += '- **Code review**: Request specific review feedback\n';
-            body += '- **Test suggestions**: Ask Copilot to suggest additional test cases\n\n';
-            body += 'For more details, see the [Contribution Guidelines](../CONTRIBUTING.md).\n';
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: body
-            });
-        env:
-          ANALYSIS: ${{ steps.analyze.outputs.analysis }}
-          WARNINGS: ${{ steps.check-files.outputs.warnings }}
-          SECURITY_ISSUES: ${{ steps.security-scan.outputs.security_issues }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Copilot Automated Review
+
+      - name: Comment on PR with Analysis
+        if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'synchronize'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.prepare-comment.outputs.body }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
 
       - name: Request Copilot Review
         uses: actions/github-script@v7
