@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 
 from . import INTAKES_PATH, Validator
-from .constants import CheckResult
+from .constants import CheckResult, ValidationError
 
 
 class MetaValidator(Validator):
@@ -16,7 +16,13 @@ class MetaValidator(Validator):
 
         module_meta_dir = path / "_meta"
         if not module_meta_dir.is_dir():
-            result.errors.append(f"Meta directory(`{module_meta_dir.relative_to(INTAKES_PATH)}`) is missing")
+            result.errors.append(
+                ValidationError(
+                    message="Meta directory is missing",
+                    file_path=str(module_meta_dir.relative_to(INTAKES_PATH)),
+                    code="meta_missing",
+                )
+            )
             return
 
         result.options["meta_dir"] = module_meta_dir
