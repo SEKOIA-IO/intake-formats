@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from . import INTAKES_PATH, Validator
-from .constants import CheckResult
+from .constants import CheckResult, ValidationError
 
 
 class LogoValidator(Validator):
@@ -39,21 +39,49 @@ def check_logo_image(image_path: Path, result: CheckResult) -> None:
         return False
 
     if not image_path.is_file():
-        result.errors.append(f"Logo (`{image_path.relative_to(INTAKES_PATH)}`) is missing")
+        result.errors.append(
+            ValidationError(
+                message="Logo is missing", file_path=str(image_path.relative_to(INTAKES_PATH)), code="logo_missing"
+            )
+        )
         return
 
     image = Image.open(image_path)
     if image.format != "PNG":
-        result.errors.append("Logo is not in PNG format")
+        result.errors.append(
+            ValidationError(
+                message="Logo is not in PNG format",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_not_png",
+            )
+        )
 
     if image.width != image.height:
-        result.errors.append(f"Logo is not square - {image.width}x{image.height}px")
+        result.errors.append(
+            ValidationError(
+                message=f"Logo is not square - {image.width}x{image.height}px",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_not_square",
+            )
+        )
 
     if not has_transparency(image):
-        result.errors.append("Logo background is not transparent")
+        result.errors.append(
+            ValidationError(
+                message="Logo background is not transparent",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_no_transparency",
+            )
+        )
 
     if os.path.getsize(image_path) > 50 * 1024:
-        result.errors.append("Logo file weights more than 50 KiB")
+        result.errors.append(
+            ValidationError(
+                message="Logo file weights more than 50 KiB",
+                file_path=str(image_path.relative_to(INTAKES_PATH)),
+                code="logo_too_large",
+            )
+        )
 
     image.close()
 
