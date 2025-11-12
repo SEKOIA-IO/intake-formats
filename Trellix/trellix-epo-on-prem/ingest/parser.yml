@@ -5,7 +5,7 @@ pipeline:
     external:
       name: xml.parse-xml
       properties:
-        input_field: '{{original.message.lstrip("\ufeff").replace("<EPOevent>", "<EPOEvent>").replace("</EPOevent>", "</EPOEvent>")}}'
+        input_field: '{{original.message.lstrip("\ufeff").rstrip("#015").replace("<EPOevent>", "<EPOEvent>").replace("</EPOevent>", "</EPOEvent>")}}'
         output_field: output
 
   - name: set_common_fields
@@ -65,6 +65,12 @@ stages:
           source.user.name: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceUserName.split('\\\\')[1]}}"
           user.target.name: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.TargetUserName}}"
 
+          source.mac: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceMAC}}"
+          source.port: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourcePort}}"
+
+          destination.mac: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.TargetMAC}}"
+          destination.port: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.TargetPort}}"
+
           threat.indicator.name: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.ThreatName}}"
           trellix.event.detect_date: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.DetectedUTC | to_rfc3339}}"
 
@@ -80,6 +86,7 @@ stages:
           trellix.source.process.signed: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceProcessSigned}}"
           trellix.source.process.signer: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceProcessSigner}}"
           trellix.source.process.trusted: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceProcessTrusted}}"
+          trellix.source.process.url: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceURL}}"
 
           trellix.source.file.path: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceFilePath}}"
           trellix.source.file.size: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceFileSize}}"
@@ -87,10 +94,19 @@ stages:
           trellix.target.drive_type: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.TargetDriveType}}"
           trellix.target.signed: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.TargetSigned}}"
           trellix.target.trusted: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.TargetTrusted}}"
+          trellix.target.hostname: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.TargetHostName}}"
 
       - set:
           host.ip: ["{{parsed_event.output.EPOEvent.MachineInfo.IPAddress}}"]
         filter: "{{parsed_event.output.EPOEvent.MachineInfo.IPAddress | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceIPV4}}"
+        filter: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceIPV4 | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.TargetIPV4}}"
+        filter: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.TargetIPV4 | is_ipaddress}}"
 
   set_update_events_fields:
     actions:
@@ -107,7 +123,6 @@ stages:
 
           host.name: "{{parsed_event.output.UpdateEvents.MachineInfo.MachineName}}"
           host.mac: "{{parsed_event.output.UpdateEvents.MachineInfo.RawMACAddress}}"
-          host.ip: "{{parsed_event.output.UpdateEvents.MachineInfo.IPAddress}}"
           host.os.full: "{{parsed_event.output.UpdateEvents.MachineInfo.OSName}}"
 
           event.code: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.EventID}}"
@@ -119,6 +134,10 @@ stages:
           trellix.update_event.initiator.id: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.InitiatorID}}"
           trellix.update_event.initiator.type: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.InitiatorType}}"
           trellix.update_event.product_id: "{{parsed_event.output.UpdateEvents.McAfeeCommonUpdater.UpdateEvent.ProductID}}"
+
+      - set:
+          host.ip: "{{parsed_event.output.UpdateEvents.MachineInfo.IPAddress}}"
+        filter: "{{parsed_event.output.UpdateEvents.MachineInfo.IPAddress | is_ipaddress}}"
 
       - set:
           trellix.update_event.usernames: "{{parsed_event.output.UpdateEvents.MachineInfo.UserName.split(',')}}"
