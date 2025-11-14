@@ -5,10 +5,10 @@ on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
     branches: [main]
+     
   pull_request:
     branches: [main]
 
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 defaults:
@@ -88,6 +88,12 @@ jobs:
                               body += f" - data source: `{error['data_source']}`"
                           if 'field_name' in error:
                               body += f" - field: `{error['field_name']}`"
+                          if 'data_type' in error:
+                              body += f" - data type: `{error['data_type']}`"
+                          if 'value' in error:
+                              body += f" - value: `{error['value']}`"
+                          if 'reason' in error:
+                              body += f" - reason: `{error['reason']}`"
                           body += '\n'
           except Exception as e:
               body += 'An error occurred while parsing the check results.\n\n'
@@ -106,18 +112,14 @@ jobs:
               body = truncated + '\n\n... (comment truncated due to length)'
 
           # Write to GitHub output
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write('body<<EOF\n')
+          with open('/tmp/pr_comment.md', 'w') as f:
               f.write(body)
-              f.write('\nEOF\n')
           EOF
-
-      - name: Post PR comment
-        if: steps.checks.outcome == 'failure' && github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
+      
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body: ${{ steps.prepare-comment.outputs.body }}
+          name: pr_comment.md
+          path: /tmp/pr_comment.md
 
       - name: Fail workflow if checks failed
         if: steps.checks.outcome == 'failure'
