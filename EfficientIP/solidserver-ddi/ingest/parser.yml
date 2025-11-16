@@ -6,7 +6,7 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER_1}|%{EFFICIENTIP_DNS_ANSWER_DEFAULT}|%{EFFICIENTIP_DNS_UPDATING_ZONE}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_RPZ_QNAME}|%{EFFICIENTIP_DNS_ERROR}|%{EFFICIENTIP_DNS_FORMAT_ERROR}|%{EFFICIENTIP_DNS_RECEIVED_NOTIFY}|%{EFFICIENTIP_DHCP}"
+        pattern: "%{EFFICIENTIP_DNS_QUERY}|%{EFFICIENTIP_DNS_ANSWER_1}|%{EFFICIENTIP_DNS_ANSWER_DEFAULT}|%{EFFICIENTIP_DNS_UPDATING_ZONE}|%{EFFICIENTIP_DNS_GUARDIAN}|%{EFFICIENTIP_DNS_GUARDIAN_LISTLOG}|%{EFFICIENTIP_RPZ_TRANSFER}|%{EFFICIENTIP_RPZ_ZONE}|%{EFFICIENTIP_RPZ_QNAME}|%{EFFICIENTIP_DNS_ERROR}|%{EFFICIENTIP_DNS_FORMAT_ERROR}|%{EFFICIENTIP_DNS_RECEIVED_NOTIFY}|%{EFFICIENTIP_DHCP}|%{EFFICIENTIP_DNS_ZONE_TRANSFER}|%{EFFICIENTIP_DNS_DIFF_APPLY}|%{EFFICIENTIP_DNS_DEFAULT}"
         custom_patterns:
           EFFICIENTIP_DHCP: "DHCP(%{DHCPD_DISCOVER}|%{DHCPD_OFFER_ACK}|%{DHCPD_REQUEST}|%{DHCPD_DECLINE}|%{DHCPD_RELEASE}|%{DHCPD_INFORM})(: %{GREEDYDATA:dhcpd_message})?"
           EFFICIENTIP_DNS_QUERY: '%{DNS_HEADER}: query: %{GREEDYDATA:dns_question_name} %{QUERY_CLASS:dns_question_class} %{QUESTION_TYPE:dns_question_type}( %{QUERY_FLAGS})? \(%{IP:server_ip}\)$'
@@ -18,9 +18,12 @@ pipeline:
           EFFICIENTIP_RPZ_QNAME: "%{DNS_HEADER}(: %{DATA})?: rpz QNAME %{GREEDYDATA} %{DATA:rpz_domain}/%{WORD:rpz_view}/%{QUERY_CLASS:rpz_query_class} via %{RPZ_SOURCE}"
           EFFICIENTIP_RPZ_TRANSFER: "(%{DNS_HEADER}: )?transfer of '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}(/%{WORD:rpz_view})?'( from %{RPZ_SOURCE})?: %{GREEDYDATA:reason}"
           EFFICIENTIP_RPZ_ZONE: "zone %{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}(/%{WORD:rpz_view})?: (%{DATA:action} from %{RPZ_SOURCE}: )?%{GREEDYDATA:reason}"
-          EFFICIENTIP_DNS_ERROR: "%{ERROR_REASON:error} resolving '%{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type}/%{QUERY_CLASS:dns_question_class}': %{IP:server_ip}#%{INT:server_port}"
-          EFFICIENTIP_DNS_FORMAT_ERROR: "DNS format error from %{IP:server_ip}#%{INT:server_port} resolving %{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type} for %{IP:client_ip}#%{INT:client_port}: %{GREEDYDATA:reason}"
+          EFFICIENTIP_DNS_ERROR: "%{ERROR_REASON:error} resolving '%{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type}(/%{QUERY_CLASS:dns_question_class})?'(: %{IP:server_ip}#%{INT:server_port})?"
+          EFFICIENTIP_DNS_FORMAT_ERROR: "DNS format error from %{IP:server_ip}#%{INT:server_port} resolving %{GREEDYDATA:dns_question_name}/%{QUESTION_TYPE:dns_question_type} for (%{IP:client_ip}#%{INT:client_port}|<unknown>): %{GREEDYDATA:reason}"
           EFFICIENTIP_DNS_RECEIVED_NOTIFY: "%{DNS_HEADER}:( view %{WORD}:)? received notify for zone '%{DATA:rpz_domain}'"
+          EFFICIENTIP_DNS_ZONE_TRANSFER: "%{DNS_HEADER}: zone transfer '%{DATA:rpz_domain}/%{QUERY_CLASS:rpz_query_class}' (denied|allowed)"
+          EFFICIENTIP_DNS_DIFF_APPLY: "dns_diff_apply: %{DATA:rpz_domain}/%{WORD:rpz_view}/%{QUERY_CLASS:rpz_query_class}: del not exact"
+          EFFICIENTIP_DNS_DEFAULT: "%{DNS_HEADER}: %{GREEDYDATA:reason}"
           QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
           QUERY_FLAGS_SIGNED: "S?"
@@ -35,7 +38,7 @@ pipeline:
           QUESTION_TYPE: "A|AAAA|CAA|CDNSKEY|CDS|CERT|CNAME|CSYNC|DLV|DNAME|DNSKEY|DS|HINFO|LOC|MX|NAPTR|NS|NSEC|NSEC3|OPENPGPKEY|PTR|RRSIG|RP|SIG|SMIMEA|SOA|SRV|TSIG|TXT|URI|TYPE65|HTTPS"
           GUARDIAN_ACTION: "(DIS)?ARMING"
           RPZ_SOURCE: "(%{IP:source_ip}#%{INT:source_port}|%{DATA:source_name})"
-          ERROR_REASON: "FORMERR|REFUSED %{DATA:reason}"
+          ERROR_REASON: "((FORMERR|REFUSED|SERVFAIL)\\s?%{DATA:reason})|(?P<reason>connection refused|host unreachable|loop detected|shut down hung fetch while)"
           DHCPD_VIA: 'via (%{IP:interface_ip}|(?P<interface_name>[^: ]+))( \[%{INT}\])?'
           DHCPD_DISCOVER: '(?P<dhcp_operation>DISCOVER) from %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA}'
           DHCPD_OFFER_ACK: '(?P<dhcp_operation>(OFFER|N?ACK)) on %{IP:client_ip} to %{MAC:client_mac}( \(%{DATA:client_name}\))? %{DHCPD_VIA}'
