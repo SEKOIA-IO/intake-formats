@@ -87,6 +87,9 @@ pipeline:
   - name: api_activity_audit_event
     filter: '{{parsed_event.message.metadata.eventType == "APIActivityAuditEvent"}}'
 
+  - name: automated_lead_summary_event
+    filter: '{{parsed_event.message.metadata.eventType == "AutomatedLeadSummaryEvent"}}'
+
 stages:
   set_common_fields:
     actions:
@@ -745,3 +748,59 @@ stages:
         mapping:
           crowdstrike.operation_name: event.type
         fallback: ["info"]
+
+  automated_lead_summary_event:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.reference: "{{parsed_event.message.event.FalconHostLink}}"
+          event.url: "{{parsed_event.message.event.FalconHostLink}}"
+          event.start: "{{parsed_event.message.event.SignalStartTimestamp | string | to_rfc3339}}"
+          event.end: "{{parsed_event.message.event.SignalEndTimestamp | string | to_rfc3339}}"
+
+          observer.vendor: "CrowdStrike"
+          observer.product: "Falcon"
+
+          crowdstrike.lead_id: "{{parsed_event.message.event.LeadId}}"
+          crowdstrike.lead_name: "{{parsed_event.message.event.Name}}"
+          crowdstrike.lead_type: "{{parsed_event.message.event.LeadType}}"
+          crowdstrike.lead_score: "{{parsed_event.message.event.Score}}"
+          crowdstrike.composite_id: "{{parsed_event.message.event.CompositeId}}"
+          crowdstrike.signal_start_timestamp: "{{parsed_event.message.event.SignalStartTimestamp | string | to_rfc3339}}"
+          crowdstrike.signal_end_timestamp: "{{parsed_event.message.event.SignalEndTimestamp | string | to_rfc3339}}"
+          crowdstrike.signal_updated_timestamp: "{{parsed_event.message.event.SignalUpdatedTimestamp | string | to_rfc3339}}"
+
+      - set:
+          crowdstrike.threatgraph_indicators: >
+            {%- set indicators = [] -%}
+            {%- for item in parsed_event.message.event.ThreatgraphIndicators -%}
+            {%- set indicator = {} -%}
+            {%- set indicator_id = item.get("IndicatorId") -%}
+            {%- set signal_timestamp = item.get("SignalAssociationTimestamp") | string | to_rfc3339 -%}
+            {%- set pattern_id = item.get("PatternId") -%}
+            {%- set pattern_disposition = item.get("PatternDisposition") -%}
+            {%- set severity = item.get("Severity") -%}
+            {%- set process_id = item.get("ProcessId") -%}
+            {%- set host_id = item.get("HostId") -%}
+            {%- set hostname = item.get("Hostname") -%}
+            {%- set template_instance_id = item.get("TemplateInstanceId") -%}
+            {%- set description = item.get("Description") -%}
+            {%- set display_name = item.get("DisplayName") -%}
+            {%- set _ = indicator.update({"indicator_id":indicator_id, "signal_association_timestamp":signal_timestamp, "pattern_id":pattern_id, "pattern_disposition":pattern_disposition, "severity":severity, "process_id":process_id, "host_id":host_id, "hostname":hostname, "template_instance_id":template_instance_id, "description":description, "display_name":display_name}) -%}
+            {%- set _ = indicators.append(indicator) -%}
+            {%- endfor -%}
+            {{indicators}}
+        filter: "{{parsed_event.message.event.get('ThreatgraphIndicators') not in [None, []]}}"
+
+      - set:
+          threat.tactic.name: '{{parsed_event.message.event.MitreAttack | map(attribute="Tactic") | list}}'
+          threat.tactic.id: '{{parsed_event.message.event.MitreAttack | map(attribute="TacticID") | list}}'
+          threat.technique.name: '{{parsed_event.message.event.MitreAttack | map(attribute="Technique") | list}}'
+          threat.technique.id: '{{parsed_event.message.event.MitreAttack | map(attribute="TechniqueID") | list}}'
+        filter: "{{parsed_event.message.event.get('MitreAttack') not in [None, []]}}"
+
+      - set:
+          host.name: '{{parsed_event.message.event.ThreatgraphIndicators | map(attribute="Hostname") | unique | list}}'
+        filter: "{{parsed_event.message.event.get('ThreatgraphIndicators') not in [None, []]}}"
