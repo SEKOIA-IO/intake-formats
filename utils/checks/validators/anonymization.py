@@ -1338,7 +1338,3 @@ def traverse(obj: Any, remaining_parts: List[str], results: set, current_path: s
         for i, item in enumerate(obj):
             array_path = f"{current_path}[{i}]"
             traverse(item, remaining_parts, results, array_path)
-
-
-
-

@@ -387,5 +387,3 @@ class TestAnonymizationValidator:
         assert "source.ip" in error_fields
         assert "user.name" in error_fields
         assert "domain" in error_fields
-
-
