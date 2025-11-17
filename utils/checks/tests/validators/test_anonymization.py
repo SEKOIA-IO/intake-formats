@@ -327,7 +327,7 @@ class TestAnonymizationValidator:
         "value, expected",
         [
             (
-                "/SUBSCRIPTIONS/11111111-1111-1111-1111-1111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-111111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
                 True,
             ),
             (
@@ -335,11 +335,11 @@ class TestAnonymizationValidator:
                 False,
             ),
             (
-                "/SUBSCRIPTIONS/11111111-1111-1111-1111-1111111111/RESOURCEGROUPS/ResourceGroup/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-111111111111/RESOURCEGROUPS/ResourceGroup/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/TEST",
                 False,
             ),
             (
-                "/SUBSCRIPTIONS/11111111-1111-1111-1111-1111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/VAULT",
+                "/SUBSCRIPTIONS/11111111-1111-1111-1111-111111111111/RESOURCEGROUPS/INTEGRATION/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/VAULT",
                 False,
             ),
         ],
@@ -350,7 +350,7 @@ class TestAnonymizationValidator:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            ("urn:uuid:11111111-1111-1111-1111-1111111111", True),
+            ("urn:uuid:11111111-1111-1111-1111-111111111111", True),
             ("urn:ucode:2222222222222222", True),
             ("urn:spo:anon", True),
             ("urn:spo:guest:hash#68b329da9893e34099c7d8ad5cb9c940", True),
