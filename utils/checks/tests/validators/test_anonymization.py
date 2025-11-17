@@ -71,6 +71,7 @@ class TestAnonymizationValidator:
             ("hostname.local", True),  # Domain is accepted
             ("acme.net", True),  # Domain is accepted
             ("test.com", True),  # Domain is accepted
+            ("baz.net", True),  # Domain is accepted
             ("google.com", False),
             ("sekoia.io", False),
         ],
@@ -385,3 +386,5 @@ class TestAnonymizationValidator:
         assert "source.ip" in error_fields
         assert "user.name" in error_fields
         assert "domain" in error_fields
+
+

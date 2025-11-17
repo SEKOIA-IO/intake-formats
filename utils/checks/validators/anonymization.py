@@ -36,7 +36,7 @@ ACCEPTED_IPV6_RANGES = [
 ACCEPTED_IPV6_ADDRESSES = ["::1"]
 
 ACCEPTED_DOMAINS = [
-    r"^([\w-]+\.)*(example|acme)\.(com|org|net)$",
+    r"^([\w-]+\.)*(example|acme|foo|bar|baz)\.(com|org|net)$",
     r"^([\w-]+\.)*test\.(corp|local|com|org|net)$",
     r"^([\w-]+\.)*(my)?corp\.(com|org|net)$",
     r"^([\w-]+\.)*internal\.test$",
