@@ -516,6 +516,10 @@ class AnonymizationValidator:
         if re.fullmatch(r"\d+", username) and all(c == username[0] for c in username):
             return True
 
+        # Check if username is a correct anonymized email
+        if self.validate_email(username):
+            return True
+
         return False
 
     def validate_email(self, email: str) -> bool:
