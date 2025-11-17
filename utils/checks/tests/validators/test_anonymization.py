@@ -25,7 +25,8 @@ class TestAnonymizationValidator:
             ("192.168.1.1", True),
             ("127.0.0.1", True),
             ("1.2.3.4", True),
-            ("8.8.8.8", False),
+            ("122.122.122.122", True),
+            ("8.8.8.8", True),
             ("1.1.1.2", False),
             ("not-an-ip", False),
         ],
@@ -52,7 +53,7 @@ class TestAnonymizationValidator:
         [
             ("192.0.2.1", True),
             ("2001:db8::1", True),
-            ("8.8.8.8", False),
+            ("8.8.8.8", True),
             ("2001:db9::1", False),
             ("0.0.0.0", True),
         ],
@@ -372,7 +373,7 @@ class TestAnonymizationValidator:
         monkeypatch.setattr("checks.validators.anonymization.INTAKES_PATH", Path("."))
         test_content = {
             "expected": {
-                "source": {"ip": "8.8.8.8"},
+                "source": {"ip": "12.34.60.11"},
                 "destination": {"ip": "1.2.3.4"},
                 "user": {"name": "realuser"},
                 "domain": "google.com",

@@ -425,8 +425,15 @@ class AnonymizationValidator:
             if ip_str in ACCEPTED_IPV4_ADDRESSES:
                 return True
 
-            # Validate IP and check ranges
+            # Validate IP
             ip = ipaddress.IPv4Address(ip_str)
+
+            # Check for repeated octet addresses (e.g., 8.8.8.8, 122.122.122.122, ...)
+            parts = ip.exploded.split(".")
+            if all(part == parts[0] for part in parts):
+                return True
+
+            # Check ranges
             return any(ip in network for network in ACCEPTED_IPV4_RANGES)
 
         except (ipaddress.AddressValueError, ValueError):
