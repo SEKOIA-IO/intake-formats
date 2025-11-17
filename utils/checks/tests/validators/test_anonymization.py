@@ -69,6 +69,8 @@ class TestAnonymizationValidator:
             ("mycorp.com", True),  # Domain is accepted
             ("localhost", True),  # Domain is accepted
             ("hostname.local", True),  # Domain is accepted
+            ("acme.net", True),  # Domain is accepted
+            ("test.com", True),  # Domain is accepted
             ("google.com", False),
             ("sekoia.io", False),
         ],
