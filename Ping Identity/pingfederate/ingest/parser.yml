@@ -1,0 +1,157 @@
+name: PingFederate
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "(%{PINGF_INTERNAL}|%{PINGF_HTTP})"
+        custom_patterns:
+                  # PingFederate standard logs
+                  PINGF_INTERNAL: '(?:%{TIMESTAMP_ISO8601:log_timestamp}(?:\s+tid:%{DATA:transaction_id})?\s+(?:%{LOGLEVEL:log_level}\s+\[%{DATA:java_class}\]\s+)?%{GREEDYDATA:kv_pairs})'
+                  # PingFederate HTTP microservice logs
+                  PINGF_HTTP: '%{IPORHOST:source_ip}\s+%{USER:ident}\s+%{USER:auth}\s+\[%{HTTPDATE:timestamp}\]\s+"%{WORD:http_request_method}\s+%{DATA:url_original}\s+HTTP/%{NUMBER:http_version}"\s+%{INT:http_response_status_code:int}\s+%{INT:http_response_body_bytes:int}(?:\s+%{INT:extra_field:int})?'
+
+  # Parse application log timestamp
+  - name: parsed_date_app
+    filter: "{{parsed_event.message.log_timestamp is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.log_timestamp}}"
+        output_field: app_timestamp
+        timezone: UTC
+
+  # Parse HTTP access log timestamp
+  - name: parsed_date_http
+    filter: "{{parsed_event.message.timestamp is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.timestamp}}"
+        output_field: http_timestamp
+        format: "%d/%b/%Y:%H:%M:%S %z"
+        timezone: UTC
+
+  # Parse key-value pairs from application logs
+  - name: kv_parsed
+    filter: "{{parsed_event.message.kv_pairs is defined}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parsed_event.message.kv_pairs}}"
+        output_field: message
+        value_sep: "="
+        item_sep: " "
+
+  - name: set_event_common_fields
+  - name: set_host_fields
+  - name: set_log_fields
+  - name: set_http_fields
+  - name: set_source_fields
+  - name: set_ecs_categorization
+
+stages:
+  set_event_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date_app.app_timestamp or parsed_date_http.http_timestamp}}"
+          event.kind: event
+          event.module: pingfederate
+          event.dataset: pingfederate
+
+  set_host_fields:
+    actions:
+      - set:
+          host.name: "{{parsed_event.message.hostname}}"
+        filter: "{{parsed_event.message.hostname is defined}}"
+
+  set_log_fields:
+    actions:
+      # Application log fields
+      - set:
+          log.level: "{{parsed_event.message.log_level}}"
+        filter: "{{parsed_event.message.log_level is defined}}"
+
+      - set:
+          log.logger: "{{parsed_event.message.java_class}}"
+        filter: "{{parsed_event.message.java_class is defined}}"
+          
+      - set:
+          pingfederate.transaction_id: "{{parsed_event.message.transaction_id}}"
+        filter: "{{parsed_event.message.transaction_id is defined}}"
+
+      - set:
+          message: "{{parsed_event.message.kv_pairs}}"
+        filter: "{{parsed_event.message.kv_pairs is defined}}"
+
+  set_http_fields:
+    actions:
+      # HTTP access log fields
+      - set:
+          http.request.method: "{{parsed_event.message.http_request_method}}"
+          http.version: "{{parsed_event.message.http_version}}"
+          http.response.status_code: "{{parsed_event.message.http_response_status_code}}"
+          http.response.body.bytes: "{{parsed_event.message.http_response_body_bytes}}"
+          url.original: "{{parsed_event.message.url_original}}"
+        filter: "{{parsed_event.message.http_request_method is defined}}"
+
+      # Extract URL from application logs (GET: https://...)
+      - set:
+          url.original: "{{kv_parsed.message.url}}"
+        filter: "{{kv_parsed.message.url is defined}}"
+
+  set_source_fields:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip is defined and parsed_event.message.source_ip | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip is defined and not (parsed_event.message.source_ip | is_ipaddress)}}"
+
+      - set:
+          user.name: "{{parsed_event.message.auth}}"
+        filter: '{{parsed_event.message.auth is defined and parsed_event.message.auth != "-"}}'
+
+  set_ecs_categorization:
+    actions:
+      # HTTP access logs
+      - set:
+          event.category: [web]
+          event.type: [access]
+        filter: "{{parsed_event.message.http_request_method is defined}}"
+
+      # Heartbeat monitoring events
+      - set:
+          event.category: [web]
+          event.type: [access]
+        filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('heartbeat\\.ping'))}}"
+
+      # Cookie management events
+      - set:
+          event.category: [web]
+          event.type: [info]
+        filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('cookie|Cookie'))}}"
+
+      # Request tracking events
+      - set:
+          event.category: [web]
+          event.type: [info]
+        filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('request ID|tracking|TrackingIdSupport'))}}"
+
+      # Locale/configuration events
+      - set:
+          event.category: [configuration]
+          event.type: [info]
+        filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('Locale|clientCert|X509ClientCertExtractor'))}}"
+
+      # GET requests from application logs
+      - set:
+          event.category: [web]
+          event.type: [access]
+          http.request.method: "GET"
+        filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('^GET:'))}}"
