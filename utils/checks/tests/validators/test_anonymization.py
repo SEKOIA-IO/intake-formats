@@ -225,29 +225,6 @@ class TestAnonymizationValidator:
     @pytest.mark.parametrize(
         "value, field_path, expected",
         [
-            ("68b329da9893e34099c7d8ad5cb9c940", "file.hash.md5", True),
-            ("adc83b19e793491b1c6ea0fd8b46cd9f32e592fc", "file.hash.sha1", True),
-            (
-                "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-                "process.hash.sha256",
-                True,
-            ),
-            (
-                "be688838ca8686e5c90689bf2ab585cef1137c999b48c70b92f67a5c34dc15697b5d11c982ed6d71be1e1e7f7b4e0733884aa97c3f7a339a8ed03577cf74be09",
-                "email.attachments.file.hash.sha512",
-                True,
-            ),
-            ("11111111111111111111111111111111", "file.hash.md5", True),
-            ("d41d8cd98f00b204e9800998ecf8427e", "file.hash.md5", False),
-            ("da39a3ee5e6b4b0d3255bfef95601890afd80709", "file.hash.sha1", False),
-        ],
-    )
-    def test_validate_hash(self, validator, value, field_path, expected):
-        assert validator.validate_hash(value, field_path) == expected
-
-    @pytest.mark.parametrize(
-        "value, field_path, expected",
-        [
             ("demo", "account.id", True),
             ("S-1-5-3", "account.id", True),
             ("123456789012", "accountId", True),
@@ -299,7 +276,6 @@ class TestAnonymizationValidator:
                 False,
             ),
             ("urn:uuid:123e4567-e89b-12d3-a456-426614174000", "account.id", False),
-            ("urn:spo:guest:hash#aSPngX3nlOfknaGB", "account.id", False),
             ("random-account-id", "account.id", False),
             ("bitcoin@nasdaq.org", "account.id", False),
             ("123e4567-e89b-12d3-a456-426614174000", "account.id", False),
@@ -357,7 +333,6 @@ class TestAnonymizationValidator:
             ("urn:spo:anon", True),
             ("urn:spo:guest:hash#68b329da9893e34099c7d8ad5cb9c940", True),
             ("urn:uuid:123e4567-e89b-12d3-a456-426614174000", False),
-            ("urn:spo:guest:hash#aSPngX3nlOfknaGB", False),
         ],
     )
     def test_validate_urn(self, validator, value, expected):

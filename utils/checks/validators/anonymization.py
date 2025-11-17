@@ -698,29 +698,6 @@ class AnonymizationValidator:
 
         return False
 
-    def validate_hash(self, value: str, field_path: str) -> bool:
-        """
-        Validate if a hash value matches the accepted anonymized hash.
-
-        Args:
-            value (str): The hash value to validate.
-            field_path (str): The field path indicating the hash type.
-        Returns:
-            bool: True if the hash is properly anonymized, False otherwise.
-        """
-        # Determine hash type from field path
-        hash_type = field_path.split(".")[-1]
-
-        # Check against accepted hashes
-        if hash_type in ACCEPTED_HASHES and value == ACCEPTED_HASHES[hash_type]:
-            return True
-
-        # For unknown hash types, check for repeated character pattern
-        if all(c == value[0] for c in value):
-            return True
-
-        return False
-
     def validate_session_id(self, value: str) -> bool:
         """
         Validate if a session ID matches accepted anonymized patterns.
@@ -903,9 +880,7 @@ class AnonymizationValidator:
                 if not resource_id_match:
                     return False
 
-                # Validate the hash
-                resource_hash = resource_id_match.group("hash")
-                return self.validate_hash(resource_hash, "urn.spo.resource_id.md5")
+                return True
 
         return False
 
@@ -1107,7 +1082,6 @@ class AnonymizationValidator:
             (self.geo_fields, self.validate_geo, "Geographic Data", "Potential real location data (strict mode)"),
             (self.org_fields, self.validate_org, "Organization", "Potential real organization name (strict mode)"),
             (self.file_fields, self.validate_file_path, "File Path", "Contains potential sensitive user directory"),
-            (self.hash_fields, self.validate_hash, "Hash", "Not an accepted anonymized hash value"),
             (self.session_id_fields, self.validate_session_id, "Session ID", "Not an accepted anonymized session ID"),
             (
                 self.account_id_fields,
@@ -1141,7 +1115,6 @@ class AnonymizationValidator:
                     # Validate the value
                     if validator_func in [
                         self.validate_org,
-                        self.validate_hash,
                         self.validate_account_id,
                         self.validate_token,
                         self.validate_certificate,
@@ -1358,3 +1331,7 @@ def traverse(obj: Any, remaining_parts: List[str], results: set, current_path: s
         for i, item in enumerate(obj):
             array_path = f"{current_path}[{i}]"
             traverse(item, remaining_parts, results, array_path)
+
+
+
+
