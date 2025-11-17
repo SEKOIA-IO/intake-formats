@@ -104,9 +104,30 @@ class TestFile(BaseModel):
     expected: dict[str, Any]
 
 
+class ValidationError(BaseModel):
+    message: str
+    code: str
+    file_path: str
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(exclude_none=True, exclude_unset=True)
+
+    def __str__(self) -> str:
+        representation = [
+            self.message,
+            f"code=`{self.code}`",
+        ]
+        if self.file_path:
+            representation.append(f"file_path=`{self.file_path}`")
+        if self.error:
+            representation.append(f"error=`{self.error}`")
+        return " ".join(representation)
+
+
 class CheckResult(BaseModel):
     name: str
     description: str
     warnings: list[str] = []
-    errors: list[str] = []
+    errors: list[ValidationError] = []
     options: dict[str, Any] = dict()
