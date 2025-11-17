@@ -1,5 +1,5 @@
 name: Microsoft Windows
-ignored_values: ["-", "N/A"]
+ignored_values: ["N/A"]
 pipeline:
   - name: json
     description: "Bypass wrong syslog configuration which adds : before the json message"
@@ -125,6 +125,19 @@ pipeline:
         output_field: event
         pattern: >-
           (%{URIPROTO:scheme}://)?(?:%{URIHOST:domain})?(?:%{URIPATHPARAM:path})
+
+  - name: patch_5136
+    filter: "{{json.event.EventID == 5136 and json.event.Message != null}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: '{{json.event.Message.replace(" "," ").replace("\r\n", "#NEWLINE#").replace("\n", "#NEWLINE2#")}}'
+        output_field: event
+        pattern: "%{MESSAGE_OPERATION_TYPE}"
+        custom_patterns:
+          # Operation:\r\n\tType:\tValue Deleted
+          MESSAGE_OPERATION_TYPE: "%{DATA}Operation:#NEWLINE#\tType:\t%{DATA:OperationType}#NEWLINE#\t%{GREEDYDATA}"
 
   - name: patch_4103
     filter: "{{json.event.ContextInfo != null and json.event.EventID == 4103}}"
@@ -467,6 +480,10 @@ stages:
           action.properties.FileVersion: "{{ json.event.FileVersion }}"
           action.properties.Product: "{{ json.event.FileVersion }}"
           action.properties.Description: "{{ json.event.Description }}"
+
+      - set:
+          action.properties.OperationType: "{{ patch_5136.event.OperationType }}"
+        filter: "{{ patch_5136.event.get('OperationType') != None }}"
 
       - set:
           action.properties.Keywords: "{{ '%d' | format(final.action.properties.Keywords | int) }}"

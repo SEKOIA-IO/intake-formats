@@ -10,44 +10,56 @@ pipeline:
           CISCO_TIMESTAMP: "%{MONTH}\\s+%{MONTHDAY}( %{YEAR})? %{TIME}"
           CISCO_DATESTAMP: "%{CISCO_TIMESTAMP:date}( %{WORD:timezone})?"
           MSG_CODE: '\%%{WORD:facility}\-%{NONNEGINT:severity}\-%{WORD:mnemonic}'
+
   - name: parsed_description
     external:
       name: grok.match
       properties:
         raise_errors: false
         input_field: parsed_event.message.description
-        pattern: "%{LINEPROTO}|%{LINK}|%{PM}|%{MAB}|%{SPANTREE}|%{SEC_VIOLATION}"
+        pattern: "%{ACCTLOCAL}|%{BLOCK_BPDUGUARD}|%{CFGLOG_LOGGEDCMD}|%{CONFIG_I}|%{CONFIG_P}|%{CONFIG_RESOLVE_FAILURE}|%{DHCP_SNOOPING}|%{DHCP_SNOOPING_MATCH_MAC_FAIL}|%{DMI_AUTH_FAILED}|%{DMI_AUTH_PASSED}|%{DUPADDR}|%{ERR_DISABLE}|%{IPACCESSLOGP}|%{IPACCESSLOGS}|%{LINEPROTO}|%{LINK}|%{LOOPGUARD_BLOCK}|%{MAB}|%{PORT_SECURITY}|%{PRIV_AUTH_FAIL}|%{PRIV_AUTH_PASS}|%{QUIET_MODE_ON}|%{ROOTCHANGE}|%{SEC_LOGIN}|%{SEC_VIOLATION}|%{SSH2_CLOSE}|%{SSH2_SESSION}|%{SSH2_USERAUTH}|%{STCKYARPOVR}|%{SW_MATM_MACFLAP}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}|%{USERNAME_CONFIGURATION}|%{USER_RESET}|%{WEAK_PASSWORD_TYPE}"
         custom_patterns:
+          ACCTLOCAL: "Username: %{USERNAME:username} Privilege level: %{NUMBER:priv_level} Command: %{GREEDYDATA:command_line}"
+          BLOCK_BPDUGUARD: "Received BPDU (from bridge %{DATA:source_mac_addr} )?on port %{NOTSPACE:ifname} with BPDU Guard enabled. Disabling port."
+          CFGLOG_LOGGEDCMD: 'User:%{USERNAME:username}\s+logged command:%{GREEDYDATA:command_line}'
+          CONFIG_I: 'Configured from console by %{DATA:username} on %{VTY} \(%{IP:source_ip}\)'
+          CONFIG_P: 'Configured programmatically by process %{DATA:process_name} from console as %{DATA:username} on %{VTY} \(%{IP:source_ip}\)'
+          CONFIG_RESOLVE_FAILURE: 'System config parse from \(%{DATA:url}\) failed'
+          DHCP_SNOOPING: "DHCP_SNOOPING drop message on untrusted port, message type: %{DATA} sa: %{DATA:source_mac_addr}"
+          DHCP_SNOOPING_MATCH_MAC_FAIL: "DHCP_SNOOPING drop message because the chaddr doesn't match source mac, message type: %{WORD:message_type}, chaddr: %{DATA:chaddr}, MAC sa: %{DATA:source_mac_addr}"
+          DMI_AUTH_FAILED: "%{DATA:switch}: %{DATA:process_name}: Authentication failure from %{IP:source_ip}:%{NUMBER:source_port} for (?P<proto>%{DATA} over %{DATA})."
+          DMI_AUTH_PASSED: "%{DATA:switch}: %{DATA:process_name}: User '%{DATA:username}' authenticated successfully from %{IP:source_ip}:%{NUMBER:source_port}\\s+for %{DATA:proto}. External groups: %{DATA:ext_groups}"
+          DUPADDR: "Duplicate address %{IP:source_ip} on %{IFNAME_AND_VLAN:ifname}, sourced by %{DATA:source_mac_addr}"
+          ERR_DISABLE: "%{DATA:error_type} error detected on %{NOTSPACE:ifname}, putting %{DATA} in %{DATA:ifstate} state"
+          IPACCESSLOGP: 'list %{DATA} permitted tcp %{IP:source_ip}\(%{NUMBER:source_port}\) -> %{IP:destination_ip}\(%{NUMBER:destination_port}\), %{NUMBER:packets} packet(s?)'
+          IPACCESSLOGS: "list %{DATA} denied %{IP:source_ip} %{NUMBER:packets} packet(s?)"
           LINEPROTO: "Line protocol on Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
           LINK: "Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
-          PM: "%{DATA:error_type} error detected on %{NOTSPACE:ifname}, putting %{DATA} in %{DATA:ifstate} state"
+          LOOPGUARD_BLOCK: "Loop guard blocking port %{NOTSPACE:ifname} on VLAN%{NUMBER:vlan}."
           MAB: "Authentication failed for client (%{DATA}) on Interface %{NOTSPACE:ifname} AuditSessionID %{DATA:session_id}"
-          SPANTREE: "Received BPDU from bridge %{DATA:source_mac_addr} on port %{NOTSPACE:ifname} with BPDU Guard enabled. Disabling port."
+          PORT_SECURITY: "Security violation on port %{NOTSPACE:ifname} due to MAC address %{DATA:source_mac_addr} on VLAN %{NUMBER:vlan}"
+          PRIV_AUTH_FAIL: 'Authentication to privilege level %{NUMBER:priv_level} failed by %{DATA:username} on %{VTY} \(%{IP:source_ip}\)'
+          PRIV_AUTH_PASS: 'Privilege level set to %{NUMBER:priv_level} by %{DATA:username} on %{VTY} \(%{IP:source_ip}\)'
+          QUIET_MODE_ON: 'Still timeleft for watching failures is %{NUMBER:timer} secs, \[user: %{USERNAME:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\] \[Reason: %{DATA}\] \[ACL: %{DATA}\] at %{GREEDYDATA}'
+          ROOTCHANGE: "Root Changed for vlan %{NUMBER:vlan}: New Root Port is %{DATA}. New Root Mac Address is %{MAC:new_mac}"
           SEC_VIOLATION: "Security violation occurred, caused by MAC address %{DATA:source_mac_addr} on port %{NOTSPACE:ifname}( attempting to access port %{DATA})?."
-    filter: '{{parsed_event.message.facility in ["LINEPROTO", "LINK", "PM", "MAB", "SPANTREE", "PORT_SECURITY"]}}'
-  - name: parsed_description
-    external:
-      name: grok.match
-      properties:
-        raise_errors: false
-        input_field: parsed_event.message.description
-        pattern: "%{SEC_LOGIN}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}"
-        custom_patterns:
-          SEC_LOGIN: 'Login (Success|failed) \[user: %{DATA:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\]( \[Reason: %{DATA}\])? at %{TIME} %{WORD} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
+          SEC_LOGIN: 'Login (Success|failed) \[user: %{DATA:username}\] \[Source: %{IP:source_ip}\] \[localport: %{NUMBER:source_port}\]( \[Reason: %{DATA}\])? at %{TIME} %{TIMEZONE} %{DAY} %{MONTH} %{MONTHDAY} %{YEAR}'
+          SSH2_CLOSE: '(SSH|SSH2) Session from %{IP:source_ip} \(?tty = %{NUMBER:tty}\)? for user ''%{DATA:username}'' using (crypto cipher )?''%{DATA:cypher}''(, hmac ''%{DATA:hmac}'')? closed'
+          SSH2_USERAUTH: 'User ''%{DATA:username}'' authentication for SSH2 Session from %{IP:source_ip} \(tty = %{NUMBER:tty}\) using crypto cipher ''%{DATA:cypher}'', hmac ''%{DATA:hmac}'' Succeeded'
+          SSH2_SESSION: 'SSH2 Session request from %{IP:source_ip} \(?tty = %{NUMBER:tty}\)? using crypto cipher ''%{DATA:cypher}'', hmac ''%{DATA:hmac}'' Succeeded'
+          STCKYARPOVR: "Attempt to overwrite Sticky ARP entry: %{IP:source_ip}, hw: %{MAC:source_mac_addr} by hw: %{MAC:new_mac}"
           SYS_LOGIN_FAILURE: "Logging to host %{IP:destination_ip} port %{NUMBER:destination_port} failed"
           SYS_LOGOUT: 'User %{USERNAME:username} has exited tty session %{NUMBER:terminal}\(%{IP:source_ip}\)'
           SYS_TTY_EXPIRE_TIMER: '\(exec timer expired, tty %{NUMBER:terminal} \(%{IP:source_ip}\)\), user %{USERNAME:username}'
-    filter: '{{parsed_event.message.facility in ["SEC_LOGIN", "SYS"]}}'
-  - name: parsed_description
-    external:
-      raise_errors: false
-      name: grok.match
-      properties:
-        input_field: parsed_event.message.description
-        pattern: "%{SW_MATM_MACFLAP}"
-        custom_patterns:
-          SW_MATM_MACFLAP: "Host %{MAC:source_mac_addr} in vlan %{NOTSPACE:vlan} is flapping between port %{NOTSPACE:port1} and port %{NOTSPACE:port2}"
-    filter: '{{parsed_event.message.facility == "SW_MATM"}}'
+          SW_MATM_MACFLAP: "Host %{MAC:source_mac_addr} in vlan %{NUMBER:vlan} is flapping between port %{NOTSPACE:port1} and port %{NOTSPACE:port2}( %{DATA})?"
+          USERNAME_CONFIGURATION: "user with username: %{USERNAME:username} configured"
+          USER_RESET: 'User %{USERNAME:target_username} failed attempts reset by %{USERNAME:source_username} on %{VTY} \(%{IP:source_ip}\)'
+          WEAK_PASSWORD_TYPE: "(%{WORD}: )?Command has been added to the configuration using a type %{NUMBER:password_type} password. However, type %{NUMBER} passwords will soon be deprecated. Migrate to a supported password type"
+
+          IFNAME_AND_VLAN: "Vlan%{NUMBER:vlan}|%{NOTSPACE}"
+          TIMEZONE: '[A-Z0-9\+\-]+'
+          VTY: "vty%{NUMBER:vty}"
+
   - name: parsed_date
     external:
       name: date.parse
@@ -55,6 +67,7 @@ pipeline:
         input_field: "{{parsed_event.message.date}}"
         output_field: date
         timezone: "{{parsed_event.message.timezone}}"
+
   - name: set_ecs_fields
   - name: set_cisco_fields
 
@@ -65,7 +78,6 @@ stages:
           "@timestamp": "{{parsed_date.date}}"
           observer.vendor: "Cisco"
           observer.product: "ios"
-          event.category: ["host"]
           event.severity: "{{parsed_event.message.severity}}"
           event.code: "{{parsed_event.message.mnemonic}}"
           event.reason: "{{parsed_event.message.description}}"
@@ -86,11 +98,34 @@ stages:
       - set:
           destination.port: "{{parsed_description.message.destination_port}}"
           user.name: "{{parsed_description.message.username}}"
+          source.user.name: "{{parsed_description.message.source_username}}"
+          user.target.name: "{{parsed_description.message.target_username}}"
           network.vlan.id: "{{parsed_description.message.vlan}}"
+          process.name: "{{parsed_description.message.process_name}}"
+          network.protocol: "{{parsed_description.message.proto}}"
+          process.command_line: "{{parsed_description.message.command_line}}"
+          url.original: "{{parsed_description.message.url}}"
 
-      - set:
-          event.category: ["authentication"]
-        filter: "{{parsed_event.message.mnemonic in ['LOGIN_FAILED', 'LOGIN_SUCCESS', 'LOGOUT', 'LOGGINGHOST_FAIL'] or 'Authentication failed' in parsed_event.message.description}}"
+      - translate:
+        dictionary:
+          AUTHENTICATION_FAILED: ["authentication"]
+          AUTH_PASSED: ["authentication"]
+          CONFIG_I: ["configuration"]
+          CONFIG_P: ["configuration"]
+          CONFIG_RESOLVE_FAILURE: ["configuration"]
+          LOGIN_FAILED: ["authentication"]
+          LOGIN_SUCCESS: ["authentication"]
+          LOGOUT: ["authentication"]
+          LOGGINGHOST_FAIL: ["authentication"]
+          PRIV_AUTH_FAIL: ["authentication"]
+          SSH2_CLOSE: ["session"]
+          SSH2_USERAUTH: ["authentication"]
+          SSH2_SESSION: ["session"]
+          SSH_CLOSE: ["session"]
+          USERNAME_CONFIGURATION: ["configuration"]
+        mapping:
+          parsed_event.message.mnemonic: event.category
+        fallback: ["host"]
 
       - translate:
         dictionary:
@@ -98,6 +133,11 @@ stages:
           LOGIN_SUCCESS: ["start"]
           LOGOUT: ["end"]
           LOGGINGHOST_FAIL: ["end"]
+          AUTHENTICATION_FAILED: ["start"]
+          AUTH_PASSED: ["start"]
+          PRIV_AUTH_FAIL: ["start"]
+          SSH2_CLOSE: ["end"]
+          SSH_CLOSE: ["end"]
         mapping:
           parsed_event.message.mnemonic: event.type
         fallback: ["info"]
@@ -108,13 +148,22 @@ stages:
           LOGIN_SUCCESS: "success"
           LOGOUT: "success"
           LOGGINGHOST_FAIL: "failure"
+          AUTHENTICATION_FAILED: "failure"
+          AUTH_PASSED: "success"
+          PRIV_AUTH_FAIL: "failure"
         mapping:
           parsed_event.message.mnemonic: event.outcome
 
       - set:
+          event.category: ["authentication"]
           event.type: ["start"]
           event.outcome: "failure"
         filter: "{{'Authentication failed' in parsed_event.message.description}}"
+
+      - set:
+          event.outcome: "success"
+          event.type: ["start"]
+        filter: "{{parsed_event.message.mnemonic == 'SSH2_USERAUTH' and 'Succeeded' in parsed_event.message.description}}"
 
   set_cisco_fields:
     actions:
@@ -123,6 +172,13 @@ stages:
           cisco.ios.event.error_type: "{{parsed_description.message.error_type}}"
           cisco.ios.observer.interface.name: "{{parsed_description.message.ifname}}"
           cisco.ios.observer.terminal: "{{parsed_description.message.terminal}}"
+          cisco.ios.privilege_level: "{{parsed_description.message.priv_level}}"
+          cisco.ios.password_type: "{{parsed_description.message.password_type}}"
+          cisco.ios.chaddr: "{{parsed_description.message.chaddr | to_mac_address}}"
+          cisco.ios.external_groups: "{{parsed_description.message.ext_groups}}"
+          cisco.ios.vty: "{{parsed_description.message.vty}}"
+          cisco.ios.timer: "{{parsed_description.message.timer}}"
+          cisco.ios.new_mac: "{{parsed_description.message.new_mac | to_mac_address}}"
       - set:
           cisco.ios.observer.interface.ports:
             - "{{parsed_description.message.port1}}"
