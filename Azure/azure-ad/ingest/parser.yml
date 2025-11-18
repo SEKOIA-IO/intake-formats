@@ -86,6 +86,9 @@ stages:
           azuread.properties.tokenIssuerType: "{{parsed_event.message.properties.tokenIssuerType}}"
           azuread.properties.incomingTokenType: "{{parsed_event.message.properties.incomingTokenType}}"
           azuread.properties.resourceId: "{{parsed_event.message.properties.resourceId}}"
+          azuread.properties.servicePrincipalName: "{{parsed_event.message.properties.servicePrincipalName}}"
+          azuread.properties.servicePrincipalId: "{{parsed_event.message.properties.servicePrincipalId}}"
+          azuread.properties.resourceOwnerTenantId: "{{parsed_event.message.properties.resourceOwnerTenantId}}"
 
       - set:
           azuread.properties.network_location.network_type: "{{(parsed_event.message.properties.networkLocationDetails | first).networkType}}"
@@ -129,8 +132,8 @@ stages:
           "@timestamp": "{{parsed_date.date}}"
           service.type: "ldap"
           service.name: '{{ parsed_event.message.resourceDisplayName or "Azure Active Directory"}}'
-          action.name: "{{parsed_event.message.operationName}}"
-          event.action: "{{parsed_event.message.operationName}}"
+          action.name: "{{parsed_event.message.operationName or parsed_event.message.activityDisplayName}}"
+          event.action: "{{parsed_event.message.operationName or parsed_event.message.activityDisplayName}}"
           user.id: "{{ parsed_event.message.userId or parsed_event.message.properties.userId}}"
           user.name: "{{ parsed_event.message.userPrincipalName}}"
           user_agent.original: "{{ parsed_event.message.userAgent}}"
@@ -158,6 +161,17 @@ stages:
               {%- if item.type == "User" -%}{{ item.id }}{%- endif -%}
             {%- endfor -%}
         filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | list | length == 1 and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first != [] }}"
+
+      - set:
+          user.target.name: >
+            {%- for item in parsed_event.message.targetResources -%}
+              {%- if item.type == "User" -%}{{ item.userPrincipalName }}{%- endif -%}
+            {%- endfor -%}
+          user.target.id: >
+            {%- for item in parsed_event.message.targetResources -%}
+              {%- if item.type == "User" -%}{{ item.id }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{parsed_event.message.targetResources | selectattr('type', 'equalto', 'User') | list | length == 1}}"
 
       - set:
           user.target.group.name: >
@@ -190,6 +204,13 @@ stages:
             {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first -%}
             {%- for prop in properties -%}
               {%- if prop.displayName == 'Group.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+
+      - set:
+          azuread.properties.targetServicePrincipalAppRoleNewDisplayValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRole.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
             {%- endfor -%}
 
       - set:
@@ -236,11 +257,25 @@ stages:
         filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
 
       - set:
+          azuread.properties.appId: >
+            {%- for item in parsed_event.message.properties.additionalDetails -%}
+              {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+
+      - set:
           user_agent.original: >
             {%- for item in parsed_additional_info.message -%}
               {%- if item.Key == 'userAgent' -%}{{ item.Value }}{%- endif -%}
             {%- endfor -%}
 
+      - set:
+          user_agent.original: >
+            {%- for item in parsed_event.message.properties.additionalDetails -%}
+              {%- if item.key == 'User-Agent' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{final.user_agent.original == null}}"
+
+      - set:
           azuread.properties.riskReasons: >
             {%- for item in parsed_additional_info.message -%}
               {%- if item.Key == 'riskReasons' -%}{{ item.Value }}{%- endif -%}
@@ -294,10 +329,9 @@ stages:
           azuread.properties.targetDevicePrincipalName: "{{parsed_event.message.properties.targetResources[0].devicePrincipalName}}"
           azuread.properties.targetDeviceDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
         filter: '{{ parsed_event.message.properties.targetResources|length == 1 and parsed_event.message.properties.targetResources[0].type == "Device"}}'
-
       - set:
-          action.properties: []
-        filter: "{{ parsed_event.message.properties.targetResources == [] }}"
+          azuread.properties.targetServicePrincipalDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
+        filter: '{{ parsed_event.message.properties.targetResources|length > 0 and parsed_event.message.properties.targetResources[0].type == "ServicePrincipal"}}'
 
   log_type_authentication:
     actions:
