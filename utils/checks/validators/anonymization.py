@@ -86,8 +86,6 @@ ACCEPTED_PHONE_FORMATS = [
     r"^\(555\)\s?\d{3}-\d{4}$",
 ]
 
-ACCEPTED_UUID = "00000000-0000-0000-0000-000000000000"
-
 ACCEPTED_HASHES = {
     "md5": "68b329da9893e34099c7d8ad5cb9c940",
     "sha1": "adc83b19e793491b1c6ea0fd8b46cd9f32e592fc",
@@ -518,6 +516,10 @@ class AnonymizationValidator:
         if re.fullmatch(r"\d+", username) and all(c == username[0] for c in username):
             return True
 
+        # Check if username is a correct anonymized email
+        if self.validate_email(username):
+            return True
+
         return False
 
     def validate_email(self, email: str) -> bool:
@@ -685,7 +687,12 @@ class AnonymizationValidator:
         Returns:
             bool: True if the UUID is properly anonymized, False otherwise.
         """
-        return value == ACCEPTED_UUID
+
+        # Accept numeric-only UUIDs - it's unlikely to have them in real production data
+        if re.fullmatch(r"\d{8}-\d{4}-\d{4}-\d{4}-\d{12}", str(value).strip()):
+            return True
+
+        return False
 
     def validate_hash(self, value: str, field_path: str) -> bool:
         """
