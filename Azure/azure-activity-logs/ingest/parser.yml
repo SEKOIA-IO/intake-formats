@@ -10,16 +10,16 @@ pipeline:
   - name: set_common_fields
 
   - name: set_administrative
-    filter: "{{parsed_event.message.category.value == 'Administrative' or parsed_event.message.category == 'Administrative'}}"
+    filter: "{{parsed_event.message.category.value == 'Administrative'}}"
 
   - name: set_alerts
-    filter: "{{parsed_event.message.category.value == 'Alert' or parsed_event.message.category == 'Alert'}}"
+    filter: "{{parsed_event.message.category.value == 'Alert'}}"
 
   - name: set_security
-    filter: "{{parsed_event.message.category.value == 'Security' or parsed_event.message.category == 'Security'}}"
+    filter: "{{parsed_event.message.category.value == 'Security'}}"
 
   - name: set_policy
-    filter: "{{parsed_event.message.category.value == 'Policy' or parsed_event.message.category == 'Policy'}}"
+    filter: "{{parsed_event.message.category.value == 'Policy'}}"
 
 stages:
   set_common_fields:
@@ -27,8 +27,8 @@ stages:
       - set:
           "@timestamp": "{{parsed_event.message.eventTimestamp}}"
           event.provider: "{{parsed_event.message.resourceProviderName.value}}"
-          event.action: "{{parsed_event.message.operationName.value or parsed_event.message.operationName}}"
-          event.dataset: "{{parsed_event.message.category.value or parsed_event.message.category}}"
+          event.action: "{{parsed_event.message.operationName.value}}"
+          event.dataset: "{{parsed_event.message.category.value}}"
           log.level: "{{parsed_event.message.level}}"
           azure.activity_logs.operation_id: "{{parsed_event.message.operationId}}"
           azure.activity_logs.correlation_id: "{{parsed_event.message.correlationId}}"
@@ -46,17 +46,13 @@ stages:
           event.type: ["info"]
 
       - set:
-          source.user.full_name: "{{parsed_event.message.get('claims', {}).get('name') or parsed_event.message.get('identity', {}).get('claims', {}).get('name')}}"
+          source.user.full_name: "{{parsed_event.message.claims.name}}"
           source.user.name: "{{parsed_event.message.caller}}"
-          source.ip: "{{parsed_event.message.get('claims', {}).get('ipaddr') or parsed_event.message.get('identity', {}).get('claims', {}).get('ipaddr') or parsed_event.message.get('callerIpAddress')}}"
+          source.ip: "{{parsed_event.message.claims.ipaddr}}"
           azure.activity_logs.channels: "{{parsed_event.message.channels}}"
           client.ip: "{{parsed_event.message.httpRequest.clientIpAddress}}"
           http.request.id: "{{parsed_event.message.httpRequest.clientRequestId}}"
           http.request.method: "{{parsed_event.message.httpRequest.method}}"
-
-      - set:
-          event.duration: "{{(parsed_event.message.durationMs | int) * 1_000_000}}" # 1 ms = 10 ^ 6 ns
-        filter: "{{parsed_event.message.durationMs | int(-1) > 0}}"
 
   set_alerts:
     actions:
@@ -66,7 +62,7 @@ stages:
           event.type: ["info"]
 
       - set:
-          event.reason: "{{parsed_event.message.get('description') or parsed_event.message.get('resultDescription')}}"
+          event.reason: "{{parsed_event.message.description}}"
           source.user.name: "{{parsed_event.message.caller}}"
           azure.activity_logs.id: "{{parsed_event.message.eventDataId}}"
           rule.reference: "{{parsed_event.message.properties.RuleUri}}"
@@ -81,7 +77,7 @@ stages:
 
       - set:
           azure.activity_logs.id: "{{parsed_event.message.eventDataId}}"
-          event.reason: "{{parsed_event.message.get('description') or parsed_event.message.get('resultDescription')}}"
+          event.reason: "{{parsed_event.message.description}}"
           rule.reference: "{{parsed_event.message.properties.RuleUri}}"
           rule.name: "{{parsed_event.message.properties.RuleName}}"
           rule.description: "{{parsed_event.message.properties.RuleDescription}}"
