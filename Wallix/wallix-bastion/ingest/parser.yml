@@ -23,6 +23,7 @@ pipeline:
   - name: set_provider
   - name: set_auditd
   - name: set_ip_fields
+  - name: set_domain_fields
   - name: set_pam_unix_fields
     filter: '{{original.message.startswith("pam_unix(")}}'
 
@@ -55,6 +56,10 @@ stages:
           parsed_event.message.status: event.outcome
         filter: '{{"session_uid" in parsed_event.message}}'
 
+      - set:
+          event.outcome: "{{parsed_event.message.status}}"
+        filter: "{{parsed_event.message.status in ('success', 'failure')}}"
+
       - translate:
         dictionary:
           "add": ["creation"]
@@ -72,8 +77,13 @@ stages:
         filter: '{{parsed_event.message.action == "authentify"}}'
 
       - set:
+          event.type: ["info"]
+        filter: "{{parsed_event.message.type == 'sessionlog'}}"
+
+      - set:
           event.type: ["end"]
-        filter: '{{parsed_event.message.infos.startswith("\"Closed")}}'
+          event.outcome: "success"
+        filter: '{{parsed_event.message.infos.startswith("Closed")}}'
 
   set_extracted_fields:
     actions:
@@ -88,7 +98,7 @@ stages:
 
       - set:
           host.name: "{{ parsed_event.message.device }}"
-        filter: '{{parsed_event.message.get("type") == "NEW_PROCESS"}}'
+        filter: '{{"PROCESS" in parsed_event.message.get("type")}}'
 
       - set:
           destination.user.name: "{{ parsed_event.message.account }}"
@@ -97,10 +107,6 @@ stages:
       - set:
           process.command_line: "{{ parsed_event.message.command_line }}"
         filter: '{{parsed_event.message.get("type") in ["NEW_PROCESS", "COMPLETED_PROCESS"]}}'
-
-      - set:
-          wallix.keyboard_input: "{{ parsed_event.message.data }}"
-        filter: "{{parsed_event.message.get('type') == 'KBD_INPUT'}}"
 
   set_auditd:
     actions:
@@ -154,6 +160,20 @@ stages:
       - set:
           source.ip: "{{ parsed_event.message.src_ip }}"
         filter: "{{ parsed_event.message.src_ip| is_ipaddress }}"
+
+  set_domain_fields:
+    actions:
+      - set:
+          destination.domain: "{{ parsed_event.message.target_ip }}"
+        filter: "{{ not parsed_event.message.target_ip| is_ipaddress }}"
+
+      - set:
+          source.domain: "{{ parsed_event.message.client_ip }}"
+        filter: "{{ not parsed_event.message.client_ip| is_ipaddress }}"
+
+      - set:
+          source.domain: "{{ parsed_event.message.src_ip }}"
+        filter: "{{ not parsed_event.message.src_ip| is_ipaddress }}"
 
   set_pam_unix_fields:
     actions:
