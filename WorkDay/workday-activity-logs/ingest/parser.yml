@@ -1,0 +1,223 @@
+name: workday-activity-logs
+pipeline:
+  - name: parsed_event
+    description: JSON log format parsing stage
+    filter: '{{original.message.startswith(''{'')}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+  - name: parsed_taskdisplayname
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_event.message.taskDisplayName}}'
+        output_field: message
+        pattern: (%{URLACTION}|%{USERACTION})
+        custom_patterns:
+          URIPATH: >-
+            ((?:\/?[A-Za-z0-9$.+!*'(){},~:;=@#%_\-])+(?:\/[A-Za-z0-9$.+!*'(){},~:;=@#%_\-]*)+)
+          URLACTION: '%{URIPATHPARAM:url} \(%{WORD:http_method}\)%{GREEDYDATA}'
+          USERACTION: >-
+            (%{GREEDYDATA:task}
+            \(%{GREEDYDATA:service}\)%{GREEDYDATA}|%{GREEDYDATA:task})
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.requestTime}}'
+        output_field: timestamp
+        format: ''
+        timezone: UTC
+  - name: ecs_observer_mapping
+  - name: ecs_event_mapping
+  - name: ecs_client_mapping
+  - name: ecs_user_agent_mapping
+  - name: ecs_url_mapping
+  - name: ecs_http_mapping
+  - name: ecs_error_mapping
+  - name: ecs_service_mapping
+  - name: custom_fields_mapping
+  - name: ecs_authentication_categorization
+  - name: ecs_configuration_categorization
+  - name: ecs_session_categorization
+  - name: ecs_web_categorization
+  - name: ecs_outcome_categorization
+  - name: ecs_kind_categorization
+stages:
+  ecs_observer_mapping:
+    actions:
+      - set:
+          observer.type: Application
+          observer.vendor: Workday
+          observer.product: Activity logs
+  ecs_event_mapping:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.action: '{{parsed_taskdisplayname.message.task}}'
+          event.message: '{{parsed_event.message.taskDisplayName}}'
+  ecs_client_mapping:
+    actions:
+      - set:
+          client.address: '{{parsed_event.message.ipAddress}}'
+          client.user.name: '{{parsed_event.message.systemAccount}}'
+  ecs_user_agent_mapping:
+    actions:
+      - set:
+          user_agent.os.type: '{{parsed_event.message.deviceType}}'
+          user_agent.original: '{{parsed_event.message.userAgent}}'
+  ecs_url_mapping:
+    actions:
+      - set:
+          url.original: '{{parsed_taskdisplayname.message.url}}'
+  ecs_http_mapping:
+    actions:
+      - set:
+          http.request.method: '{{parsed_taskdisplayname.message.http_method}}'
+  ecs_error_mapping:
+    actions:
+      - set:
+          error.code: '{{parsed_event.message.ERROR_CODE_FIELD}}'
+          error.message: '{{parsed_event.message.ERROR_MESSAGE_FIELD}}'
+  ecs_service_mapping:
+    actions:
+      - set:
+          service.name: '{{parsed_taskdisplayname.message.service}}'
+  custom_fields_mapping:
+    actions:
+      - set:
+          workday.tenant.id: '{{parsed_event.message.tenantId}}'
+          workday.session.id: '{{parsed_event.message.sessionId}}'
+          workday.tenant.host: '{{parsed_event.message.tenantHost}}'
+  ecs_authentication_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{'auth' in final.event.action or 'login' in final.event.action or
+          'logout' in final.event.action or 'logged in' in
+          final.event.action|lower or 'logged out' in final.event.action|lower
+          or 'logon' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'authentication' in
+          final.event.category and 'logout' in final.event.action|lower or
+          'done' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+  ecs_configuration_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
+        filter: >-
+          {{ 'config' in final.event.action|lower or 'policy' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: >-
+          {{'access' not in final.event.type and 'configuration' in
+          final.event.category and ('read' in final.event.action|lower or 'view'
+          in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
+        filter: >-
+          {{'change' not in final.event.type and 'configuration' in
+          final.event.category and ('change' in final.event.action|lower or
+          'update' in final.event.action|lower or 'load' in
+          final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
+        filter: >-
+          {{'creation' not in final.event.type and 'configuration' in
+          final.event.category and ('new' in final.event.action|lower or 'set'
+          in final.event.action|lower or 'create' in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'deletion' not in final.event.type and 'configuration' in
+          final.event.category and ('delete' in final.event.action|lower or
+          'remove' in final.event.action|lower or 'create' in
+          final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{final.event.type is not defined and 'configuration' in
+          final.event.category}}
+  ecs_session_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''session'']}}'
+        filter: >-
+          {{'session' not in final.event.category and 'session' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'session' in final.event.category
+          and ('close' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'session' in final.event.category
+          and 'info' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'session' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+  ecs_web_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''web'']}}'
+        filter: '{{final.event.category is not defined}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''error'']}}'
+        filter: '{{ ''web'' in final.event.category and final.error is defined}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: >-
+          {{'web' in final.event.category and (final.event.action is defined or
+          final.http.request.method is defined)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: '{{''web'' in final.event.category and final.event.type is not defined}}'
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'fail' in final.event.action|lower or 'fail' in
+          final.event.message|lower or 'fail' in
+          parsed_event.message.result|lower  or 'fail' in
+          parsed_event.message.status|lower}}
+      - set:
+          event.outcome: success
+        filter: '{{final.event.outcome is not defined}}'
+  ecs_kind_categorization:
+    actions:
+      - set:
+          event.kind: alert
+        filter: >-
+          {{'alert' in final.event.message|lower or 'alert' in
+          final.event.action|lower}}
+      - set:
+          event.kind: event
+        filter: '{{final.event.kind is not defined}}'
