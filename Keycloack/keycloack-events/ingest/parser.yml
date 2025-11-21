@@ -1,0 +1,91 @@
+name: keycloack-events
+pipeline:
+  - name: parsed_json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: parsed_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parsed_json.message.message }}"
+        output_field: message
+        value_sep: "="
+        item_sep: ',\s'
+
+  - name: set_common_fields
+
+  - name: set_ecs_categorization
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parsed_json.message.get('@timestamp') }}"
+
+          event.category: ["authentication"]
+          event.type: ["info"]
+
+          # Log fields
+          log.logger: "{{ parsed_json.message.get('log.logger') }}"
+          log.level: "{{ parsed_json.message.get('log.level') }}"
+
+          # Host fields
+          host.name: "{{ parsed_json.message.get('host.hostname') }}"
+
+          # Service fields
+          service.name: "{{ parsed_json.message.get('service.name') }}"
+          service.version: "{{ parsed_json.message.get('service.version') }}"
+
+          # Process fields
+          process.name: "{{ parsed_json.message.get('process.name') }}"
+          process.pid: "{{ parsed_json.message.get('process.pid') }}"
+          process.thread.name: "{{ parsed_json.message.get('process.thread.name') }}"
+          process.thread.id: "{{ parsed_json.message.get('process.thread.id') }}"
+
+          event.code: "{{ parsed_kv.message.type }}"
+          event.provider: "{{ parsed_kv.message.clientId }}"
+          error.code: "{{ parsed_kv.message.error }}"
+
+          # Custom Keycloak fields
+          keycloak.realm.id: "{{ parsed_kv.message.realmId }}"
+          keycloak.realm.name: "{{ parsed_kv.message.realmName }}"
+          keycloak.service.environment: "{{ parsed_json.message.get('service.environment') }}"
+
+      # Set source.ip with validation
+      - set:
+          source.ip: "{{ parsed_kv.message.ipAddress }}"
+        filter: "{{ parsed_kv.message.ipAddress | is_ipaddress }}"
+
+      - set:
+          user.id: "{{ parsed_kv.message.userId }}"
+        filter: "{{ parsed_kv.message.userId is defined and parsed_kv.message.userId != 'null' }}"
+
+  set_ecs_categorization:
+    actions:
+      # Event outcome based on error field
+      - set:
+          event.outcome: failure
+        filter: "{{ final.error.code is defined }}"
+
+      - set:
+          event.outcome: success
+        filter: "{{ final.error.code is not defined and final.event.code is defined }}"
+
+      # Event type: start (login events)
+      - set:
+          event.type: ["start"]
+        filter: "{{'login' in final.event.code | lower and final.error.code is not defined}}"
+
+      # Event type: end (logout events)
+      - set:
+          event.type: ["end"]
+        filter: "{{ 'logout' in final.event.code | lower }}"
+
+      # Event type: info with error becomes denied
+      - set:
+          event.type: ["denied"]
+        filter: "{{ final.error.code is defined }}"
