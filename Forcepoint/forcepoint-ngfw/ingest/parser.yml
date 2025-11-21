@@ -1,6 +1,8 @@
 name: forcepoint-ngfw
+ignored_values: null
 pipeline:
   - name: parsed_event
+    description: ''
     filter: '{{original.message.startswith(''LEEF'')}}'
     external:
       name: leef.parse-leef
@@ -8,6 +10,15 @@ pipeline:
         input_field: '{{original.message}}'
         output_field: message
   - name: parsed_event
+    description: ''
+    filter: '{{original.message.startswith(''CEF:'')}}'
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: '{{original.message}}'
+        output_field: message
+  - name: parsed_event
+    description: ''
     filter: '{{parsed_event is not mapping}}'
     external:
       name: kv.parse-kv
@@ -16,201 +27,480 @@ pipeline:
         output_field: message
         value_sep: '='
         item_sep: ','
-  - name: set_observer_fields
-  - name: parsed_date
-    filter: '{{parsed_event.message.devTimeFormat == "MMM dd yyyy HH:mm:ss"}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.devTime}}'
-        output_field: timestamp
-        format: '%b %d %Y %H:%M:%S'
-        timezone: UTC
-  - name: parsed_date
-    filter: '{{parsed_event.message.devTimeFormat is not defined}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.devTime}}'
-        output_field: timestamp
-        format: '%Y-%m-%d %H:%M:%S'
-        timezone: UTC
-  - name: set_event_common_fields
-  - name: set_good_practice_fields
-  - name: detailed_parsed_message
-    filter: '{{final.event.message is defined}}'
+  - name: parsed_msg
+    description: ''
+    filter: '{{parsed_event.message.msg is defined}}'
     external:
       name: grok.match
       properties:
-        input_field: '{{final.event.message}}'
+        input_field: '{{parsed_event.message.msg}}'
         output_field: message
-        pattern: '%{command_history}|%{dhcp_reply}|%{dhcp_request}|%{vpn_trigger}'
+        pattern: >-
+          %{COMMAND_HISTORY}|%{DHCP_REPLY}|%{DHCP_REQUEST}|%{VPN_TRIGGER}|%{OTHER}
         custom_patterns:
-          dhcp_reply: >-
+          OTHER: '%{DATA:reason}'
+          DHCP_REPLY: >-
             Message type
             %{WORD}\.\sXID\:\s0x%{NOTSPACE:xid}\.\sRelay\sip\s%{IP:dhcp_relay_ip}\.\sServer\sID\:\s%{IP:server_id}\.\sDNS\:\s%{IP:dns_ip}\.
-          vpn_trigger: >-
+          VPN_TRIGGER: >-
             VPN\strigger\sipv[4-6]\(%{IP:source_ip}\)\s\-\>\sipv[4-6]\(%{IP:destination_ip}\)\,\stunnel\s%{GREEDYDATA:tunnel_id}
-          dhcp_request: >-
-            Message type %{WORD}\.\sXID\:\s0x%{NOTSPACE:xid}\.\sRelay\sip\s%{IP:dhcp_relay_ip}\.\sRelayed\sto\s%{IP:server_id}(\.\sServer\sID\:\s%{IP:server_id})?\.\sHostname\:\s%{GREEDYDATA:hostname}\.
-          command_history: >-
+          DHCP_REQUEST: >-
+            Message type
+            %{WORD}\.\sXID\:\s0x%{NOTSPACE:xid}\.\sRelay\sip\s%{IP:dhcp_relay_ip}\.\sRelayed\sto\s%{IP:server_id}(\.\sServer\sID\:\s%{IP:server_id})?\.\sHostname\:\s%{GREEDYDATA:hostname}\.
+          COMMAND_HISTORY: >-
             (%{GREEDYDATA:tty}\s)?(HISTORY|history)\:\sPID\\=%{NUMBER:pid}\sUID\\=%{NUMBER:uid}\sUSER\\=%{USERNAME:process_user}\s%{GREEDYDATA:command_line}
-  - name: set_network_common_fields
-  - name: set_host_common_fields
-  - name: set_user_common_fields
-  - name: set_process_common_fields
-  - name: set_custom_fields
-  - name: set_default_values
+  - name: parsed_date
+    description: ''
+    filter: ''
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{parsed_event.message.get(''rt'') or parsed_event.message.devTime}}'
+        output_field: timestamp
+        format: ''
+        timezone: UTC
+  - name: ecs_observer_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_event_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_source_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_destination_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_network_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_host_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_user_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_process_mapping
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_custom_fields
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_authentication_categorization
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_configuration_categorization
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_process_categorization
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_session_categorization
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_network_categorization
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_kind_categorization
+    description: ''
+    filter: ''
+    external: null
+  - name: ecs_outcome_categorization
+    description: ''
+    filter: ''
+    external: null
 stages:
-  set_observer_fields:
+  ecs_observer_mapping:
     actions:
       - set:
           observer.type: firewall
-          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.vendor: '{{parsed_event.message.DeviceVendor|lower}}'
           observer.product: '{{parsed_event.message.DeviceProduct}}'
           observer.version: '{{parsed_event.message.DeviceVersion}}'
-        filter: '{{original.message.startswith(''LEEF'')}}'
-  set_event_common_fields:
-    actions:
+        filter: ''
+        name: set
       - set:
-          event.action: '{{parsed_event.message.DeviceEventClassID}}'
-          event.reason: '{{parsed_event.message.originalSituation}}'
-          event.message: '{{parsed_event.message.msg or parsed_event.message.message}}'
-          event.severity: >-
-            {{parsed_event.message.severity or parsed_event.message.Severity or
-            parsed_event.message.sev}}
-  set_good_practice_fields:
+          observer.egress.interface.name: '{{parsed_event.message.deviceOutboundInterface}}'
+          observer.ingress.interface.name: '{{parsed_event.message.deviceInboundInterface}}'
+        filter: ''
+        name: set
+      - set:
+          observer.ip: '{{parsed_event.message.dvc}}'
+        filter: '{{parsed_event.message.dvc | is_ipaddress}}'
+        name: set
+  ecs_event_mapping:
     actions:
       - set:
           '@timestamp': '{{parsed_date.timestamp}}'
-          event.kind: event
-      - set:
-          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
-        filter: >-
-          {{'login' in final.event.action|lower or 'logon' in
-          final.event.action|lower or 'authentication' in
-          final.event.action|lower or 'logout' in final.event.action|lower or
-          'auth' in final.event.action|lower}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
-        filter: >-
-          {{'allow' in final.event.action|lower or 'allowed' in
-          final.event.action|lower  or 'permit' in final.event.action|lower or
-          parsed_event.message.action|lower in ["allow","permit"]}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
-        filter: >-
-          {{'deny' in final.event.action|lower or 'denied' in
-          final.event.action|lower or 'discard' in final.event.action|lower or
-          parsed_event.message.action|lower in ["discard","refuse"]}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''connection'']}}'
-        filter: '{{''connection'' in final.event.action|lower}}'
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
-        filter: >-
-          {{'creation' in final.event.action|lower or 'create' in
-          final.event.action|lower or 'add' in final.event.action|lower or 'set' in final.event.action|lower}}
+          event.module: '{{parsed_event.message.deviceFacility}}'
+          event.reason: '{{parsed_event.message.originalSituation}}'
+          event.message: '{{parsed_event.message.msg or parsed_event.message.message}}'
+          event.severity: '{{parsed_event.message.sev or parsed_event.message.Severity}}'
+        filter: ''
         name: set
       - set:
-          event.type: '{{(final.event.type|default([])) + [''change'']}}'
-        filter: >-
-          {{'change' in final.event.action|lower or 'update' in final.event.action|lower}}
+          event.code: '{{parsed_event.message.DeviceEventClassID}}'
+          event.action: '{{parsed_event.message.Name}}'
+        filter: '{{parsed_event.message.DeviceEventClassID|int != 0}}'
+        name: set
       - set:
-          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
-        filter: >-
-          {{'delete' in final.event.action|lower or 'remove' in final.event.action|lower}}
-      - set:
-          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
-        filter: >-
-          {{'config' in final.event.action|lower or 'cfg' in
-          final.event.action|lower or 'policy' in
-          final.event.action|lower or (('session' not in final.event.type and
-          'authentication' not in final.event.category) and ('creation' in
-          final.event.type or 'deletion' in final.event.type or 'change' in
-          final.event.type))}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''start'']}}'
-        filter: >-
-          {{'open' in final.event.action|lower or 'start' in
-          final.event.action|lower or 'open' in final.event.action|lower or
-          'started' in final.event.action|lower or 'start' in
-          final.event.action|lower or 'login' in final.event.action|lower}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''end'']}}'
-        filter: >-
-          {{'closed' in final.event.action|lower or 'closed' in
-          final.event.action|lower or 'ended' in final.event.action|lower or 'logout' in final.event.action|lower}}
-      - set:
-          event.outcome: success
-        filter: >-
-          {{('success' in final.event.action|lower and not 'unsuccess' in
-          final.event.action|lower)}}
-      - set:
-          event.outcome: failure
-        filter: >-
-          {{'failed' in final.event.action|lower or 'failure' in
-          final.event.action|lower or 'fail' in final.event.action|lower or
-          'failure' in final.event.action|lower}}
-  set_network_common_fields:
+          event.action: '{{parsed_event.message.DeviceEventClassID}}'
+        filter: '{{parsed_event.message.DeviceEventClassID|int == 0}}'
+        name: set
+  ecs_source_mapping:
     actions:
       - set:
           source.ip: '{{parsed_event.message.src}}'
+        filter: '{{parsed_event.message.src | is_ipaddress}}'
+        name: set
+      - set:
+          source.nat.ip: >-
+            {{parsed_event.message.srcPostNAT or
+            parsed_event.message.sourceTranslatedAddress}}
+        filter: >-
+          {{parsed_event.message.srcPostNAT | is_ipaddress or
+          parsed_event.message.sourceTranslatedAddress | is_ipaddress}}
+        name: set
+      - set:
           source.mac: '{{parsed_event.message.srcMAC}}'
-          source.port: '{{parsed_event.message.srcPort}}'
-          source.nat.ip: '{{parsed_event.message.srcPostNAT}}'
-          destination.ip: '{{parsed_event.message.dst}}'
+          source.port: '{{parsed_event.message.srcPort or parsed_event.message.spt}}'
           source.nat.port: '{{parsed_event.message.srcPostNATPort}}'
-          destination.port: '{{parsed_event.message.dstPort}}'
-          destination.nat.ip: '{{parsed_event.message.dstPostNAT}}'
-          network.iana_number: '{{parsed_event.message.proto}}'
-          destination.nat.port: '{{parsed_event.message.dstPostNATPort}}'
-  set_host_common_fields:
+        filter: ''
+        name: set
+  ecs_destination_mapping:
     actions:
       - set:
-          host.name: '{{parsed_event.message.sender}}'
-  set_user_common_fields:
+          destination.ip: '{{parsed_event.message.dst}}'
+        filter: '{{parsed_event.message.dst | is_ipaddress}}'
+        name: set
+      - set:
+          destination.nat.ip: >-
+            {{parsed_event.message.dstPostNAT or
+            parsed_event.message.destinationTranslatedAddress}}
+        filter: >-
+          {{parsed_event.message.srcPostNAT | is_ipaddress or
+          parsed_event.message.sourceTranslatedAddress | is_ipaddress}}
+        name: set
+      - set:
+          destination.port: '{{parsed_event.message.dstPort or parsed_event.message.dpt}}'
+          destination.nat.port: '{{parsed_event.message.dstPostNATPort}}'
+        filter: ''
+        name: set
+  ecs_network_mapping:
+    actions:
+      - set:
+          network.protocol: '{{parsed_event.message.proto}}'
+        filter: '{{parsed_event.message.proto|int == 0}}'
+        name: set
+      - set:
+          network.iana_number: '{{parsed_event.message.proto}}'
+        filter: '{{parsed_event.message.proto|int != 0}}'
+        name: set
+      - set:
+          network.application: '{{parsed_event.message.app}}'
+        filter: ''
+        name: set
+  ecs_host_mapping:
+    actions:
+      - set:
+          host.name: >-
+            {{parsed_event.message.sender or
+            parsed_event.message.deviceExternalId}}
+        filter: ''
+        name: set
+  ecs_user_mapping:
     actions:
       - set:
           user.name: '{{parsed_event.message.usrName}}'
-  set_process_common_fields:
+        filter: ''
+        name: set
+  ecs_process_mapping:
     actions:
       - set:
-          process.pid: '{{detailed_parsed_message.message.pid}}'
-          process.command_line: '{{detailed_parsed_message.message.command_line}}'
-          process.user.name: '{{detailed_parsed_message.message.process_user}}'
-        filter: '{{detailed_parsed_message.message is defined}}'
+          process.pid: '{{parsed_msg.message.pid}}'
+          process.user.name: '{{parsed_msg.message.process_user}}'
+          process.command_line: '{{parsed_msg.message.command_line}}'
+        filter: '{{parsed_msg.message is defined}}'
+        name: set
       - set:
           process.name: >-
             {{parsed_event.message.process or parsed_event.message.processName
             or parsed_event.message.ProcessName}}
-          process.user.id: '{{detailed_parsed_message.message.uid}}'
+          process.user.id: '{{parsed_msg.message.uid}}'
           process.thread.id: >-
             {{parsed_event.message.ThreadID or parsed_event.message.threadID or
             parsed_event.message.process.thread.id}}
-  set_custom_fields:
+        filter: ''
+        name: set
+  ecs_custom_fields:
     actions:
       - set:
-          forcepoint.firewall.dhcp.dns: '{{detailed_parsed_message.message.dns_ip}}'
-        filter: '{{detailed_parsed_message.message is defined and detailed_parsed_message.message.dns_ip|is_ipaddress}}'
+          forcepoint.firewall.dhcp.dns: '{{parsed_msg.message.dns_ip}}'
+        filter: >-
+          {{parsed_msg.message is defined and
+          parsed_msg.message.dns_ip|is_ipaddress}}
+        name: set
       - set:
-          forcepoint.firewall.dhcp.relay: '{{detailed_parsed_message.message.dhcp_relay_ip}}'
-        filter: '{{detailed_parsed_message.message is defined and detailed_parsed_message.message.dhcp_relay_ip|is_ipaddress}}'
+          forcepoint.firewall.dhcp.relay: '{{parsed_msg.message.dhcp_relay_ip}}'
+        filter: >-
+          {{parsed_msg.message is defined and
+          parsed_msg.message.dhcp_relay_ip|is_ipaddress}}
+        name: set
       - set:
-          forcepoint.firewall.dhcp.server: '{{detailed_parsed_message.message.server_id}}'
-        filter: '{{detailed_parsed_message.message is defined and detailed_parsed_message.message.server_id|is_ipaddress}}'
+          forcepoint.firewall.dhcp.server: '{{parsed_msg.message.server_id}}'
+        filter: >-
+          {{parsed_msg.message is defined and
+          parsed_msg.message.server_id|is_ipaddress}}
+        name: set
       - set:
-          forcepoint.firewall.dhcp.hostname: '{{detailed_parsed_message.message.hostname}}'
-          forcepoint.firewall.vpn.tunnel_id: '{{detailed_parsed_message.message.tunnel_id}}'
-        filter: '{{detailed_parsed_message.message is defined}}'
-  set_default_values:
+          forcepoint.firewall.dhcp.hostname: '{{parsed_msg.message.hostname}}'
+          forcepoint.firewall.vpn.tunnel_id: '{{parsed_msg.message.tunnel_id}}'
+        filter: '{{parsed_msg.message is defined}}'
+        name: set
+      - set:
+          forcepoint.firewall.rule.id: '{{parsed_event.message.cs1}}'
+          forcepoint.firewall.dhcp.type: '{{parse_message.message.dhcp_type}}'
+          forcepoint.firewall.rule.nat_id: '{{parsed_event.message.cs2}}'
+        filter: ''
+        name: set
+  ecs_authentication_categorization:
     actions:
       - set:
-          event.category: '[''network'']'
-        filter: '{{final.event.category is not defined}}'
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{'auth' in final.event.action or 'login' in final.event.action or
+          'logout' in final.event.action or 'logged in' in
+          final.event.action|lower or 'logged out' in final.event.action|lower
+          or 'logon' in final.event.action|lower}}
+        name: set
       - set:
-          event.type: '[''info'']'
-        filter: '{{final.event.type is not defined}}'
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'authentication' in
+          final.event.category and 'logout' in final.event.action|lower or
+          'done' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower))}}
+        name: set
       - set:
-          event.outcome: unknown
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+        name: set
+  ecs_configuration_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
+        filter: >-
+          {{ 'config' in final.event.action|lower or 'policy' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: >-
+          {{'access' not in final.event.type and 'configuration' in
+          final.event.category and ('read' in final.event.action|lower or 'view'
+          in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
+        filter: >-
+          {{'change' not in final.event.type and 'configuration' in
+          final.event.category and ('change' in final.event.action|lower or
+          'update' in final.event.action|lower or 'load' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
+        filter: >-
+          {{'creation' not in final.event.type and 'configuration' in
+          final.event.category and ('new' in final.event.action|lower or 'set'
+          in final.event.action|lower or 'create' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'deletion' not in final.event.type and 'configuration' in
+          final.event.category and ('delete' in final.event.action|lower or
+          'remove' in final.event.action|lower or 'create' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{final.event.type is not defined and 'configuration' in
+          final.event.category}}
+        name: set
+  ecs_process_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''process'']}}'
+        filter: '{{final.process is defined}}'
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: >-
+          {{'access' not in final.event.type and 'process' in
+          final.event.category and ('read' in final.event.action|lower or 'view'
+          in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
+        filter: >-
+          {{'change' not in final.event.type and 'process' in
+          final.event.category and ('update' in final.event.action|lower or
+          'edit' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'process' in
+          final.event.category and ('new' in final.event.action|lower or
+          'launch' in final.event.action|lower or 'start' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'process' in final.event.category
+          and ('stop' in final.event.action|lower or 'kill' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{final.event.type is not defined and 'process' in
+          final.event.category}}
+        name: set
+  ecs_session_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''session'']}}'
+        filter: >-
+          {{'session' not in final.event.category and 'session' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'session' in final.event.category
+          and ('close' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'session' in final.event.category
+          and 'info' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'session' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+        name: set
+  ecs_network_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''network'']}}'
+        filter: >-
+          {{final.event.category is not defined and final.observer.type ==
+          'firewall'}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''connection'']}}'
+        filter: >-
+          {{'connection' not in final.event.type and 'network' in
+          final.event.category and 'connection' in final.event.action|lower}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'network' in final.event.category
+          and ('close' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'network' in
+          final.event.category and 'connection' in final.event.type and 'end'
+          not in final.event.type and 'info' not in final.event.type}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'allowed' not in final.event.type and 'network' in
+          final.event.category and (('allow' in final.event.action|lower or
+          'permit' in final.event.action|lower) or ('allow' in
+          parsed_event.message.action|lower or 'permit' in
+          parsed_event.message.action|lower))}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'denied' not in final.event.type and 'network' in
+          final.event.category and (('discard' in final.event.action|lower or
+          'block' in final.event.action|lower or 'deny' in
+          final.event.action|lower or 'denied' in final.event.action|lower) or
+          ('discard' in parsed_event.message.action|lower or 'block' in
+          parsed_event.message.action|lower or 'deny' in
+          parsed_event.message.action|lower or 'denied' in
+          parsed_event.message.action|lower))}}
+        name: set
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'network' in final.event.category and (final.event.type is not
+          defined or ('info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' in
+          final.event.action|lower))}}
+        name: set
+  ecs_kind_categorization:
+    actions:
+      - set:
+          event.kind: alert
+        filter: >-
+          {{'alert' in final.event.message|lower or 'alert' in
+          final.event.action|lower}}
+        name: set
+      - set:
+          event.kind: event
+        filter: '{{final.event.kind is not defined}}'
+        name: set
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: '{{''fail'' in final.event.action|lower}}'
+        name: set
+      - set:
+          event.outcome: success
         filter: '{{final.event.outcome is not defined}}'
+        name: set
