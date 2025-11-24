@@ -6,6 +6,13 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+  - name: event_xml
+    filter: "{{json_event.get('message', {}).get('details', {}).get('eventXml') != None}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        input_field: "{{json_event.message.details.eventXml}}"
+        output_field: message
   - name: read_event_date
     external:
       name: date.parse
@@ -49,6 +56,7 @@ pipeline:
     filter: '{{json_event.message.engine == "applicationControl"}}'
   - name: set_email_fields
     filter: '{{"emailscan" in json_event.message.engine|lower}}'
+  - name: set_event_category
 
 stages:
   set_common_fields:
@@ -68,7 +76,7 @@ stages:
           "@timestamp": "{{read_event_date.datetime}}"
           event.dataset: "{{json_event.message.engine}}"
           event.action: "{{json_event.message.action}}"
-          event.reason: "{{json_event.message.details.reason}}"
+          event.reason: "{{json_event.message.details.reason or json_event.message.message}}"
           event.code: "{{json_event.message.details.systemDataEventId}}"
           event.provider: "{{json_event.message.details.systemDataProviderName}}"
 
@@ -87,6 +95,9 @@ stages:
           user.domain: "{{parse_username.user.domain}}"
           user.name: "{{parse_username.user.name}}"
           action.properties.UserPrincipalName: "{{json_event.message.details.userPrincipalName}}"
+
+          user.target.name: "{{(event_xml.message.Event.EventData.Data | selectattr('@Name', '==', 'TargetUserName') | first).get('#text')}}"
+          user.target.domain: "{{(event_xml.message.Event.EventData.Data | selectattr('@Name', '==', 'TargetDomainName') | first).get('#text')}}"
 
           process.pid: "{{json_event.message.details.systemDataProcessId}}"
           process.executable: "{{json_event.message.details.creator}}"
@@ -121,6 +132,15 @@ stages:
       - set:
           event.category: ["malware"]
           event.type: ["info"]
+
+      - set:
+          file.path: "{{json_event.message.details.filePath}}"
+          file.name: "{{json_event.message.details.filePath | basename}}"
+        filter: "{{json_event.message.details.filePath | length > 0}}"
+
+      - set:
+          withsecure.infection.name: "{{json_event.message.details.name}}"
+        filter: "{{json_event.message.details.get('fileScanningType') == 'fileInfection'}}"
 
   deepguard_blocked_executable_file:
     actions:
@@ -298,7 +318,7 @@ stages:
             {% set sha1 = threat.split('"sha1":"')[-1].split('"')[0] %}
             {% set size = threat.split('"size":')[-1].split(',')[0][1:-1] %}
             {% set email = json_event.message.details.get("itemSender") %}
-            {% set _ = dict.update({"indicator": {"type": "file", "name": filename, "ip": json_event.message.details.get("sendingServerIP"), "file": {"hash": sha1, "size": size|int}, "email": {"address": email }}}) %}
+            {% set _ = dict.update({"indicator": {"type": "file", "name": filename, "ip": json_event.message.details.get("sendingServerIP"), "file": {"hash": {"sha1": sha1}, "size": size|int}, "email": {"address": email }}}) %}
             {% set _ = threats.append(dict) %}
             {%- endif -%}
             {%- endfor -%}
@@ -315,6 +335,25 @@ stages:
             {%- endif -%}
             {{threats}}
         filter: "{{json_event.message.details.get('attachments') != None or json_event.message.details.get('urls') != None}}"
+
+  set_event_category:
+    actions:
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: "{{json_event.message.details.systemDataEventId | int(-1) == 4740}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{json_event.message.details.systemDataEventId | int(-1) == 4625}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: "{{json_event.message.details.systemDataEventId | int(-1) == 4624}}"
 
   ## https://connect.withsecure.com/api-reference/security-events#get-Browsing-protection-harmful-or-suspicious-page-blocked
 
