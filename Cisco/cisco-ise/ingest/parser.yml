@@ -59,6 +59,24 @@ pipeline:
         value_sep: "="
         item_sep: "*,*"
 
+  - name: pre_parse_step_data
+    filter: '{{"StepData" in original.message}}'
+    external:
+      name: grok.match
+      properties:
+        output_field: result
+        pattern: '%{DATA}(?<value>(StepData=%{DATA}(, StepData=%{DATA})?)),%{DATA}'
+
+  - name: parse_step_data
+    filter: '{{pre_parse_step_data.result.get("value") != None}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{", " + pre_parse_step_data.result.value}}'
+        output_field: result
+        value_sep: '=\s'
+        item_sep: ',\sStepData='
+
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
     external:
@@ -81,13 +99,12 @@ stages:
           observer.product: "Cisco ISE"
           event.type: ["info"]
           cisco.ise.type: "{{pre_parsed_event.pre_message.event_type}}"
-          cisco.ise.identity_policy.matched_rule: '{{parsed_kv_sentence.result.get("IdentityPolicyMatchedRule")}}'
+          rule.name: '{{parsed_kv_sentence.result.get("IdentityPolicyMatchedRule")}}'
           cisco.ise.network.device_name: '{{parsed_kv_sentence.result.get("NetworkDeviceName")}}'
 
       - set:
-          cisco.ise.step_data.code: '{{parsed_kv_sentence.result.StepData.split("=")[0]}}'
-          cisco.ise.step_data.message: '{{parsed_kv_sentence.result.StepData.split("=")[1]}}'
-        filter: '{{parsed_kv_sentence.result.get("StepData") != None and "=" in parsed_kv_sentence.result.get("StepData")}}'
+          cisco.ise.step_data.5_code: '{{parse_step_data.result.get("5")}}'
+#        filter: '{{parsed_kv_sentence.result.get("StepData") != None}}'
 
   set_configuration_fields:
     actions:
