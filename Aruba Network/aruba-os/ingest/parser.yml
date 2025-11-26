@@ -25,11 +25,11 @@ pipeline:
         output_field: date
     filter: "{{parsed_leef_event.message.devTime != None}}"
 
-  - name: parsed_lldp_event
+  - name: parsed_piped_event
     external:
       name: grok.match
       properties:
-        pattern: "Event\\|%{NUMBER:lldp_code}\\|%{WORD}\\|%{WORD}\\|%{DATA}\\|%{MESSAGE:description}"
+        pattern: "Event\\|%{NUMBER:event_code}\\|%{WORD}\\|%{WORD}\\|%{DATA}\\|%{MESSAGE:description}"
         custom_patterns:
           MESSAGE: "%{LLDP103}|%{LLDP10456}|%{LLDP107}|%{LLDP108}|%{LLDP109}|%{LLDP110}|%{LLDP113}|%{GREEDYDATA}"
           LLDP103: "Configured LLDP tx-timer to %{NUMBER:tx_timer}"
@@ -39,28 +39,29 @@ pipeline:
           LLDP109: "Configured LLDP tx-delay to %{DATA:tx_delay}"
           LLDP110: "Configured LLDP reinit-delay to %{DATA:reinit_delay}"
           LLDP113: "PVID mismatch on %{DATA:interface} pvid = %{DATA:pvid}, Neighbor (%{MAC:mac_src}|%{DATA:chassis_id}) port_id = %{DATA:ninterface} pvid = %{DATA:npvid}"
-    filter: '{{ "LLDP" in original.message }}'
 
   - name: parse_message
     external:
       name: grok.match
       properties:
-        pattern: "%{CLI}|%{SYSLOG}|%{DEFAULT}"
+        pattern: "%{CLI}|%{STM}|%{SYSLOG}|%{DEFAULT}"
         custom_patterns:
           CLI: 'cli\[%{NUMBER}\]: <%{NUMBER:code}> <%{WORD}> %{DATA} <%{IP:src_ip} %{MAC:src_mac}>\s*%{GREEDYDATA:syslog_payload}'
+          STM: 'stm\[%{NUMBER}\]: <%{NUMBER:code}> <%{WORD}> %{DATA} <%{IP:src_ip} %{MAC:src_mac}>\s*%{GREEDYDATA:syslog_payload}'
           SYSLOG: '<%{NUMBER:code}> <%{NUMBER}> (<%{WORD}> )?<%{WORD} %{IP:src_ip}>\s*(%{WORD}:\s*)?\s*%{GREEDYDATA:syslog_payload}'
           DEFAULT: '%{DATA:prefix}\:\s*%{USERNAME:obs}\s*\:\s*%{GREEDYDATA:payload}\s*'
-    filter: '{{"LEEF:" not in original.message and "LLDP" not in original.message}}'
+    filter: '{{"LEEF:" not in original.message and parsed_piped_event.get("message") == None}}'
 
   - name: parse_syslog_message
     external:
       name: grok.match
       properties:
         input_field: "parse_message.message.syslog_payload"
-        pattern: "%{USER_INFO}|%{SRC_MAC}|%{FORMAT_133121}|%{KV_PART}"
+        pattern: "%{USER_AUTHENTICATED}|%{USER_INFO}|%{SRC_MAC}|%{FORMAT_133121}|%{KV_PART}"
         custom_patterns:
           FORMAT_133121: "%{DATA} to %{IP:dst_ip}(:%{NUMBER:dst_port})? with %{GREEDYDATA}"
           KV_PART: '%{DATA:payload}.\s*%{GREEDYDATA:kv_part}'
+          USER_AUTHENTICATED: "User authenticated,( mac-%{MAC:src_mac},)?( username-%{DATA:user_name},)?( IP-%{IP:client_ip},)?( method-%{DATA:method},)?( role-%{DATA:role},)?.*?"
           USER_INFO: "User %{USERNAME:user_name}.*?"
           SRC_MAC: ".*?mac-%{MAC:src_mac}.*?"
     filter: "{{ parse_message.message.get('syslog_payload') != None }}"
@@ -152,8 +153,8 @@ pipeline:
   - name: set_leef_fields
     filter: '{{"LEEF:" in original.message}}'
 
-  - name: set_lldp_fields
-    filter: '{{ "LLDP" in original.message }}'
+  - name: set_piped_fields
+    filter: "{{ parsed_piped_event.get('message') != None }}"
 
 stages:
   set_syslog_fields:
@@ -167,7 +168,15 @@ stages:
           destination.domain: "{{ syslog_parse_kv_part_message.message.servername }}"
           destination.ip: "{{ parse_syslog_message.message.dst_ip or syslog_parse_kv_part_message.message.serverip }}"
           destination.port: "{{ parse_syslog_message.message.dst_port }}"
-          user.name: "{{ parse_syslog_message.message.user_name or syslog_parse_kv_part_message.message.username }}"
+          user.name: "{{ syslog_parse_kv_part_message.message.username }}"
+
+      - set:
+          user.email: "{{ parse_syslog_message.message.user_name }}"
+        filter: "{{ '@' in parse_syslog_message.message.get('user_name') }}"
+
+      - set:
+          user.name: "{{ parse_syslog_message.message.user_name }}"
+        filter: "{{ parse_syslog_message.message.get('user_name') != None and '@' not in parse_syslog_message.message.user_name }}"
 
       - set:
           source.ip: "{{ syslog_parse_kv_part_message.message.userip }}"
@@ -398,14 +407,17 @@ stages:
         fallback: "unknown"
         filter: "{{ parse_leef.message.msg_id != None }}"
 
-  set_lldp_fields:
+  set_piped_fields:
     actions:
+      - set:
+          event.dataset: "lldp"
+        filter: '{{ "LLDP" in original.message }}'
+
       - set:
           event.category: ["network"]
           event.type: ["info"]
-          event.dataset: "lldp"
-          event.reason: "{{ parsed_lldp_event.message.description }}"
-          event.code: "{{ parsed_lldp_event.message.lldp_code }}"
-          host.name: "{{ parsed_lldp_event.message.chassis_id }}"
-          observer.ingress.interface.name: "{{ parsed_lldp_event.message.interface }}"
-          source.mac: "{{ parsed_lldp_event.message.mac_src }}"
+          event.reason: "{{ parsed_piped_event.message.description }}"
+          event.code: "{{ parsed_piped_event.message.event_code }}"
+          host.name: "{{ parsed_piped_event.message.chassis_id }}"
+          observer.ingress.interface.name: "{{ parsed_piped_event.message.interface }}"
+          source.mac: "{{ parsed_piped_event.message.mac_src }}"
