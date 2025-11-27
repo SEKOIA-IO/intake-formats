@@ -46,6 +46,46 @@ pipeline:
         value_sep: "="
         item_sep: " "
 
+  # Extract hostname from URL in GET: statements
+  - name: parsed_get_url
+    filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('^GET:'))}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.kv_pairs}}"
+        output_field: url_parts
+        pattern: "GET:\\s+(?:https?://)?(?<hostname>[^:/]+)(?::(?<port>\\d+))?(?<path>/\\S*)?"
+
+  # Extract full URL from GET: statements
+  - name: parsed_get_full_url
+    filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('^GET:'))}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.kv_pairs}}"
+        output_field: url_data
+        pattern: "GET:\\s+(?<full_url>\\S+)"
+
+  # Extract domain from cookie statements
+  - name: parsed_cookie_domain
+    filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('domain='))}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.kv_pairs}}"
+        output_field: cookie_parts
+        pattern: "domain=\\.?(?<domain>[^;\\}\\s]+)"
+
+  # Extract request ID from tracking messages
+  - name: parsed_request_id
+    filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('request ID:'))}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.kv_pairs}}"
+        output_field: tracking_parts
+        pattern: "request ID:\\s+(?<request_id>\\S+)"
+
   - name: set_event_common_fields
   - name: set_host_fields
   - name: set_log_fields
@@ -64,9 +104,20 @@ stages:
 
   set_host_fields:
     actions:
+      # For HTTP access logs, use source_ip as host.name
       - set:
-          host.name: "{{parsed_event.message.hostname}}"
-        filter: "{{parsed_event.message.hostname is defined}}"
+          host.name: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip is defined and parsed_event.message.http_request_method is defined}}"
+
+      # For application logs with GET: URL, extract hostname from URL
+      - set:
+          host.name: "{{parsed_get_url.url_parts.hostname}}"
+        filter: "{{parsed_get_url.url_parts.hostname is defined}}"
+
+      # For cookie logs, extract domain
+      - set:
+          host.name: "{{parsed_cookie_domain.cookie_parts.domain}}"
+        filter: "{{parsed_cookie_domain.cookie_parts.domain is defined}}"
 
   set_log_fields:
     actions:
@@ -83,8 +134,13 @@ stages:
           pingfederate.transaction_id: "{{parsed_event.message.transaction_id}}"
         filter: "{{parsed_event.message.transaction_id is defined}}"
 
+      # Extract request ID from tracking messages (use as transaction_id if tid is missing)
       - set:
-          message: "{{parsed_event.message.kv_pairs}}"
+          pingfederate.transaction_id: "{{parsed_request_id.tracking_parts.request_id}}"
+        filter: "{{parsed_request_id.tracking_parts.request_id is defined and pingfederate.transaction_id is not defined}}"
+
+      - set:
+          pingfederate.labels: "{{parsed_event.message.kv_pairs}}"
         filter: "{{parsed_event.message.kv_pairs is defined}}"
 
   set_http_fields:
@@ -100,8 +156,8 @@ stages:
 
       # Extract URL from application logs (GET: https://...)
       - set:
-          url.original: "{{kv_parsed.message.url}}"
-        filter: "{{kv_parsed.message.url is defined}}"
+          url.original: "{{parsed_get_full_url.url_data.full_url}}"
+        filter: "{{parsed_get_full_url.url_data.full_url is defined}}"
 
   set_source_fields:
     actions:
