@@ -1,5 +1,4 @@
 name: workday-activity-logs
-ignored_values: null
 pipeline:
   - name: parsed_event
     description: JSON log format parsing stage
@@ -10,8 +9,6 @@ pipeline:
         input_field: '{{original.message}}'
         output_field: message
   - name: parsed_taskdisplayname
-    description: ''
-    filter: ''
     external:
       name: grok.match
       properties:
@@ -26,8 +23,6 @@ pipeline:
             (%{GREEDYDATA:task}
             \(%{GREEDYDATA:service}\)%{GREEDYDATA}|%{GREEDYDATA:task})
   - name: parsed_date
-    description: ''
-    filter: ''
     external:
       name: date.parse
       properties:
@@ -36,61 +31,19 @@ pipeline:
         format: ''
         timezone: UTC
   - name: ecs_observer_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_event_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_client_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_user_agent_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_url_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_http_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_service_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: custom_fields_mapping
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_authentication_categorization
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_configuration_categorization
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_session_categorization
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_web_categorization
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_outcome_categorization
-    description: ''
-    filter: ''
-    external: null
   - name: ecs_kind_categorization
-    description: ''
-    filter: ''
-    external: null
 stages:
   ecs_observer_mapping:
     actions:
@@ -98,56 +51,40 @@ stages:
           observer.type: Application
           observer.vendor: Workday
           observer.product: Activity logs
-        filter: ''
-        name: set
   ecs_event_mapping:
     actions:
       - set:
           '@timestamp': '{{parsed_date.timestamp}}'
           event.action: '{{parsed_taskdisplayname.message.task}}'
           event.message: '{{parsed_event.message.taskDisplayName}}'
-        filter: ''
-        name: set
   ecs_client_mapping:
     actions:
       - set:
           client.address: '{{parsed_event.message.ipAddress}}'
           client.user.name: '{{parsed_event.message.systemAccount}}'
-        filter: ''
-        name: set
   ecs_user_agent_mapping:
     actions:
       - set:
           user_agent.os.type: '{{parsed_event.message.deviceType}}'
           user_agent.original: '{{parsed_event.message.userAgent}}'
-        filter: ''
-        name: set
   ecs_url_mapping:
     actions:
       - set:
           url.original: '{{parsed_taskdisplayname.message.url}}'
-        filter: ''
-        name: set
   ecs_http_mapping:
     actions:
       - set:
           http.request.method: '{{parsed_taskdisplayname.message.http_method}}'
-        filter: ''
-        name: set
   ecs_service_mapping:
     actions:
       - set:
           service.name: '{{parsed_taskdisplayname.message.service}}'
-        filter: ''
-        name: set
   custom_fields_mapping:
     actions:
       - set:
           workday.tenant.id: '{{parsed_event.message.tenantId}}'
           workday.session.id: '{{parsed_event.message.sessionId}}'
           workday.tenant.host: '{{parsed_event.message.tenantHost}}'
-        filter: ''
-        name: set
   ecs_authentication_categorization:
     actions:
       - set:
@@ -157,7 +94,6 @@ stages:
           'logout' in final.event.action or 'logged in' in
           final.event.action|lower or 'logged out' in final.event.action|lower
           or 'logon' in final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''end'']}}'
         filter: >-
@@ -167,21 +103,18 @@ stages:
           final.event.action|lower and not ('pend' in final.event.action|lower
           or 'send' in final.event.action|lower or 'calend' in
           final.event.action|lower)))}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''info'']}}'
         filter: >-
           {{'info' not in final.event.type and 'authentication' in
           final.event.category and 'end' not in final.event.type and 'info' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''start'']}}'
         filter: >-
           {{'start' not in final.event.type and 'authentication' in
           final.event.category and 'end' not in final.event.type and 'info' not
           in final.event.type}}
-        name: set
   ecs_configuration_categorization:
     actions:
       - set:
@@ -191,7 +124,6 @@ stages:
           final.event.action|lower or "view" in final.event.action|lower or
           "get" in final.event.action|lower or "edit" in
           final.event.action|lower or "set" in final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''access'']}}'
         filter: >-
@@ -200,7 +132,6 @@ stages:
           (final.event.action.lower().startswith("read") or
           final.event.action.lower().startswith("view") or
           final.event.action.lower().startswith("get"))}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''change'']}}'
         filter: >-
@@ -211,7 +142,6 @@ stages:
           final.event.action.lower().startswith("load") or
           final.event.action.lower().startswith("edit") or
           final.event.action.lower().startswith("set"))}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''creation'']}}'
         filter: >-
@@ -219,7 +149,6 @@ stages:
           finale.event.type and 'configuration' in final.event.category and
           ('new' in final.event.action|lower or 'set' in
           final.event.action|lower or 'create' in final.event.action|lower)}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
         filter: >-
@@ -227,13 +156,11 @@ stages:
           finale.event.type and 'configuration' in final.event.category and
           ('delete' in final.event.action|lower or 'remove' in
           final.event.action|lower)}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''info'']}}'
         filter: >-
           {{final.event.type is not defined and 'configuration' in
           final.event.category}}
-        name: set
   ecs_session_categorization:
     actions:
       - set:
@@ -241,7 +168,6 @@ stages:
         filter: >-
           {{'session' not in final.event.category and 'configuration' not in final.event.category and 'session' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''end'']}}'
         filter: >-
@@ -250,41 +176,34 @@ stages:
           final.event.action|lower and not ('pend' in final.event.action|lower
           or 'send' in final.event.action|lower or 'calend' in
           final.event.action|lower)))}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''start'']}}'
         filter: >-
           {{'start' not in final.event.type and 'session' in
           final.event.category and 'end' not in final.event.type and 'start' in
           final.event.action|lower}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''info'']}}'
         filter: >-
           {{'info' not in final.event.type and 'session' in final.event.category
           and 'start' not in final.event.type and 'end' not in
           final.event.type}}
-        name: set
   ecs_web_categorization:
     actions:
       - set:
           event.category: '{{(final.event.category|default([])) + [''web'']}}'
         filter: '{{final.event.category is not defined}}'
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''error'']}}'
         filter: '{{ ''web'' in final.event.category and final.error is defined}}'
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''access'']}}'
         filter: >-
           {{'web' in final.event.category and (final.url.original is defined or
           final.http.request.method is defined)}}
-        name: set
       - set:
           event.type: '{{(final.event.type|default([])) + [''info'']}}'
         filter: '{{''web'' in final.event.category and final.event.type is not defined}}'
-        name: set
   ecs_outcome_categorization:
     actions:
       - set:
@@ -294,16 +213,13 @@ stages:
           or 'fail' in final.event.message|lower or 'fail' in
           parsed_event.message.result|lower  or 'fail' in
           parsed_event.message.status|lower)}}
-        name: set
       - set:
           event.outcome: success
         filter: >-
           {{final.event.type != ['info'] and (final.event.outcome is not
           defined)}}
-        name: set
   ecs_kind_categorization:
     actions:
       - set:
           event.kind: event
         filter: '{{final.event.kind is not defined}}'
-        name: set
