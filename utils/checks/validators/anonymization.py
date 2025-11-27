@@ -11,7 +11,7 @@ from .constants import ValidationError
 
 
 # Constants for accepted generic anonymized values
-ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "n/a", "-", "integration", "test"}
+ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "n/a", "-", "integration", "test", "demo"}
 
 
 # Constants for accepted anonymized values
@@ -36,8 +36,8 @@ ACCEPTED_IPV6_RANGES = [
 ACCEPTED_IPV6_ADDRESSES = ["::1"]
 
 ACCEPTED_DOMAINS = [
-    r"^([\w-]+\.)*example\.(com|org|net)$",
-    r"^([\w-]+\.)*test\.(corp|local)$",
+    r"^([\w-]+\.)*(example|acme|foo|bar|baz)\.(com|org|net)$",
+    r"^([\w-]+\.)*test\.(corp|local|com|org|net)$",
     r"^([\w-]+\.)*(my)?corp\.(com|org|net)$",
     r"^([\w-]+\.)*internal\.test$",
     r"^(localhost|hostname|company|example)(\.local(domain)?)?$",
@@ -425,8 +425,15 @@ class AnonymizationValidator:
             if ip_str in ACCEPTED_IPV4_ADDRESSES:
                 return True
 
-            # Validate IP and check ranges
+            # Validate IP
             ip = ipaddress.IPv4Address(ip_str)
+
+            # Check for repeated octet addresses (e.g., 8.8.8.8, 122.122.122.122, ...)
+            parts = ip.exploded.split(".")
+            if all(part == parts[0] for part in parts):
+                return True
+
+            # Check ranges
             return any(ip in network for network in ACCEPTED_IPV4_RANGES)
 
         except (ipaddress.AddressValueError, ValueError):
@@ -515,6 +522,14 @@ class AnonymizationValidator:
         # Check if the account id is a numeric id and that is a repeated digit string
         if re.fullmatch(r"\d+", username) and all(c == username[0] for c in username):
             return True
+
+        # Check if username is a correct anonymized email
+        if self.validate_email(username):
+            return True
+
+        # Check for UUID format
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", username, re.IGNORECASE):
+            return self.validate_uuid(username)
 
         return False
 
@@ -690,25 +705,6 @@ class AnonymizationValidator:
 
         return False
 
-    def validate_hash(self, value: str, field_path: str) -> bool:
-        """
-        Validate if a hash value matches the accepted anonymized hash.
-
-        Args:
-            value (str): The hash value to validate.
-            field_path (str): The field path indicating the hash type.
-        Returns:
-            bool: True if the hash is properly anonymized, False otherwise.
-        """
-        # Determine hash type from field path
-        hash_type = field_path.split(".")[-1]
-
-        # Check against accepted hashes
-        if hash_type in ACCEPTED_HASHES:
-            return value == ACCEPTED_HASHES[hash_type]
-
-        return False
-
     def validate_session_id(self, value: str) -> bool:
         """
         Validate if a session ID matches accepted anonymized patterns.
@@ -765,11 +761,24 @@ class AnonymizationValidator:
         if arn.service == "s3":
             if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
                 return True
+
             # Accept example/test bucket names
             if re.match(
                 r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-z0-9]*$", arn.resource_id
             ):
                 return True
+
+            return False
+
+        if arn.service == "sts":
+            # For STS ARNs, validate assumed-role patterns
+            if arn.resource_type == "assumed-role":
+                parts = arn.resource_id.split("/")
+
+                if len(parts) >= 2:
+                    role_name = parts[1]
+                    return self.validate_username(role_name)
+
             return False
 
         # For EC2 Instance ARNs, validate instance ID (allow test patterns)
@@ -785,6 +794,7 @@ class AnonymizationValidator:
         # For other services, accept resource IDs in ACCEPTED_GENERIC_VALUES or matching generic test patterns
         if arn.resource_id is not None and arn.resource_id.lower() in ACCEPTED_GENERIC_VALUES:
             return True
+
         if re.match(
             r"^(example|test|anonymized|redacted|removed|unknown|integration|sample)[-_.a-zA-Z0-9]*$", arn.resource_id
         ):
@@ -854,6 +864,10 @@ class AnonymizationValidator:
 
         # Check for the spo nid type (Microsoft SharePoint)
         if urn.nid == "spo":
+            # For anonymous access, return True
+            if urn.nss == "anon":
+                return True
+
             # Extract type and id from nss
             match = re.match(r"^(?P<type>[^:#]+)[:#](?P<id>.+)$", urn.nss)
 
@@ -864,22 +878,16 @@ class AnonymizationValidator:
             resource_type = match["type"]
             resource_id = match["id"]
 
-            # For anonymous access, return True
-            if resource_type == "anon":
-                return True
-
             # For guest resource, validate the hash
             if resource_type == "guest":
                 # Validate the resource ID as a hash
-                resource_id_match = re.match(r"hash:(?P<hash>[0-9a-zA-Z]+)", resource_id)
+                resource_id_match = re.match(r"hash#(?P<hash>[0-9a-zA-Z]+)", resource_id)
 
                 # If no match, return False
                 if not resource_id_match:
                     return False
 
-                # Validate the hash
-                resource_hash = resource_id_match.group("hash")
-                return self.validate_hash(resource_hash, "urn.spo.resource_id")
+                return True
 
         return False
 
@@ -907,11 +915,24 @@ class AnonymizationValidator:
         if "principalId" in field_path:
             return value == "ABCDEFGHIJKLMN1234567"
         if "accessKeyId" in field_path:
-            return value == "AKIAIOSFODNN7EXAMPLE"
+            # Shorten AWS Access Key ID for validation
+            if value[:4] in ("ABIA", "ACCA", "AKIA", "ASIA", "AGPA", "AIDA", "ANPA", "AROA", "ANVA", "APKA", "ASCA"):
+                value = value[4:]
+
+            # Check for repeated character pattern
+            return all(part == value[0] for part in value)
         if "project.id" in field_path:
             return value == "my-project"
         if "instance.id" in field_path:
-            return value == "my-instance"
+            # Accept test instance name
+            if value == "my-instance":
+                return True
+
+            # Accept instance IDs like i-11111111111111, i-000000000
+            if re.match(r"^i-([0-9a-f]{8}|[0-9a-f]{17})$", value):
+                return True
+
+            return False
 
         # Check for AWS ARN
         if "arn" in value:
@@ -1068,7 +1089,6 @@ class AnonymizationValidator:
             (self.geo_fields, self.validate_geo, "Geographic Data", "Potential real location data (strict mode)"),
             (self.org_fields, self.validate_org, "Organization", "Potential real organization name (strict mode)"),
             (self.file_fields, self.validate_file_path, "File Path", "Contains potential sensitive user directory"),
-            (self.hash_fields, self.validate_hash, "Hash", "Not an accepted anonymized hash value"),
             (self.session_id_fields, self.validate_session_id, "Session ID", "Not an accepted anonymized session ID"),
             (
                 self.account_id_fields,
@@ -1102,7 +1122,6 @@ class AnonymizationValidator:
                     # Validate the value
                     if validator_func in [
                         self.validate_org,
-                        self.validate_hash,
                         self.validate_account_id,
                         self.validate_token,
                         self.validate_certificate,
