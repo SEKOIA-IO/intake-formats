@@ -8,10 +8,12 @@ pipeline:
         output_field: pre_message
         pattern: "%{KV_MESSAGE_WIDTH_DATETIME}|%{KV_MESSAGE}|%{WITH_HEADER}"
         custom_patterns:
-          KV_MESSAGE_WIDTH_DATETIME: "%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER} %{WORD:severity}\\s+%{GREEDYDATA:reason_with_kv}"
-          KV_MESSAGE: "%{NUMBER} %{NUMBER} %{NUMBER}\\s+%{GREEDYDATA:reason_with_kv}"
+          KV_MESSAGE_WIDTH_DATETIME: '(%{SUB_PREFIX})?\s*%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER} %{WORD:severity}\s*%{GREEDYDATA:reason_with_kv}'
+          KV_MESSAGE: '%{NUMBER} %{NUMBER} %{NUMBER}\s*%{GREEDYDATA:reason_with_kv}'
           WITH_HEADER: "%{NOT_KV_DATA:status}:\\s+%{GREEDYDATA:reason_with_kv}"
 
+          # For start like `Oct 27 14:29:31 HOST-01 CISE_Failed_Attempts`
+          SUB_PREFIX: "%{DATA} %{HOSTNAME:hostname} %{WORD:event_type}"
           NOT_KV_DATA: "[^=]*?"
           DATETIME: "%{YEAR}-%{MONTHNUM}-%{MONTHDAY}[T ]%{HOUR}:?%{MINUTE}(?::?%{SECOND})? %{ISO8601_TIMEZONE}"
 
@@ -57,6 +59,24 @@ pipeline:
         value_sep: "="
         item_sep: "*,*"
 
+  - name: pre_parse_step_data
+    filter: '{{"StepData" in original.message}}'
+    external:
+      name: grok.match
+      properties:
+        output_field: result
+        pattern: "%{DATA}(?<value>(StepData=%{DATA}(, StepData=%{DATA})?)),%{DATA}"
+
+  - name: parse_step_data
+    filter: '{{pre_parse_step_data.result.get("value") != None}}'
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: '{{", " + pre_parse_step_data.result.value}}'
+        output_field: result
+        value_sep: '=\s'
+        item_sep: ',\sStepData='
+
   - name: grok_mac
     filter: '{{parsed_kv_sentence.result.get("NAS Identifier") != None and "Configuration" not in parsed_event.message.reason}}'
     external:
@@ -78,6 +98,13 @@ stages:
           observer.vendor: Cisco
           observer.product: "Cisco ISE"
           event.type: ["info"]
+          cisco.ise.type: "{{pre_parsed_event.pre_message.event_type}}"
+          rule.name: '{{parsed_kv_sentence.result.get("IdentityPolicyMatchedRule")}}'
+          cisco.ise.network.device_name: '{{parsed_kv_sentence.result.get("NetworkDeviceName")}}'
+
+      - set:
+          cisco.ise.step_data.5_code: '{{parse_step_data.result.get("5")}}'
+  #        filter: '{{parsed_kv_sentence.result.get("StepData") != None}}'
 
   set_configuration_fields:
     actions:
