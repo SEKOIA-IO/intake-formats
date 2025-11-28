@@ -16,6 +16,9 @@ pipeline:
   - name: set_update_events_fields
     filter: "{{parsed_event.output.get('UpdateEvents') != None}}"
 
+  - name: set_msme_events_fields
+    filter: "{{parsed_event.output.get('MSMERoot') != None}}"
+
 stages:
   set_common_fields:
     actions:
@@ -87,6 +90,7 @@ stages:
           trellix.source.process.signer: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceProcessSigner}}"
           trellix.source.process.trusted: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceProcessTrusted}}"
           trellix.source.process.url: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceURL}}"
+          trellix.source.process.name: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CommonFields.SourceProcessName}}"
 
           trellix.source.file.path: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceFilePath}}"
           trellix.source.file.size: "{{parsed_event.output.EPOEvent.SoftwareInfo.Event.CustomFields.SourceFileSize}}"
@@ -142,3 +146,55 @@ stages:
       - set:
           trellix.update_event.usernames: "{{parsed_event.output.UpdateEvents.MachineInfo.UserName.split(',')}}"
         filter: "{{parsed_event.output.UpdateEvents.MachineInfo.UserName | length > 0}}"
+
+  set_msme_events_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.GMTTime | to_rfc3339}}"
+
+          event.dataset: "MSMEEvents"
+
+          event.category: ["malware"]
+          event.type: ["info"]
+
+          event.code: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.EventID}}"
+          event.severity: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.Severity}}"
+          event.action: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.ActionTaken}}"
+
+          agent.id: "{{parsed_event.output.MSMERoot.MachineInfo.AgentGUID.strip('{}')}}"
+
+          host.name: "{{parsed_event.output.MSMERoot.MachineInfo.MachineName}}"
+          host.mac: "{{parsed_event.output.MSMERoot.MachineInfo.RawMACAddress}}"
+          host.os.full: "{{parsed_event.output.MSMERoot.MachineInfo.OSName}}"
+
+          observer.product: "{{parsed_event.output.MSMERoot.MSME.get('@ProductName')}}"
+          observer.version: "{{parsed_event.output.MSMERoot.MSME.get('@ProductVersion')}}"
+
+          file.name: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.FileName}}"
+
+          user.name: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.UserName}}"
+
+          threat.indicator.name: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.VirusName}}"
+
+          trellix.msme.virus_type: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.VirusType}}"
+          trellix.msme.threat_type: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.ThreatType}}"
+
+      - set:
+          host.ip: ["{{parsed_event.output.MSMERoot.MachineInfo.IPAddress}}"]
+        filter: "{{parsed_event.output.MSMERoot.MachineInfo.IPAddress | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.SourceIP}}"
+        filter: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.SourceIP | is_ipaddress}}"
+
+      - set:
+          source.mac: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.SourceMAC}}"
+        filter: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.SourceMAC | length > 0}}"
+
+      - set:
+          destination.ip: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.TargetIP}}"
+        filter: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.TargetIP | is_ipaddress}}"
+
+      - set:
+          destination.mac: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.TargetMAC}}"
+        filter: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.TargetMAC | length > 0}}"
