@@ -32,6 +32,22 @@ pipeline:
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
 
+  - name: parse_display_name
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list)[0].NewValue}}"
+        output_field: values
+
+  - name: parse_app_id
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list)[0].NewValue}}"
+        output_field: values
+
   - name: set_common_fields
   - name: set_office365_fields
   - name: parse_exchange_admin
@@ -97,6 +113,11 @@ stages:
           user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
           user.id: "{{json_event.message.UserKey}}"
         filter: "{{json_event.message.RecordType not in [40]}}"
+
+      - set:
+          office365.application.id: '{{ parse_app_id.values[0] }}'
+          office365.application.name: "{{ parse_display_name.values[0] }}"
+        filter: "{{parse_display_name.values | length > 0 and parse_app_id.values | length > 0}}"
 
       - set:
           event.action: "{{json_event.message.Operation.rstrip('.')}}"
