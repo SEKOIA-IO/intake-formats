@@ -36,7 +36,7 @@ class FormatValidator:
             ManifestDataSourcesValidator,
             TaxonomyValidator,
             ParserValidator,
-            TestFileValidator,
+            TestFileValidator(args),
             ChangelogValidator,
         ]
 
