@@ -90,6 +90,9 @@ pipeline:
   - name: automated_lead_summary_event
     filter: '{{parsed_event.message.metadata.eventType == "AutomatedLeadSummaryEvent"}}'
 
+  - name: firewall_match_event
+    filter: '{{parsed_event.message.metadata.eventType == "FirewallMatchEvent"}}'
+
 stages:
   set_common_fields:
     actions:
@@ -804,3 +807,50 @@ stages:
       - set:
           host.name: '{{parsed_event.message.event.ThreatgraphIndicators | map(attribute="Hostname") | unique | list}}'
         filter: "{{parsed_event.message.event.get('ThreatgraphIndicators') not in [None, []]}}"
+
+  firewall_match_event:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.action: "{{parsed_event.message.event.EventType}}"
+          crowdstrike.host_id: "{{parsed_event.message.event.DeviceId}}"
+          crowdstrike.customer_id: "{{parsed_event.message.metadata.customerIDString}}"
+          crowdstrike.rule.family_id: "{{parsed_event.message.event.RuleFamilyID}}"
+          crowdstrike.rule.match_count.total: "{{parsed_event.message.event.MatchCount}}"
+          crowdstrike.rule.match_count.since_last_report: "{{parsed_event.message.event.MatchCountSinceLastReport}}"
+          destination.ip: "{{parsed_event.message.event.RemoteAddress}}"
+          destination.port: "{{parsed_event.message.event.RemotePort}}"
+          host.name: "{{parsed_event.message.event.HostName}}"
+          network.type: "{{parsed_event.message.event.Ipv}}"
+          process.command_line: "{{parsed_event.message.event.CommandLine}}"
+          process.name: "{{parsed_event.message.event.ImageFileName}}"
+          process.pid: "{{parsed_event.message.event.PID}}"
+          rule.category: "{{parsed_event.message.event.RuleGroupName}}"
+          rule.description: "{{parsed_event.message.event.RuleDescription}}"
+          rule.id: "{{parsed_event.message.event.RuleId}}"
+          rule.name: "{{parsed_event.message.event.RuleName}}"
+          rule.ruleset: "{{parsed_event.message.event.PolicyName}}"
+          source.ip: "{{parsed_event.message.event.LocalAddress}}"
+          source.port: "{{parsed_event.message.event.LocalPort}}"
+      - fallback: ""
+        dictionary:
+          "1": icmpv4
+          "6": tcp
+          "17": udp
+          "58": icmpv6
+        mapping:
+          parsed_event.message.event.Protocol: network.transport
+      - fallback: ""
+        dictionary:
+          "0": outbound
+          "1": inbound
+        mapping:
+          parsed_event.message.event.ConnectionDirection: network.direction
+      - fallback: ""
+        dictionary:
+          "1": ["allowed"]
+          "2": ["denied"]
+        mapping:
+          parsed_event.message.event.RuleAction: event.type
