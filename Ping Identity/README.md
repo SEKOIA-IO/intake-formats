@@ -1,7 +1,0 @@
-# PingIdentity
-
-## Description
-Ping Identity is a software company that specializes in identity management solutions, providing a suite of products including PingID for multifactor authentication, PingFederate for single sign-on capabilities, PingOne for cloud identity, PingAccess for access management, PingDirectory for identity storage, PingAuthorize for policy-based access control, and PingIntelligence for AI-powered cyber threat detection.
-
-## Intakes
-*
