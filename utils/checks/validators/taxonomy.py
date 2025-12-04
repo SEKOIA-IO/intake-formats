@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 
 import yaml
 
@@ -38,7 +39,7 @@ def check_taxonomy_file(
             result.errors.append(
                 ValidationError(
                     message="No format taxonomy found. Please create _meta/fields.yml",
-                    file_path=str(taxonomy_file_path.relative_to(INTAKES_PATH)),
+                    file_path=str(Path(taxonomy_file_path).relative_to(INTAKES_PATH)),
                     code="taxonomy_missing",
                 )
             )
