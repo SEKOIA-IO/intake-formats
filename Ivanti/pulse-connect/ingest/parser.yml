@@ -24,24 +24,14 @@ pipeline:
         value_sep: '='
         item_sep: \s
   - name: parsed_date
-    filter: '{{parsed_event.message.time is not number}}'
     external:
       name: date.parse
       properties:
         input_field: '{{parsed_event.message.time}}'
         output_field: timestamp
-        format: '%Y-%m-%d %H:%M:%S'
+        format: ''
         timezone: UTC
-  - name: parsed_date
-    filter: '{{parsed_event.message.time is number}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.time}}'
-        output_field: timestamp
-        format: timestamp
-        timezone: UTC
-  - name: parsed_end_message
+  - name: parsed_syslog_msg
     filter: >-
       {{parsed_event.message is defined and parsed_event.message.message is
       defined}}
@@ -51,7 +41,7 @@ pipeline:
         input_field: '{{parsed_event.message.message}}'
         output_field: message
         pattern: >-
-          %{module_auth_for_user_1}|%{module_auth_for_user_2}|%{action_to_ip_stats}|%{action_from_url}|%{auth_from_ip_session}|%{auth_for_user_from}|%{unauth_url}|%{unauth_connection}|%{action_to_ip}|%{action_with_ip}|%{Errors}|%{actions_result}|%{status_action_to_ip}|%{action_data}|%{full_auth_info}|%{action_for_user_reason}|%{webrequest}|%{configuration_user_account}|%{action_for_user}|%{action_from_ip}|%{lmbd_specific}|%{stats_concurrent_users}|%{stats_ncp}|%{user_action_from_ip}|%{session_admin}
+          %{module_auth_for_user_1}|%{module_auth_for_user_2}|%{action_to_ip_stats}|%{action_from_url}|%{auth_from_ip_session}|%{auth_for_user_from}|%{unauth_url}|%{unauth_connection}|%{action_to_ip}|%{action_with_ip}|%{Errors}|%{actions_result}|%{status_action_to_ip}|%{action_data}|%{full_auth_info}|%{action_for_user_reason}|%{webrequest}|%{configuration_user_account}|%{action_for_user}|%{action_from_ip}|%{lmbd_specific}|%{stats_concurrent_users}|%{stats_ncp}|%{user_action_from_ip}|%{session_admin}|%{system_actions}
         custom_patterns:
           WORDS: (\b\w+\b\s?)+
           Errors: >-
@@ -59,19 +49,19 @@ pipeline:
           ACTIONS: (?i)(logged\sout|connection)
           NOT_COLON: '[^:]+'
           NOT_POINT: '[^\.]+'
-          stats_ncp: Number\sof\sNCP\sconnections\:\s?%{NUMBER:ncp_connections}
+          stats_ncp: (?<action>Number\sof\sNCP\sconnections)\:\s?%{NUMBER:ncp_connections}
           AUTH_WORDS: (?i)(logout|login|authentication|session|connected)
           unauth_url: >-
-            %{GREEDYDATA:action}\surl\s(%{URIPATH:urlpath}|%{URI:url}|%{URIQUERY:urlpath})%{GREEDYDATA}\sfrom\sIP\s%{IP:source_ip}(\:%{NUMBER:source_port})?\.?
+            %{GREEDYDATA:action}\surl\s(%{URIQUERY:url})%{GREEDYDATA}\sfrom\sIP\s%{IP:source_ip}(\:%{NUMBER:source_port})?\.?
           webrequest: >-
-            %{NOT_COLON:action}(\s\:\sHost\:\s\[%{NOT_BRACKETS:destination_domain}\])?,(\sRequest\:)?\s%{WORD:http_request_method}(\sto)?\s(\[%{URI:url}\]|%{URIPATH:urlpath})(\s%{WORD:network_protocol}\/(\.?%{NUMBER})+)?(\sfrom\s\[%{IP:source_ip}\]\sresult\=\[%{NUMBER:http_return_code}\]\ssent\=\[%{NUMBER:source_bytes}\]\sreceived\=\[%{NUMBER:destination_bytes}\]\sin\s\[%{NUMBER:session_duration}\]\sseconds)?
+            %{NOT_COLON:action}(\s\:\sHost\:\s\[%{NOT_BRACKETS:destination_domain}\])?,(\sRequest\:)?\s%{WORD:http_request_method}(\sto)?\s(\[%{URIQUERY:url}\]|%{URIQUERY:url})(\s%{WORD:network_protocol}\/(\.?%{NUMBER})+)?(\sfrom\s\[%{IP:source_ip}\]\sresult\=\[%{NUMBER:http_return_code}\]\ssent\=\[%{NUMBER:source_bytes}\]\sreceived\=\[%{NUMBER:destination_bytes}\]\sin\s\[%{NUMBER:session_duration}\]\sseconds)?
           AUTH_STATUS: '%{AUTH_WORDS} %{STATUS_WORDS}'
           action_data: >-
-            %{GREEDYDATA:action}\s-\s(\'(%{URI:url}|%{URIPATH:urlpath})\'|%{GREEDYDATA})\.?
+            %{GREEDYDATA:action}\s-\s(\'(%{URIQUERY:url})\'|%{GREEDYDATA})\.?
           NOT_BRACKETS: '[^\[\]]+'
           STATUS_WORDS: (?i)(failed|successful|succeeded|failed|ended|started|completed)
           action_to_ip: >-
-            %{GREEDYDATA:action}\sto\s(%{NOTSPACE}\:?)?\s?%{IP:destination_ip}(\:%{NUMBER:destination_port})?
+            %{GREEDYDATA:action}\sto\s((server\s?\:?)?\s?%{IP:server_ip}(\:%{NUMBER:server_port})|(%{NOTSPACE}\:?)?\s?%{IP:destination_ip}(\:%{NUMBER:destination_port}))?
           lmbd_specific: '%{GREEDYDATA:action}\:(\s+\w:%{NUMBER}\%)+'
           session_admin: >-
             Session\:%{NOTSPACE:session_id} for
@@ -90,278 +80,262 @@ pipeline:
             (%{GREEDYDATA:action}\s%{STATUS_WORDS}|%{GREEDYDATA:action}) for
             (%{NOTSPACE:client_userdomain}\\)?%{USERNAME:client_username}(/%{NOT_PARENTHESIS:client_groupname}($|\s))?(\(session\:%{NOTSPACE:session_id}\))?
           action_from_url: >-
-            %{GREEDYDATA:action}\sfrom\s'%{URI:url}'\.?\s?(Reason\:%{GREEDYDATA:reason})?\.?
+            %{GREEDYDATA:action}\sfrom\s'%{URIQUERY:url}'\.?\s?(Reason\:%{GREEDYDATA:reason})?\.?
           unauth_connection: >-
             %{ACTIONS:action} from IP %{IP:source_ip} not authenticated yet
-            \(URL=(%{URIPATH:urlpath}|%{URI:url}|%{URIQUERY:urlpath})\)
+            \(URL=(%{URIQUERY:url})\)
           action_to_ip_stats: >-
             %{GREEDYDATA:action}\sto\s%{IP:destination_ip}(\:%{NUMBER:destination_port})?(\safter\s%{NUMBER:session_duration}\s%{WORD})?([,\s])*(with\s(%{NUMBER:destination_bytes}\sbytes\sread)?(\sand\s)?(%{NUMBER:source_bytes}\sbytes\swritten)?)\.?
           auth_for_user_from: >-
             (%{WORD:authentication_stage}\s)?%{AUTH_STATUS:action}\sfor\s(%{NOTSPACE:client_userdomain}\\)?%{USERNAME:client_username}(/%{NOT_PARENTHESIS:client_groupname}\s)?(\(session\:%{NOTSPACE:session_id}\))?\s?from\s%{IP:client_source_ip}(\svia\s%{GREEDYDATA:interface}\.|\svia\s%{GREEDYDATA:interface}|%{GREEDYDATA})?
+          TRANSPORT_PROTOCOLS: (TCP|UDP|ICMP)
           status_action_to_ip: >-
             (([Ss]tarted|[Ss]toped)\sto|[Dd]one)\s%{WORDS:action}(\sfor\s%{WORD:transport_mode}\s%{WORDS}\sserver\s\'?%{IP:server_ip}\'?)\.?
           user_action_from_ip: >-
             (%{NOTSPACE:client_userdomain}\\)?%{USERNAME:client_username}(/%{GREEDYDATA:client_groupname})?\s%{ACTIONS:action}\sfrom\sIP\s\(%{IP:client_source_ip}\)\sbecause\s%{GREEDYDATA:reason}
           auth_from_ip_session: >-
             %{AUTH_WORDS:action}\sfrom\s%{IP:source_ip}(\s\(session\:%{NOTSPACE:session_id}\))?
-          stats_concurrent_users: >-
-            Number\sof\sconcurrent\susers\slogged\sin\sto\sthe\sdevice\:(\s?)%{NUMBER:concurrent_users}
           action_for_user_reason: >-
             %{GREEDYDATA:action}\sfor\s(%{NOTSPACE:client_userdomain}\\)?%{USERNAME:client_username}(/%{GREEDYDATA:client_groupname})?(\s\(session\:%{NOTSPACE:session_id}\))?((\sdue\sto\s%{WORDS:reason}))\s%{GREEDYDATA}
           module_auth_for_user_1: >-
             %{NOT_COLON:system}:\s%{AUTH_STATUS:action}\sfor\suser\s+(%{USERNAME:client_username}|\(session:%{GREEDYDATA:session_id}\))\swith\s%{WORD:client_ip_protocol}\saddress\s%{IP:source_ip}%{GREEDYDATA}?
           module_auth_for_user_2: >-
             %{NOT_COLON:system}\:\s%{GREEDYDATA}\swith\sIP\s%{IP:source_ip}(\:%{NUMBER:source_port})?\s?%{AUTH_WORDS:action}\s(with\s%{GREEDYDATA:transport_mode}\stransport\smode\.?)?
+          stats_concurrent_users: >-
+            (?<action>Number\sof\sconcurrent\susers\slogged\sin\sto\sthe\sdevice)\:(\s?)%{NUMBER:concurrent_users}
           configuration_user_account: >-
             User Accounts
             modified\.\s%{WORDS:action}\s(%{NOTSPACE:target_userdomain}\\)?%{USERNAME:target_username}(/%{GREEDYDATA:target_groupname})?\sfrom\sauthentication\sserver\s%{GREEDYDATA:auth_server}
-          TRANSPORT_PROTOCOLS: >-
-            (TCP|UDP|ICMP)
-  - name: field_extraction
-  - name: msg_parsing
+          system_actions: >-
+            %{GREEDYDATA}(?<action>(?i)(Periodic Scan (Finished|Started)))%{GREEDYDATA}
+  - name: parsed_kv_msg
+    filter: '{{parsed_event.message is defined and parsed_event.message.msg is defined}}'
     external:
       name: grok.case_match
       properties:
         input_field: '{{parsed_event.message.msg}}'
         output_field: details
-        pattern_key: '{{field_extraction.event.code}}'
+        pattern_key: >-
+          {{parsed_event.message.msg.split(':')[0]}}
         patterns:
           AUT20920: >-
-            AUT20920: Connection from IP %{IP:src} not authenticated yet
-            \(URL=%{URIPATHPARAM:url}\)
+            AUT20920: %{GREEDYDATA:action} from IP %{IP:src} not authenticated
+            yet \(URL=%{URIPATHPARAM:url}\)
           AUT24604: >-
-            AUT24604: SSL negotiation failed while client at source IP
-            '%{IP:src}' was trying to connect to '%{IP:dst}'. Reason:
-            '%{DATA:reason}'
+            AUT24604: %{GREEDYDATA:action} while client at source IP '%{IP:src}'
+            was trying to connect to '%{IP:dst}'. Reason: '%{DATA:reason}'
           AUT24803: >-
-            AUT24803: Host Checker policy '%{DATA:policy}' passed on host
+            AUT24803: %{GREEDYDATA:action} '%{DATA:policy}' passed on host
             '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user
             '%{USERNAME:user}'.
           AUT24804: >-
-            AUT24804: Host Checker policy '%{DATA:policy}' failed on host
-            '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user
-            '%{USERNAME:user}' reason '%{DATA:reason}'.
-          AUT31556: >-
-            AUT31556: Unauthenticated request url %{URIPATHPARAM:url}
-            %{GREEDYDATA}
+            AUT24804: %{GREEDYDATA:action} '%{DATA:policy}' failed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}' reason '%{GREEDYDATA:reason}'.
+          AUT31556: 'AUT31556: %{GREEDYDATA:action} url %{URIPATHPARAM:url} %{GREEDYDATA}'
           LIC30499: >-
-            LIC30499: Leased %{NUMBER} units of '%{DATA}' from %{IP:src} -
-            reserved: %{NUMBER} maximum: %{NUMBER} incremental quantum:
-            %{NUMBER}
-          SYS20704: 'SYS20704: %{DATA} SNMP trap to %{IP:dst}:%{NUMBER:dst_port}'
-          SYS31437: 'SYS31437: Successful syslog connection to peer: ''%{IP:src}'''
+            LIC30499: %{GREEDYDATA:action} %{NUMBER} units of '%{DATA}' from
+            %{IP:src} - reserved: %{NUMBER} maximum: %{NUMBER} incremental
+            quantum: %{NUMBER}
+          SYS20704: >-
+            SYS20704: %{GREEDYDATA:action} SNMP trap to
+            %{IP:dst}:%{NUMBER:dst_port}
+          SYS31437: 'SYS31437: %{GREEDYDATA:action} to peer: ''%{IP:src}'''
+          AUT23457: >-
+            AUT23457: %{GREEDYDATA:action} using %{GREEDYDATA} Reason:
+            %{GREEDYDATA:reason}
         custom_patterns:
           HOST_ADDRESS: '%{IP:host_ip}|%{HOSTNAME:host_name}'
-  - name: details_extraction
-  - name: set_end_message_fields
-    filter: '{{parsed_event.message.message is defined}}'
-  - name: set_good_practice_fields
-  - name: set_custom_fields
+  - name: ecs_observer_mapping
+  - name: ecs_event_mapping 
+  - name: ecs_source_mapping
+  - name: ecs_destination_mapping
+  - name: ecs_user_mapping
+  - name: ecs_client_mapping
+  - name: ecs_service_mapping
+  - name: ecs_url_mapping
+  - name: ecs_host_mapping
+  - name: ecs_rule_mapping
+  - name: ecs_error_mapping
+  - name: ecs_server_mapping
+  - name: ecs_http_mapping
+  - name: ecs_network_mapping
+  - name: custom_fields_mapping
+  - name: ecs_authentication_categorization
+  - name: ecs_configuration_categorization
+  - name: ecs_network_categorization
+  - name: ecs_session_categorization
+  - name: ecs_web_categorization
+  - name: ecs_host_categorization
+  - name: ecs_kind_categorization
+  - name: ecs_outcome_categorization
 stages:
-  field_extraction:
+  ecs_observer_mapping:
     actions:
       - set:
-          user.name: '{{parsed_event.message.user}}'
-          '@timestamp': '{{parsed_date.timestamp}}'
-          event.code: '{{parsed_event.message.msg.split('':'')[0]}}'
-          user.roles: >-
-            {{parsed_event.message.roles.split(',') if
-            parsed_event.message.roles}}
-          action.name: '{{parsed_event.message.msg.split('':'')[0]}}'
           observer.ip: '[''{{parsed_event.message.fw}}'']'
-          user.domain: '{{parsed_event.message.realm}}'
-          event.reason: '{{parsed_event.message.msg.split('':'')[1:] | join('':'')}}'
-          service.name: '{{parsed_event.message.vpn}}'
-          service.type: '{{parsed_event.message.type}}'
-          source.bytes: '{{parsed_event.message.sent}}'
-          event.provider: '{{parsed_event.message.proto}}'
-          user.group.name: '{{parsed_event.message.usergroup}}'
-          destination.bytes: '{{parsed_event.message.rcvd}}'
           observer.hostname: '{{parsed_event.message.host_name}}'
-          destination.domain: '{{parsed_event.message.dstname}}'
-          network.forwarded_ip: '{{parsed_event.message.fw}}'
+      - set:
+          observer.ingress.interface.name: '{{parsed_syslog_msg.message.interface}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_event_mapping:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.provider: '{{parsed_event.message.proto}}'
+      - set:
+          event.code: '{{parsed_event.message.msg.split('':'')[0]}}'
+          event.reason: '{{parsed_event.message.msg.split('':'')[1:] | join('':'')}}'
+          action.name: '{{parsed_event.message.msg.split('':'')[0]}}' #For backward-compatibility
+        filter: '{{parsed_event.message is defined and parsed_event.message.msg is defined}}'
+      - set:
+          event.reason: '{{parsed_kv_msg.details.reason}}'
+          event.action: '{{parsed_kv_msg.details.action}}'
+        filter: '{{parsed_kv_msg.details is defined}}'
+      - set:
+          event.action: '{{parsed_syslog_msg.message.action}}'
+          event.module: '{{parsed_syslog_msg.message.system}}'
+          event.duration: '{{parsed_syslog_msg.message.session_duration}}'
+          event.reason: '{{parsed_syslog_msg.message.reason}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_source_mapping:
+    actions:
       - set:
           source.ip: '{{parsed_event.message.src}}'
         filter: '{{parsed_event.message.src | is_ipaddress}}'
       - set:
+          source.ip: '{{parsed_kv_msg.details.src}}'
+        filter: '{{parsed_kv_msg.details is defined and parsed_kv_msg.details.src | is_ipaddress}}'
+      - set:
+          source.ip: '{{parsed_syslog_msg.message.source_ip}}'
+        filter: '{{parsed_syslog_msg.message is defined and parsed_syslog_msg.message.source_ip | is_ipaddress}}'
+      - set:
+          source.bytes: '{{parsed_event.message.sent}}'
+      - set:
+          source.port: '{{parsed_syslog_msg.message.source_port}}'
+          source.bytes: '{{parsed_syslog_msg.message.source_bytes}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_destination_mapping:
+    actions:
+      - set:
           destination.ip: '{{parsed_event.message.dst}}'
         filter: '{{parsed_event.message.dst | is_ipaddress}}'
-  details_extraction:
+      - set:
+          destination.ip: '{{parsed_kv_msg.details.dst}}'
+        filter: '{{parsed_kv_msg.details is defined and parsed_kv_msg.details.dst | is_ipaddress}}'
+      - set:
+          destination.ip: '{{parsed_syslog_msg.message.destination_ip}}'
+        filter: '{{parsed_syslog_msg.message is defined and parsed_syslog_msg.message.destination_ip | is_ipaddress}}'
+      - set:
+          destination.bytes: '{{parsed_event.message.rcvd}}'
+          destination.domain: '{{parsed_event.message.dstname}}'
+      - set:
+          destination.port: '{{parsed_kv_msg.details.dst_port}}'
+        filter: '{{parsed_kv_msg.details is defined}}'
+      - set:
+          destination.port: '{{parsed_syslog_msg.message.destination_port}}'
+          destination.domain: '{{parsed_syslog_msg.message.destination_domain}}'
+          destination.bytes: '{{parsed_syslog_msg.message.destination_bytes}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_user_mapping:
     actions:
       - set:
-          url.path: '{{msg_parsing.details.url}}'
-          host.name: '{{msg_parsing.details.host_name}}'
-          rule.name: '{{msg_parsing.details.policy}}'
-          user.name: '{{msg_parsing.details.user}}'
-          event.reason: '{{msg_parsing.details.reason}}'
-          destination.port: '{{msg_parsing.details.dst_port}}'
+          user.name: '{{parsed_event.message.user}}'
+          user.roles: >-
+            {{parsed_event.message.roles.split(',') if
+            parsed_event.message.roles}}
+          user.domain: '{{parsed_event.message.realm}}'
+          user.group.name: '{{parsed_event.message.usergroup}}'
       - set:
-          source.ip: '{{msg_parsing.details.src}}'
-        filter: '{{msg_parsing.details.src | is_ipaddress}}'
+          user.name: '{{parsed_kv_msg.details.user}}'
+        filter: '{{parsed_kv_msg.details is defined}}'
       - set:
-          destination.ip: '{{msg_parsing.details.dst}}'
-        filter: '{{msg_parsing.details.dst | is_ipaddress}}'
-      - set:
-          host.ip:
-            - '{{msg_parsing.details.host_ip}}'
-        filter: '{{msg_parsing.details.host_ip | is_ipaddress}}'
-      - set:
-          host.mac:
-            - '{{msg_parsing.details.host_mac}}'
-        filter: '{{msg_parsing.details.host_mac != null}}'
-  set_end_message_fields:
+          user.target.name: '{{parsed_syslog_msg.message.target_username}}'
+          user.target.roles: '{{parsed_syslog_msg.message.target_userroles.split('','')}}'
+          user.target.domain: '{{parsed_syslog_msg.message.target_userdomain}}'
+          user.target.group.name: '{{parsed_syslog_msg.message.target_groupname}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_client_mapping:
     actions:
       - set:
-          client.ip: '{{parsed_end_message.message.client_source_ip}}'
-          client.user.name: '{{parsed_end_message.message.client_username}}'
-          user.target.name: '{{parsed_end_message.message.target_username}}'
-          client.user.roles: '{{parsed_end_message.message.client_userroles.split('','')}}'
-          user.target.roles: '{{parsed_end_message.message.target_userroles.split('','')}}'
-          client.user.domain: '{{parsed_end_message.message.client_userdomain}}'
-          user.target.domain: '{{parsed_end_message.message.target_userdomain}}'
-          client.user.group.name: '{{parsed_end_message.message.client_groupname}}'
-          user.target.group.name: '{{parsed_end_message.message.target_groupname}}'
-      - set:
-          event.action: '{{parsed_end_message.message.action}}'
-      - set:
-          source.ip: '{{parsed_end_message.message.source_ip}}'
-          source.port: '{{parsed_end_message.message.source_port}}'
-          event.module: '{{parsed_end_message.message.system}}'
-          source.bytes: '{{parsed_end_message.message.source_bytes}}'
-          destination.ip: '{{parsed_end_message.message.destination_ip}}'
-          event.duration: '{{parsed_end_message.message.session_duration}}'
-          destination.port: '{{parsed_end_message.message.destination_port}}'
-          network.protocol: '{{parsed_end_message.message.network_protocol}}'
-          destination.bytes: '{{parsed_end_message.message.destination_bytes}}'
-          network.transport: '{{parsed_end_message.message.transport_mode}}'
-          destination.domain: '{{parsed_end_message.message.destination_domain}}'
-          server.ip: '{{parsed_end_message.message.server_ip}}'
-          server.port: '{{parsed_end_message.message.server_port}}'
-          http.request.method: '{{parsed_end_message.message.http_request_method}}'
-          http.response.status_code: '{{parsed_end_message.message.http_return_code}}'
-          observer.ingress.interface.name: '{{parsed_end_message.message.interface}}'
-      - set:
-          url.path: '{{parsed_end_message.message.urlpath}}'
-          event.reason: '{{parsed_end_message.message.reason}}'
-          url.original: '{{parsed_end_message.message.url}}'
-      - set:
-          error.code: '{{parsed_end_message.message.error_code}}'
-          error.message: '{{parsed_end_message.message.error_message}}'
-  set_good_practice_fields:
+          client.ip: '{{parsed_syslog_msg.message.client_source_ip}}'
+          client.user.name: '{{parsed_syslog_msg.message.client_username}}'
+          client.user.roles: '{{parsed_syslog_msg.message.client_userroles.split('','')}}'
+          client.user.domain: '{{parsed_syslog_msg.message.client_userdomain}}'
+          client.user.group.name: '{{parsed_syslog_msg.message.client_groupname}}'
+        filter:
+          '{{parsed_syslog_msg.message is defined}}'
+  ecs_service_mapping:
     actions:
       - set:
-          event.outcome: success
-        filter: >-
-          {{final.event.type != ['info'] and 'success' in final.event.action|lower or 'succeed' in
-          final.event.action|lower or 'webrequest ok' in
-          final.event.action|lower}}
+          service.name: '{{parsed_event.message.vpn}}'
+          service.type: '{{parsed_event.message.type}}' 
+  ecs_url_mapping:
+    actions:
       - set:
-          event.outcome: failure
-        filter: >-
-          {{final.event.type != ['info'] and 'fail' in final.event.action|lower or 'unable' in
-          final.event.action|lower or final.event.code == 'AUT23457'}}
+          url.original: '{{parsed_kv_msg.details.url}}'
+        filter: '{{parsed_kv_msg.details is defined}}'
+      - set: 
+          url.original: '{{parsed_syslog_msg.message.url}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_host_mapping:
+    actions:
       - set:
-          event.outcome: unknown
-        filter: >-
-          {{final.event.type != ['info'] and final.event.outcome is not defined}}
+          host.name: '{{parsed_kv_msg.details.host_name}}'
+          host.mac: 
+            - '{{parsed_kv_msg.details.host_mac}}'
+        filter: '{{parsed_kv_msg.details is defined and parsed_kv_msg.details.host_mac != null}}'
       - set:
-          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
-        filter: >-
-          {{'logged' in final.event.action|lower or 'login' in
-          final.event.action|lower or 'authentication' in
-          final.event.action|lower or 'logout' in final.event.action|lower or (
-          'connect' in final.event.action|lower and not 'connection' in
-          final.event.action|lower) or 'AUT23457' in final.event.code}}
+          host.ip: 
+            - '{{parsed_kv_msg.details.host_ip}}'
+        filter: '{{parsed_kv_msg.details is defined and parsed_kv_msg.details.host_ip | is_ipaddress}}'
+  ecs_rule_mapping:
+    actions:
       - set:
-          event.type: '{{(final.event.type|default([])) + [''start'']}}'
-        filter: >-
-          {{'login' in final.event.action|lower or 'start' in 
-          final.event.action|lower or 'authentication' in
-          final.event.action|lower or 'connected' in final.event.action|lower}}
+          rule.name: '{{parsed_kv_msg.details.policy}}'
+        filter: '{{parsed_kv_msg.details is defined}}'
+  ecs_error_mapping:
+    actions:
       - set:
-          event.type: '{{(final.event.type|default([])) + [''end'']}}'
-        filter: >-
-          {{'logout' in final.event.action|lower or 'logged out' in
-          final.event.action|lower or 'timed out' in final.event.action|lower
-          or 'lost' in
-          final.event.action|lower or  'close' in final.event.action|lower or 'done' in
-          final.event.action|lower or 'completed' in final.event.action|lower or
-          (' end' in final.event.action|lower and not 'pending' in
-          final.event.action|lower and not 'sending' in
-          final.event.action|lower)}}
+          error.code: '{{parsed_syslog_msg.message.error_code}}'
+          error.message: '{{parsed_syslog_msg.message.error_message}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_server_mapping:
+    actions:
       - set:
-          log.description: '{{parsed_event.message.message}}'
+          server.ip: '{{parsed_syslog_msg.message.server_ip}}'
+          server.port: '{{parsed_syslog_msg.message.server_port}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_http_mapping:
+    actions:
       - set:
-          event.category: '{{(final.event.category|default([])) + [''session'']}}'
-        filter: >-
-          {{'session' in final.log.description|lower and not 'authentication' in
-          final.event.category|lower}}
+          http.request.method: '{{parsed_syslog_msg.message.http_request_method}}'
+          http.response.status_code: '{{parsed_syslog_msg.message.http_return_code}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  ecs_network_mapping:
+    actions:
       - set:
-          event.category: '{{(final.event.category|default([])) + [''web'']}}'
-        filter: '{{''webrequest'' in final.event.action|lower}}'
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''access'']}}'
-        filter: >-
-          {{('web' in final.event.category and final.http.request.method|lower
-          in ['get','head','connect','options','trace'])}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
-        filter: >-
-          {{'added' in final.event.action|lower or ('web' in
-          final.event.category and 'post' in final.http.request.method|lower)}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''change'']}}'
-        filter: >-
-          {{'modified' in final.event.action|lower or ( 'change' in
-          final.event.action|lower and not 'exchange' in
-          final.event.action|lower) or ('web' in final.event.category and
-          final.http.request.method|lower in ['put','patch'] )}}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
-        filter: >-
-          {{'remove' in final.event.action|lower or 'delete' in
-          final.event.action|lower or ('web' in final.event.category and
-          final.http.request.method|lower in ['delete'] )}}
-      - set:
-          event.category: '{{(final.event.category|default([])) + [''network'']}}'
-        filter: >-
-          {{('connection' in parsed_event.message.message|lower and not 'number of' in parsed_event.message.message|lower) or ('connection'
-          in parsed_event.message.msg|lower and not 'number of' in parsed_event.message.msg|lower) or 'sending' in parsed_event.message.msg|lower}}
-      - set:
-          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
-        filter: >-
-          {{'session' not in final.event.category and ('creation' in
-          final.event.type or 'change' in final.event.type or 'deletion' in
-          final.event.type) }}
-      - set:
-          event.category: '{{(final.event.category|default([])) + [''host'']}}'
-        filter: >-
-          {{final.user.name == 'System' or 'AUT24803' in final.event.code or
-          'AUT24804' in final.event.code }}
-      - set:
-          event.type: '{{(final.event.type|default([])) + [''info'']}}'
-        filter: '{{final.event.type is not defined}}'
-      - set:
-          event.category: '{{(final.event.category|default([])) + [''network'']}}'
-        filter: '{{final.event.category is not defined}}'
+          network.forwarded_ip: '{{parsed_event.message.fw}}'
       - set:
           network.direction: inbound
         filter: '{{''download'' in final.event.action|lower}}'
       - set:
           network.direction: outbound
         filter: '{{''upload'' in final.event.action|lower}}'
-  set_custom_fields:
+      - set:
+          network.protocol: '{{parsed_syslog_msg.message.network_protocol}}'
+          network.transport: '{{parsed_syslog_msg.message.transport_mode}}'
+        filter: '{{parsed_syslog_msg.message is defined}}'
+  custom_fields_mapping:
     actions:
       - set:
-          ivanti.connect_secure.session.id: '{{parsed_end_message.message.session_id}}'
-          ivanti.connect_secure.concurrent_users: '{{parsed_end_message.message.concurrent_users}}'
-          ivanti.connect_secure.ncp_connections: '{{parsed_end_message.message.ncp_connections}}'
-          ivanti.connect_secure.authentication.stage: '{{parsed_end_message.message.authentication_stage}}'
-          ivanti.connect_secure.authentication.server: '{{parsed_end_message.message.auth_server}}'
+          ivanti.connect_secure.session.id: '{{parsed_syslog_msg.message.session_id}}'
+          ivanti.connect_secure.ncp_connections: '{{parsed_syslog_msg.message.ncp_connections}}'
+          ivanti.connect_secure.concurrent_users: '{{parsed_syslog_msg.message.concurrent_users}}'
+          ivanti.connect_secure.authentication.stage: '{{parsed_syslog_msg.message.authentication_stage}}'
+          ivanti.connect_secure.authentication.server: '{{parsed_syslog_msg.message.auth_server}}'
           ivanti.connect_secure.instant_virtual_system: '{{parsed_event.message.instant_virtual_system}}'
-          ivanti.connect_secure.integrity_check.matched_files: '{{parsed_end_message.message.matched_files}}'
-          ivanti.connect_secure.integrity_check.detected_files: '{{parsed_end_message.message.detected_files}}'
-          ivanti.connect_secure.integrity_check.mismatched_files: '{{parsed_end_message.message.mismatched_files}}'
+          ivanti.connect_secure.integrity_check.matched_files: '{{parsed_syslog_msg.message.matched_files}}'
+          ivanti.connect_secure.integrity_check.detected_files: '{{parsed_syslog_msg.message.detected_files}}'
+          ivanti.connect_secure.integrity_check.mismatched_files: '{{parsed_syslog_msg.message.mismatched_files}}'
       - set:
           ivanti.connect_secure.authentication.stage: primary
         filter: >-
@@ -372,3 +346,193 @@ stages:
         filter: >-
           {{'secondary' in parsed_event.message.message|lower and
           'authentication' in parsed_event.message.message|lower}}
+  ecs_authentication_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
+        filter: >-
+          {{not final.event.action.lower().startswith('number of') and (('auth' in final.event.action|lower and not 'unauth' in final.event.action|lower) or 'login' in
+          final.event.action|lower or 'logout' in final.event.action|lower or
+          'logged in' in final.event.action|lower or 'logged out' in
+          final.event.action|lower or 'logon' in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'authentication' in
+          final.event.category and ('logout' in final.event.action|lower or
+          'done' in final.event.action|lower or 'completed' in
+          final.event.action|lower or ('end' in final.event.action|lower and not
+          ('pend' in final.event.action|lower or 'send' in
+          final.event.action|lower)))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and ('login' in
+          final.event.action|lower or 'start' in final.event.action|lower or
+          'logged in' in final.event.action|lower  or 'authentication' in
+          final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'start' not
+          in final.event.type}}
+  ecs_configuration_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''configuration'']}}'
+        filter: >-
+          {{ not final.event.action.lower().startswith('host') and ('config' in final.event.action|lower or 'policy' in
+          final.event.action|lower or ((final.user.name|lower == 'system' and
+          final.observer.ip == ["127.0.0.1"]) and 
+          final.event.action.lower().startswith(("read","view","get","change","update","load","edit","create","new","set","remove","delete"))))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: >-
+          {{'access' not in final.event.type and 'configuration' in
+          final.event.category and
+          final.event.action.lower().startswith(("read","view","get"))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''change'']}}'
+        filter: >-
+          {{'change' not in final.event.type and 'configuration' in
+          final.event.category and
+          final.event.action.lower().startswith(("change","update","load","edit"))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''creation'']}}'
+        filter: >-
+          {{'creation' not in final.event.type and 'configuration' in
+          final.event.category and
+          final.event.action.lower().startswith(("create","new","set"))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''deletion'']}}'
+        filter: >-
+          {{'deletion' not in final.event.type and 'configuration' in
+          final.event.category and
+          final.event.action.lower().startswith(("remove","delete"))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{final.event.type is not defined and 'configuration' in
+          final.event.category}}
+  ecs_network_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''network'']}}'
+        filter: >-
+          {{not final.event.action.lower().startswith('number of') and ('connect' in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''connection'']}}'
+        filter: >-
+          {{'connection' not in final.event.type and 'network' in
+          final.event.category and 'connect' in final.event.action|lower or
+          'flow' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'network' in final.event.category
+          and ('close' in final.event.action|lower or 'lost' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'network' in
+          final.event.category and 'end' not in final.event.type and ('create'
+          in final.event.action|lower or 'start' in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'allowed' not in final.event.type and 'network' in
+          final.event.category and ('allow' in final.event.action|lower or
+          'permit' in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'denied' not in final.event.type and 'network' in
+          final.event.category and ('discard' in final.event.action|lower or
+          'block' in final.event.action|lower or 'deny' in
+          final.event.action|lower or 'denied' in final.event.action|lower)}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'network' in final.event.category and final.event.type is not
+          defined}}
+  ecs_session_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''session'']}}'
+        filter: >-
+          {{'session' not in final.event.category and 'session' in
+          final.event.action|lower or final.event.module|lower == "vpn
+          tunneling"}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'session' in final.event.category
+          and ('close' in final.event.action|lower or 'timed out' in
+          final.event.action|lower or ('end' in final.event.action|lower and not
+          ('pend' in final.event.action|lower or 'send' in
+          final.event.action|lower)))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'session' in final.event.category
+          and 'info' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'session' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+  ecs_web_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''web'']}}'
+        filter: >-
+          {{'web' not in final.event.category and 'webrequest' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''error'']}}'
+        filter: '{{ ''web'' in final.event.category and final.error is defined}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: '{{''web'' in final.event.category and (final.event.action is defined or final.url.path is defined)}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: '{{''web'' in final.event.category and final.event.type is not defined}}'
+  ecs_host_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''host'']}}'
+        filter: >-
+          {{final.event.category is not defined or (final.user.name|lower ==
+          "system" and final.observer.ip == ["127.0.0.1"])}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'host' in final.event.category and (final.event.type is not defined
+          or final.event.category|length > 1)}}
+  ecs_kind_categorization:
+    actions:
+      - set:
+          event.kind: alert
+        filter: >-
+          {{'alert' in final.event.message|lower or 'alert' in
+          final.event.action|lower}}
+      - set:
+          event.kind: event
+        filter: '{{final.event.kind is not defined}}'
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{final.event.type != ['info'] and 'fail' in final.event.action|lower
+          or 'fail' in final.event.message|lower or 'fail' or 'unable' in
+          final.event.action|lower or final.event.code == 'AUT23457'}}
+      - set:
+          event.outcome: success
+        filter: >-
+          {{final.event.type != ['info'] and final.event.outcome is not
+          defined}}
