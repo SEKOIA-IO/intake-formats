@@ -2,6 +2,7 @@ import math
 import io
 import os
 from pathlib import Path
+from typing import Optional
 
 from PIL import Image
 import numpy as np
@@ -62,7 +63,7 @@ def resize_canvas(image: Image, canvas_width: int = 500, canvas_height: int = 50
 
     # Compute background according the image mode
     mode = image.mode
-    new_background: float | tuple[float, ...] | str | None = None
+    new_background: Optional[float | tuple[float, ...] | str] = None
 
     match mode:
         case "L" | "1":
@@ -174,12 +175,12 @@ def cli_normalize_image(source: Path, destination: Path, fuzz: int = 0, ligthen_
 
 
 @app.command("normalize_logo")
-def cli_normalize_logo(module: str | None = None, format: str | None = None):
+def cli_normalize_logo(module: Optional[str] = None, format: Optional[str] = None):
     if not module and not format:
         raise ValueError("module or format is required")
 
-    logo: Path | None = None
-    new_logo: Path | None = None
+    logo: Optional[Path] = None
+    new_logo: Optional[Path] = None
 
     if module:
         for subdir in os.listdir(INTAKES_PATH):
