@@ -6,6 +6,8 @@ pipeline:
       properties:
         pattern: "%{UNBOUND_HEADER}(%{UNBOUND_INFO_HISTOGRAM}|%{UNBOUND_INFO_RECURSION}|%{UNBOUND_INFO_SERVER_STATS}|%{UNBOUND_VALIDATION_FAILURE}|%{UNBOUND_KEYTAG}|%{UNBOUND}|%{UNBOUND_ERROR}|%{UNBOUND_ERROR_GENERIC})"
         custom_patterns:
+          DNS_TYPE: "info|query|reply"
+          UPPER: "[A-Z]+"
           UNBOUND_HEADER: >-
             (%{TIMESTAMP_ISO8601} %{HOSTNAME:hostname} unbound\[%{INT}\]: )?
           UNBOUND_INFO_HISTOGRAM: >-
@@ -19,7 +21,7 @@ pipeline:
           UNBOUND_KEYTAG: >-
             \[%{INT}:%{BASE16NUM}\] info: generate keytag query %{DATA}
           UNBOUND: >-
-            \[%{INT}:%{BASE16NUM}\] (info|query): (%{WORD} )?%{IPORHOST:source_ip}(@%{NUMBER:source_port})? %{DATA:dns_question_name} %{WORD:dns_question_type} %{WORD:dns_question_class}
+            \[%{INT}:%{BASE16NUM}\] %{DNS_TYPE:dns_type}: (%{WORD} )?%{IPORHOST:source_ip}(@%{NUMBER:source_port})? %{DATA:dns_question_name} %{UPPER:dns_question_type} %{WORD:dns_question_class}( %{UPPER:dns_response_code})?( %{NOTSPACE:ttl})?%{GREEDYDATA}
           UNBOUND_ERROR: >-
             \[%{INT}:%{BASE16NUM}\] error: %{DATA:error_type}: %{GREEDYDATA:error_message}
           UNBOUND_ERROR_GENERIC: >-
@@ -31,9 +33,6 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          dns.question.class: "{{event.message.dns_question_class}}"
-          dns.question.name: "{{event.message.dns_question_name.strip('.')}}"
-          dns.question.type: "{{event.message.dns_question_type}}"
           error.message: "{{event.message.error_message}}"
           error.type: "{{event.message.error_type}}"
           host.name: "{{event.message.hostname}}"
@@ -44,8 +43,29 @@ stages:
           user.name: "{{event.message.user_name}}"
 
       - set:
+          dns.question.class: "{{event.message.dns_question_class}}"
+          dns.question.name: "{{event.message.dns_question_name.strip('.')}}"
+          dns.question.type: "{{event.message.dns_question_type}}"
+        filter: "{{event.message.dns_type != 'reply'}}"
+
+      - set:
+          dns.answers: >
+            [{
+              "class": "{{event.message.dns_question_class}}",
+              "name": "{{event.message.dns_question_name.strip('.')}}",
+              "ttl": "{{event.message.ttl}}",
+              "type": "{{event.message.dns_question_type}}"
+            }]
+          dns.response_code: "{{event.message.dns_response_code}}"
+        filter: "{{event.message.dns_type == 'reply'}}"
+
+      - set:
           dns.type: "query"
-        filter: "{{final.source.ip != null}}"
+        filter: "{{final.source.ip != null and event.message.dns_type != 'reply'}}"
+
+      - set:
+          dns.type: "answer"
+        filter: "{{final.source.ip != null and event.message.dns_type == 'reply'}}"
 
       - set:
           dns.size_in_char: "{{final.dns.question.name | length}}"
