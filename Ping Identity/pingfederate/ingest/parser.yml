@@ -44,7 +44,7 @@ pipeline:
         input_field: "{{parsed_event.message.kv_pairs}}"
         output_field: message
         value_sep: "="
-        item_sep: " "
+        item_sep: '\s'
 
   # Extract hostname from URL in GET: statements
   - name: parsed_get_url
@@ -103,7 +103,6 @@ pipeline:
   - name: set_http_fields
   - name: set_source_fields
   - name: set_pingfederate_fields
-  - name: set_reason_fields
   - name: set_ecs_categorization
 
 stages:
@@ -203,207 +202,133 @@ stages:
 
   set_pingfederate_fields:
     actions:
-      # Map all PingFederate-specific fields from kv_pairs
+      # Map all PingFederate-specific fields from both kv_parsed and kv_reason_parsed
+      # Both parsers now use the same separator (item_sep: '\s'), so we can consolidate
+      # by checking both sources. kv_reason_parsed takes precedence for quoted values.
+
+      # ECS fields - mapped from both parsers
       - set:
-          pingfederate.trackingid: "{{kv_parsed.message.trackingid}}"
-        filter: "{{kv_parsed.message.trackingid is defined}}"
+          source.ip: "{{kv_reason_parsed.reason_data.ip or kv_parsed.message.ip}}"
+        filter: "{{(kv_reason_parsed.reason_data.ip is defined and kv_reason_parsed.reason_data.ip | is_ipaddress) or (kv_parsed.message.ip is defined and kv_parsed.message.ip | is_ipaddress)}}"
 
       - set:
-          pingfederate.transactionid: "{{kv_parsed.message.transactionid}}"
-        filter: "{{kv_parsed.message.transactionid is defined}}"
+          user.name: "{{kv_reason_parsed.reason_data.subject or kv_parsed.message.subject}}"
+        filter: '{{(kv_reason_parsed.reason_data.subject is defined and kv_reason_parsed.reason_data.subject != "") or (kv_parsed.message.subject is defined and kv_parsed.message.subject != "")}}'
 
       - set:
-          pingfederate.event: "{{kv_parsed.message.event}}"
-        filter: "{{kv_parsed.message.event is defined}}"
-
-      - set:
-          pingfederate.connectionid: "{{kv_parsed.message.connectionid}}"
-        filter: "{{kv_parsed.message.connectionid is defined}}"
-
-      - set:
-          pingfederate.protocol: "{{kv_parsed.message.protocol}}"
-        filter: "{{kv_parsed.message.protocol is defined}}"
-
-      - set:
-          pingfederate.role: "{{kv_parsed.message.role}}"
-        filter: "{{kv_parsed.message.role is defined}}"
-
-      - set:
-          pingfederate.status: "{{kv_parsed.message.status}}"
-        filter: "{{kv_parsed.message.status is defined}}"
-
-      - set:
-          pingfederate.responsetime: "{{kv_parsed.message.responsetime}}"
-        filter: "{{kv_parsed.message.responsetime is defined}}"
-
-      - set:
-          pingfederate.assertionid: "{{kv_parsed.message.assertionid}}"
-        filter: "{{kv_parsed.message.assertionid is defined}}"
-
-      - set:
-          pingfederate.attrackingid: "{{kv_parsed.message.attrackingid}}"
-        filter: "{{kv_parsed.message.attrackingid is defined}}"
-
-      - set:
-          pingfederate.attributes: "{{kv_parsed.message.attributes}}"
-        filter: "{{kv_parsed.message.attributes is defined}}"
-
-      - set:
-          pingfederate.authenticationsourceid: "{{kv_parsed.message.authenticationsourceid}}"
-        filter: "{{kv_parsed.message.authenticationsourceid is defined}}"
-
-      - set:
-          pingfederate.authnsessionexpiry: "{{kv_parsed.message.authnsessionexpiry}}"
-        filter: "{{kv_parsed.message.authnsessionexpiry is defined}}"
-
-      - set:
-          pingfederate.connectionname: "{{kv_parsed.message.connectionname}}"
-        filter: "{{kv_parsed.message.connectionname is defined}}"
-
-      - set:
-          pingfederate.granttype: "{{kv_parsed.message.granttype}}"
-        filter: "{{kv_parsed.message.granttype is defined}}"
-
-      - set:
-          pingfederate.x_forwarded_vip: "{{kv_parsed.message['X-Forwarded-Vip']}}"
-        filter: "{{kv_parsed.message['X-Forwarded-Vip'] is defined}}"
-
-      - set:
-          pingfederate.x_forwarded_host: "{{kv_parsed.message['X-Forwarded-Host']}}"
-        filter: "{{kv_parsed.message['X-Forwarded-Host'] is defined}}"
-
-      - set:
-          pingfederate.trusted_network: "{{kv_parsed.message.trustedNetwork}}"
-        filter: "{{kv_parsed.message.trustedNetwork is defined}}"
-
-      - set:
-          pingfederate.requestid: "{{kv_parsed.message.requestid}}"
-        filter: "{{kv_parsed.message.requestid is defined}}"
-
-      - set:
-          pingfederate.sri: "{{kv_parsed.message.sri}}"
-        filter: "{{kv_parsed.message.sri is defined}}"
-
-      - set:
-          pingfederate.virtualserverid: "{{kv_parsed.message.virtualserverid}}"
-        filter: "{{kv_parsed.message.virtualserverid is defined}}"
-
-  set_reason_fields:
-    actions:
-      # Map fields from kv_reason_parsed.reason_data to ECS and custom fields
-      # This extracts fields from events with quoted key=value pairs (like AUTHN_ATTEMPT)
-
-      # ECS fields
-      - set:
-          source.ip: "{{kv_reason_parsed.reason_data.ip}}"
-        filter: "{{kv_reason_parsed.reason_data.ip is defined and kv_reason_parsed.reason_data.ip | is_ipaddress}}"
-
-      - set:
-          user.name: "{{kv_reason_parsed.reason_data.subject}}"
-        filter: '{{kv_reason_parsed.reason_data.subject is defined and kv_reason_parsed.reason_data.subject != ""}}'
-
-      - set:
-          host.name: "{{kv_reason_parsed.reason_data.pfhost}}"
-        filter: "{{kv_reason_parsed.reason_data.pfhost is defined}}"
+          host.name: "{{kv_reason_parsed.reason_data.pfhost or kv_parsed.message.pfhost}}"
+        filter: "{{kv_reason_parsed.reason_data.pfhost is defined or kv_parsed.message.pfhost is defined}}"
 
       # URL mapping (connectionid contains URL)
       - set:
-          url.original: "{{kv_reason_parsed.reason_data.connectionid}}"
-        filter: "{{kv_reason_parsed.reason_data.connectionid is defined and (kv_reason_parsed.reason_data.connectionid | re_search('^https?://'))}}"
+          url.original: "{{kv_reason_parsed.reason_data.connectionid or kv_parsed.message.connectionid}}"
+        filter: "{{(kv_reason_parsed.reason_data.connectionid is defined and (kv_reason_parsed.reason_data.connectionid | re_search('^https?://'))) or (kv_parsed.message.connectionid is defined and (kv_parsed.message.connectionid | re_search('^https?://')))}}"
 
-      # Event duration (responsetime in milliseconds)
+      # Event duration (responsetime in milliseconds) - convert to nanoseconds
       - set:
-          event.duration: "{{kv_reason_parsed.reason_data.responsetime | int * 1000000}}"
-        filter: "{{kv_reason_parsed.reason_data.responsetime is defined and kv_reason_parsed.reason_data.responsetime | re_search('^[0-9]+$')}}"
+          event.duration: "{{(kv_reason_parsed.reason_data.responsetime or kv_parsed.message.responsetime) | int * 1000000}}"
+        filter: "{{(kv_reason_parsed.reason_data.responsetime is defined and kv_reason_parsed.reason_data.responsetime | re_search('^[0-9]+$')) or (kv_parsed.message.responsetime is defined and kv_parsed.message.responsetime | re_search('^[0-9]+$'))}}"
 
       # Network protocol
       - set:
-          network.protocol: "{{kv_reason_parsed.reason_data.protocol | lower}}"
-        filter: "{{kv_reason_parsed.reason_data.protocol is defined}}"
+          network.protocol: "{{(kv_reason_parsed.reason_data.protocol or kv_parsed.message.protocol) | lower}}"
+        filter: "{{kv_reason_parsed.reason_data.protocol is defined or kv_parsed.message.protocol is defined}}"
 
-      # User agent (X-Forwarded-Host can be considered as related to client)
+      # Destination domain from X-Forwarded-Host
       - set:
-          destination.domain: "{{kv_reason_parsed.reason_data['X-Forwarded-Host']}}"
-        filter: "{{kv_reason_parsed.reason_data['X-Forwarded-Host'] is defined}}"
+          destination.domain: "{{kv_reason_parsed.reason_data['X-Forwarded-Host'] or kv_parsed.message['X-Forwarded-Host']}}"
+        filter: "{{kv_reason_parsed.reason_data['X-Forwarded-Host'] is defined or kv_parsed.message['X-Forwarded-Host'] is defined}}"
 
-      # PingFederate custom fields
+      # PingFederate custom fields - consolidated from both parsers
       - set:
-          pingfederate.trackingid: "{{kv_reason_parsed.reason_data.trackingid}}"
-        filter: "{{kv_reason_parsed.reason_data.trackingid is defined}}"
-
-      - set:
-          pingfederate.transactionid: "{{kv_reason_parsed.reason_data.transactionid}}"
-        filter: "{{kv_reason_parsed.reason_data.transactionid is defined}}"
+          pingfederate.trackingid: "{{kv_reason_parsed.reason_data.trackingid or kv_parsed.message.trackingid}}"
+        filter: "{{kv_reason_parsed.reason_data.trackingid is defined or kv_parsed.message.trackingid is defined}}"
 
       - set:
-          pingfederate.event: "{{kv_reason_parsed.reason_data.event}}"
-        filter: "{{kv_reason_parsed.reason_data.event is defined}}"
-
-      # Note: connectionid mapped to url.original, not duplicated here
-      # Note: protocol mapped to network.protocol, not duplicated here
+          pingfederate.transactionid: "{{kv_reason_parsed.reason_data.transactionid or kv_parsed.message.transactionid}}"
+        filter: "{{kv_reason_parsed.reason_data.transactionid is defined or kv_parsed.message.transactionid is defined}}"
 
       - set:
-          pingfederate.role: "{{kv_reason_parsed.reason_data.role}}"
-        filter: "{{kv_reason_parsed.reason_data.role is defined}}"
+          pingfederate.event: "{{kv_reason_parsed.reason_data.event or kv_parsed.message.event}}"
+        filter: "{{kv_reason_parsed.reason_data.event is defined or kv_parsed.message.event is defined}}"
 
       - set:
-          pingfederate.status: "{{kv_reason_parsed.reason_data.status}}"
-        filter: "{{kv_reason_parsed.reason_data.status is defined}}"
-
-      # Note: responsetime mapped to event.duration, not duplicated here
+          pingfederate.connectionid: "{{kv_reason_parsed.reason_data.connectionid or kv_parsed.message.connectionid}}"
+        filter: "{{kv_reason_parsed.reason_data.connectionid is defined or kv_parsed.message.connectionid is defined}}"
 
       - set:
-          pingfederate.assertionid: "{{kv_reason_parsed.reason_data.assertionid}}"
-        filter: "{{kv_reason_parsed.reason_data.assertionid is defined}}"
+          pingfederate.protocol: "{{kv_reason_parsed.reason_data.protocol or kv_parsed.message.protocol}}"
+        filter: "{{kv_reason_parsed.reason_data.protocol is defined or kv_parsed.message.protocol is defined}}"
 
       - set:
-          pingfederate.attrackingid: "{{kv_reason_parsed.reason_data.attrackingid}}"
-        filter: "{{kv_reason_parsed.reason_data.attrackingid is defined}}"
+          pingfederate.role: "{{kv_reason_parsed.reason_data.role or kv_parsed.message.role}}"
+        filter: "{{kv_reason_parsed.reason_data.role is defined or kv_parsed.message.role is defined}}"
 
       - set:
-          pingfederate.attributes: "{{kv_reason_parsed.reason_data.attributes}}"
-        filter: "{{kv_reason_parsed.reason_data.attributes is defined}}"
+          pingfederate.status: "{{kv_reason_parsed.reason_data.status or kv_parsed.message.status}}"
+        filter: "{{kv_reason_parsed.reason_data.status is defined or kv_parsed.message.status is defined}}"
 
       - set:
-          pingfederate.authenticationsourceid: "{{kv_reason_parsed.reason_data.authenticationsourceid}}"
-        filter: "{{kv_reason_parsed.reason_data.authenticationsourceid is defined}}"
+          pingfederate.responsetime: "{{kv_reason_parsed.reason_data.responsetime or kv_parsed.message.responsetime}}"
+        filter: "{{kv_reason_parsed.reason_data.responsetime is defined or kv_parsed.message.responsetime is defined}}"
 
       - set:
-          pingfederate.authnsessionexpiry: "{{kv_reason_parsed.reason_data.authnsessionexpiry}}"
-        filter: "{{kv_reason_parsed.reason_data.authnsessionexpiry is defined}}"
+          pingfederate.assertionid: "{{kv_reason_parsed.reason_data.assertionid or kv_parsed.message.assertionid}}"
+        filter: "{{kv_reason_parsed.reason_data.assertionid is defined or kv_parsed.message.assertionid is defined}}"
 
       - set:
-          pingfederate.connectionname: "{{kv_reason_parsed.reason_data.connectionname}}"
-        filter: "{{kv_reason_parsed.reason_data.connectionname is defined}}"
+          pingfederate.attrackingid: "{{kv_reason_parsed.reason_data.attrackingid or kv_parsed.message.attrackingid}}"
+        filter: "{{kv_reason_parsed.reason_data.attrackingid is defined or kv_parsed.message.attrackingid is defined}}"
 
       - set:
-          pingfederate.granttype: "{{kv_reason_parsed.reason_data.granttype}}"
-        filter: "{{kv_reason_parsed.reason_data.granttype is defined}}"
+          pingfederate.attributes: "{{kv_reason_parsed.reason_data.attributes or kv_parsed.message.attributes}}"
+        filter: "{{kv_reason_parsed.reason_data.attributes is defined or kv_parsed.message.attributes is defined}}"
 
       - set:
-          pingfederate.x_forwarded_vip: "{{kv_reason_parsed.reason_data['X-Forwarded-Vip']}}"
-        filter: "{{kv_reason_parsed.reason_data['X-Forwarded-Vip'] is defined}}"
-
-      # Note: X-Forwarded-Host mapped to destination.domain, not duplicated here
+          pingfederate.authenticationsourceid: "{{kv_reason_parsed.reason_data.authenticationsourceid or kv_parsed.message.authenticationsourceid}}"
+        filter: "{{kv_reason_parsed.reason_data.authenticationsourceid is defined or kv_parsed.message.authenticationsourceid is defined}}"
 
       - set:
-          pingfederate.trusted_network: "{{kv_reason_parsed.reason_data.trustedNetwork}}"
-        filter: "{{kv_reason_parsed.reason_data.trustedNetwork is defined}}"
+          pingfederate.authnsessionexpiry: "{{kv_reason_parsed.reason_data.authnsessionexpiry or kv_parsed.message.authnsessionexpiry}}"
+        filter: "{{kv_reason_parsed.reason_data.authnsessionexpiry is defined or kv_parsed.message.authnsessionexpiry is defined}}"
 
       - set:
-          pingfederate.requestid: "{{kv_reason_parsed.reason_data.requestid}}"
-        filter: "{{kv_reason_parsed.reason_data.requestid is defined}}"
+          pingfederate.connectionname: "{{kv_reason_parsed.reason_data.connectionname or kv_parsed.message.connectionname}}"
+        filter: "{{kv_reason_parsed.reason_data.connectionname is defined or kv_parsed.message.connectionname is defined}}"
 
       - set:
-          pingfederate.sri: "{{kv_reason_parsed.reason_data.sri}}"
-        filter: "{{kv_reason_parsed.reason_data.sri is defined}}"
+          pingfederate.granttype: "{{kv_reason_parsed.reason_data.granttype or kv_parsed.message.granttype}}"
+        filter: "{{kv_reason_parsed.reason_data.granttype is defined or kv_parsed.message.granttype is defined}}"
 
       - set:
-          pingfederate.virtualserverid: "{{kv_reason_parsed.reason_data.virtualserverid}}"
-        filter: "{{kv_reason_parsed.reason_data.virtualserverid is defined}}"
+          pingfederate.x_forwarded_vip: "{{kv_reason_parsed.reason_data['X-Forwarded-Vip'] or kv_parsed.message['X-Forwarded-Vip']}}"
+        filter: "{{kv_reason_parsed.reason_data['X-Forwarded-Vip'] is defined or kv_parsed.message['X-Forwarded-Vip'] is defined}}"
+
+      - set:
+          pingfederate.x_forwarded_host: "{{kv_reason_parsed.reason_data['X-Forwarded-Host'] or kv_parsed.message['X-Forwarded-Host']}}"
+        filter: "{{kv_reason_parsed.reason_data['X-Forwarded-Host'] is defined or kv_parsed.message['X-Forwarded-Host'] is defined}}"
+
+      - set:
+          pingfederate.trusted_network: "{{kv_reason_parsed.reason_data.trustedNetwork or kv_parsed.message.trustedNetwork}}"
+        filter: "{{kv_reason_parsed.reason_data.trustedNetwork is defined or kv_parsed.message.trustedNetwork is defined}}"
+
+      - set:
+          pingfederate.requestid: "{{kv_reason_parsed.reason_data.requestid or kv_parsed.message.requestid}}"
+        filter: "{{kv_reason_parsed.reason_data.requestid is defined or kv_parsed.message.requestid is defined}}"
+
+      - set:
+          pingfederate.sri: "{{kv_reason_parsed.reason_data.sri or kv_parsed.message.sri}}"
+        filter: "{{kv_reason_parsed.reason_data.sri is defined or kv_parsed.message.sri is defined}}"
+
+      - set:
+          pingfederate.virtualserverid: "{{kv_reason_parsed.reason_data.virtualserverid or kv_parsed.message.virtualserverid}}"
+        filter: "{{kv_reason_parsed.reason_data.virtualserverid is defined or kv_parsed.message.virtualserverid is defined}}"
 
   set_ecs_categorization:
     actions:
+      # Note: Authentication events regex consolidated for maintainability
+      # AUTH_EVENTS_REGEX = event="(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)"
+
       # Authentication attempt events - MUST BE FIRST to take precedence
       - set:
           event.category: [authentication]
@@ -458,54 +383,54 @@ stages:
           event.type: [end]
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('event=\"SRI_REVOKED\"'))}}"
 
-      # HTTP access logs (exclude all authentication events)
+      # HTTP access logs (exclude all authentication events using consolidated regex)
       - set:
           event.category: [web]
           event.type: [access]
         filter: "{{parsed_event.message.http_request_method is defined and not (parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"')))}}"
 
-      # Heartbeat monitoring events (exclude authentication events)
+      # Heartbeat monitoring events (exclude authentication events using consolidated regex)
       - set:
           event.category: [web]
           event.type: [access]
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('heartbeat\\.ping')) and not (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"'))}}"
 
-      # Cookie management events (exclude authentication events)
+      # Cookie management events (exclude authentication events using consolidated regex)
       - set:
           event.category: [web]
           event.type: [info]
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('cookie|Cookie')) and not (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"'))}}"
 
-      # Request tracking events (exclude authentication events)
+      # Request tracking events (exclude authentication events - uses simpler event= check)
       - set:
           event.category: [web]
           event.type: [info]
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('request ID|TrackingIdSupport')) and not (parsed_event.message.kv_pairs | re_search('event='))}}"
 
-      # Locale/configuration events (exclude authentication events)
+      # Locale/configuration events (exclude authentication events using consolidated regex)
       - set:
           event.category: [configuration]
           event.type: [info]
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('Locale|clientCert|X509ClientCertExtractor')) and not (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"'))}}"
 
-      # GET requests from application logs (exclude authentication events)
+      # GET requests from application logs (exclude authentication events using consolidated regex)
       - set:
           event.category: [web]
           event.type: [access]
           http.request.method: "GET"
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('^GET:')) and not (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"'))}}"
 
-      # Authentication outcome: success (for all auth events)
+      # Authentication outcome: success (for all auth events using consolidated regex)
       - set:
           event.outcome: success
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"')) and (parsed_event.message.kv_pairs | re_search('status=\"success\"'))}}"
 
-      # Authentication outcome: failure (for all auth events)
+      # Authentication outcome: failure (for all auth events using consolidated regex)
       - set:
           event.outcome: failure
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"')) and (parsed_event.message.kv_pairs | re_search('status=\"failure\"'))}}"
 
-      # Authentication outcome: in-progress (for all auth events)
+      # Authentication outcome: in-progress (for all auth events using consolidated regex)
       - set:
           event.outcome: unknown
         filter: "{{parsed_event.message.kv_pairs is defined and (parsed_event.message.kv_pairs | re_search('event=\"(AUTHN_ATTEMPT|AUTHN_REQUEST|AUTHN_SESSION_CREATED|AUTHN_SESSION_USED|AUTHN_SESSIONS_DELETED|OAuth|SSO|SLO|SRI_REVOKED)\"')) and (parsed_event.message.kv_pairs | re_search('status=\"inprogress\"'))}}"
