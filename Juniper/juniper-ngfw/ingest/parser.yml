@@ -368,6 +368,7 @@ pipeline:
   - name: ecs_authentication_categorization
   - name: ecs_configuration_categorization
   - name: ecs_process_categorization
+  - name: ecs_intrusion_detection_categorization
   - name: ecs_network_categorization
   - name: ecs_session_categorization
   - name: ecs_outcome_categorization
@@ -727,13 +728,34 @@ stages:
         filter: >-
           {{final.event.type is not defined and 'process' in
           final.event.category}}
+  ecs_intrusion_detection_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''intrusion_detection'']}}'
+        filter: >-
+          {{'rt_ids' in final.event.dataset|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{'alarm-without-drop' in final.juniper.ngfw.ids.action.name and 'intrusion_detection' in
+          final.event.category}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'allowed' not in final.event.type and 'drop' in final.juniper.ngfw.ids.action.name and 'intrusion_detection' in
+          final.event.category}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'allowed' not in final.event.type and 'denied' not in final.event.type and 'intrusion_detection' in
+          final.event.category}}
   ecs_network_categorization:
     actions:
       - set:
           event.category: '{{(final.event.category|default([])) + [''network'']}}'
         filter: >-
           {{final.event.category is not defined and final.observer.type ==
-          'firewall' or 'flow' in final.event.action|lower}}
+          'firewall' or 'RT_FLOW' in final.event.dataset|lower}}
       - set:
           event.type: '{{(final.event.type|default([])) + [''connection'']}}'
         filter: >-
