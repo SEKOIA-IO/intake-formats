@@ -1,7 +1,11 @@
 name: skyhigh-secure-web-gateway
+ignored_values:
+  - 'null'
+  - '-'
 pipeline:
-  - name: parse_leef
+  - name: parsed_leef
     description: not_standard_leef_1_0
+    filter: '{{original.message.startswith("LEEF")}}'
     external:
       name: grok.match
       properties:
@@ -14,15 +18,17 @@ pipeline:
           NOT_PIPE: '[^\|]+'
   - name: parsed_event
     description: leef_1_0_standardisation_to_2_0
-    filter: '{{parse_leef.message is mapping}}'
+    filter: '{{parsed_leef is defined and parsed_leef.message is mapping}}'
     external:
       name: leef.parse-leef
       properties:
         input_field: >-
-          LEEF:2.0|{{parse_leef.message.vendor}}|{{parse_leef.message.vendor_product}}|{{parse_leef.message.vendor_product_version}}|{{parse_leef.message.eventID}}|x7c|{{parse_leef.message.message}}
+          LEEF:2.0|{{parsed_leef.message.vendor}}|{{parsed_leef.message.vendor_product}}|{{parsed_leef.message.vendor_product_version}}|{{parsed_leef.message.eventID}}|x7c|{{parsed_leef.message.message}}
         output_field: message
   - name: parsed_event
-    filter: '{{parse_leef.message is not mapping}}'
+    filter: >-
+      {{parsed_leef is not defined or parsed_leef is defined and
+      parsed_leef.message is not mapping}}
     external:
       name: kv.parse-kv
       properties:
@@ -30,301 +36,383 @@ pipeline:
         output_field: message
         value_sep: '='
         item_sep: \s
-  - name: parse_date
-    filter: '{{parsed_event.message.request_timestamp_epoch != null}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.request_timestamp_epoch}}'
-        output_field: datetime
-        format: timestamp
-        timezone: UTC
-  - name: parse_date
-    filter: '{{parsed_event.message.devTime != null}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.devTime}}'
-        output_field: datetime
-        format: timestamp
-        timezone: UTC
-  - name: parse_date_mcafee
-    filter: '{{parsed_event.message.date != null}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{parsed_event.message.date}}'
-        output_field: datetime
-        format: null
-        timezone: UTC
-  - name: parse_first_line
-    filter: '{{parsed_event.message.http_request_first_line != null}}'
+  - name: parsed_http_request_first_line
     external:
       name: grok.match
       properties:
         input_field: '{{parsed_event.message.http_request_first_line}}'
         output_field: message
-        pattern: '%{WORD:http_method} %{URL:url} HTTP/%{NUMBER:http_version}'
-        custom_patterns:
-          URL: >-
-            (?:%{URI}|%{URIHOST}|%{URIPATHPARAM}|(?:%{IPORHOST})?:%{POSINT:port})
-  - name: set_ecs_fields
-  - name: set_mcafee_fields
+        pattern: >-
+          %{WORD:url_method}
+          (%{URI:url}(:%{NUMBER:url_port})|%{URIHOST:url}(:%{NUMBER:url_port})|%{URI:url}|%{URIHOST:url}|:%{NUMBER:url_port})
+          (%{WORD:scheme}/%{NUMBER:scheme_version}|%{WORD:scheme})
+        custom_patterns: {}
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: >-
+          {{parsed_event.message.request_timestamp_epoch or
+          parsed_event.message.devTime or parsed_event.message.date or
+          parsed_event.message.request_timestamp_epoch}}
+        output_field: timestamp
+        format: ''
+        timezone: UTC
+  - name: ecs_observer_mapping
+  - name: ecs_event_mapping
+  - name: ecs_client_mapping
+  - name: ecs_server_mapping
+  - name: ecs_source_mapping
+  - name: ecs_destination_mapping
+  - name: ecs_user_agent_mapping
+  - name: ecs_url_mapping
+  - name: ecs_http_mapping
+  - name: ecs_file_mapping
+  - name: ecs_error_mapping
+  - name: ecs_host_mapping
+  - name: ecs_user_mapping
+  - name: ecs_rule_mapping
+  - name: ecs_service_mapping
+  - name: custom_fields_mapping
+  - name: ecs_authentication_categorization
+  - name: ecs_intrusion_detection_categorization
+  - name: ecs_web_categorization
+  - name: ecs_kind_categorization
+  - name: ecs_outcome_categorization
 stages:
-  set_ecs_fields:
+  ecs_observer_mapping:
     actions:
       - set:
-          url.full: '{{parsed_event.message.url}}'
-          url.path: '{{parsed_event.message.requested_path}}'
-          url.port: '{{parsed_event.message.url_port}}'
-          file.name: '{{parsed_event.message.filename}}'
-          host.name: '{{parsed_event.message.client_system_name}}'
-          rule.name: >-
-            {{parsed_event.message.rule_name or parsed_event.message.last_rule
-            or parsed_event.message.ruleName}}
-          '@timestamp': '{{parse_date.datetime}}'
-          event.code: '{{parsed_event.message.block_id or parsed_event.message.block_res}}'
-          url.domain: '{{parsed_event.message.urlDomain}}'
-          url.scheme: >-
-            {{parsed_event.message.uri_scheme or
-            parsed_event.message.url.split(":")[0] | lower}}
-          event.start: '{{parse_date_mcafee.datetime}}'
+          observer.type: proxy
+          observer.vendor: '{{parsed_event.message.DeviceVendor}}'
+          observer.product: '{{parsed_event.message.DeviceProduct}}'
+          observer.version: '{{parsed_event.message.DeviceVersion}}'
+          observer.hostname: '{{parsed_event.message.hostname}}'
+      - set:
+          observer.vendor: McAfee Corp.
+        filter: '{{final.observer.vendor is not defined}}'
+      - set:
+          observer.product: McAfee Web Gateway
+        filter: '{{final.observer.product is not defined}}'
+      - set:
           observer.ip: '{{parsed_event.message.serverIP}}'
-          source.port: '{{parsed_event.message.srcPort}}'
-          event.action: '{{parsed_event.message.result}}'
+        filter: '{{parsed_event.message.serverIP|is_ipaddress}}'
+  ecs_event_mapping:
+    actions:
+      - set:
+          '@timestamp': '{{parsed_date.timestamp}}'
+          event.code: '{{parsed_event.message.block_id or parsed_event.message.block_res}}'
           event.reason: >-
             {{parsed_event.message.block_reason or
             parsed_event.message.blockReason}}
-          process.name: '{{parsed_event.message.process_name}}'
-          rule.ruleset: >-
-            {{parsed_event.message.ruleset_name or
-            parsed_event.message.ruleset}}
-          service.name: '{{parsed_event.message.Listener}}'
-          source.bytes: >-
+      - set:
+          event.action: "Web request"
+        filter: '{{final.event.action is not defined}}'
+      - dictionary:
+          '0': Allowed
+          '1': Internal error
+          '3': Internal URL filter error
+          '10': Blocked due to an entry in the URL filter database
+          '14': Blocked according to URL filtering by expression
+          '15': Blocked by the Real-Time Classifier
+          '20': Blocked due to lack of content type
+          '22': Blocked due to the media type
+          '30': Blocked due to a multi-part archive having been found
+          '35': Blocked due to an archive not handled by the Archive Handler
+          '80': Blocked due to a virus having been found
+          '81': Blocked due to unauthorized access
+          '82': Blocked due to a bad request
+          '85': Blocked due to an internal anti-malware error
+          '92': Blocked due to expiration of a certificate
+          '93': Blocked due to a revoked certificate
+          '94': Blocked due to a forbidden certificate authority (CA)
+          '95': Blocked due to an unknown certificate authority (CA)
+          '97': Blocked due to a self-signed certificate
+          '98': Blocked due to a common name mismatch
+          '102': Blocked due to an unspecified certificate incident
+          '103': Blocked due to CONNECT not allowed
+          '104': Blocked due to the reverse proxy destination not being allowed
+          '140': Blocked due to an internal DLP filter error
+          '150': Blocked due to an internal Application Control filter error
+          '151': >-
+            Blocked due to a request belonging to an application that is not
+            allowed
+          '160': Blocked due to missing policy for Web Hybrid
+          '161': Blocked due to web access not being allowed by Web Hybrid
+          '162': Blocked due to URL filtering by Web Hybrid
+          '200': Blocked due to the coaching session of a user having been exceeded
+          '201': Blocked due to the time quota session of a user having been exceeded
+          '202': Blocked due to the time quota for a user having been exceeded
+          '203': >-
+            Blocked due to the volume quota session of a user having been
+            exceeded
+          '204': Blocked due to the volume quota for a user having been exceeded
+          '205': >-
+            Blocked due to the authorized override session of a user having been
+            exceeded
+          '206': Blocked due to the blocking session of a user being active
+          '300': Blocked due to a quota redirect
+          '301': Blocked due to an authentication redirect
+          '400': Blocked due to an authorized override redirect
+        mapping:
+          event.code: event.reason
+        name: translate
+  ecs_client_mapping:
+    actions:
+      - set:
+          client.ip: >-
+            {{parsed_event.message.client_ip or
+            parsed_event.message.get("X-Forwarded-For") or
+            parsed_event.message.connection}}
+          client.bytes: >-
             {{parsed_event.message.client_to_server_bytes or
             parsed_event.message.bytes_from_client}}
-          file.hash.md5: '{{parsed_event.message.hash}}'
-          observer.type: proxy
-          rule.category: '{{parsed_event.message.category}}'
-          event.category:
-            - network
-          observer.vendor: McAfee Corp.
-          destination.port: '{{parsed_event.message.destination_port}}'
-          observer.product: McAfee Web Gateway
-          destination.bytes: >-
+  ecs_server_mapping:
+    actions:
+      - set:
+          server.ip: '{{parsed_event.message.serverIP}}'
+          server.bytes: >-
             {{parsed_event.message.server_to_client_bytes or
             parsed_event.message.bytes_from_server}}
-          network.direction: egress
-          observer.hostname: '{{parsed_event.message.hostname}}'
+  ecs_source_mapping:
+    actions:
+      - set:
+          source.ip: '{{parsed_event.message.src or parsed_event.message.source_ip}}'
+          source.port: '{{parsed_event.message.srcPort}}'
+          source.bytes: '{{parsed_event.message.source_bytes}}'
+  ecs_destination_mapping:
+    actions:
+      - set:
+          destination.ip: '{{parsed_event.message.destination_ip}}'
+          destination.port: '{{parsed_event.message.destination_port}}'
+          destination.bytes: '{{parsed_event.message.destination_bytes}}'
           destination.domain: >-
             {{parsed_event.message.destination_host or
-            parsed_event.message.requested_host }}
-          http.request.bytes: '{{parsed_event.message.source_bytes}}'
-          http.response.bytes: '{{parsed_event.message.destination_bytes}}'
-          network.application: '{{parsed_event.message.applicationName}}'
-          network.forwarded_ip: '{{parsed_event.message.X-Forwarded-For}}'
-          http.request.referrer: '{{parsed_event.message.Referer}}'
-          http.request.mime_type: '{{parsed_event.message.media_type or parsed_event.message.MediaType}}'
+            parsed_event.message.requested_host}}
+  ecs_user_agent_mapping:
+    actions:
+      - set:
+          user_agent.original: >-
+            {{parsed_event.message.userAgent or parsed_event.message.user_agent
+            or parsed_event.message.user_agent_comment}}
+  ecs_url_mapping:
+    actions:
+      - set:
+          url.path: '{{parsed_event.message.requested_path}}'
+          url.port: '{{parsed_event.message.url_port}}'
+          url.scheme: '{{parsed_event.message.uri_scheme}}'
+          url.original: '{{parsed_event.message.url}}'
+      - set:
+          url.domain: '{{final.destination.domain}}'
+        filter: >-
+          {{(final.url is not defined or (final.url is defined and
+          final.url.domain is not defined)) and final.destination.domain is
+          defined}}
+      - set:
+          url.port: '{{parsed_http_request_first_line.message.url_port}}'
+          url.original: '{{parsed_http_request_first_line.message.url}}'
+          url.scheme: '{{parsed_http_request_first_line.message.scheme|lower}}'
+        filter: '{{parsed_http_request_first_line is defined}}'
+      - set:
+          url.original: '{{final.url.scheme}}://{{final.url.domain}}{{final.url.path}}'
+        filter: >-
+          {{final.url.original is not defined and final.url.scheme is defined
+          and final.url.domain is defined and final.url.path is defined}}
+      - set:
+          url.original: '{{final.url.domain}}{{final.url.path}}'
+        filter: '{{final.url.original is not defined}}'
+  ecs_http_mapping:
+    actions:
+      - set:
+          http.request.method: '{{parsed_event.message.method or parsed_event.message.http_action}}'
+          http.request.referrer: >-
+            {{parsed_event.message.Referer or parsed_event.message.http_referer
+            or parsed_event.message.referer}}
+          http.request.mime_type: >-
+            {{parsed_event.message.media_type or
+            parsed_event.message.MediaType}}
           http.response.status_code: >-
             {{parsed_event.message.http_status_code or
             parsed_event.message.httpStatus}}
       - set:
-          file.size: '{{parsed_event.message.filesize}}'
-        filter: >-
-          {{parsed_event.message.filesize is defined and
-          parsed_event.message.filesize != '-'}}
-      - set:
-          http.request.method: '{{parsed_event.message.http_action}}'
-        filter: >-
-          {{(not parse_first_line or not parse_first_line.message.http_method)
-          and parsed_event.message.http_action != None}}
-      - set:
-          http.request.method: '{{parse_first_line.message.http_method}}'
-        filter: >-
-          {{parse_first_line is defined and parse_first_line.message.http_method
-          != None}}
-      - set:
-          http.request.method: '{{parsed_event.message.method}}'
-        filter: '{{parsed_event.message.method is defined}}'
-      - set:
-          destination.ip: >-
-            {{parsed_event.message.destination_ip or
-            parsed_event.message.connection}}
-        filter: >-
-          {{parsed_event.message.destination_ip | is_ipaddress or
-          parsed_event.message.connection| is_ipaddress}}
-      - set:
-          source.nat.ip: '{{parsed_event.message.source_ip}}'
-        filter: >-
-          {{parsed_event.message.client_ip != null and
-          parsed_event.message.source_ip | is_ipaddress}}
-      - set:
-          source.ip: '{{parsed_event.message.client_ip}}'
-        filter: >-
-          {{parsed_event.message.client_ip != null and
-          parsed_event.message.client_ip | is_ipaddress}}
-      - set:
-          source.ip: '{{parsed_event.message.source_ip}}'
-        filter: '{{parsed_event.message.client_ip == null}}'
-      - set:
-          url.full: >-
-            {{parsed_event.message.uri_scheme}}://{{parsed_event.message.requested_host}}{{parsed_event.message.requested_path}}
-          url.original: '{{parsed_event.message.requested_path}}'
-        filter: >-
-          {{parsed_event.message.requested_path != null and
-          parsed_event.message.uri_scheme != null and
-          parsed_event.message.requested_host!= null and
-          parsed_event.message.requested_path != null}}
-      - set:
-          user_agent.original: >-
-            {{parsed_event.message.user_agent or
-            parsed_event.message.user_agent_product or
-            parsed_event.message.userAgent}}
-        filter: >-
-          {{(parsed_event.message.user_agent != null and
-          parsed_event.message.user_agent != "-" and
-          parsed_event.message.user_agent != "") or
-          parsed_event.message.userAgent is defined}}
-      - set:
-          url.original: '{{parse_first_line.message.url}}'
-        filter: >-
-          {{parse_first_line.message.http_method != "CONNECT" and
-          parse_first_line.message.url.startswith("http")}}
-      - set:
-          url.port: '{{parse_first_line.message.POSINT}}'
-          url.domain: '{{parse_first_line.message.HOSTNAME}}'
-          destination.port: '{{parse_first_line.message.POSINT}}'
-        filter: '{{parse_first_line.message.http_method == "CONNECT"}}'
-      - set:
-          user.name: '{{parsed_event.message.username or parsed_event.message.usrName}}'
-        filter: >-
-          {{(parsed_event.message.username != null and
-          parsed_event.message.username != "-" and parsed_event.message.username
-          != "") or parsed_event.message.usrName is defined}}
-      - set:
-          http.request.referrer: '{{parsed_event.message.http_referrer}}'
-        filter: >-
-          {{parsed_event.message.http_referrer != null and
-          parsed_event.message.http_referrer != "-" and
-          parsed_event.message.http_referrer != ""}}
-      - set:
-          http.response.mime_type: '{{parsed_event.message.media_type}}'
-        filter: >-
-          {{parsed_event.message.media_type != null and
-          parsed_event.message.media_type != "-" and
-          parsed_event.message.media_type != ""}}
-      - dictionary:
-          '0': allowed
-          '1': error
-          '2': denied
-          '3': error
-          '10': denied
-          '81': denied
-        mapping:
-          event.code: event.action
-        name: translate
-      - dictionary:
-          DENIED: denied
-          OBSERVED: allowed
-        mapping:
-          parsed_event.message.result: event.action
-        name: translate
-      - set:
-          event.type:
-            - connection
-            - access
-            - allowed
-        filter: >-
-          {{ parsed_event.message.block_id == "0" or set_ecs_fields.event.type
-          == ["allowed"] or parsed_event.message.result == "OBSERVED"}}
-      - set:
-          event.type:
-            - connection
-            - access
-            - denied
-        filter: >-
-          {{set_ecs_fields.event.type == ["denied"] or
-          parsed_event.message.result == "DENIED"}}
-      - set:
-          source.ip: '{{parsed_event.message.src}}'
-        filter: '{{parsed_event.message.src|is_ipaddress}}'
-      - set:
-          event.action: denied
-        filter: >-
-          {{parsed_event.message.block_res is defined and '0'
-          !=parsed_event.message.block_res }}
-      - set:
-          event.action: allowed
-        filter: >-
-          {{parsed_event.message.block_res is defined and '0'
-          ==parsed_event.message.block_res }}
-  set_mcafee_fields:
+          http.request.method: '{{parsed_http_request_first_line.message.url_method}}'
+        filter: '{{parsed_event.message.http_request_first_line is defined}}'
+  ecs_file_mapping:
     actions:
       - set:
-          skyhighsecurity: '{{parsed_event.message}}'
+          file.name: '{{parsed_event.message.filename}}'
+      - set:
+          file.hash.md5: '{{parsed_event.message.hash}}'
+        filter: '{{parsed_event.message.hash|length == 32}}'
+      - set:
+          file.hash.sha1: '{{parsed_event.message.hash}}'
+        filter: '{{parsed_event.message.hash|length == 40}}'
+      - set:
+          file.hash.sha256: '{{parsed_event.message.hash}}'
+        filter: '{{parsed_event.message.hash|length == 64}}'
+      - set:
+          file.hash.sha512: '{{parsed_event.message.hash}}'
+        filter: '{{parsed_event.message.hash|length == 128}}'
+      - set:
+          file.size: '{{parsed_event.message.filesize}}'
+        filter: '{{parsed_event.message.filesize|int != 0}}'
+  ecs_error_mapping:
+    actions:
+      - set:
+          error.code: '{{final.event.code}}'
+          error.message: '{{final.event.reason}}'
+        filter: '{{''error'' in final.event.reason}}'
+  ecs_host_mapping:
+    actions:
+      - set:
+          host.name: '{{parsed_event.message.client_system_name}}'
+  ecs_user_mapping:
+    actions:
+      - set:
+          user.name: '{{parsed_event.message.usrName or parsed_event.message.username}}'
+  ecs_rule_mapping:
+    actions:
+      - set:
+          rule.name: >-
+            {{parsed_event.message.rule_name or parsed_event.message.last_rule
+            or parsed_event.message.ruleName}}
+          rule.ruleset: >-
+            {{parsed_event.message.ruleset_name or
+            parsed_event.message.ruleset}}
+  ecs_service_mapping:
+    actions:
+      - set:
+          service.name: '{{parsed_event.message.Listener}}'
+  custom_fields_mapping:
+    actions:
+      - set:
+          skyhighsecurity.proxy_port: '{{parsed_event.message.proxy_port}}'
           skyhighsecurity.url.reputation: >-
             {{parsed_event.message.rep_level or
-            parsed_event.message.url_reputation_string}}
+            parsed_event.message.url_reputation_string or
+            parsed_event.message.reputation}}
+          skyhighsecurity.url.reputation_code: '{{parsed_event.message.url_reputation_code}}'
+          skyhighsecurity.application.name: >-
+            {{parsed_event.message.applicationName or
+            parsed_event.message.application_name}}
           skyhighsecurity.http.body.infected: '{{parsed_event.message.body_infected}}'
           skyhighsecurity.http.body.modified: '{{parsed_event.message.body_modified}}'
-          skyhighsecurity.url.reputation_code: >-
-            {{parsed_event.message.url_reputation_code or
-            parsed_event.message.ScoreTieReputation}}
           skyhighsecurity.application.reputation: '{{parsed_event.message.application_reputation}}'
-      - set:
-          skyhighsecurity.url.categories: '{{parsed_event.message.url_categories.split(", ")}}'
-        filter: '{{parsed_event.message.url_categories is defined}}'
       - set:
           skyhighsecurity.url.categories: '{{parsed_event.message.urlCategories.split(", ")}}'
         filter: '{{parsed_event.message.urlCategories is defined}}'
       - set:
-          skyhighsecurity.url.categories: '["Not Categorized"]'
-        filter: '{{parsed_event.message.urlCategories is not defined and parsed_event.message.url_categories is not defined }}'
+          skyhighsecurity.url.categories: '{{parsed_event.message.url_categories.split(", ")}}'
+        filter: '{{parsed_event.message.url_categories is defined}}'
       - set:
-          skyhighsecurity.application.name: '{{parsed_event.message.application_name}}'
-        filter: >-
-          {{parsed_event.message.application_name != null and
-          parsed_event.message.application_name != "-" and
-          parsed_event.message.application_name != ""}}
+          skyhighsecurity.url.categories: '{{parsed_event.message.category.split(", ")}}'
+        filter: '{{parsed_event.message.category is defined}}'
       - set:
           skyhighsecurity.viruses: '{{parsed_event.message.virus_names.split(", ")}}'
-        filter: >-
-          {{parsed_event.message.virus_names != null and
-          parsed_event.message.virus_names != "-" and
-          parsed_event.message.virus_names != ""}}
+        filter: '{{parsed_event.message.virus_names is defined}}'
       - set:
           skyhighsecurity.viruses: '{{parsed_event.message.virusName.split(", ")}}'
+        filter: '{{parsed_event.message.virusName is defined}}'
+      - set:
+          skyhighsecurity.dlp: '{{parsed_event.message.dlp == ''t''}}'
+        filter: '{{parsed_event.message.dlp is defined}}'
+      - set:
+          skyhighsecurity.rbi: '{{parsed_event.message.rbi == ''t''}}'
+        filter: '{{parsed_event.message.rbi is defined}}'
+      - set:
+          skyhighsecurity.av_scanned_up: '{{parsed_event.message.av_scanned_up == ''t''}}'
+        filter: '{{parsed_event.message.av_scanned_up is defined}}'
+      - set:
+          skyhighsecurity.av_scanned_down: '{{parsed_event.message.av_scanned_down == ''t''}}'
+        filter: '{{parsed_event.message.av_scanned_down is defined}}'
+      - set:
+          skyhighsecurity.ssl_scanned: '{{parsed_event.message.ssl_scanned == ''t''}}'
+        filter: '{{parsed_event.message.ssl_scanned is defined}}'
+  ecs_authentication_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''authentication'']}}'
         filter: >-
-          {{parsed_event.message.virusName != null and
-          parsed_event.message.virusName != "-" and
-          parsed_event.message.virusName != ""}}
-      - dictionary:
-          f: 'false'
-          t: 'true'
-        mapping:
-          parsed_event.message.dlp: skyhighsecurity.dlp
-        name: translate
-      - dictionary:
-          f: 'false'
-          t: 'true'
-        mapping:
-          parsed_event.message.rbi: skyhighsecurity.rbi
-        name: translate
-      - dictionary:
-          f: 'false'
-          t: 'true'
-        mapping:
-          parsed_event.message.av_scanned_up: skyhighsecurity.av_scanned_up
-        name: translate
-      - dictionary:
-          f: 'false'
-          t: 'true'
-        mapping:
-          parsed_event.message.av_scanned_down: skyhighsecurity.av_scanned_down
-        name: translate
-      - dictionary:
-          f: 'false'
-          t: 'true'
-        mapping:
-          parsed_event.message.ssl_scanned: skyhighsecurity.ssl_scanned
-        name: translate
+          {{'auth' in final.event.action or 'login' in final.event.action or
+          'logout' in final.event.action or 'logged in' in
+          final.event.action|lower or 'logged out' in final.event.action|lower
+          or 'logon' in final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''end'']}}'
+        filter: >-
+          {{'end' not in final.event.type and 'authentication' in
+          final.event.category and 'logout' in final.event.action|lower or
+          'done' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' in
+          final.event.action|lower}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''start'']}}'
+        filter: >-
+          {{'start' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+  ecs_intrusion_detection_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''intrusion_detection'']}}'
+        filter: '{{ not final.event.category is defined}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''allowed'']}}'
+        filter: >-
+          {{final.event.code == '0' or parsed_event.message.result ==
+          "OBSERVED"}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''denied'']}}'
+        filter: >-
+          {{'intrusion_detection' in final.event.category and 'allowed' not in
+          final.event.type and 
+          final.event.reason.lower().startswith(('blocked','denied'))}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: >-
+          {{'allowed' not in final.event.type and 'denied' not in
+          final.event.type and 'intrusion_detection' in final.event.category}}
+  ecs_web_categorization:
+    actions:
+      - set:
+          event.category: '{{(final.event.category|default([])) + [''web'']}}'
+        filter: >-
+          {{final.event.category is not defined or final.event.category ==
+          ["intrusion_detection"]}}
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''error'']}}'
+        filter: '{{ ''web'' in final.event.category and final.error is defined}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''access'']}}'
+        filter: '{{''web'' in final.event.category and final.url is defined}}'
+      - set:
+          event.type: '{{(final.event.type|default([])) + [''info'']}}'
+        filter: '{{''web'' in final.event.category and final.event.type is not defined}}'
+  ecs_kind_categorization:
+    actions:
+      - set:
+          event.kind: alert
+        filter: >-
+          {{'alert' in final.event.message|lower or 'alert' in
+          final.event.action|lower}}
+      - set:
+          event.kind: event
+        filter: '{{final.event.kind is not defined}}'
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{'info' not in final.event.type and (final.event.error is defined or ('intrusion_detection' in
+          final.event.category and 'denied' in final.event.type))}}
+      - set:
+          event.outcome: success
+        filter: >-
+          {{'info' not in final.event.type and final.event.outcome is not
+          defined}}
