@@ -60,10 +60,10 @@ pipeline:
         timezone: UTC
   - name: ecs_observer_mapping
   - name: ecs_event_mapping
-  - name: ecs_client_mapping
-  - name: ecs_server_mapping
   - name: ecs_source_mapping
   - name: ecs_destination_mapping
+  - name: ecs_client_mapping
+  - name: ecs_server_mapping
   - name: ecs_user_agent_mapping
   - name: ecs_url_mapping
   - name: ecs_http_mapping
@@ -76,6 +76,7 @@ pipeline:
   - name: ecs_service_mapping
   - name: ecs_network_mapping
   - name: custom_fields_mapping
+  - name: backward_compatibility
   - name: ecs_authentication_categorization
   - name: ecs_intrusion_detection_categorization
   - name: ecs_web_categorization
@@ -159,6 +160,22 @@ stages:
         mapping:
           event.code: event.reason
         name: translate
+  ecs_source_mapping:
+    actions:
+      - set:
+          source.ip: '{{parsed_event.message.src or parsed_event.message.source_ip}}'
+          source.port: '{{parsed_event.message.srcPort}}'
+          source.bytes: '{{parsed_event.message.source_bytes}}'
+  ecs_destination_mapping:
+    actions:
+      - set:
+          destination.ip: '{{parsed_event.message.destination_ip or parsed_event.message.serverIP}}'
+          destination.port: '{{parsed_event.message.destination_port}}'
+          destination.bytes: '{{parsed_event.message.destination_bytes or parsed_event.message.server_to_client_bytes or
+            parsed_event.message.bytes_from_server}}'
+          destination.domain: >-
+            {{parsed_event.message.destination_host or
+            parsed_event.message.requested_host}}
   ecs_client_mapping:
     actions:
       - set:
@@ -172,25 +189,8 @@ stages:
   ecs_server_mapping:
     actions:
       - set:
-          server.ip: '{{parsed_event.message.serverIP}}'
-          server.bytes: >-
-            {{parsed_event.message.server_to_client_bytes or
-            parsed_event.message.bytes_from_server}}
-  ecs_source_mapping:
-    actions:
-      - set:
-          source.ip: '{{parsed_event.message.src or parsed_event.message.source_ip}}'
-          source.port: '{{parsed_event.message.srcPort}}'
-          source.bytes: '{{parsed_event.message.source_bytes}}'
-  ecs_destination_mapping:
-    actions:
-      - set:
-          destination.ip: '{{parsed_event.message.destination_ip}}'
-          destination.port: '{{parsed_event.message.destination_port}}'
-          destination.bytes: '{{parsed_event.message.destination_bytes}}'
-          destination.domain: >-
-            {{parsed_event.message.destination_host or
-            parsed_event.message.requested_host}}
+          server.ip: '{{final.destination.ip}}'
+          server.bytes: '{{final.destination.bytes}}'
   ecs_user_agent_mapping:
     actions:
       - set:
@@ -346,6 +346,10 @@ stages:
       - set:
           skyhighsecurity.ssl_scanned: '{{parsed_event.message.ssl_scanned == ''t''}}'
         filter: '{{parsed_event.message.ssl_scanned is defined}}'
+  backward_compatibility:
+    actions:
+      - set:
+          skyhighsecurity.reputation: '{{parsed_event.message.reputation}}'
   ecs_authentication_categorization:
     actions:
       - set:
