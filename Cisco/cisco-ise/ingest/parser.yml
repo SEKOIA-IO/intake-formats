@@ -86,6 +86,15 @@ pipeline:
         output_field: address_mac
         pattern: "%{MAC:address}:%{GREEDYDATA:word}"
 
+  - name: grok_mac_called_station_id
+    filter: '{{parsed_kv_sentence.result.get("Called-Station-ID") != None}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_kv_sentence.result["Called-Station-ID"]}}'
+        output_field: address_mac
+        pattern: "%{MAC:address}(:%{DATA:word})?"
+
   - name: set_ecs_fields
   - name: set_configuration_fields
   - name: set_network_fields
@@ -154,11 +163,11 @@ stages:
         filter: '{{parsed_kv_sentence.result.get("EndpointMacAddress") != None}}'
 
       - set:
-          destination.mac: '{{parsed_kv_sentence.result["Called-Station-ID"] | to_mac_address}}'
-        filter: '{{parsed_kv_sentence.result.get("Called-Station-ID") != None }}'
+          destination.mac: "{{grok_mac_called_station_id.address_mac.address | to_mac_address}}"
+        filter: '{{grok_mac_called_station_id != None and grok_mac_called_station_id.get("address_mac", {}).get("address") != None}}'
 
       - set:
-          destination.mac: '{{parsed_kv_sentence.result["PeerAddress"] | to_mac_address  }}'
+          destination.mac: '{{parsed_kv_sentence.result["PeerAddress"] | to_mac_address }}'
         filter: '{{parsed_kv_sentence.result.get("PeerAddress") != None}}'
 
       - set:
@@ -220,8 +229,8 @@ stages:
             {%- else -%}
               failure
             {%- endif -%}
-          source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress')}}"
-          user.name: "{{parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
+          source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
+          user.name: "{{parsed_kv_sentence.result.get('UserName') or parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
         filter: '{{"Authentication" in parsed_kv_sentence.result.get("AuthenticationStatus")}}'
 
       - set:
