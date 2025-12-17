@@ -18,20 +18,12 @@ pipeline:
         item_sep: ","
 
   - name: parse_spam_processing_detail
-    filter: "{{ 'spamProcessingDetail' in parse_event.message and parse_event.message.spamProcessingDetail != '' and not parse_event.message.spamProcessingDetail.startswith('\\\"') }}"
+    filter: "{{parse_event.message.spamProcessingDetail is string and parse_event.message.spamProcessingDetail | length > 0}}"
     external:
       name: json.parse-json
       properties:
-        input_field: "{{parse_event.message.spamProcessingDetail.replace('\\\"','\"')}}"
-        output_field: details
-
-  - name: parse_spam_processing_detail
-    filter: "{{ 'spamProcessingDetail' in parse_event.message and parse_event.message.spamProcessingDetail != '' and parse_event.message.spamProcessingDetail.startswith('\\\"') }}"
-    external:
-      name: json.parse-json
-      properties:
-        input_field: "{{parse_event.message.spamProcessingDetail.split('\\\"')[1:-1]|join('\"')|replace('\\\\\"','\"')}}"
-        output_field: details
+        input_field: "{{parse_event.message.spamProcessingDetail.replace('\\\\', '').strip('\"')}}"
+        output_field: message
 
   - name: set_ecs_fields
 
@@ -75,10 +67,22 @@ stages:
           mimecast.siem.subtype: "{{parse_event.message.subtype}}"
           mimecast.siem.url_category: "{{parse_event.message.urlCategory}}"
 
+          mimecast.siem.spam.info: "{{parse_event.message.spamInfo}}"
+          mimecast.siem.spam.score: "{{parse_event.message.spamScore}}"
+          mimecast.siem.spam.detection_level: "{{parse_event.message.spamDetectionLevel}}"
+
           destination.ip: "{{parse_event.message.destinationIp}}"
           url.original: "{{parse_event.message.url}}"
 
           organization.id: "{{parse_event.message.accountId}}"
+
+      - set:
+          mimecast.siem.spam.processing_detail: "{{parse_spam_processing_detail.message}}"
+        filter: "{{parse_spam_processing_detail.message | length > 0}}"
+
+      - set:
+          mimecast.siem.spam.processing_detail: "{{parse_event.message.spamProcessingDetail}}"
+        filter: "{{final.mimecast.siem.spam.processing_detail == null}}"
 
       - set:
           network.direction: "{{parse_event.message.route.lower()}}"
@@ -101,11 +105,13 @@ stages:
 
       - set:
           email.attachments: >
-            [
-              {%- for item in parse_event.message.attachments.split(",") -%}
-                {"file": {"name": "{{ item.strip('" ') }}"}},
-              {%- endfor -%}
-            ]
+            {%- set attachments = [] -%}
+            {%- for item in parse_event.message.attachments.split(",") -%}
+              {%- set file_name = item.strip('" ') -%}
+              {%- set item = {"file": {"name": file_name}} -%}
+              {%- set attachments = attachments.append(item) -%}
+            {%- endfor -%}
+            {{ attachments }}
         filter: "{{parse_event.message.get('attachments') != None}}"
 
       - set:
