@@ -2,6 +2,7 @@ import math
 import io
 import os
 from pathlib import Path
+from typing import Optional
 
 from PIL import Image
 import numpy as np
@@ -174,7 +175,7 @@ def cli_normalize_image(source: Path, destination: Path, fuzz: int = 0, ligthen_
 
 
 @app.command("normalize_logo")
-def cli_normalize_logo(module: str | None = None, format: str | None = None):
+def cli_normalize_logo(module: Optional[str] = None, format: Optional[str] = None):
     if not module and not format:
         raise ValueError("module or format is required")
 
