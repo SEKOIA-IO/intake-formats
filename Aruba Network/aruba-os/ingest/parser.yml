@@ -57,13 +57,14 @@ pipeline:
       name: grok.match
       properties:
         input_field: "parse_message.message.syslog_payload"
-        pattern: "%{USER_AUTHENTICATED}|%{USER_INFO}|%{SRC_MAC}|%{FORMAT_133121}|%{KV_PART}"
+        pattern: "%{AUTH_ACCESS}|%{USER_AUTHENTICATED}|%{USER_INFO}|%{SRC_MAC}|%{FORMAT_133121}|%{KV_PART}"
         custom_patterns:
           FORMAT_133121: "%{DATA} to %{IP:dst_ip}(:%{NUMBER:dst_port})? with %{GREEDYDATA}"
           KV_PART: '%{DATA:payload}.\s*%{GREEDYDATA:kv_part}'
           USER_AUTHENTICATED: "User authenticated,( mac-%{MAC:src_mac},)?( username-%{DATA:user_name},)?( IP-%{IP:client_ip},)?( method-%{DATA:method},)?( role-%{DATA:role},)?.*?"
           USER_INFO: "User %{USERNAME:user_name}.*?"
           SRC_MAC: ".*?mac-%{MAC:src_mac}.*?"
+          AUTH_ACCESS: 'Auth success: %{MAC}: AP %{IP}-%{MAC:bssid}-%{DATA:name}'
     filter: "{{ parse_message.message.get('syslog_payload') != None }}"
 
   - name: syslog_parse_kv_part_message
@@ -168,6 +169,7 @@ stages:
           destination.domain: "{{ syslog_parse_kv_part_message.message.servername }}"
           destination.ip: "{{ parse_syslog_message.message.dst_ip or syslog_parse_kv_part_message.message.serverip }}"
           destination.port: "{{ parse_syslog_message.message.dst_port }}"
+          destination.mac: "{{ parse_syslog_message.message.bssid | to_mac_address }}"
           user.name: "{{ syslog_parse_kv_part_message.message.username }}"
 
       - set:
