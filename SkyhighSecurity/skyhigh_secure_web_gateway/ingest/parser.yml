@@ -37,16 +37,33 @@ pipeline:
         value_sep: '='
         item_sep: \s
   - name: parsed_http_request_first_line
+    description: ''
+    filter: ''
     external:
       name: grok.match
       properties:
         input_field: '{{parsed_event.message.http_request_first_line}}'
         output_field: message
+        pattern: '%{WORD:http_method} (%{URLCUSTOM:url}|%{HOSTNAME:destination_domain}(:%{NUMBER:destination_port})?|:%{NUMBER:destination_port}) %{GREEDYDATA}'
+        custom_patterns:
+          URLCUSTOM: >-
+            %{WORD:url_protocol}://(%{IP:destination_ip}:%{NUMBER:url_port}|%{IP:destination_ip}|%{URIHOST:url_domain}:%{NUMBER:url_port}|%{URIHOST:url_domain})%{URIPATH:url_path}?%{URIQUERY:url_query}?
+  - name: parsed_requested_path
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_event.message.requested_path}}'
+        output_field: message
         pattern: >-
-          %{WORD:url_method}
-          (%{URI:url}(:%{NUMBER:url_port})|%{URIHOST:url}(:%{NUMBER:url_port})|%{URI:url}|%{URIHOST:url}|:%{NUMBER:url_port})
-          (%{WORD:scheme}/%{NUMBER:scheme_version}|%{WORD:scheme})
-        custom_patterns: {}
+          %{URIPATH:url_path}%{URIQUERY:url_query}?
+  - name: parsed_url
+    external:
+      name: grok.match
+      properties:
+        input_field: '{{parsed_event.message.url}}'
+        output_field: message
+        pattern: >-
+          %{WORD:url_protocol}://(%{IP:destination_ip}:%{NUMBER:url_port}|%{IP:destination_ip}|%{URIHOST:url_domain}:%{NUMBER:url_port}|%{URIHOST:url_domain})%{URIPATH:url_path}?%{URIQUERY:url_query}?
   - name: parsed_date
     external:
       name: date.parse
@@ -175,6 +192,12 @@ stages:
           destination.domain: >-
             {{parsed_event.message.destination_host or
             parsed_event.message.requested_host}}
+      - set:
+          destination.domain: '{{parsed_http_request_first_line.message.destination_domain}}'
+        filter: '{{final.destination.domain is not defined and parsed_http_request_first_line is defined}}'
+      - set:
+          destination.port: '{{parsed_http_request_first_line.message.destination_port}}'
+        filter: '{{final.destination.port is not defined and parsed_http_request_first_line.message is defined}}'
   ecs_client_mapping:
     actions:
       - set:
@@ -199,32 +222,66 @@ stages:
   ecs_url_mapping:
     actions:
       - set:
-          url.path: '{{parsed_event.message.requested_path}}'
           url.port: '{{parsed_event.message.url_port}}'
           url.scheme: '{{parsed_event.message.uri_scheme}}'
           url.original: '{{parsed_event.message.url}}'
+      - set:
+          url.port: '{{parsed_http_request_first_line.message.url_port}}'
+          url.original: '{{parsed_http_request_first_line.message.url}}'
+          url.scheme: '{{parsed_http_request_first_line.message.url_protocol}}'
+      - set:
+          url.path: '{{parsed_requested_path.message.url_path}}'
+          url.query: '{{parsed_requested_path.message.url_query}}'
+      - set:
+          url.port: '{{parsed_url.message.url_port}}'
+        filter: >-
+          {{final.url is not defined or (final.url is defined and final.url.port
+          is not defined)}}
+      - set:
+          url.scheme: '{{parsed_url.message.url_protocol}}'
+        filter: >-
+          {{final.url is not defined or (final.url is defined and
+          final.url.scheme is not defined)}}
+      - set:
+          url.path: '{{parsed_url.message.url_path}}'
+        filter: >-
+          {{final.url is not defined or (final.url is defined and final.url.path
+          is not defined)}}
+      - set:
+          url.domain: '{{parsed_url.message.url_domain}}'
+          url.query: '{{parsed_url.message.url_query}}'
+      - set:
+          url.port: '{{final.destination.port}}'
+        filter: >-
+          {{final.url is not defined or (final.url is defined and final.url.port
+          is not defined)}}
       - set:
           url.domain: '{{final.destination.domain}}'
         filter: >-
           {{(final.url is not defined or (final.url is defined and
           final.url.domain is not defined)) and final.destination.domain is
           defined}}
+      - dictionary:
+          '80': http
+          '443': https
+        mapping:
+          url.port: url.scheme
+        filter: '{{final.url.port is defined and final.url.scheme is not defined}}'
       - set:
-          url.port: '{{parsed_http_request_first_line.message.url_port}}'
-          url.original: '{{parsed_http_request_first_line.message.url}}'
-          url.scheme: '{{parsed_http_request_first_line.message.scheme|lower}}'
-        filter: '{{parsed_http_request_first_line is defined}}'
-      - set:
-          url.original: '{{final.url.scheme}}://{{final.url.domain}}{{final.url.path}}'
+          url.full: >-
+            {{final.url.scheme}}://{{final.url.domain}}{{final.url.path}}{{final.url.query}}
         filter: >-
-          {{final.url.original is not defined and final.url.scheme is defined
-          and final.url.domain is defined and final.url.path is defined}}
-      - set:
-          url.original: '{{final.url.domain}}{{final.url.path}}'
-        filter: '{{final.url.original is not defined}}'
+          {{final.url.full is not defined and final.url.scheme is defined and
+          final.url.domain is defined}}
       - set:
           url.extension: '{{final.url.path.split(''.'')[-1].split(''?'')[0]}}'
-        filter: '{{''.'' in final.url.path}}'
+        filter: >-
+          {{final.url is defined and final.url.path is defined and '.' in
+          final.url.path}}
+      - set:
+          message: >-
+            {{final.url.full is not defined and final.url.scheme is defined and
+            final.url.domain is defined}}
   ecs_http_mapping:
     actions:
       - set:
@@ -239,8 +296,8 @@ stages:
             {{parsed_event.message.http_status_code or
             parsed_event.message.httpStatus}}
       - set:
-          http.request.method: '{{parsed_http_request_first_line.message.url_method}}'
-        filter: '{{parsed_event.message.http_request_first_line is defined}}'
+          http.request.method: '{{parsed_http_request_first_line.message.http_method}}'
+        filter: '{{parsed_http_request_first_line is defined}}'
       - set:
           http.request.bytes: '{{final.source.bytes or final.client.bytes}}'
           http.response.bytes: '{{final.destination.bytes or final.server.bytes}}'
