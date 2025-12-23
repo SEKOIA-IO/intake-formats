@@ -1,0 +1,7 @@
+# New Relic
+
+## Description
+New Relic is a cloud-based observability platform delivering full-stack monitoring for applications, infrastructure, logs and metrics. It ingests real-time telemetry—metrics, logs, traces and events—to help DevOps and engineering teams detect anomalies and troubleshoot faster. By transforming raw data into actionable insights, New Relic drives performance optimization and seamless digital experiences.
+
+## Intakes
+*
