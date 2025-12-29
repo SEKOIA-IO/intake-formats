@@ -10,7 +10,7 @@ pipeline:
         pattern: "(%{PINGF_INTERNAL}|%{PINGF_HTTP})"
         custom_patterns:
           # PingFederate standard logs
-          PINGF_INTERNAL: '(?:%{TIMESTAMP_ISO8601:log_timestamp}(?:\s+tid:%{DATA:transaction_id})?\s+(?:%{LOGLEVEL:log_level}\s+\[%{DATA:java_class}\]\s+)?%{GREEDYDATA:kv_pairs})'
+          PINGF_INTERNAL: '(?:%{TIMESTAMP_ISO8601:log_timestamp}(?:\s+tid:%{DATA:tracking_id})?\s+(?:%{LOGLEVEL:log_level}\s+\[%{DATA:java_class}\]\s+)?%{GREEDYDATA:kv_pairs})'
           # PingFederate HTTP microservice logs
           PINGF_HTTP: '%{IPORHOST:source_ip}\s+%{USER:ident}\s+%{USER:auth}\s+\[%{HTTPDATE:timestamp}\]\s+"%{WORD:http_request_method}\s+%{DATA:url_original}\s+HTTP/%{NUMBER:http_version}"\s+%{INT:http_response_status_code:int}\s+%{INT:http_response_body_bytes:int}(?:\s+%{INT:extra_field:int})?'
 
@@ -148,15 +148,6 @@ stages:
         filter: "{{parsed_event.message.java_class is defined}}"
 
       - set:
-          pingfederate.transaction_id: "{{parsed_event.message.transaction_id}}"
-        filter: "{{parsed_event.message.transaction_id is defined}}"
-
-      # Extract request ID from tracking messages (use as transaction_id if tid is missing)
-      - set:
-          pingfederate.transaction_id: "{{parsed_request_id.tracking_parts.request_id}}"
-        filter: "{{parsed_request_id.tracking_parts.request_id is defined and pingfederate.transaction_id is not defined}}"
-
-      - set:
           event.reason: "{{parsed_event.message.kv_pairs}}"
         filter: "{{parsed_event.message.kv_pairs is defined}}"
 
@@ -240,6 +231,11 @@ stages:
         filter: "{{kv_reason_parsed.reason_data['X-Forwarded-Host'] is defined or kv_parsed.message['X-Forwarded-Host'] is defined}}"
 
       # PingFederate custom fields - consolidated from both parsers
+      # trackingid: extract from tid prefix first (will be overridden by KV pairs if present)
+      - set:
+          pingfederate.trackingid: "tid:{{parsed_event.message.tracking_id}}"
+        filter: "{{parsed_event.message.tracking_id is defined and parsed_event.message.tracking_id != None and parsed_event.message.tracking_id != ''}}"
+
       - set:
           pingfederate.trackingid: "{{kv_reason_parsed.reason_data.trackingid or kv_parsed.message.trackingid}}"
         filter: "{{kv_reason_parsed.reason_data.trackingid is defined or kv_parsed.message.trackingid is defined}}"
