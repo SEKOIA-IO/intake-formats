@@ -105,13 +105,14 @@ stages:
   set_delinea_pra_fields:
     actions:
       - set:
-          event.dataset: "{{parsed_event.message.service.type}}"
+          event.dataset: "{{parsed_event.message.eventType.level}}"
           event.action: "{{parsed_event.message.eventType.name}}"
+          event.provider: "{{parsed_event.message.service.type}}"
 
-          event.kind: "{{parsed_event.message.level}}"
           event.reason: "{{parsed_event.message.displayMessage or parsed_notes.message.notes.eventDetails}}"
           event.outcome: "{{parsed_notes.message.notes.eventLevel}}"
           event.severity: "{{parsed_notes.message.notes.eventLevel}}"
+          event.code: "{{parsed_event.message.eventType.id}}"
 
           observer.type: "{{parsed_event.message.service.type}}"
           observer.version: "{{parsed_event.message.service.version}}"
@@ -138,3 +139,34 @@ stages:
           destination.domain: "{{parsed_event.message.target.containerName}}"
           destination.ip: "{{parsed_notes.message.notes.ipAddress}}"
           destination.port: "{{parsed_event.message.target.host.network.port}}"
+
+          user_agent.original: "{{parsed_event.message.source.host.client.userAgent}}"
+          organization.id: "{{parsed_event.message.tenantId}}"
+
+      - set:
+          event.kind: "alert"
+        filter: "{{parsed_event.message.eventType.level == 'SecurityAudit'}}"
+      - translate:
+        dictionary:
+          "Delinea.Identity.AuthSession.SessionStart": ["authentication"]
+          "Delinea.RAS.Session.ClosedByTimeout": ["authentication"]
+          "Delinea.RAS.Session.Secret.Launched": ["process"]
+          "Delinea.Vault.Secret.RemoteSession.Launched": ["process"]
+          "Delinea.RAS.Site.Queried": ["process"]
+          "Delinea.Vault.Secret.Viewed": ["configuration"]
+          "Delinea.RAS.Session.Clipboard.SentToTarget": ["configuration"]
+        mapping:
+          parsed_event.message.eventType.name: event.category
+        fallback: ["process"]
+      - translate:
+        dictionary:
+          "Delinea.Identity.AuthSession.SessionStart": ["start"]
+          "Delinea.RAS.Session.ClosedByTimeout": ["end"]
+          "Delinea.RAS.Session.Secret.Launched": ["start"]
+          "Delinea.Vault.Secret.RemoteSession.Launched": ["start"]
+          "Delinea.RAS.Site.Queried": ["info"]
+          "Delinea.Vault.Secret.Viewed": ["access"]
+          "Delinea.RAS.Session.Clipboard.SentToTarget": ["access"]
+        mapping:
+          parsed_event.message.eventType.name: event.type
+        fallback: ["info"]
