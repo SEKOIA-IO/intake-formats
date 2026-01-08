@@ -85,6 +85,38 @@ def check_test_file(test_path: str | Path, fix: bool = False) -> bool:
     return need_fix
 
 
+def check_parser(parser_path: Path | str) -> bool:
+    """
+    Check parser for redundancies, such as empty descriptions and filters
+    """
+    need_fixes = False
+    if not parser_path.is_file():
+        return False
+
+    with open(parser_path, "rt") as file:
+        raw = yaml.safe_load(file)
+
+    # check pipeline steps
+    for step in raw["pipeline"]:
+        step_name = step["name"]
+        if "filter" in step and (step["filter"] is None or len(step["filter"]) == 0):
+            need_fixes = True
+            print(f"{parser_path} needs to be fixed: remove empty filter at `{step_name}` step in pipeline")
+
+        if "description" in step and (step["description"] is None or len(step["description"]) == 0):
+            need_fixes = True
+            print(f"{parser_path} needs to be fixed: remove empty description at `{step_name}` step in pipeline")
+
+    # check stages
+    for stage_name, stage in raw["stages"].items():
+        for action in stage["actions"]:
+            if "set" in action and action.get("name") == "set":
+                need_fixes = True
+                print(f"{parser_path} needs to be fixed: remove `name: set` from `{stage_name}` stage")
+
+    return need_fixes
+
+
 def get_diff_between(t1: str, t2: str) -> str:
     green = "\x1b[38;5;16;48;5;2m"
     red = "\x1b[38;5;16;48;5;1m"
@@ -147,8 +179,10 @@ if __name__ == "__main__":
 
         exit(1)
 
-    # Collect taxonomies to check
+    # Collect taxonomies and parsers to check
     taxonomies = set()
+    parsers = set()
+
     for (
         module_name,
         format_name,
@@ -164,6 +198,10 @@ if __name__ == "__main__":
         if format_taxonomy.exists():
             taxonomies.add(format_taxonomy)
 
+        format_parser = format_path / "ingest" / "parser.yml"
+        if format_parser.exists():
+            parsers.add(format_parser)
+
     taxonomies = sorted(list(taxonomies))
 
     need_fix = False
@@ -176,9 +214,20 @@ if __name__ == "__main__":
     for path in mngr.testcases():
         need_fix |= check_test_file(INTAKES_PATH / path, fix=expect_fix)
 
-    if need_fix:
+    need_manual_fix = False
+    for path in parsers:
+        result = check_parser(INTAKES_PATH / path)
+        need_fix |= result
+        need_manual_fix |= result
+
+    if need_fix and not need_manual_fix:
         print()
         print("To fix, use `python utils/linter.py fix --changes`")
+        exit(1)
+
+    elif need_manual_fix:
+        print()
+        print("You have to fix these errors manually")
         exit(1)
 
     else:
