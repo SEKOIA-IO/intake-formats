@@ -32,6 +32,22 @@ pipeline:
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
 
+  - name: parse_display_name
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list)[0].NewValue}}"
+        output_field: values
+
+  - name: parse_app_id
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list)[0].NewValue}}"
+        output_field: values
+
   - name: set_common_fields
   - name: set_office365_fields
   - name: parse_exchange_admin
@@ -93,10 +109,18 @@ stages:
           office365.dn: "{{parse_data.ParsedData.dn}}"
           office365.tfph: "{{parse_data.ParsedData.tfph}}"
 
+          # https://learn.microsoft.com/en-us/office/office-365-management-api/office-365-management-activity-api-schema#complex-type-identitytypevaluepair
+          office365.target.displayName: "{{(json_event.message.Target | selectattr('Type', '==', 1) | list | first).get('ID')}}"
+
       - set:
           user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
           user.id: "{{json_event.message.UserKey}}"
         filter: "{{json_event.message.RecordType not in [40]}}"
+
+      - set:
+          office365.application.id: "{{ parse_app_id.values[0] }}"
+          office365.application.name: "{{ parse_display_name.values[0] }}"
+        filter: "{{parse_display_name.values | length > 0 and parse_app_id.values | length > 0}}"
 
       - set:
           event.action: "{{json_event.message.Operation.rstrip('.')}}"
@@ -135,6 +159,8 @@ stages:
   set_office365_fields:
     actions:
       - set:
+          office365.device.id: "{{json_event.message.DeviceId}}"
+          office365.device.is_managed: "{{json_event.message.IsManagedDevice}}"
           office365.record_id: "{{json_event.message.Id}}"
           office365.record_type: "{{json_event.message.RecordType}}"
           office365.result_status: "{{json_event.message.ResultStatus}}"
@@ -481,6 +507,7 @@ stages:
   parse_exchange_item_aggregated:
     actions:
       - set:
+          user.id: "{{json_event.message.LogonUserSid}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
