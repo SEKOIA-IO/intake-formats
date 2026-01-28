@@ -15,6 +15,10 @@ pipeline:
         output_field: datetime
 
   - name: set_ecs_fields
+  - name: set_inbound_fields
+    filter: "{{parse_json.message.event.entity.entity_payload.is_outgoing == false}}"
+  - name: set_outbound_fields
+    filter: "{{parse_json.message.event.entity.entity_payload.is_outgoing == true}}"
   - name: set_ecs_category
 
 stages:
@@ -45,9 +49,7 @@ stages:
           cloud.region: "{{parse_json.message.event.security_event.entity_info.customer_region}}"
           cloud.account.id: "{{parse_json.message.event.security_event.entity_info.customer_domain}}"
 
-          destination.user.full_name: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.full_name}}"
           source.user.id: "{{parse_json.message.event.entity.entity_payload.from_id}}"
-
           source.domain: "{{parse_json.message.event.entity.entity_payload.from_domain}}"
 
           checkpoint.harmony_email.saas_application: "{{parse_json.message.event.entity.entity_payload.saas}}"
@@ -58,24 +60,12 @@ stages:
           checkpoint.harmony_email.verdict.ms_defender: "{{parse_json.message.event.entity.entity_security_result.combined_verdict.ms_defender}}"
 
       - set:
-          destination.user.email: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.email}}"
-        filter: "{{ '@' in parse_json.message.event.security_event.saas_info.saas_actor_payload.email | string }}"
-
-      - set:
           source.ip: "{{parse_json.message.event.entity.entity_payload.sender_client_ip}}"
         filter: "{{parse_json.message.event.entity.entity_payload.sender_client_ip | is_ipaddress}}"
 
       - set:
           destination.address: "{{parse_json.message.event.entity.entity_payload.recipients[0]}}"
         filter: "{{parse_json.message.event.entity.entity_payload.recipients | length > 0}}"
-
-      - set:
-          email.direction: "outbound"
-        filter: "{{parse_json.message.event.entity.entity_payload.is_outgoing == true}}"
-
-      - set:
-          email.direction: "inbound"
-        filter: "{{parse_json.message.event.entity.entity_payload.is_outgoing == false}}"
 
       - set:
           url.original: "{{parse_json.message.event.entity.entity_payload.email_links[0]}}"
@@ -85,6 +75,26 @@ stages:
           rule.description: "{{parse_json.message.event.entity.entity_security_result.dlp[0].status_description}}"
           checkpoint.harmony_email.scan_details: "{{parse_json.message.event.entity.entity_security_result.dlp[0].payload.scan_details}}"
         filter: "{{parse_json.message.event.entity.entity_security_result.dlp | length > 0}}"
+
+  set_inbound_fields:
+    actions:
+      - set:
+          email.direction: "inbound"
+          destination.user.full_name: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.full_name}}"
+
+      - set:
+          destination.user.email: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.email}}"
+        filter: "{{ '@' in parse_json.message.event.security_event.saas_info.saas_actor_payload.email | string }}"
+
+  set_outbound_fields:
+    actions:
+      - set:
+          email.direction: "outbound"
+          source.user.full_name: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.full_name}}"
+
+      - set:
+          source.user.email: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.email}}"
+        filter: "{{ '@' in parse_json.message.event.security_event.saas_info.saas_actor_payload.email | string }}"
 
   set_ecs_category:
     actions:
