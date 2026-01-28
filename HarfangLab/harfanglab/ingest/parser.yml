@@ -1,5 +1,5 @@
 name: harfanglab
-ignored_values: [None, "", "-"]
+ignored_values: [None, ""]
 pipeline:
   - name: json_event
     external:
@@ -425,6 +425,18 @@ stages:
           harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
           harfanglab.threat_key: "{{json_event.message.threat_key}}"
 
+      - translate:
+        dictionary:
+          0: "UNKNOWN"
+          1: "SUCCESS"
+          2: "FAIL"
+          3: "CANNOT_QUARANTINE"
+          4: "NO_ACTION"
+          5: "DELAYED"
+        mapping:
+          json_event.message.quarantine: harfanglab.quarantine_label
+        filter: "{{json_event.message.quarantine | int(-1) > -1}}"
+
   alert_process_info:
     actions:
       - set:
@@ -502,10 +514,6 @@ stages:
         filter: "{{json_event.message.event_id == 4625}}"
 
       - set:
-          user.name: "{{json_event.message.event_data.SubjectUserName}}"
-          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
-          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
-          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
           action.properties.DeviceID: "{{json_event.message.event_data.DeviceId}}"
           action.properties.ASsecurityintelligencecreationtime: "{{json_event.message.event_data.get('AS security intelligence creation time')}}"
           action.properties.ASsecurityintelligenceversion: "{{json_event.message.event_data.get('AS security intelligence version')}}"
@@ -530,6 +538,7 @@ stages:
           action.properties.CertThumbprint: "{{json_event.message.event_data.get('CertThumbprint')}}"
           action.properties.ClientProcessId: "{{json_event.message.event_data.get('ClientProcessId')}}"
           action.properties.ClientProcessStartKey: "{{json_event.message.event_data.get('ClientProcessStartKey')}}"
+          action.properties.Destination: "{{json_event.message.event_data.get('Destination')}}"
           action.properties.DetectionID: "{{json_event.message.event_data.get('Detection ID')}}"
           action.properties.DetectionTime: "{{json_event.message.event_data.get('Detection Time')}}"
           action.properties.DetectionUser: "{{json_event.message.event_data.get('Detection User')}}"
@@ -700,6 +709,22 @@ stages:
         filter: "{{json_event.message.event_data != None}}"
 
       - set:
+          user.name: "{{json_event.message.event_data.SubjectUserName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.SubjectUserName != '-'}}"
+
+      - set:
+          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.SubjectDomainName != '-'}}"
+
+      - set:
+          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.TargetUserName != '-'}}"
+
+      - set:
+          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.TargetDomainName != '-'}}"
+
+      - set:
           action.properties.MemberName: "{{parse_member_name.message.first_name + ' ' + parse_member_name.message.last_name}}"
         filter: "{{(parse_member_name.message.first_name | length > 0) and (parse_member_name.message.last_name | length > 0)}}"
 
@@ -744,6 +769,7 @@ stages:
           action.properties.CertThumbprint: "{{json_event.message.eventlog.event_data.get('CertThumbprint')}}"
           action.properties.ClientProcessId: "{{json_event.message.eventlog.event_data.get('ClientProcessId')}}"
           action.properties.ClientProcessStartKey: "{{json_event.message.eventlog.event_data.get('ClientProcessStartKey')}}"
+          action.properties.Destination: "{{json_event.message.eventlog.event_data.get('Destination')}}"
           action.properties.DetectionID: "{{json_event.message.eventlog.event_data.get('Detection ID')}}"
           action.properties.DetectionTime: "{{json_event.message.eventlog.event_data.get('Detection Time')}}"
           action.properties.DetectionUser: "{{json_event.message.eventlog.event_data.get('Detection User')}}"
@@ -916,6 +942,10 @@ stages:
       - set:
           source.ip: "{{json_event.message.eventlog.event_data.IpAddress}}"
         filter: "{{json_event.message.eventlog.event_data.IpAddress | is_ipaddress}}"
+
+      - set:
+          url.original: "{{json_event.message.event_data.Destination}}"
+        filter: "{{json_event.message.event_data.Destination != None and json_event.message.event_data.Destination.startswith('http')}}"
 
   authentication_info:
     actions:
