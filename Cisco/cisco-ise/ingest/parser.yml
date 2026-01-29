@@ -44,7 +44,7 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{parsed_event.message.kv.strip(' ,').replace(', ', ',')}}"
+        input_field: "{{parsed_event.message.kv.strip(' ,').replace(', ', ',').replace('cisco-av-pair=http-tlv=', 'cisco-av-pair-http-tlv-').replace('cisco-av-pair=dhcp-option=', 'cisco-av-pair-dhcp-option-').replace('cisco-av-pair=', 'cisco-av-pair-')}}"
         output_field: result
         value_sep: "="
         item_sep: ","
@@ -58,6 +58,16 @@ pipeline:
         output_field: result
         value_sep: "="
         item_sep: "*,*"
+
+  - name: parsed_kv_response
+    filter: "{{ parsed_kv_sentence.get('result', {}).get('Response', '').startswith('{') }}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{ parsed_kv_sentence.result.Response.strip(' ;{}') }}"
+        output_field: result
+        value_sep: "="
+        item_sep: ';\s'
 
   - name: pre_parse_step_data
     filter: '{{"StepData" in original.message}}'
@@ -108,7 +118,7 @@ stages:
           observer.product: "Cisco ISE"
           event.type: ["info"]
           cisco.ise.type: "{{pre_parsed_event.pre_message.event_type}}"
-          rule.name: '{{parsed_kv_sentence.result.get("IdentityPolicyMatchedRule")}}'
+          rule.name: '{{parsed_kv_sentence.result.get("IdentityPolicyMatchedRule") or parsed_kv_sentence.result.get("ISEPolicySetName")}}'
           cisco.ise.network.device_name: '{{parsed_kv_sentence.result.get("NetworkDeviceName")}}'
 
       - set:
@@ -132,14 +142,14 @@ stages:
     actions:
       - set:
           event.category: ["network"]
-          event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason") or parsed_event.message.get("reason").strip()}}'
+          event.reason: '{{parsed_kv_sentence.result.get("Error Message") or parsed_kv_sentence.result.get("Failure Reason") or parsed_event.message.get("reason").strip() or parsed_kv_sentence.result.SelectedAccessService or parsed_kv_sentence.result.AuthenticationStatus}}'
           cisco.ise.network_calling_station.id: '{{parsed_kv_sentence.result.get("Error Message")}}'
-          host.name: '{{parsed_kv_sentence.result.get("host-name")}}'
+          host.name: "{{parsed_kv_sentence.result.get('host-name') or parsed_kv_sentence.result.get('Subject Alternative Name - Other Name') or parsed_kv_sentence.result.get('cisco-av-pair-dhcp-option-host-name') or parsed_kv_sentence.result.get('Subject Alternative Name')}}"
           host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System') or parsed_kv_sentence.result.get('OperatingSystem')}}"
           user.name: '{{parsed_kv_sentence.result.get("AdminName") or parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("Calling Station Id") or parsed_kv_sentence.result.get("UserName")}}'
           source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
           source.ip: '{{parsed_kv_sentence.result.get("AdminIPAddress") or parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAS-IP-Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address") or parsed_kv_sentence.result.get("EndpointIPAddress")}}'
-          tls.client.x509.issuer.common_name: "{{parsed_kv_sentence.result.get('Issuer').split('CN=')[1].split('\\\\')[0]}}"
+          tls.client.x509.issuer.common_name: "{{parsed_kv_sentence.result.get('Issuer').split('CN=')[1].split('\\\\')[0] or parsed_kv_sentence.result.get('Subject - Common Name') or parsed_kv_sentence.result.get('Subject').replace('CN=', '')}}"
           tls.client.x509.issuer.organization: "{{parsed_kv_sentence.result.get('Issuer').split('O=')[1].split('\\\\')[0]}}"
           tls.client.x509.issuer.country: "{{parsed_kv_sentence.result.get('Issuer').split('C=')[1].split('\\\\')[0]}}"
           tls.client.x509.issuer.locality: "{{parsed_kv_sentence.result.get('Issuer').split('L=')[1].split('\\\\')[0]}}"
@@ -171,6 +181,14 @@ stages:
         filter: '{{parsed_kv_sentence.result.get("PeerAddress") != None}}'
 
       - set:
+          source.mac: "{{parsed_kv_response.result.get('UserName') | to_mac_address}}"
+        filter: "{{ parsed_kv_response.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$') }}"
+
+      - set:
+          source.mac: "{{parsed_kv_response.result.get('User-Name') | to_mac_address}}"
+        filter: "{{ parsed_kv_response.result.get('User-Name', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$') }}"
+
+      - set:
           source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
         filter: '{{parsed_kv_sentence.result.get("EndPointMACAddress") != None }}'
 
@@ -187,8 +205,34 @@ stages:
         filter: '{{parsed_kv_sentence.result.get("Called-Station-ID") | is_ipaddress }}'
 
       - set:
+          source.ip: "{{parsed_kv_sentence.result.ISELocalAddress}}"
+        filter: "{{parsed_kv_sentence.result.ISELocalAddress | is_ipaddress}}"
+
+      - set:
           source.ip: '{{parsed_kv_sentence.result["Calling-Station-ID"]}}'
         filter: '{{parsed_kv_sentence.result.get("Calling-Station-ID") | is_ipaddress }}'
+
+      - set:
+          cisco.ise.device.ip: "{{parsed_kv_sentence.result.get('Framed-IP-Address') or parsed_kv_sentence.result.get('Framed-IPv6-Address')}}"
+          cisco.ise.policy: "{{parsed_kv_sentence.result.get('ISEPolicySetName') or parsed_kv_sentence.result.get('AuthorizationPolicyMatchedRule')}}"
+          cisco.ise.method: "{{parsed_kv_sentence.result.get('cisco-av-pair-method') or parsed_kv_sentence.result.get('Authen-Type') or parsed_kv_sentence.result.get('EapAuthentication') or parsed_kv_sentence.result.get('Acct-Authentic')}}"
+          cisco.ise.ssid: "{{parsed_kv_sentence.result.get('cisco-av-pair-cisco-wlan-ssid')}}"
+          cisco.ise.vlan_id: "{{parsed_kv_sentence.result.get('cisco-av-pair-vlan-id')}}"
+          cisco.ise.wlan_id: "{{parsed_kv_sentence.result.get('cisco-av-pair-wlan-profile-name')}}"
+          cisco.ise.device.uuid: "{{parsed_kv_sentence.result.get('Subject Alternative Name - DNS')}}"
+          cisco.ise.device.profile: "{{parsed_kv_sentence.result.get('cisco-av-pair-dc-profile-name') or parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
+          cisco.ise.device.model.name: "{{parsed_kv_sentence.result.get('cisco-av-pair-dc-device-name') or parsed_kv_sentence.result.get('Model Name')}}"
+          cisco.ise.device.model.class: "{{parsed_kv_sentence.result.get('cisco-av-pair-dc-device-class-tag')}}"
+          cisco.ise.acs_session_id: "{{parsed_kv_sentence.result.get('AcsSessionID')}}"
+          cisco.ise.audit_session_id: "{{parsed_kv_sentence.result.get('cisco-av-pair-audit-session-id')}}"
+          cisco.ise.location: "{{parsed_kv_sentence.result.get('NetworkDeviceGroups') or parsed_kv_sentence.result.get('Location')}}"
+          cisco.ise.certainty_metric: "{{parsed_kv_sentence.result.get('cisco-av-pair-dc-certainty-metric')}}"
+          cisco.ise.privilege_level: "{{parsed_kv_sentence.result.get('Privilege-Level')}}"
+          cisco.ise.cmd_line: "{{parsed_kv_sentence.result.get('CmdSet')}}"
+          cisco.ise.is_machine_identity: "{{parsed_kv_sentence.result.get('IsMachineIdentity')}}"
+
+          user_agent.original: "{{parsed_kv_sentence.result.get('cisco-av-pair-http-tlv-User-Agent')}}"
+          url.original: "{{parsed_kv_response.result.get('cisco-av-pair-url-redirect')}}"
 
   set_miscellaneous_fields:
     actions:
