@@ -9,29 +9,28 @@ pipeline:
         input_field: "{{original.message.replace('  ',' ')}}"
         output_field: message
         pattern: >-
-          %{STRUCTURED_DATA_FORMAT}|%{SYSTEM_LOG_FORMAT}|%{STANDARD_FORMAT}|%{COMMA_SEPARATED_FORMAT}|%{NO_FORMAT}
+          %{STRUCTURED_DATA_FORMAT}|%{STANDARD_FORMAT}|%{SYSTEM_LOG_FORMAT}|%{COMMA_SEPARATED_FORMAT}|%{NO_FORMAT}
         custom_patterns:
           VERSION: ([0-9]+\.?)+
           NOT_DASH: "[^-]+"
           NOT_COLON: '[^\:]+'
           NO_FORMAT: "%{GREEDYDATA:message}"
+          NOT_COMMA: "[^,]+"
           NOT_BRACKETS: '[^\[\]]+'
           STANDARD_FORMAT: >-
-            (%{NOT_COLON:event_dataset}:
-            \%%{NOT_DASH}-%{INT:severity}-%{NOT_COLON:tag}:|%{NOT_COLON:event_dataset}:
-            %{NOT_COLON:tag}:|%{WORD:hostname}
-            %{NOT_COLON:tag}:|%{NOT_COLON:event_provider}\:)\s+%{GREEDYDATA:message}
+            (\%%{NOT_DASH}-%{INT:severity}-%{JUNIPER_TAG_FORMAT:tag}:|%{JUNIPER_TAG_FORMAT:tag}:|%{WORD:hostname}
+            %{JUNIPER_TAG_FORMAT:tag}:)\s+%{GREEDYDATA:message}
           SYSTEM_LOG_FORMAT: >-
-            %{NOT_BRACKETS:event_provider}\[%{NUMBER}\]\:(%{NOT_BRACKETS:process_name}\[%{NUMBER:process_id}\]:
+            (%{NOT_BRACKETS:event_provider}\[%{NUMBER}\]\:|%{NOT_COLON:event_provider}\:)(%{NOT_BRACKETS:process_name}\[%{NUMBER:process_id}\]:
             %{GREEDYDATA:message}|\s%{GREEDYDATA:username}@%{IPORHOST:source_address}
             as
-            %{GREEDYDATA:process_username}:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}-%{NOT_COLON:tag}\:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}\:\s%{JUNIPER_TAG_FORMAT:tag}\:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}\:\s%{GREEDYDATA:message}|\s%{JUNIPER_TAG_FORMAT:tag}\:
+            %{GREEDYDATA:process_username}:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}-%{JUNIPER_TAG_FORMAT:tag}\:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}\:\s%{JUNIPER_TAG_FORMAT:tag}\:\s%{GREEDYDATA:message}|\s\%%{NOT_DASH}-%{INT:severity}\:\s%{GREEDYDATA:message}|\s%{JUNIPER_TAG_FORMAT:tag}\:
             %{GREEDYDATA:message}|\s%{GREEDYDATA:message})
-          JUNIPER_TAG_FORMAT: "[A-Za-z_]+"
+          JUNIPER_TAG_FORMAT: "([A-Za-z0-9]+_[A-Za-z0-9_]+)"
           COMMA_SEPARATED_FORMAT: >-
-            %{NUMBER},%{GREEDYDATA:start},%{NUMBER},%{GREEDYDATA:event_provider},%{GREEDYDATA:action},%{NUMBER},%{GREEDYDATA:end},%{DATA},%{GREEDYDATA:tag},%{DATA},%{DATA},%{DATA},%{DATA},%{GREEDYDATA:log_level},\"%{GREEDYDATA:message}\",%{NUMBER},0x%{NUMBER},%{NUMBER},%{NUMBER},%{NUMBER},%{NUMBER},%{DATA},%{GREEDYDATA:hostname},%{NUMBER},%{NUMBER},%{TIMESTAMP_ISO8601:timestamp}
+            %{NUMBER},%{NOT_COMMA:start},%{NUMBER},%{NOT_COMMA:event_provider},%{NOT_COMMA:action},%{NUMBER},%{NOT_COMMA:end},(%{NOT_COMMA})?,%{NOT_COMMA:tag},%{NOT_COMMA},%{NOT_COMMA},%{NOT_COMMA},%{NOT_COMMA},%{NOT_COMMA:log_level},\"%{GREEDYDATA:message}\",%{NUMBER},0x%{NUMBER},%{NUMBER},%{NUMBER},%{NUMBER},%{NUMBER},%{DATA},%{NOT_COMMA:hostname},%{NUMBER},%{NUMBER},%{TIMESTAMP_ISO8601:timestamp}
           STRUCTURED_DATA_FORMAT: >-
-            %{NOTSPACE:event_dataset}\s%{NOTSPACE:junos_process_id}\s%{NOTSPACE:tag}\s\[(junos@[0-9]+\.%{VERSION:plateform}\s)?%{GREEDYDATA:variable_value_pairs}\](\s%{GREEDYDATA:end_message})?
+            %{NOTSPACE:tag}\s\[(junos@[0-9]+\.%{VERSION:plateform}\s)?%{GREEDYDATA:variable_value_pairs}\](\s%{GREEDYDATA:end_message})?
   - name: parsed_event
     description: STRUCTURED_DATA_FORMAT parsing
     filter: "{{ parsed_header.message.STRUCTURED_DATA_FORMAT != None }}"
@@ -210,42 +209,42 @@ pipeline:
           RT_FLOW_SESSION_DENY: >-
             session denied
             %{IPV4:source_address}/%{NUMBER:source_port}->%{IPV4:destination_address}/%{NUMBER:destination_port}
-            0x%{DATA:connection_tag} %{DATA:service_name}
-            %{NUMBER:protocol_id}\(%{NUMBER:icmp_type}\) %{DATA:policy_name}
-            %{DATA:source_zone_name} %{DATA:destination_zone_name}
-            %{DATA:application} %{DATA:nested_application}
-            %{DATA:username}\(%{DATA:roles}\) %{DATA:packet_incoming_interface}
-            %{DATA:encrypted} %{DATA:reason} %{NUMBER:session_id}
-            %{DATA:application_category} %{DATA:application_sub_category}
-            %{DATA:application_risk} %{DATA:application_characteristics}
-            %{DATA:src_vrf_grp} %{DATA:dst_vrf_grp} %{DATA:source_tenant}
-            %{DATA:destination_service}((( %{DATA:user_type}
-            )?%{DATA:dst_identity_context_name}
-            %{DATA:dst_identity_context_roles})? %{DATA:source_country}
-            %{GREEDYDATA:destination_country})?
+            0x%{NOTSPACE:connection_tag} %{NOTSPACE:service_name}
+            %{NUMBER:protocol_id}\(%{NUMBER:icmp_type}\) %{NOTSPACE:policy_name}
+            %{NOTSPACE:source_zone_name} %{NOTSPACE:destination_zone_name}
+            %{NOTSPACE:application} %{NOTSPACE:nested_application}
+            %{NOTSPACE:username}\(%{NOTSPACE:roles}\)( %{NOTSPACE:packet_incoming_interface})?(
+            %{NOTSPACE:encrypted})?( %{NOTSPACE:reason})?( %{NUMBER:session_id})?(
+            %{NOTSPACE:application_category})?( %{NOTSPACE:application_sub_category})?(
+            %{NOTSPACE:application_risk})?( %{NOTSPACE:application_characteristics})?(
+            %{NOTSPACE:src_vrf_grp})?( %{NOTSPACE:dst_vrf_grp})?( %{NOTSPACE:source_tenant})?(
+            %{NOTSPACE:destination_service})?( %{NOTSPACE:user_type})?(
+            %{NOTSPACE:dst_identity_context_name})?(
+            %{NOTSPACE:dst_identity_context_roles})?( %{NOTSPACE:source_country})?(
+            %{NOTSPACE:destination_country})?%{GREEDYDATA}
           RT_FLOW_SESSION_CLOSE: >-
             session closed %{DATA:reason}:
             %{IPV4:source_address}/%{NUMBER:source_port}->%{IPV4:destination_address}/%{NUMBER:destination_port}
-            0x%{DATA:connection_tag} %{DATA:service_name}
+            0x%{NOTSPACE:connection_tag} %{NOTSPACE:service_name}
             %{IPV4:nat_source_address}/%{NUMBER:nat_source_port}->%{IPV4:nat_destination_address}/%{NUMBER:nat_destination_port}
-            0x%{DATA:nat_connection_tag} %{DATA:src_nat_rule_type}
-            %{DATA:src_nat_rule_name} %{DATA:dst_nat_rule_type}
-            %{DATA:dst_nat_rule_name} %{NUMBER:protocol_id} %{DATA:policy_name}
-            %{DATA:source_zone_name} %{DATA:destination_zone_name}
+            0x%{NOTSPACE:nat_connection_tag} %{NAT_RULE_TYPE:src_nat_rule_type}
+            %{NOTSPACE:src_nat_rule_name} %{NAT_RULE_TYPE:dst_nat_rule_type}
+            %{NOTSPACE:dst_nat_rule_name} %{NUMBER:protocol_id} %{NOTSPACE:policy_name}
+            %{NOTSPACE:source_zone_name} %{NOTSPACE:destination_zone_name}
             %{NUMBER:session_id}
             %{NUMBER:packets_from_client}\(%{NUMBER:bytes_from_client}\)
             %{NUMBER:packets_from_server}\(%{NUMBER:bytes_from_server}\)
-            %{NUMBER:elapsed_time} %{DATA:application}
-            %{DATA:nested_application} %{DATA:username}\(%{DATA:roles}\)
-            %{DATA:packet_incoming_interface} %{DATA:encrypted}
-            %{DATA:application_category} %{DATA:application_sub_category}
-            %{DATA:application_risk} %{DATA:application_characteristics}
-            %{DATA:secure_web_proxy_session_type} %{DATA:peer_session_id}
-            %{IPV4:peer_source_address}/%{NUMBER:peer_source_port}->%{IPV4:peer_destination_address}/%{NUMBER:peer_destination_port}
-            %{DATA:hostname} %{DATA:src_vrf_grp} %{DATA:dst_vrf_grp}
-            %{DATA:tunnel_inspection} %{DATA:tunnel_inspection_policy_set}
-            %{DATA:session_flag} %{DATA:source_tenant}
-            %{DATA:destination_service} %{DATA:user_type} %{GREEDYDATA}
+            %{NUMBER:elapsed_time} %{NOTSPACE:application}
+            %{NOTSPACE:nested_application} %{NOTSPACE:username}\(%{NOTSPACE:roles}\)
+            %{NOTSPACE:packet_incoming_interface} %{NOTSPACE:encrypted}(
+            %{NOTSPACE:application_category})?( %{NOTSPACE:application_sub_category})?(
+            %{NOTSPACE:application_risk})?( %{NOTSPACE:application_characteristics})?(
+            %{NOTSPACE:secure_web_proxy_session_type})?( %{NOTSPACE:peer_session_id})?(
+            %{IPV4:peer_source_address}/%{NUMBER:peer_source_port}->%{IPV4:peer_destination_address}/%{NUMBER:peer_destination_port})?(
+            %{NOTSPACE:hostname})?( %{NOTSPACE:src_vrf_grp})?( %{NOTSPACE:dst_vrf_grp})?(
+            %{NOTSPACE:tunnel_inspection})?( %{NOTSPACE:tunnel_inspection_policy_set})?(
+            %{NOTSPACE:session_flag})?( %{NOTSPACE:source_tenant})?(
+            %{NOTSPACE:destination_service})?( %{NOTSPACE:user_type})?%{GREEDYDATA}
           WEBFILTER_URL_BLOCKED: >-
             WebFilter: ACTION="%{DATA:action}"
             (source-zone="%{DATA:source_zone}"
@@ -263,21 +262,21 @@ pipeline:
           RT_FLOW_SESSION_CREATE: >-
             session created
             %{IPV4:source_address}/%{NUMBER:source_port}->%{IPV4:destination_address}/%{NUMBER:destination_port}
-            0x%{DATA:connection_tag} %{DATA:service_name}
+            0x%{NOTSPACE:connection_tag} %{NOTSPACE:service_name}
             %{IPV4:nat_source_address}/%{NUMBER:nat_source_port}->%{IPV4:nat_destination_address}/%{NUMBER:nat_destination_port}
-            0x%{DATA:nat_connection_tag} %{DATA:src_nat_rule_type}
-            %{DATA:src_nat_rule_name} %{DATA:dst_nat_rule_type}
-            %{DATA:dst_nat_rule_name} %{NUMBER:protocol_id} %{DATA:policy_name}
-            %{DATA:source_zone_name} %{DATA:destination_zone_name}
-            %{NUMBER:session_id} %{DATA:username}\(%{DATA:roles}\)
-            %{DATA:packet_incoming_interface} %{DATA:application}
-            %{DATA:nested_application} %{DATA:encrypted}
-            %{DATA:application_category} %{DATA:application_sub_category}
-            %{DATA:application_risk} %{DATA:application_characteristics}
-            %{DATA:src_vrf_grp} %{DATA:dst_vrf_grp} %{DATA:tunnel_inspection}
-            %{DATA:tunnel_inspection_policy_set} %{DATA:source_tenant}
-            %{DATA:destination_service} %{DATA:dst_identity_context_name}
-            %{DATA:dst_identity_context_roles}%{GREEDYDATA}
+            0x%{NOTSPACE:nat_connection_tag} %{NAT_RULE_TYPE:src_nat_rule_type}
+            %{NOTSPACE:src_nat_rule_name} %{NAT_RULE_TYPE:dst_nat_rule_type}
+            %{NOTSPACE:dst_nat_rule_name} %{NUMBER:protocol_id} %{NOTSPACE:policy_name}
+            %{NOTSPACE:source_zone_name} %{NOTSPACE:destination_zone_name}
+            %{NUMBER:session_id} %{NOTSPACE:username}\(%{NOTSPACE:roles}\)
+            %{NOTSPACE:packet_incoming_interface} %{NOTSPACE:application}
+            %{NOTSPACE:nested_application} %{NOTSPACE:encrypted}(
+            %{NOTSPACE:application_category})?( %{NOTSPACE:application_sub_category})?(
+            %{NOTSPACE:application_risk})?( %{NOTSPACE:application_characteristics})?(
+            %{NOTSPACE:src_vrf_grp})?( %{NOTSPACE:dst_vrf_grp})?( %{NOTSPACE:tunnel_inspection})?(
+            %{NOTSPACE:tunnel_inspection_policy_set})?( %{NOTSPACE:source_tenant})?(
+            %{NOTSPACE:destination_service})?( %{NOTSPACE:dst_identity_context_name})?(
+            %{DATA:dst_identity_context_roles})?%{GREEDYDATA}
           WEBFILTER_URL_PERMITTED: >-
             WebFilter: ACTION="%{DATA:action}"
             (source-zone="%{DATA:source_zone}"
@@ -294,7 +293,8 @@ pipeline:
             %{NOTSPACE:urlcategory_risk})?
           ACCT_TRANSFER_FILE_FAILED: Error <%{INT:error_code}> %{GREEDYDATA:error}
           ACCT_TRANSFER_FILE_FAILED_ITER: Error <%{INT:error_code}> %{GREEDYDATA:error}
-        custom_patterns: {}
+        custom_patterns:
+          NAT_RULE_TYPE: "(%{NOTSPACE} rule|N/A)"
   - name: parsed_event
     description: COMMA_SEPARATED_LOG_FORMAT parsing
     filter: "{{parsed_header.message.COMMA_SEPARATED_FORMAT!= None}}"
@@ -401,7 +401,7 @@ stages:
           event.action: "{{parsed_header.message.tag}}"
       - set:
           event.reason: "{{parsed_event.message.reason}}"
-          event.dataset: "{{parsed_header.message.event_dataset}}"
+          event.dataset: "{{original.log.syslog.appname}}"
           event.provider: >-
             {{parsed_header.message.event_provider.replace('/usr/sbin/','').replace('/usr/bin/','')|lower}}
       - set:
@@ -755,7 +755,7 @@ stages:
           event.category: "{{(final.event.category|default([])) + ['network']}}"
         filter: >-
           {{final.event.category is not defined and final.observer.type ==
-          'firewall' or 'RT_FLOW' in final.event.dataset|lower}}
+          'firewall' or 'rt_flow' in final.event.dataset|lower}}
       - set:
           event.type: "{{(final.event.type|default([])) + ['connection']}}"
         filter: >-
