@@ -1,0 +1,104 @@
+name: cloudflare-zero-trust-network-sessions
+pipeline:
+  - name: json_event
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: set_ecs_fields
+    description: ""
+    filter: ""
+    external: null
+  - name: set_cloudflare_fields
+    description: ""
+    filter: ""
+    external: null
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ json_event.message.SessionStartTime }}"
+          cloud.account.id: "{{ json_event.message.AccountID }}"
+          destination.bytes: "{{ json_event.message.BytesReceived }}"
+          destination.domain: "{{ json_event.message.ResolvedFQDN }}"
+          destination.ip: "{{ json_event.message.OriginIP }}"
+          destination.port: "{{ json_event.message.OriginPort }}"
+          device.id: "{{ json_event.message.DeviceID }}"
+          device.model.name: "{{ json_event.message.DeviceName }}"
+          event.action: network-session
+          event.category:
+            - network
+          event.dataset: cloudflare.zero_trust_network_sessions
+          event.duration: "{{ json_event.message.RuleEvaluationDurationMs | int * 1000000 }}"
+          event.end: "{{ json_event.message.SessionEndTime }}"
+          event.kind: event
+          event.reason: "{{ json_event.message.ConnectionCloseReason }}"
+          event.start: "{{ json_event.message.SessionStartTime }}"
+          event.type:
+            - connection
+          network.bytes: "{{ json_event.message.BytesSent + json_event.message.BytesReceived}}"
+          network.protocol: "{{ json_event.message.DetectedProtocol | lower }}"
+          network.transport: "{{ json_event.message.Protocol | lower }}"
+          source.bytes: "{{ json_event.message.BytesSent }}"
+          source.ip: "{{ json_event.message.SourceIP }}"
+          source.nat.ip: "{{ json_event.message.SourceInternalIP }}"
+          source.port: "{{ json_event.message.SourcePort }}"
+          tls.version: "{{ json_event.message.ClientTLSVersion }}"
+          user.id: "{{ json_event.message.UserID }}"
+          user.email: "{{ json_event.message.Email }}"
+        filter: ""
+        name: set
+      - set:
+          destination.nat.ip: "{{ json_event.message.InitialOriginIP }}"
+        filter: '{{ json_event.message.InitialOriginIP  != "0.0.0.0" }}'
+        name: set
+      - set:
+          tls.cipher: "{{ json_event.message.ClientTLSCipher }}"
+        filter: '{{ json_event.message.ClientTLSCipher != "none" }}'
+        name: set
+      - set:
+          tls.server.x509.issuer.common_name: "{{ json_event.message.OriginTLSCertificateIssuer }}"
+        filter: '{{ json_event.message.OriginTLSCertificateIssuer != "" }}'
+        name: set
+  set_cloudflare_fields:
+    actions:
+      - set:
+          cloudflare.SessionID: "{{ json_event.message.SessionID }}"
+          cloudflare.ClientTLSCipher: "{{ json_event.message.ClientTLSCipher }}"
+          cloudflare.ClientTLSVersion: "{{ json_event.message.ClientTLSVersion }}"
+          cloudflare.ConnectionCloseReason: "{{ json_event.message.ConnectionCloseReason }}"
+          cloudflare.ConnectionReuse: "{{ json_event.message.ConnectionReuse }}"
+          cloudflare.DestinationTunnelID: "{{ json_event.message.DestinationTunnelID }}"
+          cloudflare.EgressIP: "{{ json_event.message.EgressIP }}"
+          cloudflare.EgressPort: "{{ json_event.message.EgressPort }}"
+          cloudflare.EgressRuleID: "{{ json_event.message.EgressRuleID }}"
+          cloudflare.EgressColoName: "{{ json_event.message.EgressColoName }}"
+          cloudflare.EgressRuleName: "{{ json_event.message.EgressRuleName }}"
+          cloudflare.IngressColoName: "{{ json_event.message.IngressColoName }}"
+          cloudflare.Offramp: "{{ json_event.message.Offramp }}"
+          cloudflare.OriginTLSCertificateValidationResult: "{{ json_event.message.OriginTLSCertificateValidationResult }}"
+          cloudflare.OriginTLSCipher: "{{ json_event.message.OriginTLSCipher }}"
+          cloudflare.OriginTLSVersion: "{{ json_event.message.OriginTLSVersion }}"
+          cloudflare.RegistrationID: "{{ json_event.message.RegistrationID }}"
+          cloudflare.VirtualNetworkID: "{{ json_event.message.VirtualNetworkID }}"
+        filter: ""
+        name: set
+      - set:
+          cloudflare.InitialOriginIP: "{{ json_event.message.InitialOriginIP }}"
+        filter: '{{ json_event.message.InitialOriginIP != "0.0.0.0" }}'
+        name: set
+      - set:
+          cloudflare.ClientTLSHandshakeDurationMs: "{{ json_event.message.ClientTLSHandshakeDurationMs }}"
+        filter: "{{ json_event.message.ClientTLSHandshakeDurationMs != 0 }}"
+        name: set
+      - set:
+          cloudflare.ClientTCPHandshakeDurationMs: "{{ json_event.message.ClientTCPHandshakeDurationMs }}"
+        filter: "{{ json_event.message.ClientTCPHandshakeDurationMs != 0 }}"
+        name: set
+      - set:
+          cloudflare.OriginTLSHandshakeDurationMs: "{{ json_event.message.OriginTLSHandshakeDurationMs }}"
+        filter: "{{ json_event.message.OriginTLSHandshakeDurationMs != 0 }}"
+        name: set
