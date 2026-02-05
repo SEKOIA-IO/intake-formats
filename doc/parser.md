@@ -635,6 +635,13 @@ Ingest extends these built-in filters with a set of custom filters:
 |`to_iso8601(value: Any, format=None)`| converts and formats any date as iso8601 string
 |`re_match`| tests the value against an regular expression (the whole value)
 |`re_search`| tests if a subset of the value match the regular expression
+|`is_ipaddress`| checks if the value is a valid IP address (IPv4 or IPv6)
+|`is_ipv4`| checks if the value is a valid IPv4 address
+|`is_ipv6`| checks if the value is a valid IPv6 address
+|`is_url`| checks if the value is a valid URL
+|`from_json`| parses a JSON string into a dictionary or list
+|`to_json`| converts a value to a JSON string
+|`to_mac_address`| formats a value as a MAC address
 
 ### delete
 
