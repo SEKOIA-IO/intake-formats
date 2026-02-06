@@ -8,15 +8,6 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
     filter: "{{original.message.startswith('{')}}"
-  - name: parsed_header
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{original.message}}"
-        output_field: message
-        pattern: >-
-          %{TIMESTAMP_ISO8601} (%{HOSTNAME:hostname}|%{IP:host_ip}) %{GREEDYDATA:key_value_msg}
-    filter: "{{parsed_header is not defined}}"
   - name: parsed_event
     external:
       name: json.parse-json
@@ -25,12 +16,14 @@ pipeline:
         output_field: message
     filter: "{{original.message.startswith('{')}}"
   - name: parsed_event
-    filter: "{{parsed_event is not defined}}"
+    filter: '{{parsed_event is not defined}}'
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{parsed_header.message.key_value_msg}}"
+        input_field: '{{original.message}}'
         output_field: message
+        value_sep: '='
+        item_sep: \s
   - name: parsed_date
     external:
       name: date.parse
@@ -52,7 +45,7 @@ pipeline:
   - name: set_common_fields
   - name: set_event_category
   - name: handle_tunnel
-    filter: "{{parsed_header.message.get('sourcetype') == 'zscalernss-tunnel'}}"
+    filter: "{{final.event.dataset == 'tunnel'}}"
 stages:
   set_event_category:
     actions:
@@ -63,22 +56,22 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["info"]
-        filter: "{{parsed_header.message.get('sourcetype') == 'zscalernss-web' or parsed_header.message.get('sourcetype') == 'zscalernss-dns'}}"
+        filter: "{{final.event.dataset == 'web' or final.event.dataset == 'dns'}}"
 
       - set:
           event.category: ["network"]
           event.type: ["connection"]
-        filter: "{{parsed_header.message.get('sourcetype') == 'zscalernss-fw' or parsed_header.message.get('sourcetype') == 'zscalernss-tunnel'}}"
+        filter: "{{final.event.dataset == 'firewall' or final.event.dataset == 'tunnel'}}"
 
       - set:
           event.category: ["authentication"]
           event.type: ["start"]
-        filter: "{{parsed_header.message.get('sourcetype') == 'zscalernss-audit' and parsed_event.message.action.lower() == 'sign_in'}}"
+        filter: "{{final.event.dataset == 'audit' and parsed_event.message.action.lower() == 'sign_in'}}"
 
       - set:
           event.category: ["configuration"]
           event.type: ["change"]
-        filter: "{{parsed_header.message.get('sourcetype') == 'zscalernss-audit' and parsed_event.message.action.lower() == 'update'}}"
+        filter: "{{final.event.dataset == 'audit' and parsed_event.message.action.lower() == 'update'}}"
 
   set_common_fields:
     actions:
@@ -96,7 +89,7 @@ stages:
           event.outcome: "{{parsed_event.message.result | lower}}"
 
           zscaler.zia.event_id: "{{parsed_event.message.event_id}}"
-          zscaler.zia.source_type: "{{parsed_header.message.sourcetype}}"
+          zscaler.zia.source_type: "{{parsed_header.message.sourcetype or parsed_event.message.sourcetype}}"
           zscaler.zia.event.outcome: "{{parsed_event.message.result}}"
           zscaler.zia.vendor: "{{parsed_event.message.vendor}}"
           zscaler.zia.product: "{{parsed_event.message.product}}"
@@ -185,7 +178,16 @@ stages:
           "zscalernss-tunnel": "tunnel"
         mapping:
           parsed_header.message.sourcetype: event.dataset
-
+      - translate:
+        dictionary:
+          "zscalernss-audit": "audit"
+          "zscalernss-casb": "casb"
+          "zscalernss-dns": "dns"
+          "zscalernss-fw": "firewall"
+          "zscalernss-web": "web"
+          "zscalernss-tunnel": "tunnel"
+        mapping:
+          parsed_event.message.sourcetype: event.dataset
   handle_tunnel:
     actions:
       - set:
