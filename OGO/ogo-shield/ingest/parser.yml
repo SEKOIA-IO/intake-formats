@@ -6,6 +6,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+
   - name: parsed_date
     external:
       name: date.parse
@@ -13,19 +14,20 @@ pipeline:
         input_field: "{{parser.message.timestamp}}"
         output_field: datetime
         format: timestamp
+
   - name: set_ecs_fields
+
   - name: set_ogo_fields
+
 stages:
   set_ecs_fields:
     actions:
       - set:
-          url.full: "{{ parser.message.requestUrl }}"
-          url.path: "{{ parser.message.requestInfo.request-uri }}"
+          url.original: "{{ parser.message.requestUrl }}"
           rule.uuid: "{{ parser.message.ogo.driveUid }}"
           rule.name: "{{ parser.message.ogo.driveLabel }}"
           server.ip: "{{ parser.message.serviceAddr }}"
           source.ip: "{{ parser.message.clientIP }}"
-          url.query: "{{ parser.message.requestHeaders.query-string }}"
           "@timestamp": "{{ parsed_date.datetime }}"
           event.type: '["connection", "access"]'
           tls.cipher: "{{ parser.message.tlsCipher }}"
@@ -40,21 +42,28 @@ stages:
           event.duration: "{{ parser.message.responseTimeMs }}"
           server.address: "{{ parser.message.serviceAddr }}"
           observer.vendor: OGO Security
-          user_agent.name: "{{ parser.message.userAgentName }}"
           observer.product: Web Application Firewall
           destination.domain: "{{ parser.message.requestHeaders.site }}"
           client.geo.location: >-
             {"lat": {{ parser.message.geoIp.latitude }}, "lon": {{
             parser.message.geoIp.longitude }}}
-          http.request.method: "{{ parser.message.requestHeaders.method }}"
-          user_agent.original: "{{ parser.message.requestHeaders.user-agent }}"
           client.geo.city_name: "{{ parser.message.geoIp.cityName }}"
+          http.request.method: "{{ parser.message.requestHeaders.method or parser.message.requestInfo.method }}"
+          http.version: "{{ parser.message.requestInfo.protocol.replace('HTTP/', '') }}"
           http.request.referrer: "{{ parser.message.requestHeaders.referer }}"
-          http.request.body.bytes: "{{ parser.message.requestHeaders.content-length }}"
-          http.response.body.bytes: "{{ parser.message.responseHeaders.content-length }}"
           http.response.status_code: "{{ parser.message.responseCode }}"
-        filter: ""
-        name: set
+          user_agent.name: "{{ parser.message.userAgentName }}"
+          user_agent.original: "{{ parser.message.requestHeaders.get('user-agent') }}"
+
+      # Otherwise, "0" values will be ignored
+      - set:
+          http.response.body.bytes: "{{ parser.message.responseHeaders.get('content-length') |int }}"
+        filter: "{{ parser.message.responseHeaders.get('content-length') | int(-1) > -1 }}"
+
+      - set:
+          http.request.body.bytes: "{{ parser.message.requestInfo.get('content-size') | int }}"
+        filter: "{{ parser.message.requestInfo.get('content-size') | int(-1) > -1 }}"
+
   set_ogo_fields:
     actions:
       - set:
@@ -69,6 +78,4 @@ stages:
           ogo.whitelistedIp: "{{ parser.message.ogo.whitelistedIp }}"
           ogo.request.headers: "{{ parser.message.requestHeaders }}"
           ogo.response.headers: "{{ parser.message.responseHeaders }}"
-          ogo.request.x_forwarded_for: "{{ parser.message.requestHeaders.x-forwarded-for }}"
-        filter: ""
-        name: set
+          ogo.request.x_forwarded_for: "{{ parser.message.requestHeaders.get('x-forwarded-for') }}"
