@@ -1,0 +1,69 @@
+name: wiz-threat-detections
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Wiz"
+
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.dataset: "Threat Detections"
+
+      - set:
+          "@timestamp": "{{json_event.message.createdAt}}"
+          log.level: "{{json_event.message.severity}}"
+
+          rule.id: "{{json_event.message.ruleMatch.rule.id}}"
+          rule.name: "{{json_event.message.ruleMatch.rule.name}}"
+
+          event.reason: "{{json_event.message.description}}"
+
+          wiz.threat_detection.type: "{{json_event.message.type}}"
+          wiz.threat_detection.sub_categories: >
+            {%- set sub_categories = [] -%}
+            {%- for item in json_event.message.ruleMatch.rule.securitySubCategories -%}
+              {%- set _ = sub_categories.append(item.category.name) -%}
+            {%- endfor -%}
+            {%- if sub_categories | length > 0 -%}{{ sub_categories }}{%- endif -%}
+
+          wiz.threat_detection.id: "{{json_event.message.id}}"
+
+          cloud.account.id: "{{json_event.message.cloudAccounts[0].id}}"
+          cloud.account.name: "{{json_event.message.cloudAccounts[0].name}}"
+          cloud.provider: "{{json_event.message.cloudAccounts[0].cloudProvider}}"
+
+          organization.id: "{{json_event.message.cloudOrganizations[0].id}}"
+          organization.name: "{{json_event.message.cloudOrganizations[0].name}}"
+
+          cloud.region: "{{json_event.message.primaryResource.region}}"
+
+          wiz.threat_detection.origins: "{{json_event.message.origins}}"
+
+      - set:
+          cloud.project.name: "{{json_event.message.primaryResource.name}}"
+          cloud.project.id: "{{json_event.message.primaryResource.externalId}}"
+        filter: "{{json_event.message.primaryResource.type != null and  json_event.message.primaryResource.type.lower() != 'endpoint'}}"
+
+      - set:
+          host.id: "{{json_event.message.primaryResource.externalId}}"
+        filter: "{{json_event.message.primaryResource.type != null and json_event.message.primaryResource.type.lower() == 'endpoint'}}"
+
+      - set:
+          host.name: "{{json_event.message.primaryResource.name.split(':') | first}}"
+        filter: "{{json_event.message.primaryResource.type != null and json_event.message.primaryResource.type.lower() == 'endpoint' and (json_event.message.primaryResource.name.split(':') | first | is_ipaddress) == False}}"
+
+      - set:
+          host.ip:
+            ["{{json_event.message.primaryResource.name.split(':') | first}}"]
+        filter: "{{json_event.message.primaryResource.type != null and json_event.message.primaryResource.type.lower() == 'endpoint' and json_event.message.primaryResource.name.split(':') | first | is_ipaddress}}"
