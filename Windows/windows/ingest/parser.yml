@@ -206,6 +206,15 @@ pipeline:
         input_field: "{{parse_event_2500.event.json_params}}"
         output_field: event
 
+  - name: parse_member_name
+    filter: "{{json.event.get('MemberName') != None }}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json.event.MemberName}}"
+        output_field: message
+        pattern: "[Cc][Nn]=%{DATA:member_name},%{GREEDYDATA}"
+
   - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
@@ -699,6 +708,10 @@ stages:
           url.original: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "RelyingParty" in component%}{{component["RelyingParty"]}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          user.target.name: "{{parse_member_name.message.member_name}}"
+        filter: "{{json.event.EventID in (4728, 4729)}}" # a member was added/a member was removed
 
   action_name:
     actions:
