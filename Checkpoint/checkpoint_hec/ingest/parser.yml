@@ -1,0 +1,141 @@
+name: checkpoint_hec
+pipeline:
+  - name: parse_json
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_json.message.event.security_event.time}}"
+        output_field: datetime
+
+  - name: set_ecs_fields
+  - name: set_inbound_fields
+    filter: "{{parse_json.message.event.entity.entity_payload.is_outgoing == false}}"
+  - name: set_outbound_fields
+    filter: "{{parse_json.message.event.entity.entity_payload.is_outgoing == true}}"
+  - name: set_ecs_category
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+
+          observer.vendor: "Checkpoint"
+          observer.product: "Harmony Email and Collaboration"
+
+          observer.name: "{{parse_json.message.event.security_event.entity_info.entity_reporter}}"
+
+          event.provider: "{{parse_json.message.event.security_event.entity_payload.matched_security_tool}}"
+          event.reason: "{{parse_json.message.event.security_event.entity_payload.description_text}}"
+          event.severity: "{{parse_json.message.event.security_event.entity_payload.severity}}"
+          event.action: "{{parse_json.message.event.security_event.security_event_action[0].action_type}}"
+
+          rule.id: "{{parse_json.message.event.security_event.entity_payload.policy_rule_id}}"
+
+          email.from.address: "{{parse_json.message.event.entity.entity_payload.from_email}}"
+          email.to.address: "{{parse_json.message.event.entity.entity_payload.to}}"
+          email.subject: "{{parse_json.message.event.entity.entity_payload.subject}}"
+          email.local_id: "{{parse_json.message.event.entity.entity_payload.network_message_id}}"
+          email.message_id: "{{parse_json.message.event.entity.entity_payload.internet_message_id}}"
+
+          cloud.provider: "{{parse_json.message.event.security_event.entity_info.customer_oem}}"
+          cloud.region: "{{parse_json.message.event.security_event.entity_info.customer_region}}"
+          cloud.account.id: "{{parse_json.message.event.security_event.entity_info.customer_domain}}"
+
+          source.user.id: "{{parse_json.message.event.entity.entity_payload.from_id}}"
+          source.domain: "{{parse_json.message.event.entity.entity_payload.from_domain}}"
+
+          checkpoint.harmony_email.saas_application: "{{parse_json.message.event.security_event.entity_payload.saas}}"
+          checkpoint.harmony_email.confidence.indicator: "{{parse_json.message.event.security_event.entity_payload.confidence_indicator}}"
+          checkpoint.harmony_email.confidence.level: "{{parse_json.message.event.security_event.entity_payload.confidence_level}}"
+          checkpoint.harmony_email.verdict.dlp: "{{parse_json.message.event.entity.entity_security_result.combined_verdict.dlp}}"
+          checkpoint.harmony_email.verdict.ap: "{{parse_json.message.event.entity.entity_security_result.combined_verdict.ap}}"
+          checkpoint.harmony_email.verdict.ms_defender: "{{parse_json.message.event.entity.entity_security_result.combined_verdict.ms_defender}}"
+
+      - set:
+          source.ip: "{{parse_json.message.event.entity.entity_payload.sender_client_ip}}"
+        filter: "{{parse_json.message.event.entity.entity_payload.sender_client_ip | is_ipaddress}}"
+
+      - set:
+          url.original: "{{parse_json.message.event.entity.entity_payload.email_links[0]}}"
+        filter: "{{parse_json.message.event.entity.entity_payload.email_links | length > 0}}"
+
+      - set:
+          rule.description: "{{parse_json.message.event.entity.entity_security_result.dlp[0].status_description}}"
+          checkpoint.harmony_email.scan_details: "{{parse_json.message.event.entity.entity_security_result.dlp[0].payload.scan_details}}"
+        filter: "{{parse_json.message.event.entity.entity_security_result.dlp | length > 0}}"
+
+  set_inbound_fields:
+    actions:
+      - set:
+          email.direction: "inbound"
+          destination.user.full_name: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.full_name}}"
+
+      - set:
+          destination.user.email: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.email}}"
+        filter: "{{ '@' in (parse_json.message.event.security_event.saas_info.saas_actor_payload.email | string) }}"
+
+  set_outbound_fields:
+    actions:
+      - set:
+          email.direction: "outbound"
+          source.user.full_name: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.full_name}}"
+
+      - set:
+          source.user.email: "{{parse_json.message.event.security_event.saas_info.saas_actor_payload.email}}"
+        filter: "{{ '@' in (parse_json.message.event.security_event.saas_info.saas_actor_payload.email | string) }}"
+
+  set_ecs_category:
+    actions:
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'phishing'}}"
+
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'malware'}}"
+
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'suspicious malware'}}"
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'dlp'}}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'anomaly'}}"
+
+      - set:
+          event.category: ["host"]
+          event.type: ["info"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'shadow_it'}}"
+
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'malicious_url_click'}}"
+
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'malicious_url'}}"
+
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["info"]
+        filter: "{{parse_json.message.event.security_event.entity_payload.category == 'alert'}}"
