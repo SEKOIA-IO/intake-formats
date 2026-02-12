@@ -1,0 +1,162 @@
+name: anozrway
+
+pipeline:
+  - name: parsed_event
+    description: JSON parsing stage
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_observer
+  - name: set_timestamp
+  - name: map_vendor_fields
+  - name: map_ecs_core
+  - name: ecs_categorization
+  - name: set_related
+  - name: cleanup
+
+stages:
+  set_observer:
+    actions:
+      - set:
+          observer.type: "application"
+          observer.vendor: "Anozrway"
+          observer.product: "Domain Search"
+
+  set_timestamp:
+    actions:
+      # 1) detection_date (priorité)
+      - set:
+          "@timestamp": >-
+            {%- set ts = parsed_event.message.source.detection_date -%}
+            {{ ts if '.' in ts else ts.replace('Z', '.000000Z') }}
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.source.detection_date is defined }}
+
+      # 2) source.date
+      - set:
+          "@timestamp": >-
+            {%- set ts = parsed_event.message.source.date -%}
+            {{ ts if '.' in ts else ts.replace('Z', '.000000Z') }}
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.source.detection_date is not defined and
+             parsed_event.message.source.date is defined }}
+
+      # 3) fallback : created_at
+      - set:
+          "@timestamp": >-
+            {%- set ts = original.created_at -%}
+            {{ ts if '.' in ts else ts.replace('Z', '.000000Z') }}
+        filter: "{{ final['@timestamp'] is not defined and original.created_at is defined }}"
+
+  map_vendor_fields:
+    actions:
+      # Source Anozrway
+      - set:
+          anozrway.source.type: "{{ parsed_event.message.source.type }}"
+          anozrway.source.name: "{{ parsed_event.message.source.name }}"
+          anozrway.source.date: "{{ parsed_event.message.source.date }}"
+          anozrway.source.detection_date: "{{ parsed_event.message.source.detection_date }}"
+          anozrway.source.data: "{{ parsed_event.message.source.data }}"
+        filter: "{{ parsed_event.message.source is defined }}"
+
+      # Record (SAFE subset)
+      - set:
+          anozrway.record.email: "{{ parsed_event.message.email }}"
+          anozrway.record.other_email: "{{ parsed_event.message.other_email }}"
+          anozrway.record.username: "{{ parsed_event.message.username }}"
+          anozrway.record.first_name: "{{ parsed_event.message.first_name }}"
+          anozrway.record.last_name: "{{ parsed_event.message.last_name }}"
+          anozrway.record.full_name: "{{ parsed_event.message.full_name }}"
+          anozrway.record.company: "{{ parsed_event.message.company }}"
+          anozrway.record.work: "{{ parsed_event.message.work }}"
+          anozrway.record.city: "{{ parsed_event.message.city }}"
+          anozrway.record.country: "{{ parsed_event.message.country }}"
+          anozrway.record.postal_code: "{{ parsed_event.message.postal_code }}"
+
+      # NOT mapped on purpose:
+      # password, phone_number, physical_address, birthday
+
+  map_ecs_core:
+    actions:
+      - set:
+          user.email: "{{ parsed_event.message.email }}"
+        filter: "{{ parsed_event.message.email is defined }}"
+
+      - set:
+          user.name: "{{ parsed_event.message.username }}"
+        filter: "{{ parsed_event.message.username is defined }}"
+
+      - set:
+          user.full_name: "{{ parsed_event.message.full_name }}"
+        filter: "{{ parsed_event.message.full_name is defined }}"
+
+      - set:
+          organization.name: "{{ parsed_event.message.company }}"
+        filter: "{{ parsed_event.message.company is defined }}"
+
+      - set:
+          source.geo.city_name: "{{ parsed_event.message.city }}"
+        filter: "{{ parsed_event.message.city is defined }}"
+
+      - set:
+          source.geo.country_name: "{{ parsed_event.message.country }}"
+        filter: "{{ parsed_event.message.country is defined }}"
+
+      - set:
+          threat.indicator.type: "email-addr"
+          threat.indicator.email.address: "{{ parsed_event.message.email }}"
+        filter: "{{ parsed_event.message.email is defined }}"
+
+  ecs_categorization:
+    actions:
+      - set:
+          event.provider: "anozrway"
+          event.dataset: "anozrway.domain_search"
+          event.action: "domain_search"
+          event.kind: "event"
+          event.category: "{{ (final.event.category | default([])) + ['threat'] }}"
+
+      - set:
+          event.kind: "alert"
+        filter: "{{ final.anozrway.source.type == 'RANSOMWARE' }}"
+
+      - set:
+          event.type: "{{ (final.event.type | default([])) + ['info'] }}"
+        filter: "{{ final.anozrway.source.type == 'RANSOMWARE' }}"
+
+      - set:
+          event.type: "{{ (final.event.type | default([])) + ['info'] }}"
+        filter: "{{ final.anozrway.source.type == 'LEAK' }}"
+
+      - set:
+          event.message: "Anozrway {{ final.anozrway.source.type }} record from {{ final.anozrway.source.name }}"
+        filter: "{{ final.anozrway.source.type is defined and final.anozrway.source.name is defined }}"
+
+
+  set_related:
+    actions:
+      - set:
+          related.email: >-
+            {%- set emails = [] -%}
+            {%- if parsed_event.message.email is defined -%}
+              {%- set _ = emails.append(parsed_event.message.email) -%}
+            {%- endif -%}
+            {%- if parsed_event.message.other_email is defined -%}
+              {%- set _ = emails.append(parsed_event.message.other_email) -%}
+            {%- endif -%}
+            {{ emails }}
+        filter: "{{ parsed_event.message.email is defined or parsed_event.message.other_email is defined }}"
+
+      - set:
+          related.user: "{{ [parsed_event.message.username] }}"
+        filter: "{{ parsed_event.message.username is defined }}"
+
+  cleanup:
+    actions:
+      - delete:
+          - parsed_event
