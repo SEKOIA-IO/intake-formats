@@ -15,14 +15,22 @@ pipeline:
         output_field: details
         pattern_key: "{{field_extraction.event.code}}"
         patterns:
-          AUT31556: "AUT31556: Unauthenticated request url %{URIPATHPARAM:url} %{GREEDYDATA}"
           AUT20920: "AUT20920: Connection from IP %{IP:src} not authenticated yet \\(URL=%{URIPATHPARAM:url}\\)"
+          AUT23278: "AUT23278: Host Checker realm restrictions successfully passed for %{DATA:user}(/%{DATA:user_domain})?( , with certificate 'serialNumber=%{NOTSPACE:serial_number}, GN=%{DATA}, SN=%{DATA}, CN=%{GREEDYDATA:user_name}, OU=%{DATA:ou}, organizationIdentifier=%{DATA}, O=%{WORD:organization}, C=%{DATA:country}')?"
+          AUT24326: "AUT24326: %{NOTSPACE} authentication successful for %{USERNAME:user} from %{IP:src}"
+          AUT24414: "AUT24414: Agent login succeeded for %{DATA:user}(/%{DATA:user_domain})?( \\(session:%{DATA:sid}\\))? from (%{IP:src}|%{MAC:src_mac}) with %{GREEDYDATA:user_agent}."
           AUT24604: "AUT24604: SSL negotiation failed while client at source IP '%{IP:src}' was trying to connect to '%{IP:dst}'. Reason: '%{DATA:reason}'"
           AUT24804: "AUT24804: Host Checker policy '%{DATA:policy}' failed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}' reason '%{DATA:reason}'."
           AUT24803: "AUT24803: Host Checker policy '%{DATA:policy}' passed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}'."
+          AUT31556: "AUT31556: Unauthenticated request url %{URIPATHPARAM:url} %{GREEDYDATA}"
+          AUT32033: "AUT32033: Session created for user: \\[%{DATA:user}/%{DATA:user_domain}\\] from \\[%{IP:src}\\] with primary auth-server type: \\[%{DATA:primary_auth_server_type}\\], primary auth-server name: \\[%{DATA:primary_auth_server_name}\\], secondary auth-server type: \\[%{DATA:secondary_auth_server_type}\\], secondary auth-servername: \\[%{DATA:secondary_auth_server_name}\\], secondary auth-server user: \\[%{DATA:secondary_auth_server_user}\\], mac-address: \\[%{MAC:srv_mac}\\]."
+          AUT32051: "AUT32051: Established connection with type: \\[%{DATA:nwtype}\\]"
           SYS20704: "SYS20704: %{DATA} SNMP trap to %{IP:dst}:%{NUMBER:dst_port}"
           SYS31437: "SYS31437: Successful syslog connection to peer: '%{IP:src}'"
           LIC30499: "LIC30499: Leased %{NUMBER} units of '%{DATA}' from %{IP:src} - reserved: %{NUMBER} maximum: %{NUMBER} incremental quantum: %{NUMBER}"
+          NWC23464: "NWC23464: %{DATA}: Session started for user(  \\(session:%{DATA:sid}\\))? with IP(v4|v6)?( address)? %{IP:src}, hostname %{HOST_ADDRESS}"
+          NWC23508: "NWC23508: Key Exchange number %{NUMBER} occurred for user with NCIP %{IP:ncip}%{DATA}"
+          NWC30477: "NWC30477: %{DATA}: User with IP %{IP:src} connected with %{WORD:transport} transport mode."
         custom_patterns:
           HOST_ADDRESS: "%{IP:host_ip}|%{HOSTNAME:host_name}"
   - name: details_extraction
@@ -45,7 +53,8 @@ stages:
           destination.bytes: "{{kv_event.message.rcvd}}"
           destination.domain: "{{kv_event.message.dstname}}"
           event.type: ["info"]
-          event.reason: "{{kv_event.message.msg.split(':')[1:] | join(':')}}"
+          event.dataset: "{{kv_event.message.msg.split(':')[0][:3]}}"
+          event.reason: "{{kv_event.message.msg.split(':')[1:] | join(':') | trim}}"
 
       - set:
           source.ip: "{{kv_event.message.src}}"
@@ -64,6 +73,62 @@ stages:
           event.code: event.category
         fallback: ["network"]
 
+      - translate:
+        dictionary:
+          "ACT": "Radius"
+          "ADM": "Admin"
+          "AGU": "DsagentdUser"
+          "AIA": "UserChange"
+          "AMD": "Admin"
+          "ARC": "SystemStatus"
+          "AUT": "Authenticate"
+          "COA": "AgentManager"
+          "CRT": "ClientCert"
+          "DAS": "AdminChange"
+          "DMI": "DMIAgentStatus"
+          "EAM": "AgentManager"
+          "EAS": "EaServer"
+          "EIP": "SbrAuth"
+          "EML": "EmailRequest"
+          "ERR": "SystemError"
+          "FBR": "FileRequest"
+          "FDE": "SystemError"
+          "FDU": "IfmapClientUser"
+          "GWE": "GatewayEvent"
+          "HCC": "AdminChange"
+          "HFA": "HTML5Acc"
+          "IDP": "SensorsLog"
+          "INT": "AdmissionControlUserAction"
+          "JAV": "Java"
+          "LIC": "License"
+          "MDM": "MDMTrace"
+          "MTG": "Meeting"
+          "NET": "SystemStatus"
+          "NWC": "NetworkConnect"
+          "OAC": "SAML"
+          "ONE": "PulseOne"
+          "OUT": "AdminChange"
+          "PER": "Performance"
+          "PRO": "ProfilerEvent"
+          "PTR": "PolicyTrace"
+          "RWR": "Rewrite"
+          "SBR": "SbrAuth"
+          "SEN": "AdminChange"
+          "SMB": "SambaTroubleshooting"
+          "SML": "SAML"
+          "STA": "Terminal"
+          "STS": "Stat"
+          "SYN": "Synchronization"
+          "SYS": "SystemStatus"
+          "TAC": "TACACS"
+          "UBA": "UEBAEvent"
+          "UNI": "UnityTrace"
+          "USR": "UserChange"
+          "VDI": "VDI"
+          "WEB": "WebRequest"
+        mapping:
+          event.dataset: event.dataset
+
       - set:
           event.outcome: "failure"
         filter: "{{final.event.code == 'AUT23457'}}"
@@ -72,11 +137,38 @@ stages:
     actions:
       - set:
           url.path: "{{msg_parsing.details.url}}"
+          user.id: "{{msg_parsing.details.sid}}"
+          user_agent.original: "{{msg_parsing.details.user_agent}}"
           destination.port: "{{msg_parsing.details.dst_port}}"
           event.reason: "{{msg_parsing.details.reason}}"
+          client.ip: "{{msg_parsing.details.ncip}}"
           rule.name: "{{msg_parsing.details.policy}}"
           user.name: "{{msg_parsing.details.user}}"
           host.name: "{{msg_parsing.details.host_name}}"
+          network.transport: "{{msg_parsing.details.transport|lower}}"
+          network.type: "{{msg_parsing.details.nwtype|lower}}"
+          server.mac: "{{msg_parsing.details.srv_mac}}"
+          source.mac: "{{msg_parsing.details.src_mac}}"
+          tls.client.x509.serial_number: "{{msg_parsing.details.serial_number|upper}}"
+
+      - set:
+          tls.client.x509.subject.common_name:
+            ["{{msg_parsing.details.user_name}}"]
+        filter: "{{msg_parsing.details.user_name != null}}"
+
+      - set:
+          tls.client.x509.subject.country: ["{{msg_parsing.details.country}}"]
+        filter: "{{msg_parsing.details.country != null}}"
+
+      - set:
+          tls.client.x509.subject.organizational_unit:
+            ["{{msg_parsing.details.ou}}"]
+        filter: "{{msg_parsing.details.ou != null}}"
+
+      - set:
+          tls.client.x509.subject.organization:
+            ["{{msg_parsing.details.organization}}"]
+        filter: "{{msg_parsing.details.organization != null}}"
 
       - set:
           source.ip: "{{msg_parsing.details.src}}"
