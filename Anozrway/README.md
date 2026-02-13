@@ -5,4 +5,4 @@ Anozrway provides domain-based breach and leak intelligence through a secured AP
 
 ## Intakes
 - [Anozrway Domain Search](./anozrway-domain-search/CHANGELOG.md)
-- [Anozrway Domain Events](./anozrway-balise-pipeline/CHANGELOG.md)
+- [Anozrway Balise Pipeline](./anozrway-balise-pipeline/CHANGELOG.md)
