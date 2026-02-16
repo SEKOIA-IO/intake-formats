@@ -1,0 +1,55 @@
+name: ubika-cloud-protector-next-generation
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: alert
+          event.category: ["intrusion_detection"]
+          event.type: ["denied"]
+
+          observer.vendor: Ubika
+          observer.product: Cloud Protector Next Generation
+
+      - set:
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          http.request.id: "{{parsed_event.message.request.uid}}"
+          http.request.body.content: "{{parsed_event.message.request.body}}"
+          http.request.method: "{{parsed_event.message.request.method}}"
+
+          url.domain: "{{parsed_event.message.request.hostname}}"
+          url.path: "{{parsed_event.message.request.path}}"
+          url.query: "{{parsed_event.message.request.query}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.request.ipSource}}"
+        filter: "{{parsed_event.message.request.ipSource | is_ipaddress}}"
+
+      - set:
+          event.action: "{{parsed_event.message.context.reaction}}"
+          event.reason: "{{parsed_event.message.tokens.reason}}"
+
+          rule.name: "{{parsed_event.message.tokens.icxRuleName}}"
+          rule.uuid: "{{parsed_event.message.tokens.icxRuleUid}}"
+
+          error.type: "{{parsed_event.message.tokens.openapi3ErrorType}}"
+
+          http.response.status_code: "{{parsed_event.message.response.statusCode}}"
+          user_agent.original: '{{parsed_event.message.request.headers | selectattr("key", "equalto", "user-agent") | map(attribute="value") | first}}'
+          rule.category: "{{parsed_event.message.tokens.attackFamily}}"
+
+      - set:
+          ubika.cloud_protector.asset.name: "{{parsed_event.message.context.assetName}}"
+          ubika.cloud_protector.asset.namespace: "{{parsed_event.message.context.assetNamespace}}"
+          ubika.cloud_protector.engine.name: "{{parsed_event.message.tokens.engineName}}"
+          ubika.cloud_protector.engine.uuid: "{{parsed_event.message.tokens.engineUid}}"
+          ubika.cloud_protector.log_alert_uuid: "{{parsed_event.message.logAlertUid}}"

@@ -1,5 +1,5 @@
 name: harfanglab
-ignored_values: [None, "", "-"]
+ignored_values: [None, ""]
 pipeline:
   - name: json_event
     external:
@@ -11,22 +11,33 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.last_seen}}"
+        input_field: "{{json_event.message.last_seen or json_event.message.lastseen}}"
         output_field: datetime
 
   - name: parse_first_seen
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.first_seen}}"
+        input_field: "{{json_event.message.first_seen or json_event.message.firstseen}}"
         output_field: datetime
 
   - name: parse_task_info
-    filter: "{{json_event.message.event_data.TaskContent != None and '<?xml' in json_event.message.event_data.TaskContent}}"
+    filter: "{{json_event.message.event_data.get('TaskContent') != None and '<?xml' in json_event.message.event_data.TaskContent}}"
     external:
       name: xml.parse-xml
       properties:
-        input_field: "{{json_event.message.event_data.TaskContent}}"
+        raise_errors: false
+        input_field: "{{json_event.message.event_data.TaskContent.replace('xmlns=\\\\http://schemas.microsoft.com/windows/2004/02/mit/task\\\\', '')}}"
+        output_field: message
+
+  - name: parse_task_info
+    filter: "{{json_event.message.event_data.get('TaskContentNew') != None and '<?xml' in json_event.message.event_data.TaskContentNew}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        raise_errors: false
+        # In order to avoid XML namespace issues
+        input_field: "{{json_event.message.event_data.TaskContentNew.replace('xmlns=\\\\http://schemas.microsoft.com/windows/2004/02/mit/task\\\\', '')}}"
         output_field: message
 
   - name: parse_task_info_2
@@ -34,6 +45,7 @@ pipeline:
     external:
       name: xml.parse-xml
       properties:
+        raise_errors: false
         input_field: "{{json_event.message.eventlog.event_data.TaskContent}}"
         output_field: message
 
@@ -66,6 +78,9 @@ pipeline:
   - name: registry_info
     filter: "{{json_event.message.details_registry != None}}"
 
+  - name: details_library
+    filter: "{{json_event.message.details_library != None}}"
+
   - name: details_file
     filter: "{{json_event.message.details_file != None}}"
 
@@ -79,7 +94,7 @@ pipeline:
     filter: "{{json_event.message.log_type == 'threat'}}"
 
   - name: alert_process_info
-    filter: "{{json_event.message.alert_subtype == 'process'}}"
+    filter: "{{json_event.message.alert_subtype == 'process' or json_event.message.threat_type == 'commandline'}}"
 
   - name: investigation_info
     filter: "{{json_event.message.log_type == 'investigation'}}"
@@ -95,7 +110,6 @@ pipeline:
 
   - name: auditlog_info
     filter: "{{json_event.message.log_type == 'auditlog'}}"
-
   - name: agentlog_info
     filter: "{{json_event.message.log_type == 'agentlog'}}"
 
@@ -105,8 +119,23 @@ pipeline:
   - name: driverload_info
     filter: "{{json_event.message.log_type == 'driverload'}}"
 
+  - name: alert_driverload_info
+    filter: "{{json_event.message.alert_subtype == 'driverload'}}"
+
+  - name: alert_antivirus_info
+    filter: "{{json_event.message.alert_subtype == 'antivirus'}}"
+
+  - name: alert_firewall_self_protection_info
+    filter: "{{json_event.message.alert_subtype == 'firewall_self_protection'}}"
+
   - name: injectedthread_info
     filter: "{{json_event.message.log_type == 'injectedthread'}}"
+
+  - name: full_agent_info
+    filter: "{{json_event.message.log_type == 'agent'}}"
+
+  - name: file_info
+    filter: "{{json_event.message.log_type == 'file'}}"
 
 stages:
   threat_info:
@@ -128,7 +157,16 @@ stages:
         filter: "{{json_event.message.rules | length > 0}}"
 
       - set:
-          user.name: '{{json_event.message.impacted_users[0].user_name.replace("\\", " ")}}'
+          user.name: >
+            {%- if '\\' not in json_event.message.impacted_users[0].user_name -%}
+              {{ json_event.message.impacted_users[0].user_name }}
+            {%- else -%}
+              {{ json_event.message.impacted_users[0].user_name.split('\\')[1] }}
+            {%- endif -%}
+          user.domain: >
+            {%- if '\\' in json_event.message.impacted_users[0].user_name -%}
+              {{ json_event.message.impacted_users[0].user_name.split('\\')[0] }}
+            {%- endif -%}
         filter: "{{json_event.message.impacted_users | length > 0 }}"
 
       - set:
@@ -161,11 +199,86 @@ stages:
           host.domain: "{{json_event.message.agent.domainname}}"
           host.os.version: "{{json_event.message.agent.osversion}}"
           host.os.full: "{{json_event.message.agent.osproducttype}}"
+          host.os.type: "{{json_event.message.agent.ostype}}"
           harfanglab.groups: "{{json_event.message.groups}}"
           event.dataset: "{{json_event.message.log_type}}"
+          event.code: "{{json_event.message.event_id}}"
           user.roles: "{{ json_event.message.groups | map(attribute='name') | join(',') | replace('\n', '') | replace(' ', '') }}"
           organization.id: "{{json_event.message.tenant}}"
-          url.original: "{{json_event.message.details_url_request.url}}"
+          url.original: "{{json_event.message.get('source_url') or json_event.message.details_url_request.url}}"
+          process.executable: "{{json_event.message.image_name or json_event.message.source_image or json_event.message.process_image_path}}"
+          process.pid: "{{json_event.message.pid}}"
+          process.command_line: "{{json_event.message.process_commandline}}"
+          action.properties.StackTrace: "{{json_event.message.stacktrace}}"
+          action.properties.DesiredAccess: "{{json_event.message.desired_access_id}}"
+          action.properties.DesiredAccessStr: "{{json_event.message.desired_access_str}}"
+          action.properties.DeviceName: "{{json_event.message.device_name}}"
+          action.properties.SockType: "{{json_event.message.sock_type}}"
+          action.properties.Family: "{{json_event.message.family}}"
+          action.properties.TamperFlag: "{{json_event.message.tamper_flag}}"
+          action.properties.TamperFlagStr: "{{json_event.message.tamper_flag_as_str}}"
+          action.properties.ProcessEntrypointMemory: "{{json_event.message.process_entrypoint_memory}}"
+          action.properties.ProcessHeaderMemory: "{{json_event.message.process_header_memory}}"
+          action.properties.Access: "{{json_event.message.access}}"
+          action.properties.AccessStr: "{{json_event.message.access_str}}"
+          action.name: "{{json_event.message.operation}}"
+          user.id: "{{json_event.message.user_sid}}"
+          file.name: "{{ json_event.message.get('process_entrypoint_file') or json_event.message.pe_info.get('original_filename')}}"
+          http.request.referrer: "{{json_event.message.referrer_url}}"
+          dns.question.type: "{{json_event.message.query_type}}"
+          dns.question.name: "{{json_event.message.requested_name}}"
+          dns.resolved_ip: "{{json_event.message.ip_addresses}}"
+
+          action.properties.additional_info.additional_info1: "{{json_event.message.agent.additional_info.additional_info1}}"
+          action.properties.additional_info.additional_info2: "{{json_event.message.agent.additional_info.additional_info2}}"
+          action.properties.additional_info.additional_info3: "{{json_event.message.agent.additional_info.additional_info3}}"
+          action.properties.additional_info.additional_info4: "{{json_event.message.agent.additional_info.additional_info4}}"
+
+      - set:
+          user.name: >
+            {%- if '\\' not in json_event.message.user_name -%}
+              {{ json_event.message.username }}
+            {%- else -%}
+              {{ json_event.message.user_name.split('\\')[1] }}
+            {%- endif -%}
+          user.domain: >
+            {%- if '\\' in json_event.message.user_name -%}
+              {{ json_event.message.user_name.split('\\')[0] }}
+            {%- endif -%}
+        filter: "{{json_event.message.user_name != None}}"
+
+      - set:
+          action.properties.Query: "{{json_event.message.query}}"
+        filter: "{{json_event.message.kind == 'WmiFilterEvent'}}"
+
+      - set:
+          action.name: "{{json_event.message.event_type}}"
+          action.properties.ProductId: "{{json_event.message.product_id}}"
+          action.properties.VendorId: "{{json_event.message.vendor_id}}"
+          action.properties.ProductName: "{{json_event.message.product_name}}"
+          action.properties.VendorName: "{{json_event.message.vendor_name}}"
+          action.properties.DbProductName: "{{json_event.message.db_product_name}}"
+        filter: "{{json_event.message.product_id != None and json_event.message.vendor_id != ''}}"
+
+      - set:
+          source.ip: "{{json_event.message.address}}"
+          source.port: "{{json_event.message.port}}"
+          network.protocol: "{{json_event.message.transport_protocol}}"
+        filter: "{{json_event.message.address | is_ipaddress}}"
+
+      - set:
+          action.name: "{{json_event.message.pipe_operation}}"
+        filter: "{{json_event.message.pipe_operation != None}}"
+
+      - set:
+          url.original: "{{json_event.message.url}}"
+          http.request.method: "{{json_event.message.method}}"
+          user_agent.original: "{{json_event.message.user_agent}}"
+        filter: "{{json_event.message.url != None}}"
+
+      - set:
+          host.ip: ["{{json_event.message.agent.ipaddress}}"]
+        filter: "{{json_event.message.agent.ipaddress | is_ipaddress}}"
 
       - set:
           harfanglab.agents: >
@@ -263,6 +376,19 @@ stages:
           file.hash.sha1: "{{json_event.message.hashes.sha1}}"
         filter: "{{json_event.message.hashes != None}}"
 
+  details_library:
+    actions:
+      - set:
+          dll.path: "{{json_event.message.details_library.image_loaded}}"
+          dll.name: "{{json_event.message.details_library.image_loaded | basename}}"
+        filter: "{{json_event.message.details_library.image_loaded != None}}"
+
+      - set:
+          dll.hash.md5: "{{json_event.message.details_library.hashes.md5}}"
+          dll.hash.sha256: "{{json_event.message.details_library.hashes.sha256}}"
+          dll.hash.sha1: "{{json_event.message.details_library.hashes.sha1}}"
+        filter: "{{json_event.message.details_library.hashes != None}}"
+
   details_file:
     actions:
       - set:
@@ -302,6 +428,18 @@ stages:
           harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
           harfanglab.threat_key: "{{json_event.message.threat_key}}"
 
+      - translate:
+        dictionary:
+          0: "UNKNOWN"
+          1: "SUCCESS"
+          2: "FAIL"
+          3: "CANNOT_QUARANTINE"
+          4: "NO_ACTION"
+          5: "DELAYED"
+        mapping:
+          json_event.message.quarantine: harfanglab.quarantine_label
+        filter: "{{json_event.message.quarantine | int(-1) > -1}}"
+
   alert_process_info:
     actions:
       - set:
@@ -330,6 +468,7 @@ stages:
             {%- endif -%}
 
           process.parent.executable: "{{json_event.message.process.parent_image}}"
+          process.parent.name: "{{json_event.message.process.parent_image | basename}}"
           process.parent.command_line: "{{json_event.message.process.parent_commandline}}"
           process.working_directory: "{{json_event.message.process.current_directory}}"
           process.pe.imphash: "{{json_event.message.process.pe_imphash}}"
@@ -337,6 +476,7 @@ stages:
           event.category: ["process"]
           event.type: ["start"]
           event.kind: "alert"
+
       - set:
           file.hash.md5: "{{json_event.message.process.hashes.md5}}"
           file.hash.sha256: "{{json_event.message.process.hashes.sha256}}"
@@ -369,10 +509,14 @@ stages:
           action.id: "{{json_event.message.event_id}}"
 
       - set:
-          user.name: "{{json_event.message.event_data.SubjectUserName}}"
-          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
-          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
-          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
+          event.outcome: "success"
+        filter: "{{json_event.message.event_id == 4624}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{json_event.message.event_id == 4625}}"
+
+      - set:
           action.properties.DeviceID: "{{json_event.message.event_data.DeviceId}}"
           action.properties.ASsecurityintelligencecreationtime: "{{json_event.message.event_data.get('AS security intelligence creation time')}}"
           action.properties.ASsecurityintelligenceversion: "{{json_event.message.event_data.get('AS security intelligence version')}}"
@@ -397,6 +541,7 @@ stages:
           action.properties.CertThumbprint: "{{json_event.message.event_data.get('CertThumbprint')}}"
           action.properties.ClientProcessId: "{{json_event.message.event_data.get('ClientProcessId')}}"
           action.properties.ClientProcessStartKey: "{{json_event.message.event_data.get('ClientProcessStartKey')}}"
+          action.properties.Destination: "{{json_event.message.event_data.get('Destination')}}"
           action.properties.DetectionID: "{{json_event.message.event_data.get('Detection ID')}}"
           action.properties.DetectionTime: "{{json_event.message.event_data.get('Detection Time')}}"
           action.properties.DetectionUser: "{{json_event.message.event_data.get('Detection User')}}"
@@ -442,7 +587,6 @@ stages:
           action.properties.LogonGuid: "{{json_event.message.event_data.get('LogonGuid')}}"
           action.properties.LogonProcessName: "{{json_event.message.event_data.get('LogonProcessName')}}"
           action.properties.LogonType: "{{json_event.message.event_data.get('LogonType')}}"
-          action.properties.MemberName: "{{parse_member_name.message.first_name + ' ' + parse_member_name.message.last_name}}"
           action.properties.CompatibleIds: "{{json_event.message.event_data.get('CompatibleIds')}}"
           action.properties.NRIengineversion: "{{json_event.message.event_data.get('NRI engine version')}}"
           action.properties.NRIsecurityintelligenceversion: "{{json_event.message.event_data.get('NRI security intelligence version')}}"
@@ -516,7 +660,7 @@ stages:
           action.properties.TargetSid: "{{json_event.message.event_data.get('TargetSid')}}"
           action.properties.TargetUserName: "{{json_event.message.event_data.get('TargetUserName')}}"
           action.properties.TargetUserSid: "{{json_event.message.event_data.get('TargetUserSid')}}"
-          action.properties.TaskContent: "{{json_event.message.event_data.get('TaskContent')}}"
+          action.properties.TaskContent: "{{json_event.message.event_data.get('TaskContent') or json_event.message.event_data.get('TaskContentNew')}}"
           action.properties.TaskName: "{{json_event.message.event_data.get('TaskName')}}"
           action.properties.ThreatID: "{{json_event.message.event_data.get('Threat ID')}}"
           action.properties.ThreatName: "{{json_event.message.event_data.get('Threat Name')}}"
@@ -538,6 +682,7 @@ stages:
           action.properties.VerificationError: "{{json_event.message.event_data.get('VerificationError')}}"
           action.properties.VirtualAccount: "{{json_event.message.event_data.get('VirtualAccount')}}"
           action.properties.WorkstationName: "{{json_event.message.event_data.get('WorkstationName')}}"
+          action.properties.Workstation: "{{json_event.message.event_data.get('Workstation')}}"
           action.properties.ClassName: "{{json_event.message.event_data.get('ClassName')}}"
           action.properties.param0: "{{json_event.message.event_data.get('param0')}}"
           action.properties.param10: "{{json_event.message.event_data.get('param10')}}"
@@ -567,8 +712,36 @@ stages:
         filter: "{{json_event.message.event_data != None}}"
 
       - set:
+          user.name: "{{json_event.message.event_data.SubjectUserName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.SubjectUserName != '-'}}"
+
+      - set:
+          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.SubjectDomainName != '-'}}"
+
+      - set:
+          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.TargetUserName != '-'}}"
+
+      - set:
+          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.TargetDomainName != '-'}}"
+
+      - set:
+          action.properties.MemberName: "{{parse_member_name.message.first_name + ' ' + parse_member_name.message.last_name}}"
+        filter: "{{(parse_member_name.message.first_name | length > 0) and (parse_member_name.message.last_name | length > 0)}}"
+
+      - set:
+          action.properties.MemberName: "{{json_event.message.event_data.MemberName.split('\\\\')[-1]}}"
+        filter: "{{(json_event.message.event_data.get('MemberName') != None) and (parse_member_name.message.first_name | length == 0)}}"
+
+      - set:
           source.ip: "{{json_event.message.event_data.IpAddress}}"
         filter: "{{json_event.message.event_data.IpAddress | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json_event.message.event_data.CallingStationID}}"
+        filter: "{{json_event.message.event_data.CallingStationID | is_ipaddress}}"
 
       - set:
           user.name: "{{json_event.message.eventlog.event_data.SubjectUserName}}"
@@ -599,6 +772,7 @@ stages:
           action.properties.CertThumbprint: "{{json_event.message.eventlog.event_data.get('CertThumbprint')}}"
           action.properties.ClientProcessId: "{{json_event.message.eventlog.event_data.get('ClientProcessId')}}"
           action.properties.ClientProcessStartKey: "{{json_event.message.eventlog.event_data.get('ClientProcessStartKey')}}"
+          action.properties.Destination: "{{json_event.message.eventlog.event_data.get('Destination')}}"
           action.properties.DetectionID: "{{json_event.message.eventlog.event_data.get('Detection ID')}}"
           action.properties.DetectionTime: "{{json_event.message.eventlog.event_data.get('Detection Time')}}"
           action.properties.DetectionUser: "{{json_event.message.eventlog.event_data.get('Detection User')}}"
@@ -772,9 +946,24 @@ stages:
           source.ip: "{{json_event.message.eventlog.event_data.IpAddress}}"
         filter: "{{json_event.message.eventlog.event_data.IpAddress | is_ipaddress}}"
 
+      - set:
+          url.original: "{{json_event.message.event_data.Destination}}"
+        filter: "{{json_event.message.event_data.Destination != None and json_event.message.event_data.Destination.startswith('http')}}"
+
   authentication_info:
     actions:
       - set:
+          action.properties.AuthenticationPackageName: "{{json_event.message.windows.authentication_package_name}}"
+          action.properties.IpAddress: "{{json_event.message.windows.ip_address}}"
+          action.properties.IpPort: "{{json_event.message.windows.ip_port}}"
+          action.properties.LogonProcessName: "{{json_event.message.windows.logon_process_name}}"
+          action.properties.ProcessName: "{{json_event.message.windows.process_name}}"
+          action.properties.SubjectLogonId: "{{json_event.message.windows.source_logon_id}}"
+          action.properties.SubjectUserSid: "{{json_event.message.windows.source_sid}}"
+          action.properties.Status: "{{json_event.message.windows.status}}"
+          action.properties.TargetLogonId: "{{json_event.message.windows.target_logon_id}}"
+          action.properties.TargetUserSid: "{{json_event.message.windows.target_sid}}"
+          action.properties.WorkstationName: "{{json_event.message.windows.workstation_name}}"
           event.category: ["authentication"]
           event.type: >
             {% set type_value = ["info"] %}
@@ -838,9 +1027,6 @@ stages:
           event.category: ["network"]
           event.type: ["info"]
           process.pid: "{{json_event.message.pid}}"
-          process.executable: "{{json_event.message.process_image_path}}"
-          dns.question.type: "{{json_event.message.query_type}}"
-          dns.question.name: "{{json_event.message.requested_name}}"
 
           user.name: >
             {%- if '\\' not in json_event.message.username -%}
@@ -859,6 +1045,7 @@ stages:
           event.category: ["web"]
           event.type: ["access"]
           http.request.method: "{{json_event.message.request_method}}"
+          http.request.body.content: "{{json_event.message.request_content}}"
           http.response.status_code: "{{json_event.message.response_status_code}}"
           url.path: "{{json_event.message.request_path}}"
           user_agent.original: "{{json_event.message.user_agent}}"
@@ -911,6 +1098,52 @@ stages:
           file.name: "{{json_event.message.imagename}}"
           file.size: "{{json_event.message.imagesize}}"
 
+  alert_driverload_info:
+    actions:
+      - set:
+          event.category: ["driver"]
+          event.type: ["info"]
+
+          agent.id: "{{json_event.message.agent.agent_id}}"
+          agent.version: "{{json_event.message.agent.version}}"
+          file.hash: "{{json_event.message.driverload.hashes}}"
+          file.pe.file_version: "{{json_event.message.driverload.pe_info.file_version}}"
+          file.pe.description: "{{json_event.message.driverload.pe_info.file_description}}"
+          file.pe.company: "{{json_event.message.driverload.pe_info.company_name}}"
+          file.pe.original_file_name: "{{json_event.message.driverload.pe_info.original_filename}}"
+          file.pe.imphash: "{{json_event.message.driverload.pe_imphash}}"
+          file.pe.product: "{{json_event.message.driverload.pe_info.product_name}}"
+          file.path: "{{json_event.message.driverload.imagepath}}"
+          file.name: "{{json_event.message.driverload.imagename}}"
+          file.size: "{{json_event.message.driverload.imagesize}}"
+
+  alert_antivirus_info:
+    actions:
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+
+          file.path: "{{json_event.message.av_detection_details.path}}"
+          file.size: "{{json_event.message.av_detection_details.file_size}}"
+          file.hash.md5: "{{json_event.message.av_detection_details.hashes.md5}}"
+          file.hash.sha1: "{{json_event.message.av_detection_details.hashes.sha1}}"
+          file.hash.sha256: "{{json_event.message.av_detection_details.hashes.sha256}}"
+
+          harfanglab.av.detection.signature_id: "{{json_event.message.av_detection_details.signature_id}}"
+          harfanglab.av.detection.signature_name: "{{json_event.message.av_detection_details.signature_name}}"
+          harfanglab.av.detection.kind: "{{json_event.message.av_detection_details.kind}}"
+          harfanglab.av.detection.file_type: "{{json_event.message.av_detection_details.file_type}}"
+
+  alert_firewall_self_protection_info:
+    actions:
+      - set:
+          harfanglab.firewall_self_protection.filter_description: "{{json_event.message.firewall_self_protection.filter_description}}"
+          harfanglab.firewall_self_protection.filter_id: "{{json_event.message.firewall_self_protection.filter_id}}"
+          harfanglab.firewall_self_protection.filter_name: "{{json_event.message.firewall_self_protection.filter_name}}"
+          harfanglab.firewall_self_protection.provider_description: "{{json_event.message.firewall_self_protection.provider_description}}"
+          harfanglab.firewall_self_protection.provider_name: "{{json_event.message.firewall_self_protection.provider_name}}"
+          harfanglab.firewall_self_protection.provider_service_name: "{{json_event.message.firewall_self_protection.provider_service_name}}"
+
   injectedthread_info:
     actions:
       - set:
@@ -920,3 +1153,50 @@ stages:
           process.executable: "{{json_event.message.process_image}}"
           process.pid: "{{json_event.message.process_id}}"
           process.thread.id: "{{json_event.message.thread_id}}"
+
+  full_agent_info:
+    actions:
+      - set:
+          event.start: "{{parse_first_seen.datetime}}"
+          event.end: "{{parse_last_seen.datetime}}"
+          event.category: ["host"]
+          event.type: ["info"]
+          agent.id: "{{json_event.message.id}}"
+          agent.version: "{{json_event.message.version}}"
+          harfanglab.host.cpu.count: "{{json_event.message.cpu_count}}"
+          harfanglab.host.cpu.frequency: "{{json_event.message.cpu_frequency}}"
+          harfanglab.host.serial_number: "{{json_event.message.machine_serial}}"
+          harfanglab.host.total_memory: "{{json_event.message.total_memory}}"
+          host.architecture: "{{json_event.message.bitness}}"
+          host.name: "{{json_event.message.hostname}}"
+          host.os.full: "{{json_event.message.osproducttype}}"
+          host.os.type: "{{json_event.message.ostype}}"
+          host.os.version: "{{json_event.message.osversion}}"
+          host.os.platform: "{{json_event.message.os_platform}}"
+      - set:
+          host.ip: ["{{json_event.message.ipaddress}}"]
+        filter: "{{json_event.message.ipaddress | is_ipaddress}}"
+
+  file_info:
+    actions:
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+          action.name: "{{json_event.message.operation}}"
+
+      - set:
+          file.path: "{{json_event.message.event_path}}"
+          file.size: "{{json_event.message.written_file_size}}"
+          file.hash.md5: "{{json_event.message.written_file_hashes.md5}}"
+          file.hash.sha1: "{{json_event.message.written_file_hashes.sha1}}"
+          file.hash.sha256: "{{json_event.message.written_file_hashes.sha256}}"
+
+          process.pid: "{{json_event.message.pid}}"
+          process.thread.id: "{{json_event.message.tid}}"
+          process.executable: "{{json_event.message.process_image_path}}"
+
+          url.original: "{{json_event.message.source_url}}"
+
+      - set:
+          host.ip: ["{{json_event.message.additional_info.ipaddress}}"]
+        filter: "{{json_event.message.additional_info.ipaddress | is_ipaddress}}"

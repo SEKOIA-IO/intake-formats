@@ -6,7 +6,9 @@ pipeline:
       name: grok.match
       properties:
         output_field: message
-        pattern: '\d %{NUMBER:account_id} %{DATA:interface_id} (%{IP:srcaddr}|-) (%{IP:dstaddr}|-) (%{INT:srcport}|-) (%{INT:dstport}|-) (%{INT:protocol}|-) (%{INT:packets}|-) (%{INT:bytes}|-) %{NUMBER:start} %{NUMBER:end} (-|%{DATA:action}) %{WORD:log_status}.*'
+        pattern: '\d %{NUMBER:account_id} %{DATA:interface_id} (%{IP:srcaddr}|-) (%{IP:dstaddr}|-) (%{INT:srcport}|-) (%{INT:dstport}|-) (%{INT:protocol}|-) (%{INT:packets}|-) (%{INT:bytes}|-) %{NUMBER:start} %{NUMBER:end} (-|%{DATA:action}) %{WORD:log_status}%{VERSION_3}?.*'
+        custom_patterns:
+          VERSION_3: " (%{DATA:vpc_id}|-) (%{DATA:subnet_id}|-) (%{DATA:instance_id}|-) (%{INT:tcp_flags}|-) (%{DATA:type}|-) (%{IP:pkt_srcaddr}|-) (%{IP:pkt_dstaddr}|-) (%{DATA:region}|-) (%{DATA:az_id}|-) (%{DATA:sublocation_type}|-) (%{DATA:sublocation_id}|-) (%{DATA:pkt_src_aws_service}|-) (%{DATA:pkt_dst_aws_service}|-) (%{DATA:flow_direction}|-) (%{DATA:traffic_path}|-)"
     filter: '{{original.message | re_match("^\\s*\\{.*\\}\\s*$") == False}}'
   - name: parse_event
     external:
@@ -47,6 +49,10 @@ stages:
           source.bytes: "{{parse_event.message.bytes}}"
           source.packets: "{{parse_event.message.packets}}"
           "@timestamp": "{{parse_start_date.datetime}}"
+
+      - set:
+          aws.flowlogs.tcp_flags: "{{parse_event.message.tcp_flags | int}}"
+        filter: "{{parse_event.message.get('tcp_flags') != None}}"
 
       - set:
           destination.ip: "{{parse_event.message.dstaddr}}"

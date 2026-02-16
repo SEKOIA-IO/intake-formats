@@ -48,3 +48,5 @@ To execute a subset of test, you could define some options:
 - `poetry run pytest test_formats.py --changes`: to only run tests for updated parsers
 - `poetry run pytest test_formats.py --module='module-name'`: to only run tests for a specific module (`module-name` correspond to the name defined in the manifest of the module)
 - `poetry run pytest test_formats.py --format='format-name'`: to only run tests for a specific format (`format-name` correspond to the name defined in the manifest of the format)
+
+The option `--fix-expectations` can be used to automatically replace the expected files with the actual result in the test files. To use carefully to avoid data loss in your test files.

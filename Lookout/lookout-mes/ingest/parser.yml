@@ -1,0 +1,142 @@
+name: lookout-mes
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.created_time}}"
+        output_field: datetime
+        timezone: UTC
+
+  - name: lookout_commonfields
+
+  - name: lookout_phishing
+    filter: "{{json_event.message.threat.type == 'WEB_CONTENT'}}"
+
+  - name: lookout_app_threat
+    filter: "{{json_event.message.threat.type == 'APPLICATION'}}"
+
+  - name: lookout_file_threat
+    filter: "{{json_event.message.threat.type == 'FILE'}}"
+
+  - name: lookout_device_threat
+    filter: "{{json_event.message.threat.type == 'CONFIGURATION'}}"
+
+  - name: lookout_device_status
+    filter: "{{json_event.message.type == 'DEVICE'}}"
+
+  - name: lookout_network_threat
+    filter: "{{json_event.message.threat.type == 'NETWORK'}}"
+
+  - name: lookout_smishing_threat
+    filter: "{{json_event.message.type == 'SMISHING_ALERT'}}"
+
+  - name: lookout_audit
+    filter: "{{json_event.message.type == 'AUDIT'}}"
+
+stages:
+  lookout_commonfields:
+    actions:
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+      - set:
+          "@timestamp": "{{timestamp.datetime}}"
+          device.id: "{{json_event.message.target.guid}}"
+          organization.id: "{{json_event.message.enterprise_guid}}"
+          lookout.mes.event.id: "{{json_event.message.id}}"
+          lookout.mes.event.type: "{{json_event.message.change_type}}"
+          lookout.mes.event.category: "{{json_event.message.type}}"
+          lookout.mes.threat.classifications: "{{json_event.message.threat.classifications}}"
+
+  lookout_phishing:
+    actions:
+      - set:
+          device.id: "{{json_event.message.target.guid}}"
+          event.action: "{{json_event.message.threat.details.response}}"
+          event.reason: "{{json_event.message.threat.details.reason}}"
+          lookout.mes.threat.type: "{{json_event.message.threat.type}}"
+          url.original: "{{json_event.message.threat.details.url}}"
+          lookout.mes.threat.severity: "{{json_event.message.threat.severity}}"
+          event.agent_id_status: "{{json_event.message.threat.status}}"
+          lookout.mes.threat.external_id: "{{json_event.message.threat.guid}}"
+
+  lookout_app_threat:
+    actions:
+      - set:
+          event.reason: "{{json_event.message.threat.details.file_name}}"
+          package.name: "{{json_event.message.threat.details.package_name}}"
+          package.path: "{{json_event.message.threat.details.path}}"
+          event.outcome: "{{json_event.message.threat.status}}"
+          lookout.mes.threat.type: "{{json_event.message.threat.type}}"
+          organization.id: "{{json_event.message.enterprise_guid}}"
+          package.checksum: "{{json_event.message.threat.details.package_sha}}"
+          lookout.mes.threat.severity: "{{json_event.message.threat.severity}}"
+          event.agent_id_status: "{{json_event.message.threat.status}}"
+
+  lookout_file_threat:
+    actions:
+      - set:
+          event.reason: "{{json_event.message.threat.details.file_name}}"
+          package.name: "{{json_event.message.threat.details.file_name}}"
+          package.path: "{{json_event.message.threat.details.path}}"
+          event.outcome: "{{json_event.message.threat.status}}"
+          lookout.mes.threat.type: "{{json_event.message.threat.type}}"
+          organization.id: "{{json_event.message.enterprise_guid}}"
+          lookout.mes.threat.severity: "{{json_event.message.threat.severity}}"
+          event.agent_id_status: "{{json_event.message.threat.status}}"
+
+  lookout_device_threat:
+    actions:
+      - set:
+          event.reason: "{{json_event.message.threat.details.version_type}}"
+          event.outcome: "{{json_event.message.threat.status}}"
+          lookout.mes.threat.type: "{{json_event.message.threat.type}}"
+          lookout.mes.threat.severity: "{{json_event.message.threat.severity}}"
+          event.agent_id_status: "{{json_event.message.threat.status}}"
+          lookout.mes.minimum.os.version: "{{json_event.message.threat.details.minimum_os_version}}"
+          lookout.mes.threat.external_id: "{{json_event.message.threat.guid}}"
+
+  lookout_device_status:
+    actions:
+      - set:
+          package.name: "{{json_event.message.device.client.package_name}}"
+          host.os.version: "{{json_event.message.device.software.os_version}}"
+          package.version: "{{json_event.message.device.client.package_version}}"
+          host.os.platform: "{{json_event.message.device.platform}}"
+          device.manufacturer: "{{json_event.message.device.hardware.manufacturer}}"
+          device.model.identifier: "{{json_event.message.device.hardware.model}}"
+          lookout.mes.android.profile.type: "{{json_event.message.device.profile_type}}"
+
+  lookout_network_threat:
+    actions:
+      - set:
+          event.reason: "{{json_event.message.threat.details.network_ssid}}"
+          network.name: "{{json_event.message.threat.details.network_ssid}}"
+          event.outcome: "{{json_event.message.threat.status}}"
+          destination.mac: "{{json_event.message.threat.details.mac_address}}"
+          lookout.mes.threat.type: "{{json_event.message.threat.type}}"
+          lookout.mes.threat.severity: "{{json_event.message.threat.severity}}"
+          event.agent_id_status: "{{json_event.message.threat.status}}"
+          lookout.mes.threat.external_id: "{{json_event.message.threat.guid}}"
+
+  lookout_smishing_threat:
+    actions:
+      - set:
+          url.original: "{{json_event.message.smishing_alert.detections[0].original_url}}"
+          lookout.mes.threat.classifications: "{{json_event.message.smishing_alert.detections[0].category}}"
+          lookout.mes.threat.external_id: "{{json_event.message.smishing_alert.guid}}"
+
+  lookout_audit:
+    actions:
+      - set:
+          lookout.mes.audit.type: "{{json_event.message.audit.type}}"
+          event.action: "{{json_event.message.change_type}}"

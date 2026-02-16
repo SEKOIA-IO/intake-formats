@@ -6,12 +6,13 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: event
+
   - name: fields
+
 stages:
   fields:
     actions:
-      - name: set
-        set:
+      - set:
           user.id: "{{input.event.user.uid}}"
           url.path: "{{input.event.requestURI}}"
 
@@ -20,9 +21,9 @@ stages:
         filter: "{{input.event.sourceIPs[0] | is_ipaddress}}"
 
       - set:
-          user.name: "{{input.event.user.username}}"
+          user.name: "{{input.event.get('impersonatedUser', {}).get('username') or input.event.user.username}}"
           event.code: "{{input.event.auditID}}"
-          user.roles: "{{input.event.user.groups}}"
+          user.roles: "{{input.event.get('impersonatedUser', {}).get('groups') or input.event.user.groups}}"
           event.start: "{{input.event.requestReceivedTimestamp}}"
           event.action: "{{input.event.verb}}"
           action.outcome: '{{input.event.annotations["authorization.k8s.io/decision"]}}'
@@ -33,7 +34,14 @@ stages:
           kubernetes.namespace: "{{input.event.objectRef.namespace}}"
           kubernetes.subresource: "{{input.event.objectRef.subresource}}"
           kubernetes.rbacreason: '{{input.event.annotations["authorization.k8s.io/reason"]}}'
-      - name: set
-        set:
+
+      - set:
           kubernetes.object.name: "{{input.event.responseObject.metadata.name}}"
         filter: "{{input.event.objectRef.name == null}}"
+
+      - set:
+          kubernetes.spec.volumes: "{{input.event.requestObject.spec.volumes}}"
+          kubernetes.spec.containers: "{{input.event.requestObject.spec.containers}}"
+          kubernetes.spec.host_network: "{{input.event.requestObject.spec.hostNetwork}}"
+          kubernetes.role.name: "{{input.event.requestObject.roleRef.name}}"
+          kubernetes.api.group: "{{input.event.objectRef.apiGroup}}"
