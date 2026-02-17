@@ -88,7 +88,6 @@ stages:
           organization.id: "{{json_event.message.accountId}}"
           organization.name: "{{json_event.message.accountName}}"
           action.type: "{{json_event.message.activityType}}"
-          user.id: "{{json_event.message.userId}}"
           sentinelone.secondaryDescription: "{{json_event.message.secondaryDescription}}"
           sentinelone.siteId: "{{json_event.message.siteId}}"
           sentinelone.description: "{{json_event.message.description}}"
@@ -113,6 +112,11 @@ stages:
           sentinelone.EventTime: "{{json_event.message.EventTime}}"
           sentinelone.applications: "{{json_event.message.applications}}"
           sentinelone.whiteningOptions: "{{json_event.message.whiteningOptions}}"
+
+      - set:
+          user.id: "{{json_event.message.userId}}"
+        filter: "{{json_event.message.get('data',{}).get('sourceprocessusername') == None}}"
+
       - translate:
         dictionary:
           2: Hash Defined as Malicious By Cloud
@@ -543,16 +547,19 @@ stages:
           sentinelone.data.uploadedFilename: "{{json_event.message.data.uploadedFilename}}"
           sentinelone.data.uuid: "{{json_event.message.data.uuid}}"
 
+      - set:
+          user.id: "{{json_event.message.data.userId}}"
           user.name: "{{json_event.message.data.userName or json_event.message.data.username or json_event.message.data.lastLoggedInUserName}}"
+        filter: "{{json_event.message.get('data',{}).get('sourceprocessusername') == None}}"
 
       - set:
           process.user.domain: "{{json_event.message.data.sourceprocessusername.split('\\\\')[0]}}"
           process.user.name: "{{json_event.message.data.sourceprocessusername.split('\\\\')[1]}}"
+
+          user.name: "{{json_event.message.data.sourceprocessusername.split('\\\\')[1]}}"
         filter: "{{json_event.message.data.sourceprocessusername | length > 0}}"
 
       - set:
-          user.id: "{{json_event.message.data.userId}}"
-
           sentinelone.data.userscope: "{{json_event.message.data.userscope}}"
           sentinelone.data.version: "{{json_event.message.data.version}}"
           sentinelone.data.setting: "{{json_event.message.data.setting}}"
@@ -567,11 +574,24 @@ stages:
           container.id: "{{json_event.message.data.k8scontainerid}}"
           # Fix: sentinelone.data.k8scontainerimage: "{{json_event.message.data.k8scontainerimage}}"
           container.image.name: "{{json_event.message.data.k8scontainerimage}}"
-          # Fix: sentinelone.data.k8scontainerlabels: "{{json_event.message.data.k8scontainerlabels}}"
-          container.labels: "{{json_event.message.data.k8scontainerlabels}}"
           # Fix: sentinelone.data.k8scontainername: "{{json_event.message.data.k8scontainername}}"
           container.name: "{{json_event.message.data.k8scontainername}}"
           sentinelone.data.k8scontrollerkind: "{{json_event.message.data.k8scontrollerkind}}"
+
+      # Parse k8scontainerlabels from comma-separated key=value format to dictionary
+      - set:
+          container.labels: >
+            {
+            {% for label in json_event.message.data.k8scontainerlabels.split(',') %}
+              {% set parts = label.split('=', 1) %}
+              {% if parts | length == 2 %}
+                "{{ parts[0].strip() }}": "{{ parts[1].strip() }}",
+              {% endif %}
+            {% endfor %}
+            }
+        filter: "{{json_event.message.data.k8scontainerlabels != None and json_event.message.data.k8scontainerlabels | length > 0}}"
+
+      - set:
           sentinelone.data.k8scontrollerlabels: "{{json_event.message.data.k8scontrollerlabels}}"
           sentinelone.data.k8scontrollername: "{{json_event.message.data.k8scontrollername}}"
           sentinelone.data.k8snamespace: "{{json_event.message.data.k8snamespace}}"
@@ -683,6 +703,7 @@ stages:
           sentinelone.data.oldGroupId: "{{json_event.message.data.oldGroupId}}"
           sentinelone.data.oldGroupName: "{{json_event.message.data.oldGroupName}}"
           sentinelone.data.originalStatus: "{{json_event.message.data.originalStatus}}"
+          threat.software.type: "{{json_event.message.data.threatClassification}}"
           sentinelone.data.threatClassification: "{{json_event.message.data.threatClassification}}"
           sentinelone.data.threatClassificationSource: "{{json_event.message.data.threatClassificationSource}}"
           sentinelone.threatInfo.fileExtension: "{{json_event.message.threatInfo.fileExtension}}"
@@ -863,6 +884,10 @@ stages:
           sentinelone.agentDetectionInfo.siteId: "{{json_event.message.agentDetectionInfo.siteId}}"
           sentinelone.agentDetectionInfo.siteName: "{{json_event.message.agentDetectionInfo.siteName}}"
 
+          cloud.instance.id: "{{json_event.message.agentDetectionInfo.cloudProviders.AWS.cloudInstanceId}}"
+          sentinelone.agentDetectionInfo.cloudNetwork: "{{json_event.message.agentDetectionInfo.cloudProviders.AWS.cloudNetwork}}"
+          sentinelone.agentDetectionInfo.awsSubnetsIds: "{{json_event.message.agentDetectionInfo.cloudProviders.AWS.awsSubnetIds}}"
+
   read_threat_info:
     actions:
       - set:
@@ -928,5 +953,6 @@ stages:
           sentinelone.threatInfo.rebootRequired: "{{json_event.message.threatInfo.rebootRequired}}"
           sentinelone.threatInfo.storyline: "{{json_event.message.threatInfo.storyline}}"
           sentinelone.threatInfo.threatId: "{{json_event.message.threatInfo.threatId}}"
+          sentinelone.threatId: "{{json_event.message.threatInfo.threatId}}"
           sentinelone.threatInfo.updatedAt: "{{json_event.message.threatInfo.updatedAt}}"
           sentinelone.threatInfo.fileExtension: "{{json_event.message.threatInfo.fileExtension}}"

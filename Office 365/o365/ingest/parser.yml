@@ -3,6 +3,7 @@ pipeline:
   - name: json_event
     external:
       name: json.parse-json
+
   - name: parse_data
     filter: "{{json_event.message.RecordType in (40, 64) and json_event.message.Data | length > 0}}"
     external:
@@ -10,6 +11,7 @@ pipeline:
       properties:
         input_field: "{{json_event.message.Data}}"
         output_field: ParsedData
+
   - name: parse_client_ip
     external:
       name: grok.match
@@ -19,6 +21,7 @@ pipeline:
         output_field: result
         pattern: '::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?|\[%{IP:ip}\](:%{INT:port})?'
     filter: '{{json_event.message.ClientIP != null and json_event.message.ClientIP != "" and json_event.message.ClientIP != "<null>"}}'
+
   - name: parse_client_ip_address
     external:
       name: grok.match
@@ -28,6 +31,22 @@ pipeline:
         output_field: result
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
+
+  - name: parse_display_name
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list)[0].NewValue}}"
+        output_field: values
+
+  - name: parse_app_id
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list)[0].NewValue}}"
+        output_field: values
 
   - name: set_common_fields
   - name: set_office365_fields
@@ -67,6 +86,8 @@ pipeline:
     filter: "{{json_event.message.RecordType == 20}}"
   - name: parse_threat_intelligence_url
     filter: "{{json_event.message.RecordType == 41}}"
+  - name: parse_mip_label
+    filter: "{{json_event.message.RecordType == 43}}"
 
 stages:
   set_common_fields:
@@ -79,11 +100,27 @@ stages:
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
           user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
+          office365.dprm: "{{parse_data.ParsedData.dprm}}"
+          office365.eop: "{{parse_data.ParsedData.eop}}"
+          office365.enmd: "{{parse_data.ParsedData.enmd}}"
+          office365.tdmn: "{{parse_data.ParsedData.tdmn}}"
+          office365.app: "{{parse_data.ParsedData.app}}"
+          office365.ofph: "{{parse_data.ParsedData.ofph}}"
+          office365.dn: "{{parse_data.ParsedData.dn}}"
+          office365.tfph: "{{parse_data.ParsedData.tfph}}"
+
+          # https://learn.microsoft.com/en-us/office/office-365-management-api/office-365-management-activity-api-schema#complex-type-identitytypevaluepair
+          office365.target.displayName: "{{(json_event.message.Target | selectattr('Type', '==', 1) | list | first).get('ID')}}"
 
       - set:
           user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
           user.id: "{{json_event.message.UserKey}}"
         filter: "{{json_event.message.RecordType not in [40]}}"
+
+      - set:
+          office365.application.id: "{{ parse_app_id.values[0] }}"
+          office365.application.name: "{{ parse_display_name.values[0] }}"
+        filter: "{{parse_display_name.values | length > 0 and parse_app_id.values | length > 0}}"
 
       - set:
           event.action: "{{json_event.message.Operation.rstrip('.')}}"
@@ -122,6 +159,9 @@ stages:
   set_office365_fields:
     actions:
       - set:
+          office365.device.id: "{{json_event.message.DeviceId}}"
+          office365.device.is_managed: "{{json_event.message.IsManagedDevice}}"
+          office365.record_id: "{{json_event.message.Id}}"
           office365.record_type: "{{json_event.message.RecordType}}"
           office365.result_status: "{{json_event.message.ResultStatus}}"
           office365.user_type.code: "{{json_event.message.UserType}}"
@@ -129,12 +169,15 @@ stages:
           office365.audit.object_id: "{{json_event.message.ObjectId}}"
           office365.virus_info: "{{json_event.message.VirusInfo}}"
           office365.virus_vendor: "{{json_event.message.VirusVendor}}"
+          office365.context.authentication_type: "{{json_event.message.AuthenticationType}}"
       - set:
           office365.operation.properties: >
             {
               {%- for property in json_event.message.OperationProperties -%}
-                {%- if property.Value != null -%}
-                  {%- if property.Value | from_json == None -%}
+                {%- if property.Value | length > 0 -%}
+                  {%- if property.Name == "RuleCondition" -%}
+                    "{{property.Name}}":"{{property.Value | e}}",
+                  {%- elif property.Value | from_json == None -%}
                     "{{property.Name}}":"{{property.Value}}",
                   {%- else -%}
                     "{{property.Name}}": {{property.Value | from_json}},
@@ -143,6 +186,15 @@ stages:
               {%- endfor -%}
             }
         filter: '{{json_event.message.get("OperationProperties") != None}}'
+
+      - set:
+          office365.folders.paths: >
+            [
+              {%- for item in json_event.message.Folders -%}
+                "{{ item.Path }}",
+              {%- endfor -%}
+            ]
+        filter: "{{ json_event.message.get('Folders', []) | length > 0 }}"
 
       - translate:
         dictionary:
@@ -170,6 +222,7 @@ stages:
           office365.context.client.id: "{{json_event.message.AppAccessContext.ClientAppId}}"
           office365.context.client.name: "{{json_event.message.AppAccessContext.ClientAppName}}"
           office365.context.correlation.id: "{{json_event.message.AppAccessContext.CorrelationId}}"
+          azuread.properties.uniqueTokenIdentifier: "{{json_event.message.AppAccessContext.UniqueTokenId}}"
         filter: '{{json_event.message.get("AppAccessContext") != None}}'
 
       - translate:
@@ -300,6 +353,8 @@ stages:
       - set:
           user.id: "{{json_event.message.LogonUserSid}}"
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
+          office365.exchange.mailbox_owner.sid: "{{json_event.message.MailboxOwnerSid}}"
+          office365.exchange.mailbox_owner.upn: "{{json_event.message.MailboxOwnerUPN}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
@@ -367,7 +422,7 @@ stages:
             [
               {%- if json_event.message.AffectedItems != None -%}
                 {%- for item in json_event.message.AffectedItems -%}
-                  "{{ item.Subject }}"
+                  "{{ item.Subject }}",
                 {%- endfor -%}
               {%- endif -%}  
             ]
@@ -375,21 +430,25 @@ stages:
             [
               {%- if json_event.message.AffectedItems != None -%}
                 {%- for item in json_event.message.AffectedItems -%}
-                  "{{ item.ParentFolder.Path }}"
+                  "{{ item.ParentFolder.Path }}",
                 {%- endfor -%}
               {%- endif -%}  
             ]
 
           email.attachments: >
-            [
-              {%- if json_event.message.AffectedItems != None -%}
-                {%- for email in json_event.message.AffectedItems -%}
-                  {%- for file in email.Attachments.split("; ") -%}
-                    {"file":{ "name": "{{ file.split(" (")[0] }}", "size": "{{ file.split(" (")[1].strip('b)') }}" }},
-                  {%- endfor -%}
+            {%- set attachments = [] -%}
+            {%- if json_event.message.AffectedItems != None -%}
+              {%- for email in json_event.message.AffectedItems -%}
+                {%- for file in email.Attachments.split("; ") -%}
+                  {%- set file_name = file.rsplit(" (", 1)[0] | basename -%}
+                  {%- set file_size = file.rsplit(" (", 1)[1].strip('b)') | int -%}
+                  {%- set item = {"file": {"name": file_name, "size": file_size}} -%}
+                  {%- set attachments = attachments.append(item) -%}
                 {%- endfor -%}
-              {%- endif -%}
-            ]
+              {%- endfor -%}
+            {%- endif -%}
+            {{ attachments }}
+
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
@@ -450,6 +509,7 @@ stages:
   parse_exchange_item_aggregated:
     actions:
       - set:
+          user.id: "{{json_event.message.LogonUserSid}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
@@ -568,15 +628,29 @@ stages:
       - translate:
         dictionary:
           "UserLoggedIn": '["authentication"]'
+          "UserLoginFailed": '["authentication"]'
         mapping:
           event.action: event.category
         fallback: '["iam"]'
       - translate:
         dictionary:
           "UserLoggedIn": '["start"]'
+          "UserLoginFailed": '["start"]'
         mapping:
           event.action: event.type
         fallback: '["info"]'
+      - translate:
+        dictionary:
+          "UserLoggedIn": "success"
+          "UserLoginFailed": "failure"
+        mapping:
+          event.action: event.outcome
+      - translate:
+        dictionary:
+          "UserLoggedIn": "success"
+          "UserLoginFailed": "failure"
+        mapping:
+          event.action: action.outcome
 
       - set:
           event.category: ["iam"]
@@ -595,6 +669,8 @@ stages:
       - set:
           file.name: "{{json_event.message.SourceFileName}}"
           file.directory: "{{json_event.message.SourceRelativeUrl}}"
+          file.hash.md5: "{{json_event.message.MD5Hash}}"
+          file.hash.sha256: "{{json_event.message.SHA256Hash}}"
           event.category: ["file"]
           event.type: ["info"]
           user_agent.original: "{{json_event.message.UserAgent}}"
@@ -612,6 +688,7 @@ stages:
                 {% if json_event.message.get("UserAgent") != None %}"UserAgent": "{{json_event.message.UserAgent}}",{% endif %}
               }
             ]
+          office365.audit.item_type: "{{json_event.message.ItemType}}"
 
   parse_team:
     actions:
@@ -776,7 +853,7 @@ stages:
           office365.investigation.alert.source_type: "{{parse_data.ParsedData.SourceAlertType}}"
           event.start: "{{json_event.message.StartTimeUtc}}"
           event.end: "{{json_event.message.EndTimeUtc}}"
-          host.name: "{{parse_data.ParsedData.MachineName}}"
+          office365.machine_name: "{{parse_data.ParsedData.MachineName}}"
           log.level: "{{parse_data.ParsedData.Severity}}"
           rule.name: "{{parse_data.ParsedData.AlertDisplayName}}"
 
@@ -965,6 +1042,16 @@ stages:
           rule.id: "{{json_event.message.PolicyId}}"
 
       - set:
+          event.start: "{{parse_data.ParsedData.ts}}"
+          event.end: "{{parse_data.ParsedData.te}}"
+          event.reason: "{{parse_data.ParsedData.ad}}"
+          event.url: "{{parse_data.ParsedData.alk}}"
+          rule.reference: "{{parse_data.ParsedData.plk}}"
+          rule.category: "{{parse_data.ParsedData.mat}}"
+          office365.alert.display_name: "{{parse_data.ParsedData.an}}"
+        filter: "{{json_event.message.Source == 'Cloud App Security'}}"
+
+      - set:
           source.user.email: "{{parse_data.ParsedData.f3u}}"
         filter: "{{json_event.message.Name == 'Mass download by a single user'}}"
 
@@ -1025,3 +1112,16 @@ stages:
     actions:
       - set:
           url.original: "{{json_event.message.Url}}"
+
+  parse_mip_label:
+    actions:
+      - set:
+          email.sender.address: "{{json_event.message.Sender}}"
+          email.subject: "{{json_event.message.ItemName}}"
+
+      - set:
+          email.to.address: "{{json_event.message.Receivers}}"
+        filter: '{{json_event.message.get("Receivers", []) != []}}'
+
+      - set:
+          office365.mip.label_name: "{{json_event.message.LabelName}}"
