@@ -1,9 +1,24 @@
 name: cef
-ignored_values: ["", "NA", "N/A"]
+ignored_values: ["", "NA", "N/A", "-"]
 pipeline:
+  # Configuration of formats:
+  #  https://www.sonicwall.com/support/technical-documentation/docs/sonicos-7-1-device_log/Content/Logs_Syslog/logs-syslog-settings.htm?utm_source=chatgpt.com
+  #
+  # Check if message is CEF or Syslog
   - name: parsed_event
+    filter: "{{original.message.startswith('CEF') == True or original.message.startswith('0|') == True}}"
     external:
       name: cef.parse-cef
+
+  # For syslog format. It should start like `<134> id=firewall sn=0006B127B660 time="2026-01-26 12:34:56 UTC" ...`
+  - name: parsed_event
+    filter: "{{original.message.startswith('<') == True}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "_syslog={{ original.message[1:] }}"
+        value_sep: "="
+        item_sep: '\s'
 
   - name: parse_start_date
     filter: "{{parsed_event.message.start != null or parsed_event.message.startTime != null}}"
@@ -190,6 +205,8 @@ stages:
           user.name: "{{extract_user_name.result.user_name or parsed_event.message.susr}}"
           user.domain: "{{extract_user_name.result.user_domain}}"
           url.original: "{{parsed_event.message.request}}"
+
+          sonicwall.fw.website_category: '{{parsed_event.message.get("website-category") or parsed_event.message.webCategory}}'
 
       - translate:
         dictionary:
