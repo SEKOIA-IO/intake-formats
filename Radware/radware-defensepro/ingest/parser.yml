@@ -1,0 +1,79 @@
+name: radware-defensepro
+ignored_values: []
+pipeline:
+  - name: grok_event_parser
+    description: First parsing stage using grok patterns
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{RADWARE_ATTACK}|%{RADWARE_BDOS}|%{RADWARE_LOGIN}"
+        custom_patterns:
+          RADWARE_ATTACK: >-
+            %{GREEDYDATA:date}
+            %{WORD:DefensePro_severity} %{INT:Radware_id}
+            %{DATA:DefensePro_category} "%{DATA:Radware_attack_name}"
+            %{DATA:Radware_protocol} %{IP:source_ip} %{INT:source_port}
+            %{IP:destination_ip} %{INT:destination_port}
+            %{INT:DefensePro_physical_port} %{DATA:Radware_context}
+            "%{DATA:DefensePro_policy_name}" %{DATA:DefensePro_attack_status}
+            %{INT:DefensePro_packet_count} %{INT:DefensePro_volume}
+            %{DATA:DefensePro_VLAN_tag} %{DATA:DefensePro_MPLS_RD}
+            %{DATA:DefensePro_MPLS_tag} %{WORD:DefensePro_risk}
+            %{DATA:DefensePro_action_name} %{DATA:DefensePro_UniqueID}
+          RADWARE_BDOS: >-
+            %{GREEDYDATA:date}
+            %{WORD:DefensePro_severity} BDoS baseline learning is
+            %{DATA:DefensePro_baseline_status} on inbound IPv4 traffic for
+            policy "%{DATA:DefensePro_policy_name}".
+          RADWARE_LOGIN: >-
+            %{GREEDYDATA:date}
+            %{WORD:DefensePro_severity} User radware (logged in|successfully
+            authenticated) via (%{DATA:Radware_protocol}
+            %{IP:source_ip}|%{DATA:login_type} \(IP:%{IP:source_ip}\))
+
+  - name: date_parser
+    description: Stage to parse the date field
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{grok_event_parser.message.date}}"
+        output_field: datetime
+        format: "%d-%m-%Y %H:%M:%S"
+
+  - name: set_radware_fields
+
+stages:
+  set_radware_fields:
+    actions:
+      - set:
+          "@timestamp": "{{date_parser.datetime}}"
+          event.code: "{{grok_event_parser.message.Radware_id}}"
+          event.action: "{{grok_event_parser.message.DefensePro_action_name}}"
+
+          source.port: "{{grok_event_parser.message.source_port}}"
+          source.ip: "{{grok_event_parser.message.source_ip}}"
+          destination.ip: "{{grok_event_parser.message.destination_ip}}"
+          destination.port: "{{grok_event_parser.message.destination_port}}"
+
+          network.packets: "{{grok_event_parser.message.DefensePro_packet_count}}"
+          network.protocol: "{{grok_event_parser.message.Radware_protocol}}"
+
+          host.risk.calculated_level: "{{grok_event_parser.message.DefensePro_risk}}"
+
+          threat.feed.name: "{{grok_event_parser.message.DefensePro_category}}"
+          threat.technique.name: "{{grok_event_parser.message.Radware_attack_name}}"
+
+          log.level: "{{grok_event_parser.message.DefensePro_severity}}"
+
+          radware.defensepro.context: "{{grok_event_parser.message.Radware_context}}"
+          radware.defensepro.volume: "{{grok_event_parser.message.DefensePro_volume}}"
+          radware.defensepro.MPLS.RD: "{{grok_event_parser.message.DefensePro_MPLS_RD}}"
+          radware.defensepro.MPLS.tag: "{{grok_event_parser.message.DefensePro_MPLS_tag}}"
+          radware.defensepro.VLAN.tag: "{{grok_event_parser.message.DefensePro_VLAN_tag}}"
+          radware.defensepro.UniqueID: "{{grok_event_parser.message.DefensePro_UniqueID}}"
+          radware.defensepro.policy.name: "{{grok_event_parser.message.DefensePro_policy_name}}"
+          radware.defensepro.attack.status: "{{grok_event_parser.message.DefensePro_attack_status}}"
+          radware.defensepro.physical.port: "{{grok_event_parser.message.DefensePro_physical_port}}"
+          radware.defensepro.baseline.status: "{{grok_event_parser.message.DefensePro_baseline_status}}"
