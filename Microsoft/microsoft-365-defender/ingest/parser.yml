@@ -283,8 +283,6 @@ stages:
           process.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
           process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
           process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
-          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
-          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
           process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
           process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
           process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
@@ -313,6 +311,22 @@ stages:
       - set:
           process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
         filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      # Despite its name, InitiatingProcessFolderPath usually contains full file path.
+      # But sometimes it's indeed a directory. In this case we have to build full path from folder and file name.
+      - set:
+          process.executable: >
+            {%- set folder_path = json_event.message.properties.InitiatingProcessFolderPath -%}
+            {%- set file_name = json_event.message.properties.InitiatingProcessFileName -%}
+            {%- if folder_path.lower().endswith(file_name.lower()) -%}
+              {{ json_event.message.properties.InitiatingProcessFolderPath }}
+            {%- else -%}
+              {%- if '\\' in folder_path -%} {%- set sep = '\\' -%} {%- else -%} {%- set sep = '/' -%} {%- endif -%}
+              {{ folder_path }}{{ sep }}{{ file_name }}
+            {%- endif -%}
+
+      - set:
+          process.working_directory: "{{final.process.executable | dirname}}"
 
   set_process_deviceprocess_events:
     actions:
