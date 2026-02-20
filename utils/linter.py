@@ -13,7 +13,7 @@ INTAKES_PATH = Path(__file__).parent.parent
 
 
 def find_changed_modules_and_formats() -> (list, list):
-    diff = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
+    diff = subprocess.run(["git", "diff", "--name-only", "origin/develop"], capture_output=True)
 
     changed_modules = set()
     changed_formats = set()
