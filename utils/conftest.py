@@ -187,7 +187,7 @@ def pytest_configure(config):
         changed_modules = set()
         changed_formats = set()
 
-        result = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
+        result = subprocess.run(["git", "diff", "--name-only", "origin/develop"], capture_output=True)
         for changed_file in result.stdout.splitlines():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
