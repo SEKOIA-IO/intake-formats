@@ -1,0 +1,147 @@
+name: anozrway-balise-pipeline
+
+pipeline:
+  - name: parsed_event
+    description: JSON parsing stage
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_observer
+  - name: set_timestamp
+  - name: map_vendor_fields
+  - name: ecs_categorization
+  - name: set_threat_indicator
+  - name: cleanup
+
+stages:
+  set_observer:
+    actions:
+      - set:
+          observer.type: "application"
+          observer.vendor: "Anozrway"
+          observer.product: "Balise Pipeline"
+
+  set_timestamp:
+    actions:
+      # 1) Primary: timestamp
+      - set:
+          "@timestamp": "{{ parsed_event.message.timestamp if '.' in parsed_event.message.timestamp else parsed_event.message.timestamp.replace('Z', '.000000Z') }}"
+        filter: >-
+          {{ parsed_event.message.timestamp is defined and
+             parsed_event.message.timestamp is not none and
+             parsed_event.message.timestamp is string }}
+
+      # 2) Fallback: last_updated
+      - set:
+          "@timestamp": "{{ parsed_event.message.last_updated if '.' in parsed_event.message.last_updated else parsed_event.message.last_updated.replace('Z', '.000000Z') }}"
+        filter: >-
+          {{ (parsed_event.message.timestamp is not defined or
+              parsed_event.message.timestamp is none) and
+             parsed_event.message.last_updated is defined and
+             parsed_event.message.last_updated is not none and
+             parsed_event.message.last_updated is string }}
+
+  map_vendor_fields:
+    actions:
+      - set:
+          anozrway.balise.nom_fuite: "{{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      - set:
+          anozrway.balise.version: "{{ parsed_event.message.version }}"
+        filter: "{{ parsed_event.message.version is defined }}"
+
+      - set:
+          anozrway.balise.status: "{{ parsed_event.message.status }}"
+        filter: "{{ parsed_event.message.status is defined }}"
+
+      - set:
+          anozrway.balise.downloaded_files_count: "{{ parsed_event.message.downloaded_files_count }}"
+        filter: "{{ parsed_event.message.downloaded_files_count is defined and parsed_event.message.downloaded_files_count is not none }}"
+
+      - set:
+          anozrway.balise.watermarked_count: "{{ parsed_event.message.watermarked_count }}"
+        filter: "{{ parsed_event.message.watermarked_count is defined and parsed_event.message.watermarked_count is not none }}"
+
+      - set:
+          anozrway.balise.rule_matched_count: "{{ parsed_event.message.rule_matched_count }}"
+        filter: "{{ parsed_event.message.rule_matched_count is defined and parsed_event.message.rule_matched_count is not none }}"
+
+      - set:
+          anozrway.balise.download_links: "{{ parsed_event.message.download_links }}"
+        filter: "{{ parsed_event.message.download_links is defined }}"
+
+      - set:
+          anozrway.balise.uploaded_files: "{{ parsed_event.message.uploaded_files }}"
+        filter: "{{ parsed_event.message.uploaded_files is defined }}"
+
+      - set:
+          anozrway.balise.context: "{{ parsed_event.message._context }}"
+        filter: "{{ parsed_event.message._context is defined and parsed_event.message._context is not none }}"
+
+      - set:
+          anozrway.balise.searched_domain: "{{ parsed_event.message._searched_domain }}"
+        filter: "{{ parsed_event.message._searched_domain is defined and parsed_event.message._searched_domain is not none }}"
+
+  ecs_categorization:
+    actions:
+      - set:
+          event.provider: "anozrway"
+          event.dataset: "anozrway.balise_pipeline"
+          event.action: "leak-detected"
+          event.kind: "alert"
+          event.category: "{{ ['threat'] }}"
+          event.type: "{{ ['info'] }}"
+
+      - set:
+          event.reason: "{{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      # event.outcome derived from status
+      - set:
+          event.outcome: "success"
+        filter: "{{ parsed_event.message.status == 'finished' }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ parsed_event.message.status == 'failed' }}"
+
+      - set:
+          event.outcome: "unknown"
+        filter: >-
+          {{ parsed_event.message.status is defined and
+             parsed_event.message.status not in ['finished', 'failed'] }}
+
+      - set:
+          event.message: "Anozrway Balise Pipeline leak detected: {{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+  set_threat_indicator:
+    actions:
+      - set:
+          threat.indicator.type: "file"
+          threat.indicator.provider: "anozrway"
+        filter: >-
+          {{ parsed_event.message.uploaded_files is defined and
+             parsed_event.message.uploaded_files | length > 0 }}
+
+      - set:
+          threat.indicator.first_seen: "{{ parsed_event.message.timestamp }}"
+        filter: "{{ parsed_event.message.timestamp is defined }}"
+
+      - set:
+          threat.indicator.last_seen: "{{ parsed_event.message.last_updated }}"
+        filter: "{{ parsed_event.message.last_updated is defined }}"
+
+      - set:
+          threat.indicator.name: "{{ parsed_event.message.nom_fuite }}"
+          threat.indicator.description: "Data leak: {{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+  cleanup:
+    actions:
+      - delete:
+          - parsed_event
