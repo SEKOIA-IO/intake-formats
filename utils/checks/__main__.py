@@ -176,7 +176,7 @@ def main():
     intake_formats = None
 
     if args.changes:
-        result = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
+        result = subprocess.run(["git", "diff", "--name-only", "origin/develop"], capture_output=True)
         changed_modules = set()
         changed_formats = set()
         for changed_file in result.stdout.splitlines():
