@@ -1,0 +1,483 @@
+name: anozrway
+
+pipeline:
+  - name: parsed_event
+    description: JSON parsing stage
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_observer
+  - name: set_timestamp
+  - name: map_vendor_fields
+  - name: map_ecs_core
+  - name: ecs_categorization
+  - name: set_threat_indicator
+  - name: set_url_file_pivots
+  - name: set_related
+  - name: cleanup
+
+stages:
+  set_observer:
+    actions:
+      # Balise Pipeline events (discriminated by nom_fuite)
+      - set:
+          observer.type: "application"
+          observer.vendor: "Anozrway"
+          observer.product: "Balise Pipeline"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      # Domain Search events (discriminated by source.type)
+      - set:
+          observer.type: "application"
+          observer.vendor: "Anozrway"
+          observer.product: "Domain Search"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.source.type is defined }}"
+
+  set_timestamp:
+    actions:
+      # Balise: primary timestamp
+      - set:
+          "@timestamp": "{{ parsed_event.message.timestamp if '.' in parsed_event.message.timestamp else parsed_event.message.timestamp.replace('Z', '.000000Z') }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.timestamp is defined and
+             parsed_event.message.timestamp is not none and
+             parsed_event.message.timestamp is string }}
+
+      # Balise: fallback last_updated
+      - set:
+          "@timestamp": "{{ parsed_event.message.last_updated if '.' in parsed_event.message.last_updated else parsed_event.message.last_updated.replace('Z', '.000000Z') }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             (parsed_event.message.timestamp is not defined or
+              parsed_event.message.timestamp is none) and
+             parsed_event.message.last_updated is defined and
+             parsed_event.message.last_updated is not none and
+             parsed_event.message.last_updated is string }}
+
+      # Domain Search: source.date (primary)
+      - set:
+          "@timestamp": >-
+            {%- set ts = parsed_event.message.source.date -%}
+            {{ ts if '.' in ts else ts.replace('Z', '.000000Z') }}
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.source.type is defined and
+             parsed_event.message.source.date is defined and
+             parsed_event.message.source.date is not none and
+             parsed_event.message.source.date is string }}
+
+      # Domain Search: detection_date fallback
+      - set:
+          "@timestamp": >-
+            {%- set ts = parsed_event.message.source.detection_date -%}
+            {{ ts if '.' in ts else ts.replace('Z', '.000000Z') }}
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.source.type is defined and
+             (parsed_event.message.source.date is not defined or
+              parsed_event.message.source.date is none) and
+             parsed_event.message.source.detection_date is defined and
+             parsed_event.message.source.detection_date is not none and
+             parsed_event.message.source.detection_date is string }}
+
+      # Global fallback: created_at
+      - set:
+          "@timestamp": >-
+            {%- set ts = original.created_at -%}
+            {{ ts if '.' in ts else ts.replace('Z', '.000000Z') }}
+        filter: >-
+          {{ final['@timestamp'] is not defined and
+             original.created_at is defined and
+             original.created_at is not none and
+             original.created_at is string }}
+
+  map_vendor_fields:
+    actions:
+      # --- Balise Pipeline custom fields ---
+      - set:
+          anozrway.balise.nom_fuite: "{{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      - set:
+          anozrway.balise.version: "{{ parsed_event.message.version }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined and parsed_event.message.version is defined }}"
+
+      - set:
+          anozrway.balise.status: "{{ parsed_event.message.status }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined and parsed_event.message.status is defined }}"
+
+      - set:
+          anozrway.balise.downloaded_files_count: "{{ parsed_event.message.downloaded_files_count }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.downloaded_files_count is defined and
+             parsed_event.message.downloaded_files_count is not none }}
+
+      - set:
+          anozrway.balise.watermarked_count: "{{ parsed_event.message.watermarked_count }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.watermarked_count is defined and
+             parsed_event.message.watermarked_count is not none }}
+
+      - set:
+          anozrway.balise.rule_matched_count: "{{ parsed_event.message.rule_matched_count }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.rule_matched_count is defined and
+             parsed_event.message.rule_matched_count is not none }}
+
+      - set:
+          anozrway.balise.download_links: "{{ parsed_event.message.download_links }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined and parsed_event.message.download_links is defined }}"
+
+      - set:
+          anozrway.balise.uploaded_files: "{{ parsed_event.message.uploaded_files }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined and parsed_event.message.uploaded_files is defined }}"
+
+      - set:
+          anozrway.balise.context: "{{ parsed_event.message._context }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message._context is defined and
+             parsed_event.message._context is not none }}
+
+      - set:
+          anozrway.balise.searched_domain: "{{ parsed_event.message._searched_domain }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message._searched_domain is defined and
+             parsed_event.message._searched_domain is not none }}
+
+      # --- Domain Search custom fields (no ECS equivalent) ---
+      - set:
+          anozrway.source.type: "{{ parsed_event.message.source.type }}"
+          anozrway.source.detection_date: "{{ parsed_event.message.source.detection_date }}"
+          anozrway.source.data: "{{ parsed_event.message.source.data }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.source.type is defined }}"
+
+      - set:
+          anozrway.record.other_email: "{{ parsed_event.message.other_email }}"
+          anozrway.record.work: "{{ parsed_event.message.work }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.source.type is defined }}"
+
+      # NOT mapped on purpose: password, phone_number, physical_address, birthday
+
+  map_ecs_core:
+    actions:
+      # Domain Search ECS mappings
+      - set:
+          user.email: "{{ parsed_event.message.email }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.email is defined }}"
+
+      - set:
+          user.name: "{{ parsed_event.message.username }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.username is defined }}"
+
+      - set:
+          user.full_name: "{{ parsed_event.message.full_name }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.full_name is defined }}"
+
+      - set:
+          user.full_name: "{{ parsed_event.message.first_name ~ ' ' ~ parsed_event.message.last_name }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             final['user.full_name'] is not defined and
+             parsed_event.message.first_name is defined and
+             parsed_event.message.first_name is not none and
+             parsed_event.message.last_name is defined and
+             parsed_event.message.last_name is not none }}
+
+      - set:
+          user.full_name: "{{ parsed_event.message.first_name }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             final['user.full_name'] is not defined and
+             parsed_event.message.first_name is defined and
+             parsed_event.message.first_name is not none and
+             (parsed_event.message.last_name is not defined or parsed_event.message.last_name is none) }}
+
+      - set:
+          user.full_name: "{{ parsed_event.message.last_name }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             final['user.full_name'] is not defined and
+             parsed_event.message.last_name is defined and
+             parsed_event.message.last_name is not none and
+             (parsed_event.message.first_name is not defined or parsed_event.message.first_name is none) }}
+
+      - set:
+          organization.name: "{{ parsed_event.message.company }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.company is defined }}"
+
+      - set:
+          source.geo.city_name: "{{ parsed_event.message.city }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.city is defined }}"
+
+      - set:
+          source.geo.country_name: "{{ parsed_event.message.country }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.country is defined }}"
+
+      - set:
+          source.geo.postal_code: "{{ parsed_event.message.postal_code }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.postal_code is defined }}"
+
+      - set:
+          threat.indicator.type: "email-addr"
+          threat.indicator.email.address: "{{ parsed_event.message.email }}"
+        filter: "{{ parsed_event.message.source is defined and parsed_event.message.email is defined }}"
+
+      - set:
+          threat.indicator.url.domain: "{{ parsed_event.message.source.name }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.source.name is defined and
+             parsed_event.message.source.name is not none }}
+
+  ecs_categorization:
+    actions:
+      # Balise Pipeline: always alert, indicator
+      - set:
+          event.provider: "anozrway"
+          event.dataset: "anozrway.balise_pipeline"
+          event.action: "leak-detected"
+          event.kind: "alert"
+          event.category: "{{ ['threat'] }}"
+          event.type: "{{ ['indicator'] }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      - set:
+          event.reason: "{{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      # event.outcome derived from Balise status
+      - set:
+          event.outcome: "success"
+        filter: "{{ parsed_event.message.nom_fuite is defined and parsed_event.message.status == 'finished' }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ parsed_event.message.nom_fuite is defined and parsed_event.message.status == 'failed' }}"
+
+      - set:
+          event.outcome: "unknown"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.status is defined and
+             parsed_event.message.status not in ['finished', 'failed'] }}
+
+      # Domain Search - LEAK: enrichment (informational threat intel)
+      - set:
+          event.provider: "anozrway"
+          event.dataset: "anozrway.domain_search"
+          event.action: "leak-detected"
+          event.kind: "enrichment"
+          event.category: "{{ ['threat'] }}"
+          event.type: "{{ ['indicator'] }}"
+        filter: "{{ parsed_event.message.source is defined and final.anozrway.source.type == 'LEAK' }}"
+
+      # Domain Search - RANSOMWARE: alert (active threat)
+      - set:
+          event.provider: "anozrway"
+          event.dataset: "anozrway.domain_search"
+          event.action: "ransomware-detected"
+          event.kind: "alert"
+          event.category: "{{ ['threat'] }}"
+          event.type: "{{ ['indicator'] }}"
+        filter: "{{ parsed_event.message.source is defined and final.anozrway.source.type == 'RANSOMWARE' }}"
+
+      - set:
+          event.reason: "Anozrway {{ final.anozrway.source.type }} record from {{ parsed_event.message.source.name }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             final.anozrway.source.type is defined and
+             parsed_event.message.source.name is defined }}
+
+  set_threat_indicator:
+    actions:
+      # Balise Pipeline: file indicator (uploaded_files non-empty)
+      - set:
+          threat.indicator.type: "file"
+          threat.indicator.provider: "anozrway"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.uploaded_files is defined and
+             parsed_event.message.uploaded_files is not none and
+             parsed_event.message.uploaded_files | length > 0 }}
+
+      # Balise Pipeline: url indicator fallback (no files, but links present)
+      - set:
+          threat.indicator.type: "url"
+          threat.indicator.provider: "anozrway"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             (parsed_event.message.uploaded_files is not defined or
+              parsed_event.message.uploaded_files is none or
+              parsed_event.message.uploaded_files | length == 0) and
+             parsed_event.message.download_links is defined and
+             parsed_event.message.download_links is not none and
+             parsed_event.message.download_links | length > 0 }}
+
+      - set:
+          threat.indicator.first_seen: "{{ parsed_event.message.timestamp }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.timestamp is defined and
+             parsed_event.message.timestamp is not none }}
+
+      - set:
+          threat.indicator.last_seen: "{{ parsed_event.message.last_updated }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.last_updated is defined and
+             parsed_event.message.last_updated is not none }}
+
+      - set:
+          threat.indicator.name: "{{ parsed_event.message.nom_fuite }}"
+          threat.indicator.description: "Data leak: {{ parsed_event.message.nom_fuite }}"
+        filter: "{{ parsed_event.message.nom_fuite is defined }}"
+
+      # Domain Search: first_seen from source.detection_date
+      - set:
+          threat.indicator.first_seen: "{{ parsed_event.message.source.detection_date }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.source.type is defined and
+             parsed_event.message.source.detection_date is defined and
+             parsed_event.message.source.detection_date is not none }}
+
+  set_url_file_pivots:
+    actions:
+      # ── A. url.full from download_links[0] ─────────────────────────────────
+      # Strip surrounding double-quotes that some links carry (e.g. "\"http://...\"")
+      - set:
+          url.full: >-
+            {%- set raw = parsed_event.message.download_links[0] -%}
+            {{ raw.strip('"') }}
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.download_links is defined and
+             parsed_event.message.download_links is not none and
+             parsed_event.message.download_links | length > 0 and
+             parsed_event.message.download_links[0] is not none and
+             parsed_event.message.download_links[0] is string }}
+
+      # ── A. url.domain for .onion hosts ─────────────────────────────────────
+      # Extract host from scheme://host[:port]/path — only when host ends in .onion
+      - set:
+          url.domain: >-
+            {%- set after = final['url.full'].split('://')[1] -%}
+            {%- set host_port = after.split('/')[0] -%}
+            {{ host_port.split(':')[0] if ':' in host_port else host_port }}
+        filter: >-
+          {{ final['url.full'] is defined and
+             '://' in final['url.full'] and
+             '.onion' in final['url.full'] }}
+
+      # ── A. related.hosts for .onion hosts ──────────────────────────────────
+      - set:
+          related.hosts: >-
+            {%- set after = final['url.full'].split('://')[1] -%}
+            {%- set host_port = after.split('/')[0] -%}
+            {%- set host = host_port.split(':')[0] if ':' in host_port else host_port -%}
+            {{ (final.related.hosts | default([])) + [host] }}
+        filter: >-
+          {{ final['url.full'] is defined and
+             '://' in final['url.full'] and
+             '.onion' in final['url.full'] }}
+
+      # ── A. related.ip for non-.onion hosts (IP-addressed URLs in context) ──
+      # Note: assumes non-.onion download links point to IP addresses (as per examples).
+      # If plain-domain URLs appear, extend this stage with explicit IP detection.
+      - set:
+          related.ip: >-
+            {%- set after = final['url.full'].split('://')[1] -%}
+            {%- set host_port = after.split('/')[0] -%}
+            {%- set host = host_port.split(':')[0] if ':' in host_port else host_port -%}
+            {{ (final.related.ip | default([])) + [host] }}
+        filter: >-
+          {{ final['url.full'] is defined and
+             '://' in final['url.full'] and
+             '.onion' not in final['url.full'] }}
+
+      # ── A. threat.indicator.url.full mirrors url.full ──────────────────────
+      - set:
+          threat.indicator.url.full: "{{ final['url.full'] }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             final['url.full'] is defined }}
+
+      # ── B. file.name from uploaded_files[0].filename ───────────────────────
+      - set:
+          file.name: "{{ parsed_event.message.uploaded_files[0].filename }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.uploaded_files is defined and
+             parsed_event.message.uploaded_files is not none and
+             parsed_event.message.uploaded_files | length > 0 and
+             parsed_event.message.uploaded_files[0].filename is defined and
+             parsed_event.message.uploaded_files[0].filename is not none }}
+
+      # ── B. file.extension derived from file.name (last token after '.') ────
+      - set:
+          file.extension: "{{ final['file.name'].split('.')[-1] | lower }}"
+        filter: >-
+          {{ final['file.name'] is defined and
+             '.' in final['file.name'] }}
+
+      # ── E. observer.version from Balise version field ──────────────────────
+      - set:
+          observer.version: "{{ parsed_event.message.version }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message.version is defined and
+             parsed_event.message.version is not none }}
+
+      # ── F. url.domain from _searched_domain (only when url.domain not set) ─
+      - set:
+          url.domain: "{{ parsed_event.message._searched_domain }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message._searched_domain is defined and
+             parsed_event.message._searched_domain is not none and
+             final['url.domain'] is not defined }}
+
+      # ── F. related.hosts from _searched_domain ─────────────────────────────
+      - set:
+          related.hosts: "{{ (final.related.hosts | default([])) + [parsed_event.message._searched_domain] }}"
+        filter: >-
+          {{ parsed_event.message.nom_fuite is defined and
+             parsed_event.message._searched_domain is defined and
+             parsed_event.message._searched_domain is not none }}
+
+  set_related:
+    actions:
+      - set:
+          related.user: "{{ (final.related.user | default([])) + [parsed_event.message.username] }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.username is defined and
+             parsed_event.message.username is not none }}
+
+      - set:
+          related.user: "{{ (final.related.user | default([])) + [parsed_event.message.email] }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.email is defined and
+             parsed_event.message.email is not none }}
+
+      - set:
+          related.user: "{{ (final.related.user | default([])) + [parsed_event.message.other_email] }}"
+        filter: >-
+          {{ parsed_event.message.source is defined and
+             parsed_event.message.other_email is defined and
+             parsed_event.message.other_email is not none }}
+
+  cleanup:
+    actions:
+      - delete:
+          - parsed_event
