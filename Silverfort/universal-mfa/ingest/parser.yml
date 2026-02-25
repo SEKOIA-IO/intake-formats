@@ -16,7 +16,7 @@ pipeline:
     description: ""
     filter: >-
       {{original.message.startswith("0|Silverfort") and
-      "dataType=DailyAuthStatistic" not in original.message}}
+      "DailyAuthStatistic" not in original.message}}
     external:
       name: cef.parse-cef
       properties:
@@ -26,7 +26,7 @@ pipeline:
     description: ""
     filter: >-
       {{original.message.startswith("0|Silverfort") and
-      "dataType=DailyAuthStatistic" in original.message}}
+      "DailyAuthStatistic" in original.message}}
     external:
       name: kv.parse-kv
       properties:
@@ -36,7 +36,7 @@ pipeline:
         item_sep: \s
   - name: parsed_date_rt
     description: ""
-    filter: '{{parsed_event.message.get("rt") != None}}'
+    filter: '{{parsed_event.message is defined and parsed_event.message.get("rt") != None}}'
     external:
       name: date.parse
       properties:
@@ -46,7 +46,7 @@ pipeline:
         timezone: UTC
   - name: parsed_date_timestamp
     description: ""
-    filter: '{{parsed_event_daily.message.get("timestamp") != None}}'
+    filter: '{{parsed_event_daily.message is defined and parsed_event_daily.message.get("timestamp") != None}}'
     external:
       name: date.parse
       properties:
@@ -57,8 +57,9 @@ pipeline:
   - name: set_date
     description: ""
     filter: >-
-      {{parsed_date_rt.date is defined or parsed_date_timestamp.date is
-      defined}}
+      {{ (parsed_date_rt is defined and parsed_date_rt.date is defined) or
+      (parsed_date_timestamp is defined and parsed_date_timestamp.date is
+      defined) }}
     external: null
   - name: set_ecs_fields
     description: ""
@@ -68,13 +69,12 @@ stages:
   set_date:
     actions:
       - set:
-          "@timestamp": |-
-            {{
-              parsed_date_rt.date
-                if parsed_date_rt.date is defined
-                else parsed_date_timestamp.date
-            }}
-        filter: ""
+          "@timestamp": "{{parsed_date_rt.date}}"
+        filter: "{{parsed_date_rt.date is defined}}"
+        name: set
+      - set:
+          "@timestamp": "{{parsed_date_timestamp.date}}"
+        filter: "{{parsed_date_timestamp.date is defined}}"
         name: set
   set_ecs_fields:
     actions:
@@ -106,9 +106,7 @@ stages:
       - set:
           host.name: "{{parsed_event.message.shost}}"
           host.domain: "{{parsed_event.message.sntdom}}"
-        filter: >-
-          {{parsed_event.message.src is defined and parsed_event.message.src !=
-          "undefined"}}
+        filter: "{{parsed_event.message is defined}}"
         name: set
       - set:
           user.name: "{{parsed_event.message.suser}}"
@@ -158,7 +156,7 @@ stages:
           observer.version: "{{parsed_event_daily.message.DeviceVersion}}"
           observer.hostname: "{{parsed_event_daily.message.server_name}}"
           silverfort.data_type: "{{parsed_event_daily.message.dataType}}"
-          silverfort.authentications: "{{parsed_event_daily.message.authentications}}"
+          silverfort.authentications: "{{parsed_event_daily.message.authentications | int}}"
         filter: >-
           {{parsed_event_daily.message is defined and
           parsed_event_daily.message.dataType == "DailyAuthStatistic"}}
