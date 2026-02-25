@@ -1,0 +1,60 @@
+name: Trapster
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "ballpoint"
+          observer.product: "trapster"
+
+      - set:
+          host.name: "{{parsed_event.message.device.name}}"
+          event.reason: "{{parsed_event.message.description}}"
+          event.action: "{{parsed_event.message.action}}"
+          event.start: "{{parsed_event.message.start_time | to_rfc3339}}"
+          event.end: "{{parsed_event.message.end_time | to_rfc3339}}"
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.kind: "alert"
+        filter: "{{parsed_event.message.category != 'disconnected'}}"
+
+      - set:
+          event.category: ["host"]
+          event.type: ["device"]
+        filter: "{{parsed_event.message.category == 'disconnected'}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.src_ip}}"
+          source.port: "{{parsed_event.message.src_port}}"
+          source.domain: "{{parsed_event.message.src_ip_reverse}}"
+          source.address: "{{parsed_event.message.src_ip}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.dst_ip}}"
+          destination.port: "{{parsed_event.message.dst_port}}"
+          destination.address: "{{parsed_event.message.dst_ip}}"
+
+      - set:
+          device.id: "{{parsed_event.message.device.id}}"
+          group.name: "{{parsed_event.message.group}}"
+
+      - set:
+          ballpoint.trapster.device.template: "{{parsed_event.message.device.template}}"
+          ballpoint.trapster.device.name: "{{parsed_event.message.device.name}}"
+          ballpoint.trapster.group: "{{parsed_event.message.group}}"
+          ballpoint.trapster.channel: "{{parsed_event.message.channel}}"
+          ballpoint.trapster.category: "{{parsed_event.message.category}}"
+          ballpoint.trapster.events_count: "{{parsed_event.message.events_count}}"
+          ballpoint.trapster.acknowledged: "{{parsed_event.message.acknowledged}}"
+          ballpoint.trapster.extra: "{{parsed_event.message.extra}}"
