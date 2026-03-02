@@ -6,11 +6,13 @@ pipeline:
       properties:
         input_field: "original.message"
         output_field: result
-        pattern: "%{USER_FIRST}|%{FALLBACK}"
+        pattern: "%{USER_FIRST}|%{FALLBACK}|%{RECORDING_PROGRESS}|%{IDLE_TIME}"
         custom_patterns:
           USER_FIRST: "%{EMAILADDRESS:user_email} %{DATA:event_reason}"
           BASE_INFO: '(\s*(org:%{DATA:organization_name}),?)?(\s*(user:%{DATA:user_email})( %{DATA})?,?)(\s*(ip:%{IP:source_ip})).*'
           FALLBACK: "%{DATA:event_reason}%{BASE_INFO}"
+          RECORDING_PROGRESS: '%{WORD:event_action} in progress %{WORD:user_name}@%{WORD:user_domain}'
+          IDLE_TIME: '%{WORD:user_name}@%{WORD:user_domain} received:%{INT:idle_time_seconds}'
 
   - name: event_reason
     filter: "{{event.result.get('event_reason') != None}}"
@@ -96,3 +98,18 @@ stages:
           event.type: ["start"]
           event.outcome: "success"
         filter: "{{event_reason.result.get('session_event', '').lower() == 'connexion'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+          event.action: "{{event.result.get('event_action', '').lower()}}"
+          user.name: "{{event.result.user_name}}"
+          user.domain: "{{event.result.user_domain}}"
+        filter: "{{event.result.get('event_action', '') == 'Recording'}}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+          event.action: "idle"
+          user.name: "{{event.result.user_name}}"
+        filter: "{{event.result.get('idle_time_seconds') != None}}"
