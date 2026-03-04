@@ -283,8 +283,6 @@ stages:
           process.start: "{{json_event.message.properties.InitiatingProcessCreationTime}}"
           process.name: "{{json_event.message.properties.InitiatingProcessFileName | basename}}"
           process.command_line: "{{json_event.message.properties.ProcessCommandLine or json_event.message.properties.InitiatingProcessCommandLine}}"
-          process.executable: "{{json_event.message.properties.InitiatingProcessFolderPath}}"
-          process.working_directory: "{{json_event.message.properties.InitiatingProcessFolderPath | dirname}}"
           process.user.domain: "{{json_event.message.properties.InitiatingProcessAccountDomain}}"
           process.user.name: "{{json_event.message.properties.InitiatingProcessAccountName}}"
           process.user.id: "{{json_event.message.properties.InitiatingProcessAccountSid}}"
@@ -313,6 +311,22 @@ stages:
       - set:
           process.args: '{{json_event.message.properties.ProcessCommandLine.split(" ")[1:]}}'
         filter: '{{json_event.message.properties.get("ProcessCommandLine") and json_event.message.properties.ProcessCommandLine.split(" ") | length > 1 and json_event.message.properties.ProcessCommandLine.split(" ")[1:] != [""]}}'
+
+      # Despite its name, InitiatingProcessFolderPath usually contains full file path.
+      # But sometimes it's indeed a directory. In this case we have to build full path from folder and file name.
+      - set:
+          process.executable: >
+            {%- set folder_path = json_event.message.properties.InitiatingProcessFolderPath -%}
+            {%- set file_name = json_event.message.properties.InitiatingProcessFileName -%}
+            {%- if folder_path.lower().endswith(file_name.lower()) -%}
+              {{ json_event.message.properties.InitiatingProcessFolderPath }}
+            {%- else -%}
+              {%- if '\\' in folder_path -%} {%- set sep = '\\' -%} {%- else -%} {%- set sep = '/' -%} {%- endif -%}
+              {{ folder_path }}{{ sep }}{{ file_name }}
+            {%- endif -%}
+
+      - set:
+          process.working_directory: "{{final.process.executable | dirname}}"
 
   set_process_deviceprocess_events:
     actions:
@@ -416,6 +430,9 @@ stages:
           email.sender.address: "{{parse_additional_fields.fields.Sender}}"
           email.message_id: "{{parse_additional_fields.fields.InternetMessageId.strip('>').strip('<')}}"
 
+          microsoft.defender.threat.urls: "{{parse_additional_fields.fields.Urls}}"
+          url.original: "{{parse_additional_fields.fields.Urls | first}}"
+
           action.properties.AttachmentCount: "{{parse_additional_fields.fields.AttachmentCount}}"
           action.properties.UrlCount: "{{parse_additional_fields.fields.UrlCount}}"
 
@@ -434,6 +451,7 @@ stages:
           threat.technique.name: "{{json_event.message.properties.AttackTechniques}}"
           microsoft.defender.threat.category: "{{json_event.message.properties.Category}}"
           microsoft.defender.threat.severity: "{{json_event.message.properties.Severity}}"
+
   set_cloud_app_events_fields:
     actions:
       - set:
@@ -455,11 +473,17 @@ stages:
           action.properties.IPTags: "{{json_event.message.properties.IPTags}}"
           action.properties.IPCategory: "{{json_event.message.properties.IPCategory}}"
           action.properties.UserAgentTags: "{{json_event.message.properties.UserAgentTags}}"
+          action.properties.TimeGenerated: "{{parse_raw_event_data.data.TimeGenerated}}"
+          action.properties.AlertDisplayName: "{{parse_raw_event_data.data.AlertDisplayName}}"
+          action.properties.Operation: "{{parse_raw_event_data.data.Operation}}"
 
           microsoft.defender.investigation.id: "{{json_event.message.properties.RawEventData.InvestigationId}}"
           microsoft.defender.investigation.name: "{{json_event.message.properties.RawEventData.InvestigationName}}"
           microsoft.defender.investigation.type: "{{json_event.message.properties.RawEventData.InvestigationType}}"
           microsoft.defender.investigation.status: "{{json_event.message.properties.RawEventData.Status}}"
+          microsoft.defender.investigation.deep_link: "{{json_event.message.properties.RawEventData.DeepLinkUrl}}"
+
+          microsoft.defender.threat.severity: "{{parse_raw_event_data.data.Severity}}"
 
           email.attachments: >
             [
@@ -473,6 +497,16 @@ stages:
               {%- endfor -%}
             {%- endfor -%}
             ]
+
+          email.to.address: "{{parse_raw_event_data.data.Entities | selectattr('Recipient', 'defined') | map(attribute='Recipient') |list}}"
+
+      - set:
+          url.original: "{{parse_raw_event_data.data.Entities | selectattr('SourceEntityId', 'defined') | map(attribute='SourceEntityId') | first}}"
+        filter: "{{parse_raw_event_data.data.Entities | selectattr('SourceEntityType', '==', 'MaliciousUrl') | first | length > 0}}"
+
+      - set:
+          source.ip: "{{parse_raw_event_data.data.Entities | selectattr('SenderIP', 'defined') | map(attribute='SenderIP') | first}}"
+        filter: "{{ parse_raw_event_data.data.Entities | selectattr('SenderIP', 'defined') | map(attribute='SenderIP') | first | is_ipaddress }}"
 
   set_device_events_fields:
     actions:
