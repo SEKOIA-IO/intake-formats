@@ -1,0 +1,7 @@
+# PRODAFT
+
+## Description
+PRODAFT is a cybersecurity company that specializes in Cyber Threat Intelligence (CTI) and risk management, focusing on proactive defense by intercepting threats at their source. Their suite of products, including the U.S.T.A. and BLINDSPOT platforms, helps organizations monitor adversarial infrastructure and detect potential attacks in real-time before they occur. PRODAFT's solutions cater to critical industries such as finance, aviation, defense, and telecommunications, offering advanced capabilities in supply chain risk assessment, fraud prevention, and post-incident analysis.
+
+## Intakes
+*

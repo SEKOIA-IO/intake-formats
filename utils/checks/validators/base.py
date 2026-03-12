@@ -11,8 +11,14 @@ class Validator(ABC):
     """
     Every validator class changes mutable `result` data class either by adding data for the downstream validators
     or enhancing list of detected errors
+
+    The validate method can be used both as a classmethod (for stateless validators)
+    or as an instance method (for validators that need initialization state).
     """
 
-    @classmethod
-    def validate(cls, result: CheckResult, args: argparse.Namespace) -> None:
+    def validate(self, result: CheckResult, args: argparse.Namespace) -> None:
+        """
+        Validate the given result. Can be called on both class and instance.
+        Subclasses should implement this method.
+        """
         raise NotImplementedError

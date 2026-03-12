@@ -31,6 +31,13 @@ pipeline:
         input_field: "{{parsed_event.message.event.StartTime}}"
         output_field: datetime
 
+  - name: parse_event_creation_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.metadata.eventCreationTime}}"
+        output_field: datetime
+
   - name: parse_event_end_date
     external:
       name: date.parse
@@ -77,11 +84,22 @@ pipeline:
   - name: scheduler_report_notification_event
     filter: '{{parsed_event.message.metadata.eventType == "ScheduledReportNotificationEvent"}}'
 
+  - name: api_activity_audit_event
+    filter: '{{parsed_event.message.metadata.eventType == "APIActivityAuditEvent"}}'
+
+  - name: automated_lead_summary_event
+    filter: '{{parsed_event.message.metadata.eventType == "AutomatedLeadSummaryEvent"}}'
+
+  - name: firewall_match_event
+    filter: '{{parsed_event.message.metadata.eventType == "FirewallMatchEvent"}}'
+
 stages:
   set_common_fields:
     actions:
       - set:
           "@timestamp": "{{read_event_date.datetime}}"
+          crowdstrike.customer_id: "{{parsed_event.message.metadata.customerIDString}}"
+          crowdstrike.event_created: "{{parse_event_creation_date.datetime}}"
           crowdstrike.event_type: "{{parsed_event.message.metadata.eventType}}"
 
   detection_summary_event:
@@ -95,9 +113,9 @@ stages:
         filter: "{{parsed_event.message.event.MACAddress != null}}"
 
       - set:
-          agent.id: "{{parsed_event.message.event.AgentIdString}}"
-          host.name: "{{parsed_event.message.event.ComputerName}}"
-          log.hostname: "{{parsed_event.message.event.ComputerName}}"
+          agent.id: "{{parsed_event.message.event.AgentIdString or parsed_event.message.event.AgentId}}"
+          host.name: "{{parsed_event.message.event.ComputerName or parsed_event.message.event.Hostname}}"
+          log.hostname: "{{parsed_event.message.event.ComputerName or parsed_event.message.event.Hostname}}"
           user.name: "{{parsed_event.message.event.UserName}}"
           event.kind: alert
           event.type: ["info"]
@@ -105,6 +123,7 @@ stages:
           file.name: "{{parsed_event.message.event.AssociatedFile | basename}}"
           file.directory: "{{parsed_event.message.event.AssociatedFile | dirname}}"
           file.hash.md5: "{{parsed_event.message.event.MD5String}}"
+          file.hash.sha1: "{{parsed_event.message.event.SHA1String}}"
           file.hash.sha256: "{{parsed_event.message.event.SHA256String}}"
           event.category: ["intrusion_detection"]
           process.parent.pid: "{{parsed_event.message.event.ParentProcessId}}"
@@ -113,18 +132,67 @@ stages:
           process.command_line: "{{parsed_event.message.event.CommandLine}}"
           process.name: "{{parsed_event.message.event.FileName}}"
           process.working_directory: "{{parsed_event.message.event.FilePath}}"
-          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
+          crowdstrike.detect_id: "{{parsed_event.message.event.DetectId or parsed_event.message.event.AggregateId}}"
+          crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
+          crowdstrike.pattern.disposition_flags: "{{ parsed_event.message.event.PatternDispositionFlags }}"
+          crowdstrike.pattern.disposition_value: "{{ parsed_event.message.event.PatternDispositionValue }}"
+          crowdstrike.process.grandparent.executable: "{{parsed_event.message.event.GrandparentImageFileName}}"
+          crowdstrike.process.grandparent.name: "{{parsed_event.message.event.GrandparentImageFileName | basename}}"
+          crowdstrike.process.grandparent.working_directory: "{{parsed_event.message.event.GrandparentImageFileName | dirname}}"
+          crowdstrike.process.grandparent.command_line: "{{parsed_event.message.event.GrandparentCommandLine}}"
+          crowdstrike.sensor_id: "{{parsed_event.message.event.SensorId}}"
+          crowdstrike.composite_id: "{{parsed_event.message.event.CompositeId}}"
+          threat.indicator.name: "{{parsed_event.message.event.IOCValue}}"
           threat.technique.name: "{{parsed_event.message.event.Technique or parsed_event.message.event.Techniques}}"
           threat.technique.id: "{{parsed_event.message.event.TechniqueIds}}"
-          crowdstrike.customer_id: "{{parsed_event.message.event.CustomerIDString}}"
           process.parent.executable: "{{parsed_event.message.event.ParentImageFileName}}"
           process.parent.name: "{{parsed_event.message.event.ParentImageFileName | basename}}"
           process.parent.working_directory: "{{parsed_event.message.event.ParentImageFileName | dirname}}"
           process.parent.command_line: "{{parsed_event.message.event.ParentCommandLine}}"
           crowdstrike.detect_description: "{{parsed_event.message.event.DetectDescription}}"
+          crowdstrike.falcon_host_link: "{{parsed_event.message.event.FalconHostLink}}"
           event.severity: "{{parsed_event.message.event.Severity}}"
           crowdstrike.severity_name: "{{parsed_event.message.event.SeverityName}}"
           crowdstrike.host_groups: '{{parsed_event.message.event.HostGroups.split(",")}}'
+
+      - set:
+          process.end: "{{parsed_event.message.event.ProcessEndTime | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.event.get('ProcessEndTime') != None and parsed_event.message.event.ProcessEndTime > 0}}"
+
+      - set:
+          crowdstrike.network_accesses: "{{parsed_event.message.event.NetworkAccesses}}"
+        filter: "{{parsed_event.message.event.get('NetworkAccesses') not in [None, []]}}"
+
+      - translate:
+        dictionary:
+          domain: domain-name
+          filename: file
+          ipv4: ipv4-addr
+          ipv6: ipv6-addr
+          hash_md5: file
+          hash_sha256: file
+          registry_key: windows-registry-key
+          command_line: process
+          behavior: process
+        mapping:
+          parsed_event.message.event.IOCType: threat.indicator.type
+        filter: "{{parsed_event.message.event.get('IOCType') != None}}"
+
+      - set:
+          threat.indicator.url.domain: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'domain'}}"
+
+      - set:
+          threat.indicator.file.name: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'filename'}}"
+
+      - set:
+          threat.indicator.file.hash.md5: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'hash_md5'}}"
+
+      - set:
+          threat.indicator.registry.key: "{{parsed_event.message.event.IOCValue}}"
+        filter: "{{parsed_event.message.event.IOCType == 'registry_key'}}"
 
       - set:
           process.end: "{{parsed_event.message.event.ProcessEndTime | string | to_rfc3339}}"
@@ -136,8 +204,11 @@ stages:
 
       - set:
           threat.indicator.file.hash.sha256: "{{parsed_event.message.event.IOCValue}}"
-          threat.indicator.type: "file"
         filter: "{{parsed_event.message.event.IOCType == 'hash_sha256'}}"
+
+      - set:
+          threat.indicator.ip: "{{parsed_event.message.event.IOCValue.split(',')}}"
+        filter: "{{parsed_event.message.event.IOCType in ['ipv4', 'ipv6']}}"
 
       - set:
           process.parent.executable: "{{parsed_event.message.event.ParentImageFilePath}}"
@@ -190,11 +261,16 @@ stages:
           event.kind: alert
           event.type: ["info"]
           event.category: ["intrusion_detection"]
+          event.url: "{{parsed_event.message.event.FalconHostLink}}"
+          event.reference: "{{parsed_event.message.event.FalconHostLink}}"
           crowdstrike.state: "{{parsed_event.message.event.State}}"
           crowdstrike.host_id: "{{parsed_event.message.event.HostID}}"
           crowdstrike.incident_id: "{{parsed_event.message.event.IncidentID}}"
           crowdstrike.incident_end: "{{parsed_event.message.event.IncidentEndTime}}"
           crowdstrike.incident_start: "{{parsed_event.message.event.IncidentStartTime}}"
+          crowdstrike.fine_score: "{{parsed_event.message.event.FineScore}}"
+          crowdstrike.lateral_movement: "{{parsed_event.message.event.LateralMovement}}"
+          crowdstrike.incident_type: "{{parsed_event.message.event.IncidentType}}"
 
   idp_detection_summary_event:
     actions:
@@ -259,7 +335,7 @@ stages:
           crowdstrike.added_privilege: "{{ parsed_event.message.event.AddedPrivilege }}"
           crowdstrike.attempt_outcome: "{{ parsed_event.message.event.AttemptOutcome }}"
           crowdstrike.detect_description: "{{ parsed_event.message.event.DetectDescription }}"
-          crowdstrike.detect_name: "{{ parsed_event.message.event.DetectName }}"
+          crowdstrike.detect_name: "{{ parsed_event.message.event.DetectName or parsed_event.message.event.Name }}"
           crowdstrike.idp_policy_rule_trigger: "{{ parsed_event.message.event.IdpPolicyRuleTrigger }}"
           crowdstrike.pattern_id: "{{ parsed_event.message.event.PatternId }}"
           crowdstrike.previous_privileges: "{{ parsed_event.message.event.PreviousPrivileges }}"
@@ -274,7 +350,6 @@ stages:
           host.name: "{{ parsed_event.message.event.SourceEndpointHostName }}"
           event.action: "{{ parsed_event.message.event.IdpPolicyRuleAction }}"
           rule.name: "{{ parsed_event.message.event.IdpPolicyRuleName }}"
-          source.geo.country_iso_code: "{{ parsed_event.message.event.LocationCountryCode }}"
           source.ip: "{{ parsed_event.message.event.SourceEndpointIpAddress }}"
           threat.tactic.name: "{{ parsed_event.message.event.Tactic }}"
           threat.technique.name: "{{ parsed_event.message.event.Technique }}"
@@ -547,8 +622,8 @@ stages:
 
           crowdstrike.customer_id: "{{parsed_event.message.metadata.customerIDString}}"
           crowdstrike.detect_id: "{{parsed_event.message.event.DetectId}}"
-          crowdstrike.detect_name: "{{parsed_event.message.event.DetectName}}"
-          crowdstrike.detect_description: "{{parsed_event.message.event.DetectDescription}}"
+          crowdstrike.detect_name: "{{parsed_event.message.event.DetectName or parsed_event.message.event.Name}}"
+          crowdstrike.detect_description: "{{parsed_event.message.event.DetectDescription or parsed_event.message.event.Description}}"
           crowdstrike.event_objective: "{{parsed_event.message.event.Objective}}"
 
           agent.id: "{{parsed_event.message.event.SensorId}}"
@@ -637,3 +712,144 @@ stages:
           user.id: "{{parsed_event.message.event.UserUUID}}"
           user.name: "{{parsed_event.message.event.UserID}}"
           file.name: "{{parsed_event.message.event.ExecutionMetadata.ReportFileName}}"
+
+  api_activity_audit_event:
+    actions:
+      - set:
+          crowdstrike.operation_name: "{{parsed_event.message.event.OperationName}}"
+          crowdstrike.customer_id: "{{parsed_event.message.event.Attributes.cid}}"
+          event.category: ["api"]
+          http.request.method: "{{parsed_event.message.event.Attributes.request_method}}"
+          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes}}"
+          http.response.status_code: "{{parsed_event.message.event.Attributes.status_code}}"
+          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces}}"
+          service.name: "{{parsed_event.message.event.ServiceName}}"
+          trace.id: "{{parsed_event.message.event.Attributes.trace_id}}"
+          url.query: "{{parsed_event.message.event.Attributes.request_query}}"
+          url.path: "{{parsed_event.message.event.Attributes.request_path}}"
+          user_agent.original: "{{parsed_event.message.event.Attributes.user_agent}}"
+      - set:
+          http.request.mime_type: "{{parsed_event.message.event.Attributes.consumes[1:-1]|join()}}"
+        filter: "{{parsed_event.message.event.Attributes.consumes | first == '[' and parsed_event.message.event.Attributes.consumes | last == ']'}}"
+      - set:
+          http.response.mime_type: "{{parsed_event.message.event.Attributes.produces[1:-1]|join()}}"
+        filter: "{{parsed_event.message.event.Attributes.produces | first == '[' and parsed_event.message.event.Attributes.produces | last == ']'}}"
+      - set:
+          event.outcome: >
+            {%- if parsed_event.message.event.Success -%}
+              success
+            {%- else -%}
+              failure
+            {%- endif -%}
+        filter: '{{parsed_event.message.event.get("OperationName") == "logged"}}'
+      - set:
+          source.ip: "{{parsed_event.message.event.UserIp}}"
+        filter: "{{parsed_event.message.event.UserIp | is_ipaddress}}"
+      - translate:
+        dictionary:
+          "logged": ["access"]
+        mapping:
+          crowdstrike.operation_name: event.type
+        fallback: ["info"]
+
+  automated_lead_summary_event:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.reference: "{{parsed_event.message.event.FalconHostLink}}"
+          event.url: "{{parsed_event.message.event.FalconHostLink}}"
+          event.start: "{{parsed_event.message.event.SignalStartTimestamp | string | to_rfc3339}}"
+          event.end: "{{parsed_event.message.event.SignalEndTimestamp | string | to_rfc3339}}"
+
+          observer.vendor: "CrowdStrike"
+          observer.product: "Falcon"
+
+          crowdstrike.lead_id: "{{parsed_event.message.event.LeadId}}"
+          crowdstrike.lead_name: "{{parsed_event.message.event.Name}}"
+          crowdstrike.lead_type: "{{parsed_event.message.event.LeadType}}"
+          crowdstrike.lead_score: "{{parsed_event.message.event.Score}}"
+          crowdstrike.composite_id: "{{parsed_event.message.event.CompositeId}}"
+          crowdstrike.signal_start_timestamp: "{{parsed_event.message.event.SignalStartTimestamp | string | to_rfc3339}}"
+          crowdstrike.signal_end_timestamp: "{{parsed_event.message.event.SignalEndTimestamp | string | to_rfc3339}}"
+          crowdstrike.signal_updated_timestamp: "{{parsed_event.message.event.SignalUpdatedTimestamp | string | to_rfc3339}}"
+
+      - set:
+          crowdstrike.threatgraph_indicators: >
+            {%- set indicators = [] -%}
+            {%- for item in parsed_event.message.event.ThreatgraphIndicators -%}
+            {%- set indicator = {} -%}
+            {%- set indicator_id = item.get("IndicatorId") -%}
+            {%- set signal_timestamp = item.get("SignalAssociationTimestamp") | string | to_rfc3339 -%}
+            {%- set pattern_id = item.get("PatternId") -%}
+            {%- set pattern_disposition = item.get("PatternDisposition") -%}
+            {%- set severity = item.get("Severity") -%}
+            {%- set process_id = item.get("ProcessId") -%}
+            {%- set host_id = item.get("HostId") -%}
+            {%- set hostname = item.get("Hostname") -%}
+            {%- set template_instance_id = item.get("TemplateInstanceId") -%}
+            {%- set description = item.get("Description") -%}
+            {%- set display_name = item.get("DisplayName") -%}
+            {%- set _ = indicator.update({"indicator_id":indicator_id, "signal_association_timestamp":signal_timestamp, "pattern_id":pattern_id, "pattern_disposition":pattern_disposition, "severity":severity, "process_id":process_id, "host_id":host_id, "hostname":hostname, "template_instance_id":template_instance_id, "description":description, "display_name":display_name}) -%}
+            {%- set _ = indicators.append(indicator) -%}
+            {%- endfor -%}
+            {{indicators}}
+        filter: "{{parsed_event.message.event.get('ThreatgraphIndicators') not in [None, []]}}"
+
+      - set:
+          threat.tactic.name: '{{parsed_event.message.event.MitreAttack | map(attribute="Tactic") | unique | list}}'
+          threat.tactic.id: '{{parsed_event.message.event.MitreAttack | map(attribute="TacticID") | unique | list}}'
+          threat.technique.name: '{{parsed_event.message.event.MitreAttack | map(attribute="Technique") | unique | list}}'
+          threat.technique.id: '{{parsed_event.message.event.MitreAttack | map(attribute="TechniqueID") | unique |list}}'
+        filter: "{{parsed_event.message.event.get('MitreAttack') not in [None, []]}}"
+
+      - set:
+          host.name: '{{parsed_event.message.event.ThreatgraphIndicators | map(attribute="Hostname") | unique | list}}'
+        filter: "{{parsed_event.message.event.get('ThreatgraphIndicators') not in [None, []]}}"
+
+  firewall_match_event:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.action: "{{parsed_event.message.event.EventType}}"
+          crowdstrike.host_id: "{{parsed_event.message.event.DeviceId}}"
+          crowdstrike.customer_id: "{{parsed_event.message.metadata.customerIDString}}"
+          crowdstrike.rule.family_id: "{{parsed_event.message.event.RuleFamilyID}}"
+          crowdstrike.rule.match_count.total: "{{parsed_event.message.event.MatchCount}}"
+          crowdstrike.rule.match_count.since_last_report: "{{parsed_event.message.event.MatchCountSinceLastReport}}"
+          destination.ip: "{{parsed_event.message.event.RemoteAddress}}"
+          destination.port: "{{parsed_event.message.event.RemotePort}}"
+          host.name: "{{parsed_event.message.event.HostName}}"
+          network.type: "{{parsed_event.message.event.Ipv}}"
+          process.command_line: "{{parsed_event.message.event.CommandLine}}"
+          process.name: "{{parsed_event.message.event.ImageFileName}}"
+          process.pid: "{{parsed_event.message.event.PID}}"
+          rule.category: "{{parsed_event.message.event.RuleGroupName}}"
+          rule.description: "{{parsed_event.message.event.RuleDescription}}"
+          rule.id: "{{parsed_event.message.event.RuleId}}"
+          rule.name: "{{parsed_event.message.event.RuleName}}"
+          rule.ruleset: "{{parsed_event.message.event.PolicyName}}"
+          source.ip: "{{parsed_event.message.event.LocalAddress}}"
+          source.port: "{{parsed_event.message.event.LocalPort}}"
+      - fallback: ""
+        dictionary:
+          "1": icmpv4
+          "6": tcp
+          "17": udp
+          "58": icmpv6
+        mapping:
+          parsed_event.message.event.Protocol: network.transport
+      - fallback: ""
+        dictionary:
+          "0": outbound
+          "1": inbound
+        mapping:
+          parsed_event.message.event.ConnectionDirection: network.direction
+      - fallback: ["info"]
+        dictionary:
+          "1": ["allowed"]
+          "2": ["denied"]
+        mapping:
+          parsed_event.message.event.RuleAction: event.type

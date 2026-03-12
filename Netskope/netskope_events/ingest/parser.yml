@@ -50,6 +50,11 @@ stages:
           host.name: "{{parsed_event.message.hostname}}"
           host.os.name: "{{parsed_event.message.os}}"
           host.os.version: "{{parsed_event.message.os_version}}"
+
+      - set:
+          client.ip: "{{parsed_event.message.userip}}"
+        filter: "{{parsed_event.message.userip | is_ipaddress}}"
+
       - set:
           source.ip: "{{parsed_event.message.srcip}}"
         filter: "{{parsed_event.message.srcip | is_ipaddress}}"
@@ -60,12 +65,14 @@ stages:
           source.geo.city_name: "{{parsed_event.message.src_location}}"
           source.geo.region_name: "{{parsed_event.message.src_region}}"
           source.geo.postal_code: "{{parsed_event.message.src_zipcode}}"
-          source.geo.country_iso_code: "{{parsed_event.message.src_country}}"
           source.geo.location.lat: "{{parsed_event.message.src_latitude}}"
           source.geo.location.lon: "{{parsed_event.message.src_longitude}}"
       - set:
           destination.ip: "{{parsed_event.message.dstip}}"
         filter: "{{parsed_event.message.dstip | is_ipaddress}}"
+      - set:
+          destination.ip: "{{parsed_event.message.dsthost}}"
+        filter: "{{parsed_event.message.dsthost | is_ipaddress}}"
 
       - set:
           destination.bytes: "{{parsed_event.message.server_bytes}}"
@@ -73,7 +80,6 @@ stages:
           destination.geo.city_name: "{{parsed_event.message.dst_location}}"
           destination.geo.region_name: "{{parsed_event.message.dst_region}}"
           destination.geo.postal_code: "{{parsed_event.message.dst_zipcode}}"
-          destination.geo.country_iso_code: "{{parsed_event.message.dst_country}}"
           destination.geo.location.lat: "{{parsed_event.message.dst_latitude}}"
           destination.geo.location.lon: "{{parsed_event.message.dst_longitude}}"
           rule.id: "{{parsed_event.message.policy_id}}"
@@ -104,6 +110,20 @@ stages:
           parsed_event.message.alert: event.kind
         fallback: "event"
       - set:
+          url.domain: "{{parsed_event.message.url.split('?')[0].split('/')[0] }}"
+          url.path: "/{{parsed_event.message.url.split('?')[0].split('/')[1:] | join('/') }}"
+          url.query: "{{parsed_event.message.url.split('?')[1]}}"
+        filter: "{{parsed_event.message.url | length > 0 and not parsed_event.message.url.startswith('http')}}"
+      - set:
+          url.domain: "{{parsed_event.message.url.split('?')[0].split('/')[2] }}"
+          url.path: "/{{parsed_event.message.url.split('?')[0].split('/')[3:] | join('/') }}"
+          url.query: "{{parsed_event.message.url.split('?')[1]}}"
+        filter: "{{parsed_event.message.url | length > 0 and parsed_event.message.url.startswith('http')}}"
+      - set:
+          url.full: "https://{{parsed_event.message.url}}"
+          url.scheme: "https"
+        filter: "{{parsed_event.message.url | length > 0 and not parsed_event.message.url.startswith('https') and 'HTTPS' in parsed_event.message.protocol}}"
+      - set:
           host.os.type: "macos"
           host.os.platform: "darwin"
         filter: '{{parsed_event.message.device in ["Mac Device", "iOS Device", "iPad", "iPhone"]}}'
@@ -123,7 +143,7 @@ stages:
         filter: "{{parsed_event.message.conn_endtime > 0}}"
       - set:
           user.roles: '["{{parsed_event.message.user_role}}"]'
-        filter: "{{parsed_event.message.user_role != null}}"
+        filter: "{{parsed_event.message.user_role | length > 0}}"
       - set:
           user.name: "{{extract_user_name.result.user_name}}"
           user.domain: "{{extract_user_name.result.user_domain}}"
@@ -144,6 +164,7 @@ stages:
           netskope.events.application.activity: "{{parsed_event.message.app_activity}}"
           netskope.events.access_method: "{{parsed_event.message.access_method}}"
           netskope.events.ccl: "{{parsed_event.message.ccl}}"
+          netskope.events.shared_credential_user: "{{parsed_event.message.shared_credential_user}}"
 
       - set:
           netskope.events.severity_id: "{{parsed_event.message.severity_id}}"
@@ -204,12 +225,12 @@ stages:
             {%- set rules = [] -%}
             {%- for rule in parsed_event.message.dlp_match_info[0].dlp_rules -%}
             {%- set _ = rules.append({
-              "name": rule.dlp_rule_name,
-              "score": rule.dlp_rule_score,
-              "severity": rule.dlp_rule_severity,
-              "count": rule.dlp_incident_rule_count,
-              "unique_count": rule.is_unique_count,
-              "data_identifiers": rule.dlp_data_identifiers
+              "name": rule.get('dlp_rule_name'),
+              "score": rule.get('dlp_rule_score'),
+              "severity": rule.get('dlp_rule_severity'),
+              "count": rule.get('dlp_incident_rule_count'),
+              "unique_count": rule.get('is_unique_count'),
+              "data_identifiers": rule.get('dlp_data_identifiers')
             }) -%}
             {%- endfor -%}
             {{rules}}
@@ -228,16 +249,26 @@ stages:
       - set:
           event.category: ["authentication"]
         filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+
       - translate:
         dictionary:
           "Login Successful": ["start"]
           "Login Failed": ["info"]
           "Logout Successful": ["end"]
-
         mapping:
           parsed_event.message.audit_log_event: event.type
         fallback: ["info"]
         filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+
+      - translate:
+        dictionary:
+          "Login Successful": "success"
+          "Login Failed": "failure"
+          "Logout Successful": "success"
+        mapping:
+          parsed_event.message.audit_log_event: event.outcome
+        filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+
       - set:
           event.category: ["iam"]
           event.type: ["change"]

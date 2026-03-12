@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from . import INTAKES_PATH, Validator
-from .constants import CheckResult
+from .constants import CheckResult, ValidationError
 
 
 class ManifestValidator(Validator):
@@ -26,7 +26,13 @@ class ManifestValidator(Validator):
 
 def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse.Namespace) -> None:
     if not manifest_file_path.is_file():
-        result.errors.append(f"manifest file (`{manifest_file_path.relative_to(INTAKES_PATH)}`) is missing")
+        result.errors.append(
+            ValidationError(
+                message="manifest file is missing",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_missing",
+            )
+        )
         return
 
     # check the format/module has a valid manifest
@@ -35,7 +41,14 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
             manifest_content = yaml.safe_load(fd)
 
     except Exception as any_error:
-        result.errors.append(f"manifest file cannot be loaded (`{any_error}`)")
+        result.errors.append(
+            ValidationError(
+                message="manifest file cannot be loaded",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                error=str(any_error),
+                code="manifest_invalid",
+            )
+        )
         return
 
     result.options["manifest_file_path"] = manifest_file_path
@@ -43,7 +56,13 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
     # check the format/module has a uuid
     manifest_uuid = manifest_content.get("uuid")
     if not manifest_uuid:
-        result.errors.append("no uuid found in the manifest file")
+        result.errors.append(
+            ValidationError(
+                message="no uuid found in the manifest file",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_uuid_missing",
+            )
+        )
 
     else:
         result.options["manifest_uuid"] = manifest_uuid
@@ -51,7 +70,13 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
     # check the format/module has a name
     manifest_name = manifest_content.get("name")
     if not manifest_name:
-        result.errors.append("no name found in the manifest file")
+        result.errors.append(
+            ValidationError(
+                message="no name found in the manifest file",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_name_missing",
+            )
+        )
 
     else:
         result.options["manifest_name"] = manifest_name
@@ -59,17 +84,41 @@ def check_manifest(manifest_file_path: Path, result: CheckResult, args: argparse
     # check the format/module has a slug
     manifest_slug = manifest_content.get("slug")
     if not manifest_slug:
-        result.errors.append("no slug found in the manifest file")
+        result.errors.append(
+            ValidationError(
+                message="no slug found in the manifest file",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_slug_missing",
+            )
+        )
 
     elif not re.match(r"^[a-z]([a-z]|-|\d)*$", manifest_slug):
-        result.errors.append("incorrect slug in the manifest file")
+        result.errors.append(
+            ValidationError(
+                message="incorrect slug in the manifest file",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_slug_incorrect",
+            )
+        )
 
     else:
         result.options["manifest_slug"] = manifest_slug
 
     # check the format/module has a description
     if "description" not in manifest_content:
-        result.errors.append("no description found in the manifest file")
+        result.errors.append(
+            ValidationError(
+                message="no description found in the manifest file",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_description_missing",
+            )
+        )
 
     elif not args.ignore_empty_descriptions and len(manifest_content.get("description")) == 0:
-        result.errors.append("description is found, but empty")
+        result.errors.append(
+            ValidationError(
+                message="description is found, but empty",
+                file_path=str(manifest_file_path.relative_to(INTAKES_PATH)),
+                code="manifest_description_empty",
+            )
+        )

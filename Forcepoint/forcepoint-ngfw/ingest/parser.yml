@@ -1,0 +1,306 @@
+name: forcepoint-ngfw
+pipeline:
+  - name: parsed_event
+    filter: "{{ original.message.startswith('CEF:') }}"
+    external:
+      name: cef.parse-cef
+
+  - name: parsed_event
+    filter: "{{ original.message.startswith('LEEF:') }}"
+    external:
+      name: leef.parse-leef
+
+  - name: parsed_date
+    filter: "{{parsed_event.message.devTimeFormat == 'MMM dd yyyy HH:mm:ss'}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.devTime}}"
+        output_field: datetime
+        format: "%b %d %Y %H:%M:%S"
+        timezone: UTC
+
+  - name: parsed_date
+    filter: "{{parsed_event.message.rt is defined and parsed_event.message.devTimeFormat is not defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: datetime
+
+  - name: parsed_date
+    filter: "{{parsed_event.message.devTime is defined and parsed_event.message.devTimeFormat is not defined and parsed_event.message.rt is not defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.devTime}}"
+        output_field: datetime
+        format: "%Y-%m-%d %H:%M:%S"
+        timezone: UTC
+
+  - name: parse_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.msg}}"
+        output_field: message
+        pattern: "%{DHCP_REQUEST}|%{DHCP_REPLY}|%{VPN_TRIGGER}|%{COMMAND_HISTORY}|%{OTHER}"
+        custom_patterns:
+          DHCP_REQUEST: "Message type\\s+%{WORD:dhcp_type}\\.\\s+XID:\\s+(0x)?%{NOTSPACE:xid}\\.\\s+Relay ip\\s+%{IP:dhcp_relay_ip}\\.\\s+Relayed to\\s+%{IP:relayed_to}(\\.\\s+Server ID:\\s+%{IP:server_id})?\\.\\s+Hostname:\\s+%{GREEDYDATA:hostname}\\."
+          DHCP_REPLY: "Message type\\s+%{WORD:dhcp_type}\\.\\s+XID:\\s+(0x)?%{NOTSPACE:xid}\\.\\s+Relay ip\\s+%{IP:dhcp_relay_ip}\\.\\s+Server ID:\\s+%{IP:server_id}\\.\\s+DNS:\\s+%{IP:dns_ip}\\."
+          VPN_TRIGGER: "VPN trigger ipv[4-6]\\(%{IP:vpn_src_ip}\\)\\s*->\\s*ipv[4-6]\\(%{IP:vpn_dst_ip}\\),\\s*tunnel\\s+%{GREEDYDATA:tunnel_id}"
+          COMMAND_HISTORY: "(%{GREEDYDATA:tty}\\s+)?(HISTORY|history):\\s+PID\\\\=%{NUMBER:pid}\\s+UID\\\\=%{NUMBER:uid}\\s+USER\\\\=%{USERNAME:process_user}\\s+%{GREEDYDATA:command_line}"
+          OTHER: "%{GREEDYDATA:reason}"
+
+  - name: set_cef_fields
+    filter: "{{ original.message.startswith('CEF:') }}"
+
+  - name: set_leef_fields
+    filter: "{{ original.message.startswith('LEEF:') }}"
+
+  - name: set_fields
+  - name: set_ecs_categorization
+
+stages:
+  set_cef_fields:
+    actions:
+      - set:
+          # was SignatureId or EventTypeId in spec but those fields are not present
+          event.code: "{{parsed_event.message.DeviceEventClassID}}"
+          event.action: "{{parsed_event.message.Name}}"
+          # instead of observer.id
+          device.id: "{{parsed_event.message.deviceExternalId}}"
+          # Store raw outcome for later processing
+          forcepoint.firewall.action: "{{parsed_event.message.act}}"
+
+  set_leef_fields:
+    actions:
+      - set:
+          event.action: "{{parsed_event.message.DeviceEventClassID}}"
+          observer.name: "{{parsed_event.message.sender}}"
+
+          # Store raw outcome for later processing
+          forcepoint.firewall.action: "{{parsed_event.message.action}}"
+
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+
+          # Set default category and type
+          # If will be modified later in ecs_categorization stage
+          event.category: ["network"]
+          event.type: ["info"]
+          event.kind: "event"
+
+          observer.vendor: "{{parsed_event.message.DeviceVendor | lower}}"
+          observer.type: "{{parsed_event.message.DeviceProduct or 'Firewall'}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+
+          observer.hostname: "{{parsed_event.message.dvchost}}"
+          observer.ingress.interface.name: "{{parsed_event.message.deviceInboundInterface}}"
+          observer.egress.interface.name: "{{parsed_event.message.deviceOutboundInterface}}"
+
+          event.severity: "{{parsed_event.message.Severity}}"
+          event.module: "{{parsed_event.message.deviceFacility}}"
+
+          event.reason: "{{parse_message.message.reason or parsed_event.message.originalSituation}}"
+          event.message: "{{parsed_event.message.msg or parsed_event.message.message}}"
+
+          # Store protocol number in proper ECS field
+          network.iana_number: "{{parsed_event.message.proto}}"
+          network.application: "{{parsed_event.message.app}}"
+
+          source.nat.port: "{{parsed_event.message.sourceTranslatedPort}}"
+          source.port: "{{parsed_event.message.spt}}"
+          source.mac: "{{parsed_event.message.srcMAC}}"
+
+          destination.port: "{{parsed_event.message.dpt}}"
+          destination.nat.port: "{{parsed_event.message.destinationTranslatedPort}}"
+
+          user.name: "{{parsed_event.message.usrName}}"
+
+          host.name: "{{parsed_event.message.sender}}"
+
+          forcepoint.firewall.rule.id: "{{parsed_event.message.cs1}}"
+          forcepoint.firewall.rule.nat_id: "{{parsed_event.message.cs2}}"
+
+          forcepoint.firewall.dhcp.type: "{{parse_message.message.dhcp_type}}"
+          forcepoint.firewall.dhcp.dns: "{{parse_message.message.dns_ip}}"
+          forcepoint.firewall.dhcp.relay: "{{parse_message.message.dhcp_relay_ip}}"
+          forcepoint.firewall.dhcp.server: "{{parse_message.message.server_id}}"
+          forcepoint.firewall.dhcp.hostname: "{{parse_message.message.hostname}}"
+
+          forcepoint.firewall.vpn.tunnel_id: "{{parse_message.message.tunnel_id}}"
+
+          # Process fields
+          process.pid: "{{parse_message.message.pid}}"
+          process.user.name: "{{parse_message.message.process_user}}"
+          process.user.id: "{{parse_message.message.uid}}"
+          process.command_line: "{{parse_message.message.command_line}}"
+          process.name: "{{parsed_event.message.process or parsed_event.message.processName or parsed_event.message.ProcessName}}"
+          process.thread.id: "{{parsed_event.message.ThreadID or parsed_event.message.threadID or parsed_event.message.process.thread.id}}"
+
+      # Translate protocol numbers to names
+      - translate:
+        dictionary:
+          "1": icmp
+          "2": igmp
+          "6": tcp
+          "17": udp
+          "41": ipv6
+          "47": gre
+          "50": esp
+          "51": ah
+          "58": ipv6-icmp
+          "89": ospf
+          "132": sctp
+        mapping:
+          network.iana_number: network.transport
+
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+        filter: "{{parsed_event.message.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.dst}}"
+        filter: "{{parsed_event.message.dst | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.sourceTranslatedAddress}}"
+        filter: "{{parsed_event.message.sourceTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parsed_event.message.destinationTranslatedAddress}}"
+        filter: "{{parsed_event.message.destinationTranslatedAddress | is_ipaddress}}"
+
+      - set:
+          observer.ip: "{{parsed_event.message.dvc}}"
+        filter: "{{parsed_event.message.dvc | is_ipaddress}}"
+
+  set_ecs_categorization:
+    actions:
+      # Event outcome mapping to ECS standard values. Default is 'unknown' if no match later.
+      - set:
+          event.outcome: unknown
+
+      - set:
+          event.outcome: success
+        filter: >-
+          {{final.forcepoint.firewall.action | lower in ['allow', 'permit', 'accept'] or
+          'allow' in final.event.action | lower or 'permit' in final.event.action | lower or
+          'accept' in final.event.action | lower or 'success' in final.event.action | lower}}
+
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{final.forcepoint.firewall.action | lower in ['discard', 'deny', 'block', 'refuse', 'reject'] or
+          'discard' in final.event.action | lower or 'deny' in final.event.action | lower or
+          'denied' in final.event.action | lower or 'block' in final.event.action | lower or
+          'refuse' in final.event.action | lower or 'reject' in final.event.action | lower or
+          'fail' in final.event.action | lower}}
+
+      # Event type: allowed
+      - set:
+          event.type: ["allowed"]
+        filter: >-
+          {{final.forcepoint.firewall.action | lower in ['allow', 'permit', 'accept'] or
+          'allow' in final.event.action | lower or 'permit' in final.event.action | lower or
+          'accept' in final.event.action | lower}}
+
+      # Event type: denied
+      - set:
+          event.type: ["denied"]
+        filter: >-
+          {{final.forcepoint.firewall.action | lower in ['discard', 'deny', 'block', 'refuse', 'reject'] or
+          'discard' in final.event.action | lower or 'deny' in final.event.action | lower or
+          'denied' in final.event.action | lower or 'block' in final.event.action | lower or
+          'refuse' in final.event.action | lower or 'reject' in final.event.action | lower}}
+
+      # Event type: connection
+      - set:
+          event.type: ["connection"]
+        filter: "{{'connection' in final.event.action | lower}}"
+
+      # Event type: start
+      - set:
+          event.type: ["start"]
+        filter: >-
+          {{'start' in final.event.action | lower or 'open' in final.event.action | lower or
+          'login' in final.event.action | lower or 'logon' in final.event.action | lower or
+          'opened' in final.event.action | lower}}
+
+      # Event type: end
+      - set:
+          event.type: ["end"]
+        filter: >-
+          {{'end' in final.event.action | lower or 'close' in final.event.action | lower or
+          'closed' in final.event.action | lower or 'logout' in final.event.action | lower or
+          'logoff' in final.event.action | lower}}
+
+      # Event type: creation
+      - set:
+          event.type: ["creation"]
+        filter: >-
+          {{'create' in final.event.action | lower or 'creation' in final.event.action | lower or
+          'add' in final.event.action | lower or 'added' in final.event.action | lower}}
+
+      # Event type: change
+      - set:
+          event.type: ["change"]
+        filter: >-
+          {{'change' in final.event.action | lower or 'changed' in final.event.action | lower or
+          'modify' in final.event.action | lower or 'modified' in final.event.action | lower or
+          'update' in final.event.action | lower or 'updated' in final.event.action | lower }}
+
+      # Event type: deletion
+      - set:
+          event.type: ["deletion"]
+        filter: >-
+          {{'delete' in final.event.action | lower or 'deleted' in final.event.action | lower or
+          'remove' in final.event.action | lower or 'removed' in final.event.action | lower}}
+
+      # Event category: authentication
+      - set:
+          event.category: ["authentication"]
+        filter: >-
+          {{'login' in final.event.action | lower or 'logon' in final.event.action | lower or
+          'logout' in final.event.action | lower or 'logoff' in final.event.action | lower or
+          'auth' in final.event.action | lower}}
+
+      # Event category: configuration
+      - set:
+          event.category: ["configuration"]
+        filter: >-
+          {{'config' in final.event.action | lower or 'policy' in final.event.action | lower or
+          'setting' in final.event.action | lower or
+          (
+            ('creation' in final.event.type or 'change' in final.event.type or 'deletion' in final.event.type) and
+            'authentication' not in final.event.category | default([]) 
+          )}}
+
+      # Event category: network double check after all previous categorizations
+      - set:
+          event.category: ["network"]
+        filter: >-
+          {{'connection' in final.event.type or
+          final.network.iana_number is defined or
+          final.source.ip is defined or
+          final.destination.ip is defined}}
+
+      # Event category: process
+      - set:
+          event.category: ["process"]
+        filter: >-
+          {{'command' in final.event.action | lower or
+          final.process.pid is defined or
+          final.process.command_line is defined}}
+
+      # Event category: file
+      - set:
+          event.category: ["file"]
+        filter: "{{'file' in final.event.action | lower}}"
+
+      - set:
+          event.kind: "alert"
+        filter: "{{'alert' in final.event.message | lower or 'alert' in final.event.action | lower}}"

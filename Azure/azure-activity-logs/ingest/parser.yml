@@ -1,0 +1,108 @@
+name: azure-activity-logs
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_common_fields
+
+  - name: set_administrative
+    filter: "{{parsed_event.message.category.value == 'Administrative'}}"
+
+  - name: set_alerts
+    filter: "{{parsed_event.message.category.value == 'Alert'}}"
+
+  - name: set_security
+    filter: "{{parsed_event.message.category.value == 'Security'}}"
+
+  - name: set_policy
+    filter: "{{parsed_event.message.category.value == 'Policy'}}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event.message.eventTimestamp}}"
+          event.provider: "{{parsed_event.message.resourceProviderName.value}}"
+          event.action: "{{parsed_event.message.operationName.value}}"
+          event.dataset: "{{parsed_event.message.category.value}}"
+          log.level: "{{parsed_event.message.level}}"
+          azure.activity_logs.operation_id: "{{parsed_event.message.operationId}}"
+          azure.activity_logs.correlation_id: "{{parsed_event.message.correlationId}}"
+          azure.activity_logs.resource.group: "{{parsed_event.message.resourceGroupName}}"
+          azure.activity_logs.resource.type: "{{parsed_event.message.resourceType.value}}"
+          azure.activity_logs.resource.id: "{{parsed_event.message.resourceId}}"
+          azure.activity_logs.channels: "{{parsed_event.message.channels}}"
+
+          observer.name: "{{parsed_event.message.identity.claims.name}}"
+
+  set_administrative:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          source.user.full_name: "{{parsed_event.message.claims.name}}"
+          source.user.name: "{{parsed_event.message.caller}}"
+          source.ip: "{{parsed_event.message.claims.ipaddr}}"
+          client.ip: "{{parsed_event.message.httpRequest.clientIpAddress}}"
+          http.request.id: "{{parsed_event.message.httpRequest.clientRequestId}}"
+          http.request.method: "{{parsed_event.message.httpRequest.method}}"
+
+  set_alerts:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          event.reason: "{{parsed_event.message.description}}"
+          source.user.name: "{{parsed_event.message.caller}}"
+          azure.activity_logs.id: "{{parsed_event.message.eventDataId}}"
+          rule.reference: "{{parsed_event.message.properties.RuleUri}}"
+          rule.name: "{{parsed_event.message.properties.RuleName}}"
+          rule.description: "{{parsed_event.message.properties.RuleDescription}}"
+
+  set_security:
+    actions:
+      - set:
+          event.category: ["malware"]
+          event.type: ["info"]
+
+      - set:
+          azure.activity_logs.id: "{{parsed_event.message.eventDataId}}"
+          event.reason: "{{parsed_event.message.description}}"
+          rule.reference: "{{parsed_event.message.properties.RuleUri}}"
+          rule.name: "{{parsed_event.message.properties.RuleName}}"
+          rule.description: "{{parsed_event.message.properties.RuleDescription}}"
+          process.command_line: "{{parsed_event.message.properties.commandLine}}"
+          process.pid: "{{parsed_event.message.properties.processId}}"
+          process.name: "{{parsed_event.message.properties.processName}}"
+          process.parent.name: "{{parsed_event.message.properties.parentProcess}}"
+          process.parent.pid: "{{parsed_event.message.properties.get('parentProcess id')}}"
+          process.user.name: "{{parsed_event.message.properties.userName}}"
+          process.user.id: "{{parsed_event.message.properties.userSID}}"
+          process.user.domain: "{{parsed_event.message.properties.domainName}}"
+
+  set_policy:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+
+      - set:
+          source.user.id: "{{parsed_event.message.caller}}"
+          event.reason: "{{parsed_event.message.description}}"
+          azure.activity_logs.resource.location: "{{parsed_event.message.properties.resourceLocation}}"
+          azure.activity_logs.policies: >
+            {%- set result = [] -%}
+            {%- for item in parsed_event.message.properties.policies | from_json -%}
+              {%- set record = {'definition_id': item.get('policyDefinitionId'), 'definition_name': item.get('policyDefinitionName'), 'assignment_id': item.get('policyAssignmentId'), 'assignment_name': item.get('policyAssignmentName') } -%}
+              {%- set _ = result.append(record) -%}
+            {%- endfor -%}
+            {{ result }}
