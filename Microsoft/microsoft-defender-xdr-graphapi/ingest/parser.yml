@@ -1,0 +1,169 @@
+name: microsoft-defender-xdr-graphapi
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: set_alert_fields
+    filter: "{{json_event.message.get('@odata.type') == '#microsoft.graph.security.alert'}}"
+
+  - name: set_evidence_fields
+    filter: "{{json_event.message.get('@odata.type').endswith('Evidence')}}"
+
+stages:
+  set_alert_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["info"]
+          event.dataset: "alert_info"
+
+      - set:
+          "@timestamp": "{{json_event.message.createdDateTime}}"
+
+          service.name: "{{json_event.message.serviceSource}}"
+          service.type: "{{json_event.message.detectionSource}}"
+
+          organization.id: "{{json_event.message.tenantId}}"
+
+          event.start: "{{json_event.message.firstActivityDateTime}}"
+          event.end: "{{json_event.message.lastActivityDateTime}}"
+
+          threat.technique.id: "{{json_event.message.mitreTechniques}}"
+
+          event.reason: "{{json_event.message.description}}"
+          event.reference: "{{json_event.message.alertWebUrl}}"
+
+          user.name: "{{json_event.message.actorDisplayName}}"
+          microsoft.defender.threat.category: "{{json_event.message.category}}"
+          microsoft.defender.alert.severity: "{{json_event.message.severity}}"
+          microsoft.defender.alert.title: "{{json_event.message.title}}"
+          microsoft.defender.alert.id: "{{json_event.message.id}}"
+          microsoft.defender.alert.status: "{{json_event.message.status}}"
+          microsoft.defender.alert.classification: "{{json_event.message.classification}}"
+          microsoft.defender.alert.determination: "{{json_event.message.determination}}"
+          microsoft.defender.alert.recommendedActions: "{{json_event.message.recommendedActions}}"
+
+          microsoft.defender.incident.reference: "{{json_event.message.incidentWebUrl}}"
+          microsoft.defender.incident.id: "{{json_event.message.incidentId}}"
+
+          microsoft.defender.threat.name: "{{json_event.message.threatDisplayName}}"
+          microsoft.defender.threat.family: "{{json_event.message.threatFamilyName}}"
+
+  set_evidence_fields:
+    actions:
+      - set:
+          event.kind: "enrichment"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+          event.dataset: "alert_evidence"
+
+      - set:
+          microsoft.defender.threat.suspicion_level: "Suspicious"
+        filter: "{{'suspicious' in json_event.message.roles}}"
+
+      - set:
+          microsoft.defender.threat.suspicion_level: "Compromised"
+        filter: "{{'compromised' in json_event.message.roles}}"
+
+      - set:
+          "@timestamp": "{{json_event.message.createdDateTime}}"
+
+      - set:
+          registry.key: "{{json_event.message.registryKey}}"
+          registry.path: "{{json_event.message.registryHive}}\\{{json_event.message.registryKey}}"
+        filter: "{{json_event.message.registryHive | length > 0}}"
+
+      - translate:
+        dictionary:
+          "HKEY_LOCAL_MACHINE": "HKLM"
+          "HKEY_CURRENT_CONFIG": "HKCC"
+          "HKEY_CLASSES_ROOT": "HKCR"
+          "HKEY_CURRENT_USER": "HKCU"
+          "HKEY_USERS": "HKU"
+        mapping:
+          json_event.message.registryHive: registry.hive
+
+      - set:
+          registry.value: "{{json_event.message.registryValueName}}"
+          registry.data.type: "{{json_event.message.registryValueType}}"
+
+      - set:
+          registry.data.strings: "{{json_event.message.registryValue}}"
+        filter: "{{json_event.message.registryValueType == 'REG_SZ'}}"
+
+      - set:
+          registry.data.bytes: "{{json_event.message.registryValue}}"
+        filter: "{{json_event.message.registryValueType != 'REG_SZ'}}"
+
+      - set:
+          process.pid: "{{json_event.message.processId}}"
+          process.command_line: "{{json_event.message.processCommandLine}}"
+          process.start: "{{json_event.message.processCreationDateTime}}"
+          process.name: "{{json_event.message.imageFile.fileName}}"
+          process.args: "{{json_event.message.args}}"
+
+      - set:
+          container.id: "{{json_event.message.containerId}}"
+          container.name: "{{json_event.message.name}}"
+        filter: "{{json_event.message.get('@odata.type') == '#microsoft.graph.security.containerEvidence'}}"
+
+      - set:
+          file.name: "{{json_event.message.imageFile.fileName}}"
+          file.directory: "{{json_event.message.imageFile.filePath}}"
+          file.size: "{{json_event.message.imageFile.fileSize}}"
+          file.hash.sha1: "{{json_event.message.imageFile.sha1}}"
+          file.hash.sha256: "{{json_event.message.imageFile.sha256}}"
+          file.pe.company: "{{json_event.message.imageFile.filePublisher}}"
+        filter: "{{json_event.message.get('imageFile') != None}}"
+
+      - set:
+          file.name: "{{json_event.message.fileDetails.fileName}}"
+          file.directory: "{{json_event.message.fileDetails.filePath}}"
+          file.size: "{{json_event.message.fileDetails.fileSize}}"
+          file.hash.sha1: "{{json_event.message.fileDetails.sha1}}"
+          file.hash.sha256: "{{json_event.message.fileDetails.sha256}}"
+          file.pe.company: "{{json_event.message.fileDetails.filePublisher}}"
+        filter: "{{json_event.message.get('fileDetails') != None}}"
+
+      - set:
+          process.parent.pid: "{{json_event.message.parentProcessId}}"
+          process.parent.start: "{{json_event.message.parentProcessCreationDateTime}}"
+
+          user.name: "{{json_event.message.userAccount.accountName}}"
+          user.domain: "{{json_event.message.userAccount.domainName}}"
+          user.id: "{{json_event.message.userAccount.userSid}}"
+          user.email: "{{json_event.message.userAccount.userPrincipalName}}"
+          user.full_name: "{{json_event.message.userAccount.displayName}}"
+
+          host.id: "{{json_event.message.mdeDeviceId}}"
+          host.name: "{{json_event.message.deviceDnsName}}"
+          host.os.full: "{{json_event.message.osPlatform}}"
+          host.os.version: "{{json_event.message.osBuild}}"
+          host.ip: "{{json_event.message.ipInterfaces}}"
+
+          cloud.instance.id: "{{json_event.message.vmMetadata.vmId}}"
+          cloud.provider: "{{json_event.message.vmMetadata.cloudProvider}}"
+          cloud.entity.id: "{{json_event.message.vmMetadata.resourceId}}"
+
+          microsoft.defender.entity.subscription_id: "{{json_event.message.vmMetadata.subscriptionId}}"
+          microsoft.defender.alert.id: "{{json_event.message.alertId}}"
+          microsoft.defender.evidence.type: "{{json_event.message.get('@odata.type').removeprefix('#microsoft.graph.security.')}}"
+          microsoft.defender.evidence.role: "{{json_event.message.roles[0]}}"
+          microsoft.defender.evidence.roles: "{{json_event.message.roles}}"
+          microsoft.defender.threat.detection_status: "{{json_event.message.detectionStatus}}"
+          microsoft.defender.threat.last_remediation_state: "{{json_event.message.remediationStatus}}"
+          microsoft.defender.threat.severity: "{{json_event.message.riskScore}}"
+          microsoft.defender.device.health_status: "{{json_event.message.healthStatus}}"
+          microsoft.defender.device.onboarding_status: "{{json_event.message.onboardingStatus}}"
+
+          url.original: "{{json_event.message.url}}"
+
+      - set:
+          source.ip: "{{json_event.message.ipAddress}}"
+        filter: "{{'attacker' in json_event.message.roles or 'source' in json_event.message.roles}}"
+
+      - set:
+          destination.ip: "{{json_event.message.ipAddress}}"
+        filter: "{{'attacked' in json_event.message.roles or 'destination' in json_event.message.roles}}"
