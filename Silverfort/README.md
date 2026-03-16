@@ -2,7 +2,7 @@
 
 ## Description
 
-Couche de protection supplémentaire avec l’authentification multifacteur (MFA) pour Windows Logon, RDP et VPN
+Additional protection layer with Multi-Factor Authentication (MFA) for Windows Logon, RDP, and VPN access.
 
 ## Intakes
 

@@ -3,30 +3,27 @@ ignored_values:
   - n/a
   - N/A
   - undefined
+  - '"n/a"'
+  - '"N/A"'
 pipeline:
   - name: parsed_event
     description: ""
-    filter: '{{original.message.startswith("CEF:")}}'
-    external:
-      name: cef.parse-cef
-      properties:
-        input_field: "{{original.message}}"
-        output_field: message
-  - name: parsed_event
-    description: ""
     filter: >-
-      {{original.message.startswith("0|Silverfort") and
-      "DailyAuthStatistic" not in original.message}}
+      {{original.message.startswith("CEF:") or
+      (original.message.startswith("0|Silverfort") and "DailyAuthStatistic" not in
+      original.message)}}
     external:
       name: cef.parse-cef
       properties:
-        input_field: CEF:{{original.message}}
+        input_field: >-
+          {{original.message if original.message.startswith("CEF:") else "CEF:" +
+          original.message}}
         output_field: message
   - name: parsed_event_daily
     description: ""
     filter: >-
-      {{original.message.startswith("0|Silverfort") and
-      "DailyAuthStatistic" in original.message}}
+      {{original.message.startswith("0|Silverfort") and "DailyAuthStatistic" in
+      original.message}}
     external:
       name: kv.parse-kv
       properties:
@@ -97,11 +94,19 @@ stages:
         filter: "{{parsed_event.message is defined}}"
         name: set
       - set:
+          event.outcome: success
+        filter: '{{parsed_event.message is defined and parsed_event.message.cs2 is defined and parsed_event.message.cs2.startswith("Allowed")}}'
+        name: set
+      - set:
+          event.outcome: failure
+        filter: '{{parsed_event.message is defined and parsed_event.message.cs2 is defined and (parsed_event.message.cs2.startswith("Denied") or parsed_event.message.cs2.startswith("denied"))}}'
+        name: set
+      - set:
           source.ip: "{{parsed_event.message.src}}"
           source.domain: "{{parsed_event.message.sntdom}}"
         filter: >-
-          {{parsed_event.message.src is defined and parsed_event.message.src !=
-          "undefined"}}
+          {{parsed_event.message is defined and parsed_event.message.src is
+          defined and parsed_event.message.src != "undefined"}}
         name: set
       - set:
           host.name: "{{parsed_event.message.shost}}"
@@ -120,7 +125,8 @@ stages:
       - set:
           service.name: "{{parsed_event.message.destinationServiceName}}"
         filter: >-
-          {{parsed_event.message.destinationServiceName is defined and
+          {{parsed_event.message is defined and
+          parsed_event.message.destinationServiceName is defined and
           parsed_event.message.destinationServiceName != ""}}
         name: set
       - set:
@@ -151,8 +157,8 @@ stages:
             - info
           event.category:
             - authentication
-          observer.vendor: "{{parsed_event_daily.message.DeviceVendor}}"
-          observer.product: "{{parsed_event_daily.message.DeviceProduct}}"
+          observer.vendor: "Silverfort"
+          observer.product: "Universal MFA"
           observer.version: "{{parsed_event_daily.message.DeviceVersion}}"
           observer.hostname: "{{parsed_event_daily.message.server_name}}"
           silverfort.data_type: "{{parsed_event_daily.message.dataType}}"
