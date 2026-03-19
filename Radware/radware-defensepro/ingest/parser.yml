@@ -1,5 +1,4 @@
 name: radware-defensepro
-ignored_values: []
 pipeline:
   - name: grok_event_parser
     description: First parsing stage using grok patterns
@@ -41,7 +40,6 @@ pipeline:
         input_field: "{{grok_event_parser.message.date}}"
         output_field: datetime
         format: "%d-%m-%Y %H:%M:%S"
-
   - name: set_radware_fields
 
 stages:
@@ -49,6 +47,8 @@ stages:
     actions:
       - set:
           "@timestamp": "{{date_parser.datetime}}"
+          observer.vendor: "Radware"
+          observer.product: "DefensePro"
           event.code: "{{grok_event_parser.message.Radware_id}}"
           event.action: "{{grok_event_parser.message.DefensePro_action_name}}"
 
@@ -60,13 +60,12 @@ stages:
           network.packets: "{{grok_event_parser.message.DefensePro_packet_count}}"
           network.protocol: "{{grok_event_parser.message.Radware_protocol}}"
 
-          host.risk.calculated_level: "{{grok_event_parser.message.DefensePro_risk}}"
-
           threat.feed.name: "{{grok_event_parser.message.DefensePro_category}}"
           threat.technique.name: "{{grok_event_parser.message.Radware_attack_name}}"
 
           log.level: "{{grok_event_parser.message.DefensePro_severity}}"
 
+          radware.defensepro.risk: "{{grok_event_parser.message.DefensePro_risk}}"
           radware.defensepro.context: "{{grok_event_parser.message.Radware_context}}"
           radware.defensepro.volume: "{{grok_event_parser.message.DefensePro_volume}}"
           radware.defensepro.MPLS.RD: "{{grok_event_parser.message.DefensePro_MPLS_RD}}"
@@ -77,3 +76,21 @@ stages:
           radware.defensepro.attack.status: "{{grok_event_parser.message.DefensePro_attack_status}}"
           radware.defensepro.physical.port: "{{grok_event_parser.message.DefensePro_physical_port}}"
           radware.defensepro.baseline.status: "{{grok_event_parser.message.DefensePro_baseline_status}}"
+
+      - set:
+          event.kind: "alert"
+          event.category: ["network", "intrusion_detection"]
+          event.type: "denied"
+        filter: "{{grok_event_parser.message.get('Radware_attack_name') != None}}"
+
+      - set:
+          event.kind: "event"
+          event.category: ["network"]
+          event.type: "start"
+        filter: "{{grok_event_parser.message.get('DefensePro_baseline_status') != None}}"
+
+      - set:
+          event.kind: "event"
+          event.category: ["authentication"]
+          event.type: "info"
+        filter: "{{grok_event_parser.message.get('login_type') != None or ( grok_event_parser.message.get('Radware_attack_name') == None and grok_event_parser.message.get('DefensePro_baseline_status') == None )}}"
