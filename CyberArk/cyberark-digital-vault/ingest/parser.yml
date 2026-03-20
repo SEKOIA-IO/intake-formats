@@ -1,224 +1,414 @@
-name: cyberark-digital-vault
-pipeline:
-  - name: parsed_event
-    filter: "{{'LEEF:' in original.message}}"
-    external:
-      name: leef.parse-leef
-      properties:
-        input_field: "{{original.message.replace('\t ', '\t')}}"
-        output_field: message
-  - name: extra_details_stage
-    filter: "{{parsed_event.message.ExtraDetails is defined}}"
-    external:
-      name: kv.parse-kv
-      properties:
-        #Some logs contains escaped semi-colons that are not handled by the kv.parse-kv module. Using a replace function is the only way to make a stable parser
-        input_field: >-
-          {{parsed_event.message.ExtraDetails.replace('\;','$oxdPivwT$').replace(';','$HdQYoHsx$').replace('$oxdPivwT$','\\;')}}
-        output_field: message
-        value_sep: "="
-        item_sep: \$HdQYoHsx\$
-  - name: set_observer_fields
-  - name: set_event_common_fields
-  - name: set_good_practice_fields
-  - name: set_user_common_fields
-  - name: set_network_common_fields
-  - name: set_file_common_fields
-  - name: set_specific_fields
-  - name: extra_details_specific_fields
-    filter: "{{parsed_event.message.ExtraDetails is defined}}"
-  - name: set_defaults
-stages:
-  set_observer_fields:
-    actions:
-      - set:
-          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
-          observer.product: "{{parsed_event.message.DeviceProduct}}"
-          observer.version: "{{parsed_event.message.DeviceVersion}}"
-        filter: >-
-          {{original.message.startswith('LEEF') or
-          original.message.startswith('CEF')}}
-  set_event_common_fields:
-    actions:
-      - set:
-          event.action: "{{parsed_event.message.Action}}"
-      - set:
-          event.reason: "{{parsed_event.message.reason}}"
-          event.severity: "{{parsed_event.message.sev}}"
-          log.syslog.severity.code: "{{parsed_event.message.sev}}"
-      - set:
-          event.code: "{{parsed_event.message.DeviceEventClassID}}"
-      - set:
-          log.description: "{{parsed_event.message.EventMessage}}"
-      - dictionary:
-          "2": Critical
-          "3": Error
-          "6": Info
-        mapping:
-          log.syslog.severity.code: log.syslog.severity.name
-        filter: ""
-        name: translate
-  set_good_practice_fields:
-    actions:
-      - set:
-          event.kind: event
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['authentication']}}"
-        filter: >-
-          {{'login' in final.event.action|lower or 'logon' in
-          final.event.action|lower or 'authentication' in
-          final.event.action|lower or 'logout' in final.event.action|lower}}
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['file']}}"
-        filter: "{{'file' in final.event.action|lower}}"
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['allowed']}}"
-        filter: "{{'allow' in final.event.action|lower}}"
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['denied']}}"
-        filter: >-
-          {{'deny' in final.event.action|lower or 'denied' in
-          final.event.action|lower or final.event.code in ['0','3','5','6','9',
-          '10','11','12','13','14','16','17','25','26','28','29','30','34','35',
-          '40','41','42','43','46','47','48','49','55','56','63','65','770','72',
-          '74','76','77','82','85','87','90','92','96','97','100','101','132',
-          '133','134','135','46','147','148','150','152','153','154','155','156',
-          '157','158','159','160','161','162','163','164','165','166','167',
-          '168','169','171','172','173','174','175','176','177','178','179',
-          '186','191','193','196','197','206','207','208','214','215','216',
-          '222','225','226','227','228','237','238','243','244','250','253',
-          '255','260','261','262','263','269','271','284','306','307','314',
-          '315']}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['creation']}}"
-        filter: >-
-          {{'add' in final.event.action|lower or 'create' in
-          final.event.action|lower}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['change']}}"
-        filter: >-
-          {{'update' in final.event.action|lower or 'change' in
-          final.event.action|lower}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['deletion']}}"
-        filter: >-
-          {{'delete' in final.event.action|lower or 'remove' in
-          final.event.action|lower}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['connection']}}"
-        filter: "{{'connection' in final.event.action|lower}}"
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['start']}}"
-        filter: >-
-          {{('connect' in final.event.action|lower and not 'disconnect' in
-          final.event.action|lower) or 'open' in final.event.action|lower or
-          'start' in final.event.action|lower or 'login' in
-          final.event.action|lower or 'logon' in final.event.action|lower or
-          final.event.action|lower == 'user authentication'}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['end']}}"
-        filter: >-
-          {{'disconnect' in final.event.action|lower or 'closed' in
-          final.event.action|lower or 'ended' in final.event.action|lower or
-          'logout' in final.event.action|lower}}
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['session']}}"
-        filter: "{{'psm' in final.event.action|lower}}"
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['configuration']}}"
-        filter: >-
-          {{'creation' in final.event.type|lower or 'change' in
-          final.event.type|lower or 'deletion' in final.event.type|lower}}
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['network']}}"
-        filter: "{{'connection' in final.event.action|lower}}"
-      - set:
-          event.outcome: success
-        filter: >-
-          {{('success' in final.event.action|lower and not 'unsuccess' in
-          final.event.action|lower)}}
-      - set:
-          event.outcome: failure
-        filter: >-
-          {{'failed' in final.event.action|lower or 'failure' in 
-          final.event.action|lower or 'fail' in final.event.action|lower
-           or "denied" in final.event.type or final.event.code in ['4','38','57','60','102','103','104','116','117','130','137','142',
-           '248','249','280','281','297','298','301','303','320','333','336','338','339','345S','347S',
-           '349','350','352','353','360','362','365','366','369','371','373','375','377','379','381','386','409','413','415',
-           '417','419','421','423','425','430','431','433','435','440','442','444','464','472',
-           '474','475','476','478']}}
+  name: cyberark-digital-vault
+  pipeline:
+    #LEEF Format handling
+    - name: parsed_event
+      filter: "{{original.message.startswith('LEEF:')}}"
+      external:
+        name: leef.parse-leef
+        properties:
+          input_field: "{{original.message.replace('\t ', '\t')}}"
+          output_field: message
+    #CEF Format handling
+    - name: parsed_event
+      description: ''
+      filter: "{{original.message.startswith('CEF:')}}"
+      external:
+        name: cef.parse-cef
+        properties:
+          input_field: "{{original.message}}"
+          output_field: message
+    #Parsing extra_details the nested field 
+    - name: parsed_extra_details
+      filter: "{{parsed_event.message.ExtraDetails is defined}}"
+      external:
+        name: kv.parse-kv
+        properties:
+          #Some logs contains escaped semi-colons that are not handled by the kv.parse-kv module. Using a replace function is the only way to make a stable parser
+          input_field: >-
+            {{parsed_event.message.ExtraDetails.replace('\;','$oxdPivwT$').replace(';','$HdQYoHsx$').replace('$oxdPivwT$','\\;')}}
+          output_field: message
+          value_sep: "="
+          item_sep: \$HdQYoHsx\$
+    - name: ecs_observer_mapping
+    - name: ecs_event_mapping
+    - name: ecs_user_mapping
+    - name: ecs_source_mapping
+    - name: ecs_destination_mapping
+    - name: ecs_network_mapping
+    - name: ecs_file_mapping
+    - name: custom_field_mapping
+    - name: ecs_process_mapping
+    - name: ecs_kind_categorization
+    - name: ecs_authentication_categorization
+    - name: ecs_session_categorization
+    - name: ecs_network_categorization
+    - name: ecs_process_categorization
+    - name: ecs_file_categorization
+    - name: ecs_iam_categorization
+    - name: ecs_outcome_categorization
+  stages:
+    ecs_observer_mapping:
+      actions:
+        - set:
+            observer.type: "iam"
+            observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+            observer.product: "{{parsed_event.message.DeviceProduct}}"
+            observer.version: "{{parsed_event.message.DeviceVersion}}"
+          filter: >-
+            {{original.message.startswith('LEEF') or
+            original.message.startswith('CEF')}}
+    ecs_event_mapping:
+      actions:
+        - set:
+            event.action: "{{parsed_event.message.Action or parsed_event.message.act}}"
+        - set:
+            event.reason: "{{parsed_event.message.Reason or parsed_event.message.msg or parsed_event.message.reason}}"
+          #For some events, the reason is a command_line
+          filter: "{{final.event.code not in ['359','360','361','412']}}"
+        - set:
+            event.severity: "{{parsed_event.message.sev}}"
+            log.syslog.severity.code: "{{parsed_event.message.sev}}"
+          #Ref: mapped Severity from xsl file
+        - dictionary:
+            "2": Critical
+            "10": Critical
+            "3": Error
+            "7": Error
+            "6": Info
+            "5": Info
+          mapping:
+            log.syslog.severity.code: log.syslog.severity.name
+          filter: ""
+          name: translate
+        - set:
+            event.code: "{{parsed_event.message.DeviceEventClassID}}"
+        - set:
+            event.duration: >
+              {%- set duration = parsed_extra_details.message.SessionDuration-%}
+              {%- set hours = duration.split(':')[0]-%} {%- set minutes =
+              duration.split(':')[1]-%} {%- set seconds =
+              duration.split(':')[2]-%} {{(hours | int * 3600 + minutes | int * 60
+              + seconds | int) * 1_000_000_000}}
+          filter: "{{parsed_extra_details is defined and parsed_extra_details.message is defined}}"
+        - set:
+            log.description: "{{parsed_event.message.EventMessage or parsed_event.message.msg}}"
+    ecs_user_mapping:
+      actions:
+        - set:
+            user.name: "{{parsed_event.message.usrName or parsed_event.message.suser}}"
+            user.domain: "{{final.user.name.split('@')[1]}}"
+    ecs_source_mapping:
+      actions:
+        - set:
+            source.domain: "{{parsed_event.message.shost}}"
+          filter: "{{not (parsed_event.message.shost | is_ipaddress)}}"
+        - set:
+            source.domain: "{{parsed_event.message.src}}"
+          filter: "{{final.source.domain is not defined and not (parsed_event.message.src | is_ipaddress)}}"
+        - set:
+            source.ip: "{{parsed_event.message.shost}}"
+          filter: "{{parsed_event.message.shost | is_ipaddress}}"
+        - set:
+            source.ip: "{{parsed_event.message.src}}"
+          filter: "{{final.source.ip is not defined and (parsed_event.message.src | is_ipaddress)}}"
+        - set:
+            source.user.name: "{{parsed_event.message.SourceUser or parsed_event.message.get('Affected User Name')}}"
+            source.user.domain: "{{final.source.user.name.split('@')[1]}}"
+    ecs_destination_mapping:
+      actions:
+        - set:
+            destination.ip: "{{parsed_event.message.dhost}}"
+          filter: "{{parsed_event.message.dhost | is_ipaddress}}"
+        - set:
+            destination.domain: "{{parsed_event.message.dhost}}"
+          filter: "{{not (parsed_event.message.dhost | is_ipaddress)}}"
+        - set:
+            destination.user.name: "{{parsed_event.message.duser}}"
+            destination.user.domain: "{{final.destination.user.name.split('@')[1]}}"
+    ecs_network_mapping:
+      actions:
+        - set:
+            network.protocol: "{{parsed_event.message.app}}"
+    ecs_file_mapping:
+      actions:
+        - set:
+            file.name: "{{parsed_event.message.File or parsed_event.message.fname}}"
+    custom_field_mapping:
+      actions:
+        - set:
+            cyberark.vault.safe: "{{parsed_event.message.Safe or parsed_event.message.get('Safe Name')}}"
+            cyberark.vault.reason: "{{parsed_event.message.Reason}}"
+            cyberark.vault.location: "{{ parsed_event.message.Location}}"
+            cyberark.vault.category: "{{parsed_event.message.Category}}"
+            cyberark.vault.GatewayStation: "{{ parsed_event.message.GatewayStation or parsed_event.message.dvc}}"
+            cyberark.vault.device.type: "{{ parsed_event.message.get('Device Type') }}"
+            cyberark.psm.session.id: "{{parsed_event.message.externalId}}"
+        #For some events, the reason is a command_line
+        - set:
+            cyberark.psm.command_line: "{{parsed_event.message.reason}}"
+          filter: "{{final.event.code in ['359','360','361','412']}}"
+        - set:
+            cyberark.psm.server.id: "{{parsed_extra_details.message.PSMID}}"
+            cyberark.psm.session.id: "{{parsed_extra_details.message.externalId}}"
+            cyberark.psm.application: >-
+              {{parsed_extra_details.message.ApplicationType or
+              parsed_extra_details.message.ConnectionComponentId}}
+            cyberark.psm.command_line: "{{parsed_extra_details.message.Command}}"
+          filter: "{{parsed_extra_details is defined and parsed_extra_details.message is defined}}"
+    ecs_process_mapping:
+      actions:
+        - set:
+            process.command_line: "{{final.cyberark.psm.command_line}}"
+    ecs_kind_categorization:
+      actions:
+        - set:
+            event.kind: alert
+          filter: >-
+            {{final.event.code in ['0','3','4','5','6','9',
+            '10','11','12','13','14','16','17','18','21','23','25','26','27','28','29','30','34','35','38','40',
+            '41','42','43','44','45','46','47','48','49','55','56','57','60','63','65','70','72',
+            '74','76','77','78','82','85','87','89','90','92','96','97','100','101','102','103','104','110','113','116',
+            '117','130','131','132','133','134','135','137','142','145','146','147','148','150','152','153','154','155','156',
+            '157','158','159','160','161','162','163','164','165','166','167','168','169','170','171','172','173','174',
+            '175','176','177','178','179','186','189','191','193','196','197','198','204','205','206','207','208','214','215','216',
+            '221','222','225','226','227','228','237','238','243','244','248','249','250','253','255','260','261','262',
+            '263','269','271','272','280','281','284','297','298','301','303','306','307','309','314','315','320','333','336','338',
+            '339','342','345S','347S','349','350','352','353','360','362','363','365','366','369','371','373','375','377',
+            '379','381','399','403','404','408','409','413','440','442',
+            '444','464','475','476','478','479','481','483','484','485','486','487','488']}}
+        - set:
+            event.kind: event
+          filter: "{{final.event.kind is not defined}}"
+    ecs_authentication_categorization:
+      actions:
+        - set:
+            event.category: "{{(final.event.category|default([])) + ['authentication']}}"
+          filter: >-
+            {{'login' in final.event.action|lower or 'logon' in
+            final.event.action|lower or 'authentication' in
+            final.event.action|lower or 'logout' in final.event.action|lower or 
+            'logoff' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['end']}}"
+          filter: >-
+            {{'end' not in final.event.type and 'authentication' in
+            final.event.category and ('logout' in final.event.action|lower or 
+            'logoff' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['start']}}"
+          filter: >-
+            {{'start' not in final.event.type and 'authentication' in
+            final.event.category and 'end' not in final.event.type and ('login' in
+            final.event.action|lower or 'logon' in final.event.action|lower or
+            final.event.action|lower == 'user authentication')}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['info']}}"
+          filter: >-
+            {{'info' not in final.event.type and 'authentication' in
+            final.event.category and 'end' not in final.event.type and 'start' not
+            in final.event.type}}
+    ecs_session_categorization:
+      actions:
+        - set:
+            event.category: "{{(final.event.category|default([])) + ['session']}}"
+          filter: >-
+            {{'session' not in final.event.category and ('session' in
+            final.event.action|lower or 'PSM' in final.event.action or final.event.code in ['359','360','361','367','411','412','413'])}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['end']}}"
+          filter: >-
+            {{'end' not in final.event.type and 'session' in final.event.category
+            and ('disconnect' in final.event.action|lower or 'session end' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['info']}}"
+          filter: >-
+            {{'info' not in final.event.type and 'session' in final.event.category
+            and ('monitor' in final.event.action|lower or 'recording' in final.event.action|lower or final.event.code in ['359','360','361','367','411','412','413'])}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['start']}}"
+          filter: >-
+            {{'start' not in final.event.type and 'session' in
+            final.event.category and 'end' not in final.event.type and 'info' not
+            in final.event.type}}
+    ecs_network_categorization:
+      actions:
+        - set:
+            event.category: "{{(final.event.category|default([])) + ['network']}}"
+          filter: >-
+            {{'network' not in final.event.category and 'gateway connection' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['connection']}}"
+          filter: >-
+            {{'network' in final.event.category and 'connection' not in final.event.type and 'connection' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['end']}}"
+          filter: >-
+            {{'end' not in final.event.type and 'network' in final.event.category
+            and ('close' in final.event.action|lower or ('end' in
+            final.event.action|lower and not ('pend' in final.event.action|lower
+            or 'send' in final.event.action|lower)))}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['start']}}"
+          filter: >-
+            {{'start' not in final.event.type and 'end' not in final.event.type and 'network' in
+            final.event.category}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['denied']}}"
+          filter: >-
+            {{'denied' not in final.event.type and 'network' in
+            final.event.category and final.event.code in ['21']}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['allowed']}}"
+          filter: >-
+            {{'allowed' not in final.event.type and 'network' in
+            final.event.category and final.event.code in ['19','20']}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['info']}}"
+          filter: >-
+            {{'network' in final.event.category and final.event.type is not
+            defined}}
+    ecs_process_categorization:
+      actions:
+        - set:
+            event.category: "{{(final.event.category|default([])) + ['process']}}"
+          filter: >-
+            {{'process' not in final.event.category and 'process' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['access']}}"
+          filter: >-
+            {{'process' in final.event.category and 'access' not in final.event.type and 'connection' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['change']}}"
+          filter: >-
+            {{False}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['end']}}"
+          filter: >-
+            {{'end' not in final.event.type and 'process' in final.event.category
+            and ('stop' in final.event.action|lower or 'cancel' in final.event.action|lower 
+            or ('end' in final.event.action|lower and not ('pend' in final.event.action|lower
+            or 'send' in final.event.action|lower)))}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['start']}}"
+          filter: >-
+            {{'start' not in final.event.type and 'process' in
+            final.event.category and 'end' not in final.event.type and ('start' in final.event.action|lower or 'execution' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['info']}}"
+          filter: >-
+            {{'process' in final.event.category and final.event.type is not
+            defined}}
+    ecs_file_categorization:
+      actions:
+        - set:
+            event.category: "{{(final.event.category|default([])) + ['file']}}"
+          filter: >-
+            {{ 'file' not in final.event.category and ('file' in final.event.action|lower and not 'category' in final.event.action|lower) and not final.event.code in ['145','170','189','198']}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['access']}}"
+          filter: >-
+            {{'file' in final.event.category and 'access' not in final.event.type 
+            and ('get' in final.event.action|lower or 'list' in final.event.action|lower or 
+            'retrieve' in final.event.action|lower or 'find' in final.event.action|lower or
+            'open' in final.event.action|lower or 'fetched' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['change']}}"
+          filter: >-
+            {{'change' not in final.event.type and 'file' in final.event.category and 
+            ('change' in final.event.action|lower or 'update' in final.event.action|lower or 
+            'load' in final.event.action|lower or 'undelete' in final.event.action|lower or 
+            'move' in final.event.action|lower or 'rename' in final.event.action|lower or 
+            'unlock' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['creation']}}"
+          filter: >-
+            {{'creation' not in final.event.type and 'file' in
+            final.event.category and ('new' in final.event.action|lower or
+            'create' in final.event.action|lower or 'set' in final.event.action|lower or
+            'store' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['deletion']}}"
+          filter: >-
+            {{'deletion' not in final.event.type and 'file' in
+            final.event.category and ('delet' in final.event.action|lower or
+            'remove' in final.event.action|lower or 'clear' in final.event.action|lower or 
+            'copy' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['info']}}"
+          filter: >-
+            {{'file' in final.event.category and (final.event.type is not defined or 
+            'access' not in final.event.type or 'change' not in final.event.type or 
+            'creation' not in final.event.type  or 'deletion' not in final.event.type)}}
+    ecs_iam_categorization:
+      actions:
+        - set:
+            event.category: "{{(final.event.category|default([])) + ['iam']}}"
+          filter: >-
+            {{final.event.category is not defined or ('iam' not in final.event.category and final.event.category == ['file'])}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['user']}}"
+          filter: >-
+            {{'user' not in final.event.type and 'iam' in
+            final.event.category and 'user' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['group']}}"
+          filter: >-
+            {{'group' not in final.event.type and 'iam' in
+            final.event.category and 'group' in final.event.action|lower}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['admin']}}"
+          filter: >-
+            {{'admin' not in final.event.type and 'iam' in
+            final.event.category and ('group' not in final.event.type and 'user' not in final.event.type)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['change']}}"
+          filter: >-
+            {{'change' not in final.event.type and 'iam' in
+            final.event.category and ('change' in final.event.action|lower or 
+            'update' in final.event.action|lower or 'enable' in final.event.action|lower or 
+            'disable' in final.event.action|lower or 'reconcile' in final.event.action|lower or 
+            ('load' in final.event.action|lower and not 'download' in final.event.action|lower) or ('group member' in final.event.action|lower and not 'list' in final.event.action|lower))}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['creation']}}"
+          filter: >-
+            {{'creation' not in final.event.type and 'iam' in
+            final.event.category and not 'group member' in final.event.action|lower and ('new' in final.event.action|lower or
+            'create' in final.event.action|lower or 'set' in final.event.action|lower or 
+            'add' in final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['deletion']}}"
+          filter: >-
+            {{'deletion' not in final.event.type and 'iam' in
+            final.event.category and ('delete' in final.event.action|lower or
+            'remove' in final.event.action|lower or 'clear' in
+            final.event.action|lower)}}
+        - set:
+            event.type: "{{(final.event.type|default([])) + ['info']}}"
+          filter: >-
+            {{'info' not in final.event.type and 'iam' in final.event.category and (final.event.type is not defined or 
+            ('change' not in final.event.type and 'creation' not in final.event.type and 'deletion' not in final.event.type))}}
 
-  set_user_common_fields:
-    actions:
-      - set:
-          user.name: "{{parsed_event.message.usrName}}"
-          user.domain: "{{parsed_event.message.usrName.split('@')[1]}}"
-          source.user.name: "{{parsed_event.message.SourceUser}}"
-          source.user.domain: "{{parsed_event.message.SourceUser.split('@')[1]}}"
-          destination.user.name: "{{parsed_event.message.duser}}"
-          destination.user.domain: "{{parsed_event.message.duser.split('@')[1]}}"
-      - set:
-          user.target.name: "{{parsed_event.message.TargetUser}}"
-          user.target.domain: "{{parsed_event.message.TargetUser.split('@')[1]}}"
-      - set:
-          client.user.name: "{{parsed_event.message.OSUser}}"
-          client.user.domain: "{{parsed_event.message.OSUser.split('@')[1]}}"
-  set_network_common_fields:
-    actions:
-      - set:
-          destination.ip: "{{parsed_event.message.dhost}}"
-        filter: "{{parsed_event.message.dhost | is_ipaddress}}"
-      - set:
-          destination.domain: "{{parsed_event.message.dhost}}"
-        filter: "{{not (parsed_event.message.dhost | is_ipaddress)}}"
-      - set:
-          source.domain: "{{parsed_event.message.shost}}"
-        filter: "{{not (parsed_event.message.shost | is_ipaddress)}}"
-      - set:
-          source.ip: "{{parsed_event.message.shost}}"
-        filter: "{{parsed_event.message.shost | is_ipaddress}}"
-  set_file_common_fields:
-    actions:
-      - set:
-          file.name: "{{parsed_event.message.File}}"
-  set_specific_fields:
-    actions:
-      - set:
-          cyberark.vault.safe: "{{parsed_event.message.Safe}}"
-          cyberark.vault.reason: "{{ parsed_event.message.Reason}}"
-          cyberark.vault.location: "{{ parsed_event.message.Location}}"
-          cyberark.vault.category: "{{parsed_event.message.Category}}"
-          cyberark.vault.GatewayStation: "{{ parsed_event.message.GatewayStation }}"
-  extra_details_specific_fields:
-    actions:
-      - set:
-          client.user.name: "{{extra_details_stage.message.username}}"
-          client.user.domain: "{{extra_details_stage.message.address}}"
-      - set:
-          source.ip: "{{extra_details_stage.message.SrcHost}}"
-          observer.ip: "{{parsed_event.message.dhost}}"
-          destination.ip: "{{extra_details_stage.message.DstHost}}"
-          event.duration: >
-            {%- set duration = extra_details_stage.message.SessionDuration-%}
-            {%- set hours = duration.split(':')[0]-%} {%- set minutes =
-            duration.split(':')[1]-%} {%- set seconds =
-            duration.split(':')[2]-%} {{(hours | int * 3600 + minutes | int * 60
-            + seconds | int) * 1_000_000_000}}
-          network.protocol: "{{extra_details_stage.message.Protocol}}"
-          cyberark.psm.server.id: "{{extra_details_stage.message.PSMID}}"
-          cyberark.psm.session.id: "{{extra_details_stage.message.SessionID}}"
-          cyberark.psm.application: >-
-            {{extra_details_stage.message.ApplicationType or
-            extra_details_stage.message.ConnectionComponentId}}
-          cyberark.psm.command_line: "{{extra_details_stage.message.Command}}"
-  set_defaults:
-    actions:
-      - set:
-          event.category: "['iam']"
-        filter: "{{final.event.category is not defined}}"
-      - set:
-          event.outcome: success
-        filter: "{{final.event.outcome is not defined}}"
-      - set:
-          event.type: "['info']"
-        filter: "{{final.event.type is not defined}}"
+    ecs_outcome_categorization:
+      actions:
+        - set:
+            event.outcome: failure
+          filter: >-
+            {{final.event.type != ['info'] and ('fail' in final.event.action|lower
+            or "denied" in final.event.type or final.event.code in ['0','3','4','5','6','9',
+            '10','11','12','13','14','16','17','18','21','25','26','27','28','29','30','34','35','38','40',
+            '41','42','43','44','45','46','47','48','49','55','56','57','60','63','64','65','70','72',
+            '74','76','77','78','82','85','87','89','90','92','96','97','100','101','102','103','104','113','116',
+            '117','130','132','133','134','135','137','142','145','146','147','148','150','152','153','154','155','156',
+            '157','158','159','160','161','162','163','164','165','166','167','168','169','171','172','173','174',
+            '175','176','177','178','179','186','191','193','196','197','198','204','205','206','207','208','214','215','216',
+            '222','225','226','227','228','237','238','243','244','248','249','250','253','255','260','261','262',
+            '263','269','271','272','280','281','284','297','298','301','303','306','307','314','315','320','333','336','338',
+            '339','345S','347S','349','350','352','353','360','362','365','366','369','371','373','375','377',
+            '379','381','386','403','408','409','413','415','417','419','421','423','425','430','431','433','435','440','442',
+            '444','464','472','474','475','476','478','481','483','484','485','486','487','488'])}}
+        - set:
+            event.outcome: success
+          filter: >-
+            {{final.event.type != ['info'] and (('success' in final.event.action|lower and not 'unsuccess' in
+            final.event.action|lower) or final.event.outcome is not
+            defined)}}
