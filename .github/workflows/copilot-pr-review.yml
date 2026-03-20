@@ -37,7 +37,7 @@ jobs:
           echo "" >> analysis.md
           
           # Extract vendor/product from changed files
-          vendors=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+          vendors=$(echo "${STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES}" | \
             grep -oP '^[^/]+/[^/]+' | sort -u || echo "")
           
           if [ -n "$vendors" ]; then
@@ -53,7 +53,7 @@ jobs:
           echo "" >> analysis.md
           echo "## Changed File Types" >> analysis.md
           echo "" >> analysis.md
-          echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+          echo "${STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES}" | \
             grep -oE '\.[^.]+$' | sort | uniq -c | \
             awk '{print "- " $2 " files: " $1}' >> analysis.md || \
             echo "- No specific file types detected" >> analysis.md
@@ -62,6 +62,8 @@ jobs:
           echo "analysis<<EOF" >> $GITHUB_OUTPUT
           cat analysis.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
 
       - name: Check for Required Files
         id: check-files
@@ -70,7 +72,7 @@ jobs:
           warnings=""
           
           # Get list of modified vendor/product directories
-          vendors=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+          vendors=$(echo "${STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES}" | \
             grep -oP '^[^/]+/[^/]+' | sort -u || echo "")
           
           if [ -n "$vendors" ]; then
@@ -107,6 +109,8 @@ jobs:
           else
             echo "warnings=No issues detected" >> $GITHUB_OUTPUT
           fi
+        env:
+          STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
 
       - name: Scan for Sensitive Information (CRITICAL)
         id: security-scan
@@ -114,7 +118,7 @@ jobs:
           security_issues=""
           
           # Get all changed test files
-          test_files=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+          test_files=$(echo "${STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES}" | \
             tr ' ' '\n' | grep -iE '(test|example|sample).*\.(py|json|txt|yml|yaml|log)$' || echo "")
           
           if [ -z "$test_files" ]; then
@@ -194,14 +198,16 @@ jobs:
           else
             echo "security_issues=✅ No obvious sensitive information detected in test files" >> $GITHUB_OUTPUT
           fi
+        env:
+          STEPS_CHANGED_FILES_OUTPUTS_ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
 
       - name: Prepare PR comment
         if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'synchronize'
         id: prepare-comment
         run: |
-          analysis="${{ steps.analyze.outputs.analysis }}"
-          warnings="${{ steps.check-files.outputs.warnings }}"
-          security_issues="${{ steps.security-scan.outputs.security_issues }}"
+          analysis="${STEPS_ANALYZE_OUTPUTS_ANALYSIS}"
+          warnings="${STEPS_CHECK_FILES_OUTPUTS_WARNINGS}"
+          security_issues="${STEPS_SECURITY_SCAN_OUTPUTS_SECURITY_ISSUES}"
           
           # Use defaults if empty
           analysis="${analysis:-No analysis available}"
@@ -281,6 +287,10 @@ jobs:
 
           For more details, see the [Contribution Guidelines](../CONTRIBUTING.md).
           COMMENT_EOF
+        env:
+          STEPS_ANALYZE_OUTPUTS_ANALYSIS: ${{ steps.analyze.outputs.analysis }}
+          STEPS_CHECK_FILES_OUTPUTS_WARNINGS: ${{ steps.check-files.outputs.warnings }}
+          STEPS_SECURITY_SCAN_OUTPUTS_SECURITY_ISSUES: ${{ steps.security-scan.outputs.security_issues }}
       
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
