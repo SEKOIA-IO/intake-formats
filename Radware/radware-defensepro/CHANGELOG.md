@@ -6,3 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+- Initial intake format for Radware DefensePro
+- Support for attack events, BDoS baseline events, and login events
+- Field mappings for DefensePro-specific attributes (MPLS, VLAN, physical port, etc.)
