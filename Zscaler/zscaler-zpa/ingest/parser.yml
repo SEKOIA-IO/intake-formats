@@ -42,6 +42,7 @@ pipeline:
   - name: ecs_url_mapping
   - name: ecs_http_mapping
   - name: ecs_organization_mapping
+  - name: ecs_cloud_mapping
   - name: custom_fields_mapping
   - name: ecs_authentication_categorization
   - name: ecs_configuration_categorization
@@ -55,34 +56,39 @@ stages:
   zpa_log_type_mapping:
     actions:
       - set:
-          event.dataset: zpa-app-connector-status
+          event.dataset: app-connector-status
         filter: "{{parsed_event.message.BytesRxInterface is defined}}"
       - set:
-          event.dataset: zpa-approtection
+          event.dataset: appprotection
         filter: "{{parsed_event.message.Domain is defined}}"
       - set:
-          event.dataset: zpa-audit-log
+          event.dataset: audit
         filter: "{{parsed_event.message.AuditOperationType is defined}}"
       - set:
-          event.dataset: zpa-browser-access
+          event.dataset: browser-access
         filter: "{{parsed_event.message.CorsToken is defined}}"
       - set:
-          event.dataset: zpa-app-user-activity
+          event.dataset: user-activity
         filter: "{{parsed_event.message.ClientCity is defined}}"
       - set:
-          event.dataset: zpa-app-user-status
+          event.dataset: user-status
         filter: "{{parsed_event.message.City is defined}}"
   ecs_observer_mapping:
     actions:
       - set:
           observer.type: cloud
           observer.vendor: Zscaler
-          observer.product: Zscaler-ZPA
+          observer.product: Private Access
           observer.hostname: "{{parsed_event.message.ZEN or parsed_event.message.ClientZEN}}"
   ecs_organization_mapping:
     actions:
       - set:
           organization.name: "{{parsed_event.message.Customer}}"
+  ecs_cloud_mapping:
+    actions:
+      - set:
+          cloud.account.id: "{{parsed_event.message.MicroTenantID}}"
+        filter: "{{parsed_event.message.MicroTenantID is defined}}"
   ecs_event_mapping:
     actions:
       - set:
@@ -172,7 +178,7 @@ stages:
           url.original: "{{ parsed_event.message.URL }}"
       - set:
           url.scheme: "{{ parsed_event.message.Protocol | lower }}"
-        filter: "{{ final.event.dataset == 'zpa-browser-access' }}"
+        filter: "{{ final.event.dataset == 'browser-access' }}"
   ecs_http_mapping:
     actions:
       - set:
@@ -184,55 +190,51 @@ stages:
           http.response.bytes: "{{parsed_event.message.ResponseSize or parsed_event.message.ResponseBodySize + parsed_event.message.ResponseHdrSize}}"
       - set:
           http.version: "{{parsed_event.message.Protocol}}"
-        filter: "{{final.event.dataset == 'zpa-approtection'}}"
+        filter: "{{final.event.dataset == 'appprotection'}}"
   custom_fields_mapping:
     actions:
       - set:
-          zscaler.zpa.Microtenant_id: "{{parsed_event.message.MicroTenantID}}"
-          zscaler.zpa.AppConnectorVersion: "{{parsed_event.message.Version}}"
-          zscaler.zpa.AppConnectorGroupName: "{{parsed_event.message.ConnectorGroup}}"
-        filter: '{{final.event.dataset == "zpa-app-connector-status"}}'
+          zscaler.zpa.appconnector.version: "{{parsed_event.message.Version}}"
+          zscaler.zpa.appconnector.groupname: "{{parsed_event.message.ConnectorGroup}}"
+        filter: '{{final.event.dataset == "app-connector-status"}}'
 
       - set:
-          zscaler.zpa.InspectionControlsHitCount: "{{parsed_event.message.InspectionControlsHitCount}}"
-          zscaler.zpa.InspectionPolicy: "{{parsed_event.message.InspectionPolicy}}"
-          zscaler.zpa.InspectionProfile: "{{parsed_event.message.InspectionProfile}}"
-          zscaler.zpa.ParanoiaLevel: "{{parsed_event.message.ParanoiaLevel}}"
-          zscaler.zpa.AppGroupName: "{{parsed_event.message.ApplicationGroup}}"
-        filter: '{{final.event.dataset == "zpa-approtection"}}'
+          zscaler.zpa.inspection.controlshitcount: "{{parsed_event.message.InspectionControlsHitCount}}"
+          zscaler.zpa.inspection.policy: "{{parsed_event.message.InspectionPolicy}}"
+          zscaler.zpa.inspection.profile: "{{parsed_event.message.InspectionProfile}}"
+          zscaler.zpa.paranoialevel: "{{parsed_event.message.ParanoiaLevel}}"
+          zscaler.zpa.appgroupname: "{{parsed_event.message.ApplicationGroup}}"
+        filter: '{{final.event.dataset == "appprotection"}}'
 
       - set:
-          zscaler.zpa.auditOldValue: "{{parsed_event.message.AuditOldValue}}"
-          zscaler.zpa.auditNewValue: "{{parsed_event.message.AuditNewValue}}"
-          zscaler.zpa.auditOperationType: "{{parsed_event.message.AuditOperationType}}"
-          zscaler.zpa.objectID: "{{parsed_event.message.ObjectID}}"
-          zscaler.zpa.objectName: "{{parsed_event.message.ObjectName}}"
-          zscaler.zpa.objectType: "{{parsed_event.message.ObjectType}}"
-        filter: '{{final.event.dataset == "zpa-audit-log"}}'
+          zscaler.zpa.audit.oldvalue: "{{parsed_event.message.AuditOldValue}}"
+          zscaler.zpa.audit.newvalue: "{{parsed_event.message.AuditNewValue}}"
+          zscaler.zpa.audit.operationtype: "{{parsed_event.message.AuditOperationType}}"
+          zscaler.zpa.object.id: "{{parsed_event.message.ObjectID}}"
+          zscaler.zpa.object.name: "{{parsed_event.message.ObjectName}}"
+          zscaler.zpa.object.type: "{{parsed_event.message.ObjectType}}"
+        filter: '{{final.event.dataset == "audit"}}'
 
       - set:
-          zscaler.zpa.Microtenant_id: "{{parsed_event.message.MicroTenantID}}"
-          zscaler.zpa.AppMicroTenantID: "{{parsed_event.message.AppMicroTenantID}}"
-          zscaler.zpa.PostureHit: "{{parsed_event.message.PosturesHit}}"
-          zscaler.zpa.PostureMiss: "{{parsed_event.message.PosturesMiss}}"
-          zscaler.zpa.AccessPolicyName: "{{parsed_event.message.Policy}}"
-          zscaler.zpa.AppConnectorName: "{{parsed_event.message.Connector}}"
-          zscaler.zpa.AppConnectorIP: "{{parsed_event.message.ConnectorIP}}"
-          zscaler.zpa.AppConnectorPort: "{{parsed_event.message.ConnectorPort}}"
-          zscaler.zpa.AppGroupName: "{{parsed_event.message.AppGroup}}"
-          zscaler.zpa.ConnectorZEN: "{{parsed_event.message.ConnectorZEN}}"
-        filter: '{{final.event.dataset == "zpa-app-user-activity"}}'
+          zscaler.zpa.posture.hit: "{{parsed_event.message.PosturesHit}}"
+          zscaler.zpa.posture.miss: "{{parsed_event.message.PosturesMiss}}"
+          zscaler.zpa.accesspolicyname: "{{parsed_event.message.Policy}}"
+          zscaler.zpa.appconnector.name: "{{parsed_event.message.Connector}}"
+          zscaler.zpa.appconnector.ip: "{{parsed_event.message.ConnectorIP}}"
+          zscaler.zpa.appconnector.port: "{{parsed_event.message.ConnectorPort}}"
+          zscaler.zpa.appgroupname: "{{parsed_event.message.AppGroup}}"
+          zscaler.zpa.appconnector.zen: "{{parsed_event.message.ConnectorZEN}}"
+        filter: '{{final.event.dataset == "user-activity"}}'
 
       - set:
-          zscaler.zpa.Microtenant_id: "{{parsed_event.message.MicroTenantID}}"
-          zscaler.zpa.ClientConnectorVersion: "{{parsed_event.message.Version}}"
-          zscaler.zpa.ClientType: "{{parsed_event.message.ClientType}}"
-        filter: '{{final.event.dataset == "zpa-app-user-status"}}'
+          zscaler.zpa.clientconnectorversion: "{{parsed_event.message.Version}}"
+          zscaler.zpa.clienttype: "{{parsed_event.message.ClientType}}"
+        filter: '{{final.event.dataset == "user-status"}}'
       - set:
-          zscaler.zpa.TrustedNetworksID: '{{parsed_event.message.TrustedNetworks.split(",")}}'
-          zscaler.zpa.TrustedNetworksNames: '{{parsed_event.message.TrustedNetworksNames.split(",")}}'
+          zscaler.zpa.trustednetworks.ids: '{{parsed_event.message.TrustedNetworks.split(",")}}'
+          zscaler.zpa.trustednetworks.names: '{{parsed_event.message.TrustedNetworksNames.split(",")}}'
         filter: >-
-          {{final.event.dataset == "zpa-app-user-status" and parsed_event.message.TrustedNetworks is defined and
+          {{final.event.dataset == "user-status" and parsed_event.message.TrustedNetworks is defined and
           parsed_event.message.TrustedNetworksNames is defined}}
 
   ecs_authentication_categorization:
@@ -443,9 +445,6 @@ stages:
         filter: >-
           {{'alert' in final.event.message|lower or 'alert' in
           final.event.action|lower}}
-      - set:
-          event.kind: event
-        filter: "{{final.event.kind is not defined}}"
   ecs_outcome_categorization:
     actions:
       - set:
