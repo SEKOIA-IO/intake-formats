@@ -1,16 +1,16 @@
 name: radware-defensepro
 pipeline:
   - name: grok_event_parser
-    description: First parsing stage using grok patterns
     external:
       name: grok.match
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "%{RADWARE_ATTACK}|%{RADWARE_BDOS}|%{RADWARE_LOGIN}"
+        pattern: "%{RADWARE_ATTACK}|%{RADWARE_LOGIN}|%{RADWARE_BDOS}"
         custom_patterns:
+          RADWARE_DATE: "%{MONTHDAY}-%{MONTHNUM}-%{YEAR} %{TIME}"
           RADWARE_ATTACK: >-
-            %{GREEDYDATA:date}
+            %{RADWARE_DATE:date}
             %{WORD:DefensePro_severity} %{INT:Radware_id}
             %{DATA:DefensePro_category} "%{DATA:Radware_attack_name}"
             %{DATA:Radware_protocol} %{IP:source_ip} %{INT:source_port}
@@ -21,25 +21,32 @@ pipeline:
             %{DATA:DefensePro_VLAN_tag} %{DATA:DefensePro_MPLS_RD}
             %{DATA:DefensePro_MPLS_tag} %{WORD:DefensePro_risk}
             %{DATA:DefensePro_action_name} %{DATA:DefensePro_UniqueID}
-          RADWARE_BDOS: >-
-            %{GREEDYDATA:date}
-            %{WORD:DefensePro_severity} BDoS baseline learning is
-            %{DATA:DefensePro_baseline_status} on inbound IPv4 traffic for
-            policy "%{DATA:DefensePro_policy_name}".
           RADWARE_LOGIN: >-
-            %{GREEDYDATA:date}
-            %{WORD:DefensePro_severity} User radware (logged in|successfully
-            authenticated) via (%{DATA:Radware_protocol}
-            %{IP:source_ip}|%{DATA:login_type} \(IP:%{IP:source_ip}\))
+            %{RADWARE_DATE:date} %{WORD:DefensePro_severity} User radware (logged in|successfully authenticated) via (%{DATA:Radware_protocol} %{IP:source_ip}|%{DATA:login_type} \(IP:%{IP:source_ip}\))
+          RADWARE_BDOS: >-
+            %{RADWARE_DATE:date}
+            %{WORD:DefensePro_severity} %{GREEDYDATA:event_reason}
+
+  - name: bdos_parser
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_event_parser.message.event_reason}}"
+        output_field: bdos
+        pattern: "%{RADWARE_BDOS_DETAIL}"
+        custom_patterns:
+          RADWARE_BDOS_DETAIL: >-
+              BDoS baseline learning is being %{WORD:DefensePro_baseline_status} now on inbound IPv4 traffic for policy "%{DATA:DefensePro_policy_name}".
+    filter: "{{grok_event_parser.message.get('event_reason') != None}}"
 
   - name: date_parser
-    description: Stage to parse the date field
     external:
       name: date.parse
       properties:
         input_field: "{{grok_event_parser.message.date}}"
         output_field: datetime
         format: "%d-%m-%Y %H:%M:%S"
+
   - name: set_radware_fields
 
 stages:
@@ -58,7 +65,6 @@ stages:
           destination.port: "{{grok_event_parser.message.destination_port}}"
 
           network.packets: "{{grok_event_parser.message.DefensePro_packet_count}}"
-          network.protocol: "{{grok_event_parser.message.Radware_protocol}}"
 
           threat.feed.name: "{{grok_event_parser.message.DefensePro_category}}"
           threat.technique.name: "{{grok_event_parser.message.Radware_attack_name}}"
@@ -78,6 +84,10 @@ stages:
           radware.defensepro.baseline.status: "{{grok_event_parser.message.DefensePro_baseline_status}}"
 
       - set:
+          network.protocol: "{{grok_event_parser.message.Radware_protocol | lower}}"
+        filter: "{{grok_event_parser.message.get('Radware_protocol') != None}}"
+
+      - set:
           event.kind: "alert"
           event.category: ["network", "intrusion_detection"]
           event.type: "denied"
@@ -87,10 +97,20 @@ stages:
           event.kind: "event"
           event.category: ["network"]
           event.type: "start"
-        filter: "{{grok_event_parser.message.get('DefensePro_baseline_status') != None}}"
+          event.reason: "{{grok_event_parser.message.event_reason}}"
+          radware.defensepro.baseline.status: "{{bdos_parser.bdos.DefensePro_baseline_status}}"
+        filter: "{{grok_event_parser.message.get('event_reason') != None }}"
+
+      - set:
+          radware.defensepro.baseline.status: "{{bdos_parser.bdos.DefensePro_baseline_status}}"
+        filter: "{{bdos_parser.bdos.get('DefensePro_baseline_status') != None}}"
+
+      - set:
+          radware.defensepro.policy.name: "{{bdos_parser.bdos.DefensePro_policy_name}}"
+        filter: "{{bdos_parser.bdos.get('DefensePro_policy_name') != None}}"
 
       - set:
           event.kind: "event"
           event.category: ["authentication"]
           event.type: "info"
-        filter: "{{grok_event_parser.message.get('login_type') != None or ( grok_event_parser.message.get('Radware_attack_name') == None and grok_event_parser.message.get('DefensePro_baseline_status') == None )}}"
+        filter: "{{grok_event_parser.message.get('login_type') != None or ( grok_event_parser.message.get('Radware_attack_name') == None and grok_event_parser.message.get('event_reason') == None )}}"
