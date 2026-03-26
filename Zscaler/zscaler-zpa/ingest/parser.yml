@@ -47,8 +47,8 @@ pipeline:
   - name: ecs_authentication_categorization
   - name: ecs_configuration_categorization
   - name: ecs_process_categorization
-  - name: ecs_network_categorization
   - name: ecs_session_categorization
+  - name: ecs_network_categorization
   - name: ecs_web_categorization
   - name: ecs_kind_categorization
   - name: ecs_outcome_categorization
@@ -98,8 +98,23 @@ stages:
           "@timestamp": "{{parsed_date_iso8601.timestamp}}"
         filter: "{{parsed_event.message.LogTimestamp is not defined}}"
       - set:
-          event.action: "{{parsed_event.message.AuditOperationType}}"
           event.reason: "{{parsed_event.message.ConnectionReason or parsed_event.message.InternalReason}}"
+      - set:
+          event.action: "{{parsed_event.message.AuditOperationType}}"
+        filter: "{{parsed_event.message.AuditOperationType is defined}}"
+      - set:
+          event.action: "Session status"
+        filter: "{{final.event.dataset == 'user-status' or final.event.dataset == 'app-connector-status'}}"
+      - set:
+          event.action: "Web access"
+        filter: "{{final.event.dataset == 'browser-access'}}"
+      - set:
+          event.action: "Inspect"
+        filter: "{{final.event.dataset == 'appprotection'}}"
+      - set:
+          event.action: "User activity"
+        filter: "{{final.event.dataset == 'user-activity'}}"
+
       - set:
           event.outcome: success
         filter: >-
@@ -245,13 +260,13 @@ stages:
           {{'auth' in final.event.action|lower or 'login' in final.event.action|lower or
           'logout' in final.event.action|lower or 'logged in' in
           final.event.action|lower or 'logged out' in final.event.action|lower
-          or 'logon' in final.event.action|lower}}
+          or 'logon' in final.event.action|lower or 'sign' in final.event.action|lower}}
       - set:
           event.type: "{{(final.event.type|default([])) + ['end']}}"
         filter: >-
           {{'end' not in final.event.type and 'authentication' in
           final.event.category and ( 'logout' in final.event.action|lower or
-          'done' in final.event.action|lower or ('end' in
+          'done' in final.event.action|lower or 'out' in final.event.action|lower or ('end' in
           final.event.action|lower and not ('pend' in final.event.action|lower
           or 'send' in final.event.action|lower)))}}
       - set:
@@ -272,7 +287,7 @@ stages:
           event.category: "{{(final.event.category|default([])) + ['configuration']}}"
         filter: >-
           {{ 'config' in final.event.action|lower or 'policy' in
-          final.event.action|lower}}
+          final.event.action|lower or 'Create' in final.event.action or 'Update' in final.event.action or 'Delete' in final.event.action or 'Change' in final.event.action}}
       - set:
           event.type: "{{(final.event.type|default([])) + ['access']}}"
         filter: >-
@@ -344,13 +359,38 @@ stages:
           {{final.event.type is not defined and 'process' in
           final.event.category}}
         name: set
+  ecs_session_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['session']}}"
+        filter: >-
+          {{'session' not in final.event.category and 'session' in
+          final.event.action|lower}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'session' in final.event.category
+          and ('close' in final.event.action|lower or 'out' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{'info' not in final.event.type and 'session' in final.event.category
+          and 'status' in final.event.action|lower}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'session' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
   ecs_network_categorization:
     actions:
       - set:
           event.category: "{{(final.event.category|default([])) + ['network']}}"
         filter: >-
-          {{final.event.category is not defined and (final.observer.type ==
-          'firewall' or 'flow' in final.event.action|lower)}}
+          {{final.event.category is not defined and final.event.dataset != 'browser-access' and (final.observer.type ==
+          'cloud' or 'flow' in final.event.action|lower)}}
         name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['connection']}}"
@@ -399,7 +439,7 @@ stages:
     actions:
       - set:
           event.category: "{{(final.event.category|default([])) + ['web']}}"
-        filter: "{{final.event.category is not defined}}"
+        filter: "{{final.event.category is not defined or final.event.dataset == 'browser-access'}}"
         name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['error']}}"
@@ -413,31 +453,7 @@ stages:
           event.type: "{{(final.event.type|default([])) + ['info']}}"
         filter: "{{'web' in final.event.category and final.event.type is not defined}}"
         name: set
-  ecs_session_categorization:
-    actions:
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['session']}}"
-        filter: >-
-          {{'session' not in final.event.category and 'session' in
-          final.event.action|lower}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['end']}}"
-        filter: >-
-          {{'end' not in final.event.type and 'session' in final.event.category
-          and ('close' in final.event.action|lower or ('end' in
-          final.event.action|lower and not ('pend' in final.event.action|lower
-          or 'send' in final.event.action|lower)))}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['info']}}"
-        filter: >-
-          {{'info' not in final.event.type and 'session' in final.event.category
-          and 'info' in final.event.action|lower}}
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['start']}}"
-        filter: >-
-          {{'start' not in final.event.type and 'session' in
-          final.event.category and 'end' not in final.event.type and 'info' not
-          in final.event.type}}
+
   ecs_kind_categorization:
     actions:
       - set:
