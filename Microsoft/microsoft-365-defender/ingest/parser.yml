@@ -129,13 +129,15 @@ stages:
           "@timestamp": "{{parsed_date.datetime}}"
           event.type: ["info"]
           event.action: "{{json_event.message.properties.Action or json_event.message.properties.DeliveryAction}}"
+          event.risk_score: "{{parse_raw_event_data.data.get('ConfidenceScore')}}"
           action.name: "{{json_event.message.operationName}}"
           agent.version: "{{json_event.message.properties.ClientVersion}}"
           agent.id: "{{json_event.message.properties.DeviceId}}"
           destination.port: "{{json_event.message.properties.RemotePort or json_event.message.properties.DestinationPort}}"
-          email.local_id: "{{json_event.message.properties.NetworkMessageId}}"
-          email.message_id: "{{json_event.message.properties.InternetMessageId}}"
-          email.subject: "{{json_event.message.properties.EmailSubject or json_event.message.properties.Subject}}"
+          email.delivery_timestamp: "{{parse_raw_event_data.data.get('Entities', [])[0].get('ReceivedDate')|to_rfc3339()}}"
+          email.local_id: "{{json_event.message.properties.NetworkMessageId or parse_raw_event_data.data.get('Entities', [])[0].get('NetworkMessageId')}}"
+          email.message_id: "{{json_event.message.properties.InternetMessageId or parse_raw_event_data.data.get('Entities', [])[0].get('InternetMessageId')}}"
+          email.subject: "{{json_event.message.properties.EmailSubject or json_event.message.properties.Subject or parse_raw_event_data.data.get('Entities', [])[0].get('Subject')}}"
           file.directory: "{{json_event.message.properties.FolderPath}}"
           file.hash.md5: "{{json_event.message.properties.MD5}}"
           file.hash.sha1: "{{json_event.message.properties.SHA1}}"
@@ -197,12 +199,43 @@ stages:
           microsoft.defender.activity.type: "{{json_event.message.properties.ActivityType}}"
           microsoft.defender.alert.id: "{{json_event.message.properties.AlertId}}"
           microsoft.defender.alert.title: "{{json_event.message.properties.Title}}"
+          microsoft.defender.alert.types: "{{parse_raw_event_data.data.get('Entities') | map(attribute='SourceEntityType') | unique | join(', ')}}"
+          microsoft.defender.alert.correlation_key: "{{parse_raw_event_data.data.get('CorrelationKey')}}"
           microsoft.defender.alert.severity: "{{json_event.message.properties.Severity}}"
           microsoft.defender.report.id: "{{json_event.message.properties.ReportId}}"
-          microsoft.defender.threat.detection: "{{json_event.message.properties.DetectionMethods}}"
+          microsoft.defender.threat.detection: "{{json_event.message.properties.DetectionMethods or parse_raw_event_data.data.get('Entities', [])[0].get('ThreatDetectionMethods') or parse_raw_event_data.data.get('DetectionTechnology')}}"
           microsoft.defender.threat.names: "{{json_event.message.properties.ThreatNames}}"
           microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
           microsoft.defender.url_location: "{{json_event.message.properties.UrlLocation}}"
+
+      - set:
+          microsoft.defender.campaign.id: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignID')}}"
+          microsoft.defender.campaign.name: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignName')}}"
+          microsoft.defender.campaign.family: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignFamily')}}"
+          microsoft.defender.campaign.first_seen: "{{parse_raw_event_data.data.get('Entities')[0].get('FirstSeen')|to_rfc3339()}}"
+          microsoft.defender.campaign.last_seen: "{{parse_raw_event_data.data.get('Entities')[0].get('LastSeen')|to_rfc3339()}}"
+        filter: '{{parse_raw_event_data.data.get("Entities") != None and parse_raw_event_data.data.get("Entities")[0].get("CampaignID") != None}}'
+
+      - set:
+          microsoft.defender.network.message.id: >
+            {%- set entities = parse_raw_event_data.data.get('Entities') -%}
+            {%- set message_ids = [] -%}
+            {%- for entity in entities -%}
+              {%- if entity.get('NetworkMessageId') != None -%}
+                {%- set _ = message_ids.append(entity.get('NetworkMessageId')) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ message_ids }}
+
+      - set:
+          microsoft.defender.threat.remediation_action: >
+            {%- set actions = parse_raw_event_data.data.get('Entities')[0].get('AdditionalActionsAndResults') -%}
+            {%- for action in actions -%}
+              {%- if "Zap:" in action -%}
+                {{action.split("Zap: ")[1]}}
+              {%- endif -%}
+            {%- endfor -%}
+        filter: '{{parse_raw_event_data.data.get("Entities")[0].get("AdditionalActionsAndResults") != None}}'
 
       - set:
           source.ip: "{{json_event.message.properties.LocalIP}}"
@@ -222,6 +255,9 @@ stages:
       - set:
           source.ip: "{{json_event.message.properties.SenderIPv6}}"
         filter: '{{json_event.message.properties.get("SenderIPv6")  | is_ipaddress}}'
+      - set:
+          source.ip: "{{parse_raw_event_data.data.get('SenderIP')}}"
+        filter: '{{parse_raw_event_data.data.get("SenderIP")  | is_ipaddress}}'
       - set:
           source.ip: "{{json_event.message.properties.InitiatingProcessRemoteSessionIP}}"
         filter: '{{json_event.message.properties.get("InitiatingProcessRemoteSessionIP")  | is_ipaddress}}'
@@ -272,6 +308,18 @@ stages:
               {%- endfor -%}
             }
         filter: '{{json_event.message.properties.RawEventData.get("OperationProperties") != None}}'
+
+      - set:
+          email.from.address: >
+            {%- set entities = parse_raw_event_data.data.get('Entities')|list -%}
+            {%- set senders = [] -%}
+            {%- for entity in entities -%}
+              {%- if entity.get('Sender') != None -%}
+                {%- set _ = senders.append(entity.get('Sender')) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ senders }}
+        filter: '{{json_event.message.properties.get("NetworkMessageId") == None}}'
 
   set_process_events:
     actions:
