@@ -1,4 +1,5 @@
 name: microsoft-defender-xdr-graphapi
+ignored_values: ["none", "unknown"]
 pipeline:
   - name: json_event
     external:
@@ -70,11 +71,6 @@ stages:
       - set:
           "@timestamp": "{{json_event.message.createdDateTime}}"
 
-      - set:
-          registry.key: "{{json_event.message.registryKey}}"
-          registry.path: "{{json_event.message.registryHive}}\\{{json_event.message.registryKey}}"
-        filter: "{{json_event.message.registryHive | length > 0}}"
-
       - translate:
         dictionary:
           "HKEY_LOCAL_MACHINE": "HKLM"
@@ -84,6 +80,11 @@ stages:
           "HKEY_USERS": "HKU"
         mapping:
           json_event.message.registryHive: registry.hive
+
+      - set:
+          registry.key: "{{json_event.message.registryKey}}"
+          registry.path: "{{final.registry.hive}}\\{{json_event.message.registryKey}}"
+        filter: "{{final.registry.hive | length > 0}}"
 
       - set:
           registry.value: "{{json_event.message.registryValueName}}"
@@ -128,6 +129,12 @@ stages:
         filter: "{{json_event.message.get('fileDetails') != None}}"
 
       - set:
+          file.path: >
+            {%- if '\\' in final.file.directory -%}{{final.file.directory}}\{{final.file.name}}{%- endif -%}
+            {%- if '/' in final.file.directory -%}{{final.file.directory}}/{{final.file.name}}{%- endif -%}
+        filter: "{{final.file.path | length == 0 and final.file.name | length > 0 and final.file.directory | length > 0}}"
+
+      - set:
           process.parent.pid: "{{json_event.message.parentProcessId}}"
           process.parent.start: "{{json_event.message.parentProcessCreationDateTime}}"
 
@@ -150,8 +157,6 @@ stages:
           microsoft.defender.entity.subscription_id: "{{json_event.message.vmMetadata.subscriptionId}}"
           microsoft.defender.alert.id: "{{json_event.message.alertId}}"
           microsoft.defender.evidence.type: "{{json_event.message.get('@odata.type').removeprefix('#microsoft.graph.security.')}}"
-          microsoft.defender.evidence.role: "{{json_event.message.roles[0]}}"
-          microsoft.defender.evidence.roles: "{{json_event.message.roles}}"
           microsoft.defender.threat.detection_status: "{{json_event.message.detectionStatus}}"
           microsoft.defender.threat.last_remediation_state: "{{json_event.message.remediationStatus}}"
           microsoft.defender.threat.severity: "{{json_event.message.riskScore}}"
@@ -159,6 +164,11 @@ stages:
           microsoft.defender.device.onboarding_status: "{{json_event.message.onboardingStatus}}"
 
           url.original: "{{json_event.message.url}}"
+
+      - set:
+          microsoft.defender.evidence.role: "{{json_event.message.roles[0]}}"
+          microsoft.defender.evidence.roles: "{{json_event.message.roles}}"
+        filter: "{{json_event.message.roles | length > 0 }}"
 
       - set:
           source.ip: "{{json_event.message.ipAddress}}"
