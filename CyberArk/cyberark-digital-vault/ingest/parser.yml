@@ -10,7 +10,6 @@
           output_field: message
     #CEF Format handling
     - name: parsed_event
-      description: ''
       filter: "{{original.message.startswith('CEF:')}}"
       external:
         name: cef.parse-cef
@@ -61,6 +60,7 @@
       actions:
         - set:
             event.action: "{{parsed_event.message.Action or parsed_event.message.act}}"
+            event.code: "{{parsed_event.message.DeviceEventClassID}}"
         - set:
             event.reason: "{{parsed_event.message.Reason or parsed_event.message.msg or parsed_event.message.reason}}"
           #For some events, the reason is a command_line
@@ -81,22 +81,22 @@
           filter: ""
           name: translate
         - set:
-            event.code: "{{parsed_event.message.DeviceEventClassID}}"
-        - set:
             event.duration: >
               {%- set duration = parsed_extra_details.message.SessionDuration-%}
               {%- set hours = duration.split(':')[0]-%} {%- set minutes =
               duration.split(':')[1]-%} {%- set seconds =
               duration.split(':')[2]-%} {{(hours | int * 3600 + minutes | int * 60
               + seconds | int) * 1_000_000_000}}
-          filter: "{{parsed_extra_details is defined and parsed_extra_details.message is defined}}"
+          filter: "{{parsed_extra_details is defined and parsed_extra_details.message is defined and parsed_extra_details.message.SessionDuration is defined}}"
         - set:
             log.description: "{{parsed_event.message.EventMessage or parsed_event.message.msg}}"
     ecs_user_mapping:
       actions:
         - set:
             user.name: "{{parsed_event.message.usrName or parsed_event.message.suser}}"
+        - set:
             user.domain: "{{final.user.name.split('@')[1]}}"
+          filter: "{{final.user.name is defined and '@' in final.user.name}}"
     ecs_source_mapping:
       actions:
         - set:
@@ -113,7 +113,9 @@
           filter: "{{final.source.ip is not defined and (parsed_event.message.src | is_ipaddress)}}"
         - set:
             source.user.name: "{{parsed_event.message.SourceUser or parsed_event.message.get('Affected User Name')}}"
+        - set:
             source.user.domain: "{{final.source.user.name.split('@')[1]}}"
+          filter: "{{final.source.user.name is defined and '@' in final.source.user.name}}"
     ecs_destination_mapping:
       actions:
         - set:
@@ -124,7 +126,9 @@
           filter: "{{not (parsed_event.message.dhost | is_ipaddress)}}"
         - set:
             destination.user.name: "{{parsed_event.message.duser}}"
+        - set:
             destination.user.domain: "{{final.destination.user.name.split('@')[1]}}"
+          filter: "{{final.destination.user.name is defined and '@' in final.destination.user.name}}"
     ecs_network_mapping:
       actions:
         - set:
@@ -138,10 +142,10 @@
         - set:
             cyberark.vault.safe: "{{parsed_event.message.Safe or parsed_event.message.get('Safe Name')}}"
             cyberark.vault.reason: "{{parsed_event.message.Reason}}"
-            cyberark.vault.location: "{{ parsed_event.message.Location}}"
+            cyberark.vault.location: "{{parsed_event.message.Location}}"
             cyberark.vault.category: "{{parsed_event.message.Category}}"
-            cyberark.vault.GatewayStation: "{{ parsed_event.message.GatewayStation or parsed_event.message.dvc}}"
-            cyberark.vault.device.type: "{{ parsed_event.message.get('Device Type') }}"
+            cyberark.vault.GatewayStation: "{{parsed_event.message.GatewayStation or parsed_event.message.dvc}}"
+            cyberark.vault.device.type: "{{parsed_event.message.get('Device Type')}}"
             cyberark.psm.session.id: "{{parsed_event.message.externalId}}"
         #For some events, the reason is a command_line
         - set:
@@ -277,10 +281,10 @@
             event.type: "{{(final.event.type|default([])) + ['access']}}"
           filter: >-
             {{'process' in final.event.category and 'access' not in final.event.type and 'connection' in final.event.action|lower}}
-        - set:
-            event.type: "{{(final.event.type|default([])) + ['change']}}"
-          filter: >-
-            {{False}}
+#        - set:
+#            event.type: "{{(final.event.type|default([])) + ['change']}}"
+#          filter: >-
+#            {{False}}
         - set:
             event.type: "{{(final.event.type|default([])) + ['end']}}"
           filter: >-
@@ -303,7 +307,7 @@
         - set:
             event.category: "{{(final.event.category|default([])) + ['file']}}"
           filter: >-
-            {{ 'file' not in final.event.category and ('file' in final.event.action|lower and not 'category' in final.event.action|lower) and not final.event.code in ['145','170','189','198']}}
+            {{'file' not in final.event.category and ('file' in final.event.action|lower and not 'category' in final.event.action|lower) and not final.event.code in ['145','170','189','198']}}
         - set:
             event.type: "{{(final.event.type|default([])) + ['access']}}"
           filter: >-
@@ -336,9 +340,9 @@
         - set:
             event.type: "{{(final.event.type|default([])) + ['info']}}"
           filter: >-
-            {{'file' in final.event.category and (final.event.type is not defined or 
-            'access' not in final.event.type or 'change' not in final.event.type or 
-            'creation' not in final.event.type  or 'deletion' not in final.event.type)}}
+            {{'file' in final.event.category and (final.event.type is not defined or ( 
+            'access' not in final.event.type and 'change' not in final.event.type and 
+            'creation' not in final.event.type  and 'deletion' not in final.event.type))}}
     ecs_iam_categorization:
       actions:
         - set:
