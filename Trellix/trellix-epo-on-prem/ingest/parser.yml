@@ -5,7 +5,7 @@ pipeline:
     external:
       name: xml.parse-xml
       properties:
-        input_field: '{{original.message.lstrip("\ufeff").rstrip("#015").replace("<EPOevent>", "<EPOEvent>").replace("</EPOevent>", "</EPOEvent>")}}'
+        input_field: '{{original.message.lstrip("\ufeff").rstrip("#015").replace("<EPOevent>", "<EPOEvent>").replace("</EPOevent>", "</EPOEvent>").replace("<DLPE____1114>", "<DLPEEvent>").replace("</DLPE____1114>", "</DLPEEvent>")}}'
         output_field: output
 
   - name: set_common_fields
@@ -18,6 +18,9 @@ pipeline:
 
   - name: set_msme_events_fields
     filter: "{{parsed_event.output.get('MSMERoot') != None}}"
+
+  - name: set_dlpe_events_fields
+    filter: "{{parsed_event.output.get('DLPEEvent') != None}}"
 
 stages:
   set_common_fields:
@@ -198,3 +201,35 @@ stages:
       - set:
           destination.mac: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.TargetMAC}}"
         filter: "{{parsed_event.output.MSMERoot.MSME.MSMEEvent.TargetMAC | length > 0}}"
+
+  set_dlpe_events_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event.output.DLPEEvent.EventList.Event.GMTTime | to_rfc3339}}"
+
+          event.dataset: "DLPEEvents"
+
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+          event.code: "{{parsed_event.output.DLPEEvent.EventList.Event.EventID}}"
+          event.severity: "{{parsed_event.output.DLPEEvent.EventList.Event.Severity}}"
+
+          agent.id: "{{parsed_event.output.DLPEEvent.MachineInfo.AgentGUID.strip('{}')}}"
+          agent.version: "{{parsed_event.output.DLPEEvent.MachineInfo.AgentVersion}}"
+
+          host.name: "{{parsed_event.output.DLPEEvent.MachineInfo.MachineName}}"
+          host.mac: "{{parsed_event.output.DLPEEvent.MachineInfo.RawMACAddress}}"
+          host.os.full: "{{parsed_event.output.DLPEEvent.MachineInfo.OSName}}"
+
+          user.name: "{{parsed_event.output.DLPEEvent.MachineInfo.UserName}}"
+
+          observer.product: "{{parsed_event.output.DLPEEvent.EventList.get('@ProductName')}}"
+          observer.version: "{{parsed_event.output.DLPEEvent.EventList.get('@ProductVersion')}}"
+
+          threat.indicator.name: "{{parsed_event.output.DLPEEvent.EventList.Event.ThreatName}}"
+          rule.name: "{{parsed_event.output.DLPEEvent.EventList.Event.PolicyName}}"
+
+      - set:
+          host.ip: ["{{parsed_event.output.DLPEEvent.MachineInfo.IPAddress}}"]
+        filter: "{{parsed_event.output.DLPEEvent.MachineInfo.IPAddress | is_ipaddress}}"
