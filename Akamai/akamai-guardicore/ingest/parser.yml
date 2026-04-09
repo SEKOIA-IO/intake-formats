@@ -1,79 +1,44 @@
 name: akamai-guardicore
 pipeline:
-  # --- Audit log parsing ---
-  - name: parse_audit
+  - name: parse_event
     external:
       name: grok.match
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        raise_errors: false
-        pattern: "New [Aa]udit log entry reported by the Guardicore Security Suite;;Username: %{DATA:username};IP Address: %{DATA:ip_address};;%{GREEDYDATA}"
+        pattern: "%{NETWORK_LOG}|%{AUDIT_LOG}|%{INCIDENT_LOG}"
+        custom_patterns:
+          AUDIT_LOG: "New [Aa]udit log entry reported by the Guardicore Security Suite;;Username: %{DATA:username};IP Address: %{DATA:ip_address};;\\s?Title: %{DATA:title};;?\\s?Description: %{GREEDYDATA:description}"
+          INCIDENT_LOG: >-
+            New \w+ severity security incident reported by the Guardicore Security Suite;;ID: %{DATA:id};URL: %{DATA:url};;Description: %{DATA:description};;Severity: %{DATA:severity};Start Time: %{DATA:start_time};End Time: %{DATA:end_time};;Rule ID: %{DATA:rule_id};Affected Assets:;%{DATA:affected_assets};;%{DATA:dest_labels};;%{DATA:tags};;Summary: ;%{DATA:summary};Direction: %{DATA:direction};%{GREEDYDATA}
+          NETWORK_LOG: >-
+            New network connection reported by the Guardicore Security Suite;ID: %{DATA:id};Connection type: %{DATA:connection_type};\s*Action: %{DATA:action};Count: %{INT:count};Time: %{DATA:start_time};Source IP: %{DATA:source_ip};Source process name: %{DATA:source_process_name};Source application name: %{DATA:source_app};Destination IP: %{DATA:dest_ip};Destination port: %{INT:dest_port};Destination asset name: %{DATA:dest_asset};Destination user name: %{DATA:dest_user};Destination process name: %{DATA:dest_process_name};Destination process path: %{DATA:dest_process_path};(?:Destination process name: %{DATA:dup_dest_process_name};\s*)?Protocol: %{DATA:protocol};Connection verdict: %{DATA:verdict};Policy rule: %{DATA:policy_rule};\s*Incidents:\s*%{GREEDYDATA:incidents}
 
-  - name: parse_audit_description
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{original.message}}"
-        output_field: message
-        raise_errors: false
-        pattern: "%{GREEDYDATA}[Dd]escription: %{GREEDYDATA:description}"
-
-  # --- Incident parsing ---
-  - name: parse_incident
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{original.message}}"
-        output_field: message
-        raise_errors: false
-        pattern: >-
-          New \w+ severity security incident reported by the Guardicore Security Suite;;ID: %{DATA:id};URL: %{DATA:url};;Description: %{DATA:description};;Severity: %{DATA:severity};Start Time: %{DATA:start_time};End Time: %{DATA:end_time};;Rule ID: %{DATA:rule_id};Affected Assets:;%{DATA:affected_assets};;%{DATA:dest_labels};;%{DATA:tags};;Summary: ;%{DATA:summary};Direction: %{DATA:direction};%{GREEDYDATA}
-
-  - name: parse_incident_start_time
-    filter: "{{parse_incident.message.start_time is not none}}"
+  - name: parse_start_time
+    filter: "{{parse_event.message.start_time is not none}}"
     external:
       name: date.parse
       properties:
-        input_field: parse_incident.message.start_time
+        input_field: parse_event.message.start_time
         output_field: datetime
 
-  - name: parse_incident_end_time
-    filter: "{{parse_incident.message.end_time is not none}}"
+  - name: parse_end_time
+    filter: "{{parse_event.message.end_time is not none}}"
     external:
       name: date.parse
       properties:
-        input_field: parse_incident.message.end_time
+        input_field: parse_event.message.end_time
         output_field: datetime
 
   - name: parse_incident_labels
-    filter: "{{parse_incident.message.dest_labels is not none}}"
+    filter: "{{parse_event.message.dest_labels is not none}}"
     external:
       name: grok.match
       properties:
-        input_field: "{{parse_incident.message.dest_labels}}"
+        input_field: "{{parse_event.message.dest_labels}}"
         output_field: message
         raise_errors: false
         pattern: ".*App: %{DATA:app};Environment: %{DATA:environment};os_name: %{DATA:os_name};os_type: %{DATA:os_type}"
-
-  # --- Network connection parsing ---
-  - name: parse_network
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{original.message}}"
-        output_field: message
-        raise_errors: false
-        pattern: >-
-          New network connection reported by the Guardicore Security Suite;ID: %{DATA:id};Connection type: %{DATA:connection_type};\s*Action: %{DATA:action};Count: %{INT:count};Time: %{DATA:time};Source IP: %{DATA:source_ip};Source process name: %{DATA:source_process_name};Source application name: %{DATA:source_app};Destination IP: %{DATA:dest_ip};Destination port: %{INT:dest_port};Destination asset name: %{DATA:dest_asset};Destination user name: %{DATA:dest_user};Destination process name: %{DATA:dest_process_name};Destination process path: %{DATA:dest_process_path};(?:Destination process name: %{DATA:dup_dest_process_name};\s*)?Protocol: %{DATA:protocol};Connection verdict: %{DATA:verdict};Policy rule: %{DATA:policy_rule};\s*Incidents:\s*%{GREEDYDATA:incidents}
-
-  - name: parse_network_time
-    filter: "{{parse_network.message.time is not none}}"
-    external:
-      name: date.parse
-      properties:
-        input_field: parse_network.message.time
-        output_field: datetime
 
   # --- Set fields ---
   - name: set_common_fields
@@ -101,31 +66,31 @@ stages:
           event.category: ["configuration"]
           event.dataset: "audit"
           event.type: ["info"]
-          event.reason: "{{parse_audit_description.message.description}}"
+          event.reason: "{{parse_event.message.description}}"
 
       - set:
-          source.ip: "{{parse_audit.message.ip_address}}"
-        filter: "{{parse_audit.message.ip_address | is_ipaddress}}"
+          source.ip: "{{parse_event.message.ip_address}}"
+        filter: "{{parse_event.message.ip_address | is_ipaddress}}"
 
       - set:
-          user.name: "{{parse_audit.message.username}}"
-        filter: "{{parse_audit.message.username is not none and parse_audit.message.username.lower() != 'none'}}"
+          user.name: "{{parse_event.message.username}}"
+        filter: "{{parse_event.message.username is not none and parse_event.message.username.lower() != 'none'}}"
 
       - set:
           event.type: ["creation"]
-        filter: "{{parse_audit_description.message.description is not none and 'created' in parse_audit_description.message.description.lower()}}"
+        filter: "{{parse_event.message.description is not none and 'created' in parse_event.message.description.lower()}}"
 
       - set:
           event.type: ["deletion"]
-        filter: "{{parse_audit_description.message.description is not none and 'deleted' in parse_audit_description.message.description.lower()}}"
+        filter: "{{parse_event.message.description is not none and 'deleted' in parse_event.message.description.lower()}}"
 
       - set:
           event.type: ["access"]
-        filter: "{{parse_audit_description.message.description is not none and 'access to' in parse_audit_description.message.description.lower()}}"
+        filter: "{{parse_event.message.description is not none and 'access to' in parse_event.message.description.lower()}}"
 
       - set:
           event.type: ["change"]
-        filter: "{{parse_audit_description.message.description is not none and ('updated' in parse_audit_description.message.description.lower() or 'modified' in parse_audit_description.message.description.lower())}}"
+        filter: "{{parse_event.message.description is not none and ('updated' in parse_event.message.description.lower() or 'modified' in parse_event.message.description.lower())}}"
 
   set_incident_fields:
     actions:
@@ -134,19 +99,19 @@ stages:
           event.category: ["threat"]
           event.type: ["info"]
           event.dataset: "incident"
-          "@timestamp": "{{parse_incident_start_time.datetime}}"
-          "event.start": "{{parse_incident_start_time.datetime}}"
-          event.end: "{{parse_incident_end_time.datetime}}"
-          event.reference: "{{parse_incident.message.url}}"
-          rule.id: "{{parse_incident.message.rule_id}}"
-          event.reason: "{{parse_incident.message.summary}}"
-          akamai.guardicore.incident.id: "{{parse_incident.message.id}}"
-          akamai.guardicore.incident.severity: "{{parse_incident.message.severity}}"
-          akamai.guardicore.incident.affected_assets: "{{parse_incident.message.affected_assets}}"
+          "@timestamp": "{{parse_start_time.datetime}}"
+          "event.start": "{{parse_start_time.datetime}}"
+          event.end: "{{parse_end_time.datetime}}"
+          event.reference: "{{parse_event.message.url}}"
+          rule.id: "{{parse_event.message.rule_id}}"
+          event.reason: "{{parse_event.message.summary}}"
+          akamai.guardicore.incident.id: "{{parse_event.message.id}}"
+          akamai.guardicore.incident.severity: "{{parse_event.message.severity}}"
+          akamai.guardicore.incident.affected_assets: "{{parse_event.message.affected_assets}}"
 
       - set:
-          network.direction: "{{parse_incident.message.direction | lower}}"
-        filter: "{{parse_incident.message.direction is not none}}"
+          network.direction: "{{parse_event.message.direction | lower}}"
+        filter: "{{parse_event.message.direction is not none}}"
 
       - set:
           network.application: "{{parse_incident_labels.message.app}}"
@@ -161,35 +126,35 @@ stages:
           event.category: ["network"]
           event.type: ["info"]
           event.dataset: "network"
-          "@timestamp": "{{parse_network_time.datetime}}"
-          event.action: "{{parse_network.message.action}}"
-          process.name: "{{parse_network.message.source_process_name}}"
-          network.application: "{{parse_network.message.source_app}}"
-          destination.port: "{{parse_network.message.dest_port | int}}"
-          destination.domain: "{{parse_network.message.dest_asset}}"
-          destination.user.name: "{{parse_network.message.dest_user}}"
-          network.transport: "{{parse_network.message.protocol | lower}}"
-          rule.id: "{{parse_network.message.policy_rule | trim}}"
-          akamai.guardicore.network.id: "{{parse_network.message.id}}"
-          akamai.guardicore.network.connection_verdict: "{{parse_network.message.verdict}}"
-          akamai.guardicore.network.destination.process.name: "{{parse_network.message.dest_process_name}}"
-          akamai.guardicore.network.destination.process.path: "{{parse_network.message.dest_process_path}}"
-          akamai.guardicore.network.incidents: "{{parse_network.message.incidents | trim}}"
+          "@timestamp": "{{parse_start_time.datetime}}"
+          event.action: "{{parse_event.message.action}}"
+          process.name: "{{parse_event.message.source_process_name}}"
+          network.application: "{{parse_event.message.source_app}}"
+          destination.port: "{{parse_event.message.dest_port | int}}"
+          destination.domain: "{{parse_event.message.dest_asset}}"
+          destination.user.name: "{{parse_event.message.dest_user}}"
+          network.transport: "{{parse_event.message.protocol | lower}}"
+          rule.id: "{{parse_event.message.policy_rule | trim}}"
+          akamai.guardicore.network.id: "{{parse_event.message.id}}"
+          akamai.guardicore.network.connection_verdict: "{{parse_event.message.verdict}}"
+          akamai.guardicore.network.destination.process.name: "{{parse_event.message.dest_process_name}}"
+          akamai.guardicore.network.destination.process.path: "{{parse_event.message.dest_process_path}}"
+          akamai.guardicore.network.incidents: "{{parse_event.message.incidents | trim}}"
 
       - set:
-          source.ip: "{{parse_network.message.source_ip}}"
-        filter: "{{parse_network.message.source_ip | is_ipaddress}}"
+          source.ip: "{{parse_event.message.source_ip}}"
+        filter: "{{parse_event.message.source_ip | is_ipaddress}}"
 
       - set:
-          destination.ip: "{{parse_network.message.dest_ip}}"
-        filter: "{{parse_network.message.dest_ip | is_ipaddress}}"
+          destination.ip: "{{parse_event.message.dest_ip}}"
+        filter: "{{parse_event.message.dest_ip | is_ipaddress}}"
 
       - set:
           event.outcome: "success"
           event.type: ["allowed"]
-        filter: "{{parse_network.message.verdict |lower == 'allowed'}}"
+        filter: "{{parse_event.message.verdict |lower == 'allowed'}}"
 
       - set:
           event.outcome: "failure"
           event.type: ["denied"]
-        filter: "{{parse_network.message.verdict is not none and 'blocked_by' in parse_network.message.verdict}}"
+        filter: "{{parse_event.message.verdict is not none and 'blocked_by' in parse_event.message.verdict}}"
