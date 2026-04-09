@@ -9,15 +9,19 @@ on:
       - develop
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   find-intakes:
+    permissions:
+      contents: read  # for actions/checkout to fetch code
     name: Find intakes in repo
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.list-intakes.outputs.matrix }}
     steps:
       - name: Check-out the repo under $GITHUB_WORKSPACE
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
 
@@ -25,17 +29,17 @@ jobs:
         name: List intakes having changed files
         run: |
           if ${{ github.event_name == 'workflow_dispatch' }}; then
-            echo "matrix=$(find . -maxdepth 2 -type d ! -name '.*' ! -path './.git*' ! -path './utils*' ! -name '_meta' | awk -F/ 'NF == 3 && $2 {print $2 "/" $3}' | sort | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+            echo "matrix=$(find . -maxdepth 2 -type d ! -name '.*' ! -path './.git*' ! -path './utils*' ! -name '_meta' | awk -F/ 'NF == 3 && $2 {print $2 "/" $3}' | sort | jq -R -s -c 'split("\n")[:-1]')" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if ${{ github.event_name == 'pull_request' }}; then
             start="HEAD^1"
             end="HEAD"
           else
-            start=${{ github.event.before }}
-            end=${{ github.event.after }}
+            start="${{ github.event.before }}"
+            end="${{ github.event.after }}"
           fi
-          echo "matrix=$(comm -12 <(cut -d "/" -f 1,2 <<< "$(git diff --name-only -r $start $end | sort | uniq)") <(find . -maxdepth 2 -type d ! -name '.*' ! -path './.git*' ! -path './utils*' ! -name '_meta' | awk -F/ 'NF == 3 && $2 {print $2 "/" $3}' | sort | uniq) | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          echo "matrix=$(comm -12 <(cut -d "/" -f 1,2 <<< "$(git diff --name-only -r "$start" "$end" | sort | uniq)") <(find . -maxdepth 2 -type d ! -name '.*' ! -path './.git*' ! -path './utils*' ! -name '_meta' | awk -F/ 'NF == 3 && $2 {print $2 "/" $3}' | sort | uniq) | jq -R -s -c 'split("\n")[:-1]')" >> "$GITHUB_OUTPUT"
 
   deploy-intakes:
     name: Deploy intakes
@@ -49,13 +53,13 @@ jobs:
     steps:
       - name: my-app-install token
         id: my-app
-        uses: getsentry/action-github-app-token@v1
+        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
         with:
           app_id: ${{ secrets.PRIVATE_DISPATCH_APP_ID }}
           private_key: ${{ secrets.PRIVATE_DISPATCH_APP_SECRET_KEY }}
 
       - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@v1
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.my-app.outputs.token }}
           event-type: publish-intakes
