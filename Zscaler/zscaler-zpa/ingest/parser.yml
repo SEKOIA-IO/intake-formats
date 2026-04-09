@@ -1,0 +1,475 @@
+name: zscaler-zpa
+pipeline:
+  - name: parsed_event
+    description: "JSON log format parsing stage"
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: parsed_date_custom
+    description: ""
+    filter: "{{parsed_event.message.LogTimestamp is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.LogTimestamp}}"
+        output_field: timestamp
+        format: "%a %b %d %H:%M:%S %Y"
+        timezone: UTC
+  - name: parsed_date_iso8601
+    description: ""
+    filter: "{{parsed_event.message.CreationTime is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.CreationTime}}"
+        output_field: timestamp
+        format: "%Y-%m-%dT%H:%M:%S.%fZ"
+        timezone: UTC
+  - name: zpa_log_type_mapping
+  - name: ecs_observer_mapping
+  - name: ecs_event_mapping
+  - name: ecs_source_mapping
+  - name: ecs_destination_mapping
+  - name: ecs_network_mapping
+  - name: ecs_host_mapping
+  - name: ecs_user_mapping
+  - name: ecs_service_mapping
+  - name: ecs_tls_mapping
+  - name: ecs_user_agent_mapping
+  - name: ecs_url_mapping
+  - name: ecs_http_mapping
+  - name: ecs_organization_mapping
+  - name: ecs_cloud_mapping
+  - name: custom_fields_mapping
+  - name: ecs_authentication_categorization
+  - name: ecs_configuration_categorization
+  - name: ecs_process_categorization
+  - name: ecs_session_categorization
+  - name: ecs_network_categorization
+  - name: ecs_web_categorization
+  - name: ecs_kind_categorization
+  - name: ecs_outcome_categorization
+stages:
+  zpa_log_type_mapping:
+    actions:
+      - set:
+          event.dataset: app-connector-status
+        filter: "{{parsed_event.message.BytesRxInterface is defined}}"
+      - set:
+          event.dataset: appprotection
+        filter: "{{parsed_event.message.Domain is defined}}"
+      - set:
+          event.dataset: audit
+        filter: "{{parsed_event.message.AuditOperationType is defined}}"
+      - set:
+          event.dataset: browser-access
+        filter: "{{parsed_event.message.CorsToken is defined}}"
+      - set:
+          event.dataset: user-activity
+        filter: "{{parsed_event.message.ClientCity is defined}}"
+      - set:
+          event.dataset: user-status
+        filter: "{{parsed_event.message.City is defined}}"
+  ecs_observer_mapping:
+    actions:
+      - set:
+          observer.type: cloud
+          observer.vendor: Zscaler
+          observer.product: Private Access
+          observer.hostname: "{{parsed_event.message.ZEN or parsed_event.message.ClientZEN}}"
+  ecs_organization_mapping:
+    actions:
+      - set:
+          organization.name: "{{parsed_event.message.Customer}}"
+  ecs_cloud_mapping:
+    actions:
+      - set:
+          cloud.account.id: "{{parsed_event.message.MicroTenantID}}"
+        filter: "{{parsed_event.message.MicroTenantID is defined}}"
+  ecs_event_mapping:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date_custom.timestamp}}"
+        filter: "{{parsed_event.message.LogTimestamp is defined}}"
+      - set:
+          "@timestamp": "{{parsed_date_iso8601.timestamp}}"
+        filter: "{{parsed_event.message.LogTimestamp is not defined}}"
+      - set:
+          event.reason: "{{parsed_event.message.ConnectionReason or parsed_event.message.InternalReason}}"
+      - set:
+          event.action: "{{parsed_event.message.AuditOperationType}}"
+        filter: "{{parsed_event.message.AuditOperationType is defined}}"
+      - set:
+          event.action: "Session status"
+        filter: "{{final.event.dataset == 'user-status' or final.event.dataset == 'app-connector-status'}}"
+      - set:
+          event.action: "Web access"
+        filter: "{{final.event.dataset == 'browser-access'}}"
+      - set:
+          event.action: "Inspect"
+        filter: "{{final.event.dataset == 'appprotection'}}"
+      - set:
+          event.action: "User activity"
+        filter: "{{final.event.dataset == 'user-activity'}}"
+
+      - set:
+          event.outcome: success
+        filter: >-
+          {{parsed_event.message.SessionStatus == 'ZPN_STATUS_AUTHENTICATED'}}
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{parsed_event.message.SessionStatus == 'ZPN_STATUS_DISCONNECTED' or parsed_event.message.SessionStatus == 'ZPN_STATUS_AUTH_FAILED'}}
+  ecs_source_mapping:
+    actions:
+      - set:
+          source.ip: >-
+            {{parsed_event.message.PublicIP or parsed_event.message.ClientPublicIp or parsed_event.message.ClientPublicIP}}
+          source.port: |-
+            {{parsed_event.message.ClientPort or parsed_event.message.ClientPublicPort}}
+          source.bytes: >-
+            {{parsed_event.message.TotalBytesTx}}
+          source.nat.ip: >-
+            {{parsed_event.message.PrivateIP or parsed_event.message.ClientPrivateIp or parsed_event.message.ClientPrivateIP}}
+          source.geo.location.lon: >-
+            {{parsed_event.message.Longitude or parsed_event.message.ClientLongitude}}
+          source.geo.location.lat: >-
+            {{parsed_event.message.Latitude or parsed_event.message.ClientLatitude}}
+          source.geo.country_iso_code: >-
+            {{parsed_event.message.CountryCode or parsed_event.message.ClientCountryCode}}
+          source.geo.city_name: >-
+            {{parsed_event.message.City or parsed_event.message.ClientCity}}
+  ecs_destination_mapping:
+    actions:
+      - set:
+          destination.ip: >-
+            {{parsed_event.message.ServerIP}}
+          destination.port: |-
+            {{parsed_event.message.ServerPort or parsed_event.message.ApplicationPort}}
+          destination.domain: >-
+            {{parsed_event.message.Host}}
+          destination.bytes: >-
+            {{parsed_event.message.TotalBytesRx}}
+  ecs_network_mapping:
+    actions:
+      - set:
+          network.bytes: "{{parsed_event.message.TotalBytesProcessed}}"
+          network.protocol: "{{parsed_event.message.Protocol}}"
+      - set:
+          network.iana_number: "{{parsed_event.message.IPProtocol}}"
+        filter: "{{parsed_event.message.IPProtocol is defined}}"
+  ecs_host_mapping:
+    actions:
+      - set:
+          host.name: "{{parsed_event.message.Connector or parsed_event.message.Host or parsed_event.message.Hostname}}"
+          host.os.type: "{{parsed_event.message.Platform}}"
+  ecs_user_mapping:
+    actions:
+      - set:
+          user.name: >-
+            {{parsed_event.message.UserID or parsed_event.message.ModifiedByUser or parsed_event.message.NameID or parsed_event.message.Username or parsed_event.message.User}}
+          user.domain: >-
+            {{parsed_event.message.Idp}}
+  ecs_service_mapping:
+    actions:
+      - set:
+          service.name: "{{parsed_event.message.Application}}"
+  ecs_tls_mapping:
+    actions:
+      - set:
+          tls.client.x509.subject.common_name: "{{parsed_event.message.CertificateCN}}"
+  ecs_user_agent_mapping:
+    actions:
+      - set:
+          user_agent.original: "{{parsed_event.message.UserAgent}}"
+  ecs_url_mapping:
+    actions:
+      - set:
+          url.domain: "{{ parsed_event.message.Domain or  parsed_event.message.Host}}"
+          url.path: "{{ parsed_event.message.URL }}"
+          url.original: "{{ parsed_event.message.URL }}"
+      - set:
+          url.scheme: "{{ parsed_event.message.Protocol | lower }}"
+        filter: "{{ final.event.dataset == 'browser-access' }}"
+  ecs_http_mapping:
+    actions:
+      - set:
+          http.request.method: "{{parsed_event.message.Method}}"
+          http.response.status_code: "{{parsed_event.message.StatusCode}}"
+          http.request.body.bytes: "{{parsed_event.message.RequestBodySize}}"
+          http.request.bytes: "{{parsed_event.message.RequestSize or parsed_event.message.RequestBodySize + parsed_event.message.RequestHdrSize}}"
+          http.response.body.bytes: "{{parsed_event.message.ResponseBodySize}}"
+          http.response.bytes: "{{parsed_event.message.ResponseSize or parsed_event.message.ResponseBodySize + parsed_event.message.ResponseHdrSize}}"
+      - set:
+          http.version: "{{parsed_event.message.Protocol}}"
+        filter: "{{final.event.dataset == 'appprotection'}}"
+  custom_fields_mapping:
+    actions:
+      - set:
+          zscaler.zpa.app_connector.version: "{{parsed_event.message.Version}}"
+          zscaler.zpa.app_connector.group_name: "{{parsed_event.message.ConnectorGroup}}"
+        filter: '{{final.event.dataset == "app-connector-status"}}'
+
+      - set:
+          zscaler.zpa.inspection.controls_hit_count: "{{parsed_event.message.InspectionControlsHitCount}}"
+          zscaler.zpa.inspection.policy: "{{parsed_event.message.InspectionPolicy}}"
+          zscaler.zpa.inspection.profile: "{{parsed_event.message.InspectionProfile}}"
+          zscaler.zpa.paranoia_level: "{{parsed_event.message.ParanoiaLevel}}"
+          zscaler.zpa.app_group_name: "{{parsed_event.message.ApplicationGroup}}"
+        filter: '{{final.event.dataset == "appprotection"}}'
+
+      - set:
+          zscaler.zpa.audit.old_value: "{{parsed_event.message.AuditOldValue}}"
+          zscaler.zpa.audit.new_value: "{{parsed_event.message.AuditNewValue}}"
+          zscaler.zpa.audit.operation_type: "{{parsed_event.message.AuditOperationType}}"
+          zscaler.zpa.object.id: "{{parsed_event.message.ObjectID}}"
+          zscaler.zpa.object.name: "{{parsed_event.message.ObjectName}}"
+          zscaler.zpa.object.type: "{{parsed_event.message.ObjectType}}"
+        filter: '{{final.event.dataset == "audit"}}'
+
+      - set:
+          zscaler.zpa.posture.hit: "{{parsed_event.message.PosturesHit}}"
+          zscaler.zpa.posture.miss: "{{parsed_event.message.PosturesMiss}}"
+          zscaler.zpa.access_policy_name: "{{parsed_event.message.Policy}}"
+          zscaler.zpa.app_connector.name: "{{parsed_event.message.Connector}}"
+          zscaler.zpa.app_connector.ip: "{{parsed_event.message.ConnectorIP}}"
+          zscaler.zpa.app_connector.port: "{{parsed_event.message.ConnectorPort}}"
+          zscaler.zpa.app_group_name: "{{parsed_event.message.AppGroup}}"
+          zscaler.zpa.app_connector.zen: "{{parsed_event.message.ConnectorZEN}}"
+        filter: '{{final.event.dataset == "user-activity"}}'
+
+      - set:
+          zscaler.zpa.client_connector_version: "{{parsed_event.message.Version}}"
+          zscaler.zpa.client_type: "{{parsed_event.message.ClientType}}"
+        filter: '{{final.event.dataset == "user-status"}}'
+      - set:
+          zscaler.zpa.trusted_networks.ids: '{{parsed_event.message.TrustedNetworks.split(",")}}'
+          zscaler.zpa.trusted_networks.names: '{{parsed_event.message.TrustedNetworksNames.split(",")}}'
+        filter: >-
+          {{final.event.dataset == "user-status" and parsed_event.message.TrustedNetworks is defined and
+          parsed_event.message.TrustedNetworksNames is defined}}
+
+  ecs_authentication_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['authentication']}}"
+        filter: >-
+          {{'auth' in final.event.action|lower or 'login' in final.event.action|lower or
+          'logout' in final.event.action|lower or 'logged in' in
+          final.event.action|lower or 'logged out' in final.event.action|lower
+          or 'logon' in final.event.action|lower or 'sign' in final.event.action|lower}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'authentication' in
+          final.event.category and ( 'logout' in final.event.action|lower or
+          'done' in final.event.action|lower or 'out' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{'info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' in
+          final.event.action|lower}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+  ecs_configuration_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['configuration']}}"
+        filter: >-
+          {{ 'config' in final.event.action|lower or 'policy' in
+          final.event.action|lower or 'Create' in final.event.action or 'Update' in final.event.action or 'Delete' in final.event.action or 'Change' in final.event.action}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['access']}}"
+        filter: >-
+          {{'access' not in final.event.type and 'configuration' in
+          final.event.category and ('read' in final.event.action|lower or 'view'
+          in final.event.action|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['change']}}"
+        filter: >-
+          {{'change' not in final.event.type and 'configuration' in
+          final.event.category and ('change' in final.event.action|lower or
+          'update' in final.event.action|lower or 'load' in
+          final.event.action|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['creation']}}"
+        filter: >-
+          {{'creation' not in final.event.type and 'configuration' in
+          final.event.category and ('new' in final.event.action|lower or 'set'
+          in final.event.action|lower or 'create' in final.event.action|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['deletion']}}"
+        filter: >-
+          {{'deletion' not in final.event.type and 'configuration' in
+          final.event.category and ('delete' in final.event.action|lower or
+          'remove' in final.event.action|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{final.event.type is not defined and 'configuration' in
+          final.event.category}}
+  ecs_process_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['process']}}"
+        filter: "{{final.process is defined}}"
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['access']}}"
+        filter: >-
+          {{'access' not in final.event.type and 'process' in
+          final.event.category and ('read' in final.event.action|lower or 'view'
+          in final.event.action|lower or 'show' in final.event.action)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['change']}}"
+        filter: >-
+          {{'change' not in final.event.type and 'process' in
+          final.event.category and ('update' in final.event.action|lower or
+          'edit' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'process' in
+          final.event.category and ('new' in final.event.action|lower or
+          'launch' in final.event.action|lower or 'start' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'process' in final.event.category
+          and ('stop' in final.event.action|lower or 'kill' in
+          final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{final.event.type is not defined and 'process' in
+          final.event.category}}
+        name: set
+  ecs_session_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['session']}}"
+        filter: >-
+          {{'session' not in final.event.category and 'session' in
+          final.event.action|lower}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'session' in final.event.category
+          and ('close' in final.event.action|lower or 'out' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{'info' not in final.event.type and 'session' in final.event.category
+          and 'status' in final.event.action|lower}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'session' in
+          final.event.category and 'end' not in final.event.type and 'info' not
+          in final.event.type}}
+  ecs_network_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['network']}}"
+        filter: >-
+          {{final.event.category is not defined and final.event.dataset != 'browser-access' and (final.observer.type ==
+          'cloud' or 'flow' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['connection']}}"
+        filter: >-
+          {{'connection' not in final.event.type and 'network' in
+          final.event.category and ('connection' in final.event.action|lower or
+          'flow' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'network' in final.event.category
+          and ('close' in final.event.action|lower or ('end' in
+          final.event.action|lower and not ('pend' in final.event.action|lower
+          or 'send' in final.event.action|lower)))}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'network' in
+          final.event.category and 'end' not in final.event.type and ('create' in
+          final.event.action|lower or 'start' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['allowed']}}"
+        filter: >-
+          {{'allowed' not in final.event.type and 'network' in
+          final.event.category and ('allow' in final.event.action|lower or
+          'permit' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['denied']}}"
+        filter: >-
+          {{'denied' not in final.event.type and 'network' in
+          final.event.category and ('discard' in final.event.action|lower or
+          'block' in final.event.action|lower or 'deny' in
+          final.event.action|lower or 'denied' in final.event.action|lower)}}
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{'network' in final.event.category and final.event.type is not
+          defined}}
+        name: set
+  ecs_web_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['web']}}"
+        filter: "{{final.event.category is not defined or final.event.dataset == 'browser-access'}}"
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['error']}}"
+        filter: "{{ 'web' in final.event.category and final.error is defined}}"
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['access']}}"
+        filter: "{{'web' in final.event.category and final.event.action is defined}}"
+        name: set
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: "{{'web' in final.event.category and final.event.type is not defined}}"
+        name: set
+
+  ecs_kind_categorization:
+    actions:
+      - set:
+          event.kind: alert
+        filter: >-
+          {{'alert' in final.event.message|lower or 'alert' in
+          final.event.action|lower}}
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{ 'fail' in (final.event.action|default('')|lower) or
+          'fail' in (final.event.message|default('')|lower) or
+          'fail' in (parsed_event.message.result|default('')|lower) or
+          'fail' in (parsed_event.message.status|default('')|lower) }}
+      - set:
+          event.outcome: success
+        filter: "{{final.event.outcome is not defined}}"
