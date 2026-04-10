@@ -40,6 +40,16 @@ pipeline:
         raise_errors: false
         pattern: ".*App: %{DATA:app};Environment: %{DATA:environment};os_name: %{DATA:os_name};os_type: %{DATA:os_type}"
 
+  - name: parse_affected_assets
+    filter: "{{parse_event.message.affected_assets is not none}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_event.message.affected_assets}}"
+        output_field: message
+        raise_errors: false
+        pattern: "%{IPORHOST:source_address} \\(source\\);%{IPORHOST:destination_address} \\(destination\\)"
+
   # --- Set fields ---
   - name: set_common_fields
 
@@ -107,6 +117,22 @@ stages:
           akamai.guardicore.incident.id: "{{parse_event.message.id}}"
           akamai.guardicore.incident.severity: "{{parse_event.message.severity}}"
           akamai.guardicore.incident.affected_assets: "{{parse_event.message.affected_assets}}"
+
+      - set:
+          source.ip: "{{parse_affected_assets.message.source_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.source_address | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{parse_affected_assets.message.source_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.source_address is not none and  parse_affected_assets.message.source_address | is_ipaddress == False}}"
+
+      - set:
+          destination.ip: "{{parse_affected_assets.message.destination_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.destination_address | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parse_affected_assets.message.destination_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.destination_address is not none and  parse_affected_assets.message.destination_address | is_ipaddress == False}}"
 
       - set:
           rule.id: "{{parse_event.message.rule_id}}"
