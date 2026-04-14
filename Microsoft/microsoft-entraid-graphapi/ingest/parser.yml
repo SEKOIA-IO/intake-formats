@@ -105,3 +105,35 @@ stages:
           service.id: "{{json_event.message.targetResources[0].id}}"
           service.name: "{{json_event.message.targetResources[0].displayName}}"
         filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'application'}}"
+
+      # action.properties - aligned with azure-ad Event Hub parser
+      - set:
+          action.properties: >
+            [
+            {%- for targetResource in json_event.message.targetResources -%}
+              {%- if targetResource.modifiedProperties != null -%}
+                {%- for modifiedProperty in targetResource.modifiedProperties -%}
+                  {%- if modifiedProperty.displayName != "Included Updated Properties" -%}
+                    {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+              {%- if targetResource.type == "User" and targetResource.userPrincipalName != null -%}
+                {'name': '{{targetResource.userPrincipalName | lower}}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
+              {%- endif -%}
+            {%- endfor -%}
+            ]
+        filter: "{{json_event.message.targetResources | length > 0}}"
+
+      # azure.entraid.properties.targetServicePrincipalDisplayName - aligned with azure-ad Event Hub parser
+      - set:
+          azure.entraid.properties.targetServicePrincipalDisplayName: "{{json_event.message.targetResources[0].displayName}}"
+        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type == 'ServicePrincipal'}}"
+
+      # azure.entraid.properties.appId - aligned with azure-ad Event Hub parser
+      - set:
+          azure.entraid.properties.appId: >
+            {%- for item in json_event.message.additionalDetails -%}
+              {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
