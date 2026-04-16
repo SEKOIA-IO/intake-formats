@@ -759,9 +759,9 @@ pipeline:
   - name: set_finalize_user_name
   - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
-    filter: '{{parsed_event.message.get("deviceOutboundInterface") != None}}'
+    filter: '{{parsed_event.message.get("deviceOutboundInterface") != None or parsed_event.message.get("OutboundInterface") != None}}'
   - name: set_ecs_deviceInboundInterface
-    filter: '{{parsed_event.message.get("deviceInboundInterface") != None}}'
+    filter: '{{parsed_event.message.get("deviceInboundInterface") != None or parsed_event.message.get("InboundInterface") != None}}'
   - name: set_action_outcome
   - name: set_event_outcome
   - name: set_csv_severity
@@ -778,12 +778,24 @@ stages:
       - set:
           observer.egress.interface.name: "{{parsed_event.message.deviceOutboundInterface}}"
           observer.egress.interface.id: '{{parsed_event.message.deviceOutboundInterface.split("/") | last}}'
+        filter: '{{parsed_event.message.get("deviceOutboundInterface") != None }}'
+
+      - set:
+          observer.egress.interface.name: "{{parsed_event.message.OutboundInterface}}"
+          observer.egress.interface.id: '{{parsed_event.message.OutboundInterface.split("/") | last}}'
+        filter: '{{parsed_event.message.get("OutboundInterface") != None }}'
 
   set_ecs_deviceInboundInterface:
     actions:
       - set:
-          observer.ingress.interface.name: "{{parsed_event.message.deviceInboundInterface | last}}"
-          observer.ingress.interface.id: '{{parsed_event.message.deviceOutboundInterface.split("/") | last}}'
+          observer.ingress.interface.name: "{{parsed_event.message.deviceInboundInterface}}"
+          observer.ingress.interface.id: '{{parsed_event.message.deviceInboundInterface.split("/") | last}}'
+        filter: '{{parsed_event.message.get("deviceInboundInterface") != None }}'
+
+      - set:
+          observer.egress.interface.name: "{{parsed_event.message.InboundInterface}}"
+          observer.egress.interface.id: '{{parsed_event.message.InboundInterface.split("/") | last}}'
+        filter: '{{parsed_event.message.get("InboundInterface") != None }}'
 
   set_action_outcome:
     actions:
@@ -900,10 +912,19 @@ stages:
       - set:
           destination.port: "{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}"
           destination.user.name: "{{parsed_event.message.duser or parsed_event.message.DestinationUser}}"
-          email.from.address: "{{parsed_event.message.Sender}}"
-          email.subject: "{{parsed_event.message.Subject}}"
-          email.to.address: "{{parsed_event.message.Recipient}}"
           event.action: "{{parsed_event.message.act or parsed_event.message.Action or parsed_description.message.action}}"
+
+      - set:
+          email.from.address: "{{parsed_event.message.Sender}}"
+        filter: '{{parsed_event.message.Sender != None and "@" in parsed_event.message.Sender}}'
+      - set:
+          email.subject: "{{parsed_event.message.Subject}}"
+        filter: '{{parsed_event.message.Subject != None and "@" in parsed_event.message.Subject}}'
+      - set:
+          email.to.address: "{{parsed_event.message.Recipient}}"
+        filter: '{{parsed_event.message.Recipient != None and "@" in parsed_event.message.Recipient}}'
+
+      - set:
           event.timezone: "{{parsed_event.message.dtz}}"
           event.dataset: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
           event.module: "{{parsed_description.message.module}}"
@@ -922,8 +943,8 @@ stages:
           log.logger: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
           network.application: "{{parsed_event.message.Application or parsed_event.message.app}}"
           network.bytes: "{{parsed_event.message.Bytes or parsed_event.message.PanOSBytes}}"
-          network.transport: "{{parsed_event.message.IPProtocol or parsed_event.message.proto}}"
-          network.protocol: "{{parsed_description.message.proto}}"
+          network.transport: "{{parsed_event.message.IPProtocol or parsed_event.message.Protocol or parsed_event.message.proto}}"
+          network.protocol: "{{parsed_description.message.proto or parsed_event.message.Application or parsed_event.message.app}}"
           network.type: "{{parsed_event.message.TunnelType or parsed_event.message.PanOSTunnelType}}"
           tls.version: "{{parsed_event.message.TLSVersion[3:]}}"
           tls.cipher: "TLS_{{parsed_event.message.TLSKeyExchange}}_{{parsed_event.message.TLSEncryptionAlgorithm}}_{{parsed_event.message.message.TLS_AUTH}}"
