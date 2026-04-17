@@ -1,0 +1,232 @@
+name: akamai-guardicore-on-prem
+ignored_values: ["Unknown", "N/A"]
+pipeline:
+  - name: parse_event
+    external:
+      name: cef.parse-cef
+
+  - name: parse_incident_labels
+    filter: "{{parse_event.message.AssetLabels is not none}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_event.message.AssetLabels}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: ","
+        raise_errors: false
+
+  - name: set_common_fields
+
+  - name: set_audit_fields
+    filter: '{{ parse_event.message.DeviceEventClassID | lower == "audit record"}}'
+
+  - name: set_incident_fields
+    filter: '{{parse_event.message.get("IncidentUUID") is not none}}'
+
+  - name: set_network_fields
+    filter: '{{ parse_event.message.DeviceEventClassID | lower == "network log"}}'
+
+  - name: set_test_connection_fields
+    filter: '{{ parse_event.message.DeviceEventClassID | lower == "test connection"}}'
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "Akamai"
+          observer.product: "Guardicore"
+          observer.type: "ids"
+          observer.version: "{{parse_event.message.DeviceVersion}}"
+          observer.hostname: "{{parse_event.message.dvchost}}"
+
+      - set:
+          observer.ip: ["{{parse_event.message.dvc}}"]
+        filter: "{{parse_event.message.dvc | is_ipaddress}}"
+
+      - set:
+          "@timestamp": "{{parse_event.message.start | to_rfc3339}}"
+        filter: "{{parse_event.message.start is not none}}"
+
+      - set:
+          akamai.guardicore.signature_id: "{{parse_event.message.DeviceEventClassID}}"
+
+  set_audit_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["info"]
+          event.dataset: "audit"
+          event.reason: "{{parse_event.message.msg}}"
+          event.action: "{{parse_event.message.act}}"
+
+      - set:
+          source.ip: "{{parse_event.message.src}}"
+        filter: "{{parse_event.message.src | is_ipaddress}}"
+
+      - set:
+          user.name: "{{parse_event.message.suser}}"
+
+      - set:
+          url.path: "{{parse_event.message.request}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{"authenticated successfully" in parse_event.message.msg}}'
+
+      - set:
+          event.type: ["creation"]
+        filter: '{{"creat" in parse_event.message.msg | lower or "adding" in parse_event.message.msg | lower}}'
+
+      - set:
+          event.type: ["deletion"]
+        filter: '{{"delet" in parse_event.message.msg | lower}}'
+
+      - set:
+          event.type: ["access"]
+        filter: '{{"access" in parse_event.message.msg | lower}}'
+
+      - set:
+          event.type: ["change"]
+        filter: '{{"updat" in parse_event.message.msg | lower or "modif" in parse_event.message.msg | lower}}'
+
+  set_incident_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["info"]
+          event.dataset: "incident"
+          event.reason: "{{parse_event.message.Summary or parse_event.message.Name}}"
+          event.reference: "{{parse_event.message.IncidentURI}}"
+          event.start: "{{parse_event.message.start | to_rfc3339}}"
+          event.severity: "{{parse_event.message.Severity}}"
+
+      - set:
+          event.end: "{{parse_event.message.end | to_rfc3339}}"
+        filter: "{{parse_event.message.end is not none}}"
+
+      - set:
+          rule.id: "{{parse_event.message.RuleID}}"
+        filter: "{{parse_event.message.RuleID != 'No rule'}}"
+
+      - set:
+          network.direction: "{{parse_event.message.Direction | lower}}"
+        filter: "{{parse_event.message.Direction is not none}}"
+
+      - set:
+          akamai.guardicore.incident.id: "{{parse_event.message.IncidentUUID}}"
+
+      - transate:
+        dictionary:
+          8: "high"
+          5: "medium"
+          3: "low"
+        mapping:
+          parse_event.message.Severity: akamai.guardicore.incident.severity
+
+      - set:
+          akamai.guardicore.incident.affected_assets: "{{parse_event.message.AssetId}}"
+        filter: "{{parse_event.message.AssetId is not none}}"
+
+      - set:
+          akamai.guardicore.incident.tags: "{{parse_event.message.IncidentTags.split(',')}}"
+        filter: "{{parse_event.message.IncidentTags is not none}}"
+
+      - set:
+          network.application: "{{parse_incident_labels.result.App}}"
+          host.os.full: "{{parse_incident_labels.result.os_name}}"
+          host.os.type: "{{parse_incident_labels.result.os_type | lower}}"
+          akamai.guardicore.incident.environment: "{{parse_incident_labels.result.Environment}}"
+        filter: "{{parse_incident_labels.result is not none}}"
+
+  set_network_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "network"
+          event.action: "{{parse_event.message.act | lower}}"
+
+      - set:
+          process.name: "{{parse_event.message.source_process | basename}}"
+          process.executable: "{{parse_event.message.source_process_path}}"
+
+      - set:
+          network.application: "{{parse_event.message.app}}"
+          network.transport: "{{parse_event.message.proto | lower}}"
+
+      - set:
+          destination.port: "{{parse_event.message.dpt}}"
+          destination.domain: "{{parse_event.message.dhost}}"
+          destination.user.name: "{{parse_event.message.duser}}"
+
+      - set:
+          destination.user.domain: "{{parse_event.message.duser.split('\\\\')[0]}}"
+          destination.user.name: "{{parse_event.message.duser.split('\\\\')[1]}}"
+        fitler: "{{'\\\\' in parse_event.message.duser}}"
+
+      - set:
+          source.port: "{{parse_event.message.sport}}"
+          source.domain: "{{parse_event.message.shost}}"
+          user.name: "{{parse_event.message.suser}}"
+
+      - set:
+          user.domain: "{{parse_event.message.suser.split('\\\\')[0]}}"
+          user.name: "{{parse_event.message.suser.split('\\\\')[1]}}"
+        fitler: "{{'\\\\' in parse_event.message.suser}}"
+
+      - set:
+          rule.id: "{{parse_event.message.policy_rule}}"
+        filter: "{{parse_event.message.policy_rule is not none}}"
+
+      - set:
+          rule.ruleset: "{{parse_event.message.policy_ruleset}}"
+        filter: "{{parse_event.message.policy_ruleset is not none}}"
+
+      - set:
+          akamai.guardicore.network.id: "{{parse_event.message.id}}"
+
+          akamai.guardicore.network.connection_verdict: "{{parse_event.message.connection_verdict}}"
+          akamai.guardicore.network.destination.process.name: "{{parse_event.message.destination_process_full_path | basename}}"
+          akamai.guardicore.network.destination.process.path: "{{parse_event.message.destination_process_full_path}}"
+
+      - set:
+          akamai.guardicore.network.incidents: "{{parse_event.message.incidents.split(',')}}"
+        filter: "{{parse_event.message.Incidents is not none}}"
+
+      - set:
+          source.ip: "{{parse_event.message.src}}"
+        filter: "{{parse_event.message.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parse_event.message.dst}}"
+        filter: "{{parse_event.message.dst | is_ipaddress}}"
+
+      - set:
+          event.outcome: "success"
+          event.type: ["allowed"]
+        filter: "{{parse_event.message.connection_verdict |lower == 'allowed'}}"
+
+      - set:
+          event.outcome: "failure"
+          event.type: ["denied"]
+        filter: "{{parse_event.message.connection_verdict is not none and 'blocked_by' in parse_event.message.connection_verdict}}"
+
+  set_test_connection_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "test"
+          event.reason: "{{parse_event.message.Message}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{'successful' in parse_event.message.Message}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{'failed' in parse_event.message.Message}}"
