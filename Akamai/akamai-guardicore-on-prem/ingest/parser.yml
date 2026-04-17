@@ -1,0 +1,172 @@
+name: akamai-guardicore-on-prem
+ignored_values: ["unknown", "N/A"]
+pipeline:
+  - name: parse_event
+    external:
+      name: json.parse-json
+
+  - name: parse_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_event.message.Timestamp
+        output_field: datetime
+
+  - name: parse_incident_labels
+    filter: "{{parse_event.message.SourceLabels is not none}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_event.message.SourceLabels}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: ","
+        raise_errors: false
+
+  - name: set_common_fields
+
+  - name: set_audit_fields
+    filter: '{{ parse_event.message.SignatureID | lower == "audit record"}}'
+
+  - name: set_incident_fields
+    filter: '{{parse_event.message.get("IncidentUUID") is not none}}'
+
+  - name: set_network_fields
+    filter: '{{ parse_event.message.SignatureID | lower == "network log"}}'
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "Akamai"
+          observer.product: "Guardicore"
+          observer.type: "ids"
+          observer.version: "{{parse_event.message.DeviceVersion}}"
+          observer.hostname: "{{parse_event.message.DisplayHostname}}"
+
+      - set:
+          "@timestamp": "{{parse_timestamp.datetime}}"
+
+  set_audit_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["info"]
+          event.dataset: "audit"
+          event.reason: "{{parse_event.message.Message}}"
+
+      - set:
+          source.ip: "{{parse_event.message.IPAddress}}"
+        filter: "{{parse_event.message.IPAddress | is_ipaddress}}"
+
+      - set:
+          user.name: "{{parse_event.message.Username}}"
+
+      - set:
+          url.path: "{{parse_event.message.Request}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{"authenticated successfully" in parse_event.message.Message}}'
+
+      - set:
+          event.type: ["creation"]
+        filter: '{{"created" in parse_event.message.Message}}'
+
+      - set:
+          event.type: ["deletion"]
+        filter: '{{"deleted" in parse_event.message.Message}}'
+
+      - set:
+          event.type: ["access"]
+        filter: '{{"access" in parse_event.message.Message}}'
+
+      - set:
+          event.type: ["change"]
+        filter: '{{"updated" in parse_event.message.Message or "modified" in parse_event.message.Message}}'
+
+  set_incident_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["info"]
+          event.dataset: "incident"
+          event.reason: "{{parse_event.message.Summary}}"
+          event.reference: "{{parse_event.message.IncidentURI}}"
+          event.start: "{{parse_event.message.StartTime | to_rfc3339}}"
+          event.end: "{{parse_event.message.EndTime | to_rfc3339}}"
+
+      - set:
+          source.ip: "{{parse_event.message.IPAddress}}"
+        filter: "{{parse_event.message.IPAddress != 'N/A'}}"
+
+      - set:
+          rule.id: "{{parse_event.message.RuleID}}"
+        filter: "{{parse_event.message.RuleID != 'No rule'}}"
+
+      - set:
+          network.direction: "{{parse_event.message.Direction | lower}}"
+        filter: "{{parse_event.message.Direction is not none}}"
+
+      - set:
+          akamai.guardicore.incident.id: "{{parse_event.message.IncidentUUID or parse_event.message.ID}}"
+          akamai.guardicore.incident.severity: "{{parse_event.message.Severity}}"
+          akamai.guardicore.incident.signature_id: "{{parse_event.message.SignatureId}}"
+
+      - set:
+          akamai.guardicore.incident.affected_assets: "{{parse_event.message.AffectedAssets.split(';')}}"
+        filter: "{{parse_event.message.AffectedAssets is not none}}"
+
+      - set:
+          akamai.guardicore.incident.tags: "{{parse_event.message.IncidentTags.split(',')}}"
+        filter: "{{parse_event.message.IncidentTags is not none}}"
+
+      - set:
+          network.application: "{{parse_incident_labels.result.App}}"
+          host.os.full: "{{parse_incident_labels.result.os_name}}"
+          host.os.type: "{{parse_incident_labels.result.os_type | lower}}"
+          akamai.guardicore.incident.environment: "{{parse_incident_labels.result.Environment}}"
+        filter: "{{parse_incident_labels.result is not none}}"
+
+  set_network_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "network"
+          event.action: "{{parse_event.message.Action}}"
+          process.name: "{{parse_event.message.Source.ProcessName}}"
+          process.executable: "{{parse_event.message.Source.ProcessPath}}"
+          network.application: "{{parse_event.message.Source.ApplicationName}}"
+          destination.port: "{{parse_event.message.Destination.Port}}"
+          destination.domain: "{{parse_event.message.Destination.AssetName}}"
+          destination.user.name: "{{parse_event.message.Destination.UserName}}"
+          network.transport: "{{parse_event.message.Protocol | lower}}"
+          rule.id: "{{parse_event.message.PolicyRule | trim}}"
+          akamai.guardicore.network.id: "{{parse_event.message.ID}}"
+
+          akamai.guardicore.network.connection_verdict: "{{parse_event.message.ConnectionVerdict}}"
+          akamai.guardicore.network.destination.process.name: "{{parse_event.message.Destination.ProcessName}}"
+          akamai.guardicore.network.destination.process.path: "{{parse_event.message.Destination.ProcessPath}}"
+          akamai.guardicore.network.incidents: "{{parse_event.message.Incidents | trim}}"
+
+      - set:
+          source.ip: "{{parse_event.message.Source.IP}}"
+        filter: "{{parse_event.message.Source.IP | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parse_event.message.Destination.IP}}"
+        filter: "{{parse_event.message.Destination.IP | is_ipaddress}}"
+
+      - set:
+          event.outcome: "success"
+          event.type: ["allowed"]
+        filter: "{{parse_event.message.ConnectionVerdict |lower == 'allowed'}}"
+
+      - set:
+          event.outcome: "failure"
+          event.type: ["denied"]
+        filter: "{{parse_event.message.ConnectionVerdict is not none and 'blocked_by' in parse_event.message.ConnectionVerdict}}"
