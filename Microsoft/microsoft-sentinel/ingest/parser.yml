@@ -44,3 +44,55 @@ stages:
           microsoft.sentinel.classification.reason: "{{json_event.message.classification_reason}}"
           microsoft.sentinel.status: "{{json_event.message.status}}"
           microsoft.sentinel.incident.number: "{{json_event.message.incident_number}}"
+
+      - set:
+          user.name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Account') | map(attribute='properties.account_name') | reject('none') | first) | default('', true) }}"
+          user.email: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Account') | map(attribute='properties.additional_data.UserPrincipalName') | reject('none') | first) | default('', true) }}"
+          user.id: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Account') | map(attribute='properties.additional_data.AccountName') | reject('none') | first) | default('', true) }}"
+          host.ip: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties.address') | reject('none') | first) | default('', true) }}"
+          host.geo.city_name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties.location.city') | reject('none') | first) | default('', true) }}"
+          host.geo.country_iso_code: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties.location.country_code') | reject('none') | first) | default('', true) }}"
+          host.geo.country_name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties.location.country_name') | reject('none') | first) | default('', true) }}"
+          host.geo.region_name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties.location.state') | reject('none') | first) | default('', true) }}"
+          cloud.service.name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'CloudApplication') | map(attribute='properties.app_name') | reject('none') | first) | default('', true) }}"
+          cloud.instance.name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'CloudApplication') | map(attribute='properties.instance_name') | reject('none') | first) | default('', true) }}"
+          host.name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties.host_name') | reject('none') | first) | default('', true) }}"
+          host.domain: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties.nt_domain') | reject('none') | first) | default('', true) }}"
+          host.os.type: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties.os_family') | reject('none') | first | lower) | default('', true) }}"
+          host.os.version: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties.os_version') | reject('none') | first) | default('', true) }}"
+          cloud.instance.id: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties.azure_id') | reject('none') | first) | default('', true) }}"
+          file.directory: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'File') | map(attribute='properties.directory') | reject('none') | first) | default('', true) }}"
+          file.name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'File') | map(attribute='properties.file_name') | reject('none') | first) | default('', true) }}"
+          process.command_line: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties.command_line') | reject('none') | first) | default('', true) }}"
+          process.pid: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties.process_id') | reject('none') | first) | default('', true) }}"
+          process.start: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties.creation_time_utc') | reject('none') | first) | default('', true) }}"
+          threat.software.name: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Malware') | map(attribute='properties.malware_name') | reject('none') | first) | default('', true) }}"
+          url.original: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties.url') | reject('none') | first) | default('', true) }}"
+          microsoft.sentinel.resource.id: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'AzureResource') | map(attribute='properties.resource_id') | reject('none') | first) | default('', true) }}"
+          microsoft.sentinel.subscription.id: "{{ (json_event.message.related_entities | selectattr('kind', 'equalto', 'AzureResource') | map(attribute='properties.subscription_id') | reject('none') | first) | default('', true) }}"
+        filter: "{{json_event.message.related_entities != null and json_event.message.related_entities | length > 0}}"
+
+      - set:
+          file.hash: >-
+            {
+            {%- for entity in json_event.message.related_entities -%}
+              {%- if entity.kind == 'FileHash' and entity.properties.algorithm != null and entity.properties.hash_value != null -%}
+                '{{entity.properties.algorithm | lower}}': '{{entity.properties.hash_value}}',
+              {%- endif -%}
+            {%- endfor -%}
+            }
+        filter: >-
+          {{
+            json_event.message.related_entities != null
+            and json_event.message.related_entities | length > 0
+            and 'FileHash' in (json_event.message.related_entities | map(attribute='kind') | list)
+          }}
+
+      - set:
+          threat.software.type: "malware"
+        filter: >-
+          {{
+            json_event.message.related_entities != null
+            and json_event.message.related_entities | length > 0
+            and 'Malware' in (json_event.message.related_entities | map(attribute='kind') | list)
+          }}
