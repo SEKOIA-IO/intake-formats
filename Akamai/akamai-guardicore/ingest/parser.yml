@@ -6,9 +6,10 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "%{NETWORK_LOG}|%{AUDIT_LOG}|%{INCIDENT_LOG}"
+        pattern: "%{NETWORK_LOG}|%{AUDIT_LOG}|%{CONNECTION_LOG}|%{INCIDENT_LOG}"
         custom_patterns:
           AUDIT_LOG: "New [Aa]udit log entry reported by the Guardicore Security Suite;;Username: %{DATA:username};IP Address: %{DATA:ip_address};;\\s?Title: %{DATA:title};;?\\s?Description: %{GREEDYDATA:description}"
+          CONNECTION_LOG: "New (test)? connection entry reported by the Guardicore Security Suite;;Username: %{DATA:username};IP Address: %{DATA:ip_address};;\\s?Title: %{DATA:title};;?\\s?Description: %{GREEDYDATA:description}"
           INCIDENT_LOG: >-
             New \w+ severity security incident reported by the Guardicore Security Suite;;ID: %{DATA:id};URL: %{DATA:url};;Description: %{DATA:description};;Severity: %{DATA:severity};Start Time: %{DATA:start_time};End Time: %{DATA:end_time};;Rule ID: %{DATA:rule_id};Affected Assets:;%{DATA:affected_assets};;%{DATA:dest_labels};;%{DATA:tags};;Summary: ;%{DATA:summary};Direction: %{DATA:direction};%{GREEDYDATA}
           NETWORK_LOG: >-
@@ -61,6 +62,9 @@ pipeline:
 
   - name: set_network_fields
     filter: '{{ "network connection" in original.message }}'
+
+  - name: set_test_connection_fields
+    filter: '{{ "connection entry" in original.message.lower() }}'
 
 stages:
   set_common_fields:
@@ -208,3 +212,19 @@ stages:
           event.outcome: "failure"
           event.type: ["denied"]
         filter: "{{parse_event.message.verdict is not none and (('blocked by' in (parse_event.message.verdict | lower)) or ('blocked_by' in (parse_event.message.verdict | lower)))}}"
+
+  set_test_connection_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "test"
+          event.reason: "{{parse_event.message.title}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parse_event.message.description is not none and 'successful' in parse_event.message.description | lower}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{parse_event.message.description is not none and 'failed' in parse_event.message.description | lower}}"
