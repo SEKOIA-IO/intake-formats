@@ -44,7 +44,14 @@ class JsonSorterEncoder(json.JSONEncoder):
                     if len(item) > 0 and isinstance(item[0], dict):
                         return sorted(item, key=lambda i: i.keys())
 
-                    return sorted(_sort(i) for i in item)
+                    try:
+                        return sorted(_sort(i) for i in item)
+                    except TypeError:
+                        # When list items contain nested dicts (e.g. list of lists
+                        # of dicts), sorted() fails because dicts don't support
+                        # the < operator. Fall back to preserving original order
+                        # while still recursively sorting each element's internals.
+                        return [_sort(i) for i in item]
 
                 case _ if isinstance(item, dict):
                     return {k: _sort(v) for k, v in item.items()}
