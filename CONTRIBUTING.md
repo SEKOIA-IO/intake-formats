@@ -16,7 +16,7 @@ To contribute to this repository, you will need the following development setup:
 
 - Python3
 
-  We recommend you to use Python3.10 or higher.
+  We recommend using Python 3.14 or higher.
   To ease python version management, you can use [pyenv](https://github.com/pyenv/pyenv#installation).
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
