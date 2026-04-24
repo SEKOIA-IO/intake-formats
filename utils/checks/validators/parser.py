@@ -8,7 +8,22 @@ from typing import Any
 import yaml
 
 from . import INTAKES_PATH, Validator
-from .constants import CheckResult, CustomField, DeleteAction, IntakeFormat, SetAction, TranslateAction
+from .constants import (
+    CheckResult,
+    CustomField,
+    DeleteAction,
+    IntakeFormat,
+    SetAction,
+    TranslateAction,
+    ValidationError,
+)
+
+
+class ParserFieldError(ValidationError):
+    field_name: str
+
+    def __str__(self) -> str:
+        return f"{self.message} field=`{self.field_name}` file_path=`{self.file_path}`"
 
 
 class ParserValidator(Validator):
@@ -18,7 +33,13 @@ class ParserValidator(Validator):
         parser_file = format_path / "ingest" / "parser.yml"
         if not parser_file.exists():
             if not args.ignore_missing_parsers:
-                result.errors.append(f"Parser file does not exist")
+                result.errors.append(
+                    ValidationError(
+                        message="Parser file does not exist",
+                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                        code="parser_missing",
+                    )
+                )
 
             return
 
@@ -29,7 +50,14 @@ class ParserValidator(Validator):
             parser_content = IntakeFormat.model_validate(parser)
 
         except Exception as any_error:
-            result.errors.append(f"parser file ({parser_file}) exists but cannot be loaded (`{any_error}`)")
+            result.errors.append(
+                ValidationError(
+                    message="parser file exists but cannot be loaded",
+                    file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                    error=str(any_error),
+                    code="parser_invalid",
+                )
+            )
             return
 
         module_result = result.options["module_result"]
@@ -39,6 +67,7 @@ class ParserValidator(Validator):
         check_format_parser(
             result,
             parser=parser_content,
+            parser_file=parser_file,
             # Don't report undeclared fields for an incorrect taxonomy
             report_undeclared_fields=not taxonomy_exists_but_failed,
             ignore_event_fieldset_errors=args.ignore_event_fieldset_errors,
@@ -50,6 +79,7 @@ class ParserValidator(Validator):
 def check_format_parser(
     result: CheckResult,
     parser: IntakeFormat,
+    parser_file: Path,
     report_undeclared_fields: bool = True,
     ignore_event_fieldset_errors: bool = False,
     format_taxonomy: dict[str, CustomField] | None = None,
@@ -91,22 +121,48 @@ def check_format_parser(
 
     if len(non_declared_fields) > 0 and report_undeclared_fields:
         for field in non_declared_fields:
-            result.errors.append(f"Custom field `{field}` needs to be defined in _meta/fields.yml")
+            result.errors.append(
+                ParserFieldError(
+                    message="Custom field needs to be defined in _meta/fields.yml",
+                    file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                    field_name=field,
+                    code="parser_field_undeclared",
+                )
+            )
 
     # Check whether event.type and event.category are set
     if not ignore_event_fieldset_errors:
         required_fields = {"event.type", "event.category"}
         for field in required_fields:
             if field not in used_fields:
-                result.errors.append(f"Required field `{field}` was not set")
+                result.errors.append(
+                    ParserFieldError(
+                        message="Required field was not set",
+                        file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                        field_name=field,
+                        code="parser_field_required_missing",
+                    )
+                )
 
-        if "event.category" in field_assignments:
-            if not check_event_category_or_type(field_assignments["event.category"]):
-                result.errors.append(f"event.category is not a list")
+        if "event.category" in field_assignments and not check_event_category_or_type(
+            field_assignments["event.category"]
+        ):
+            result.errors.append(
+                ValidationError(
+                    message="event.category is not a list",
+                    file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                    code="parser_event_category_not_list",
+                )
+            )
 
-        if "event.type" in field_assignments:
-            if not check_event_category_or_type(field_assignments["event.type"]):
-                result.errors.append(f"event.type is not a list")
+        if "event.type" in field_assignments and not check_event_category_or_type(field_assignments["event.type"]):
+            result.errors.append(
+                ValidationError(
+                    message="event.type is not a list",
+                    file_path=str(parser_file.relative_to(INTAKES_PATH)),
+                    code="parser_event_type_not_list",
+                )
+            )
 
     return result
 

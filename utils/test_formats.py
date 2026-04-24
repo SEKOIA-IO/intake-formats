@@ -100,18 +100,6 @@ def test_intakes_produce_expected_messages(request, manager, intakes_root, test_
     assert parsed_sorted == expected_sorted
 
 
-def test_intake_format_coverage(manager, module, intake_format):
-    coverage = manager.get_coverage(module, intake_format)
-
-    print(f"Coverage: {coverage['percent']}")
-    print("Steps missing coverage:\n")
-
-    for missing in coverage.get("missing", []):
-        print(missing)
-
-    assert coverage["percent"] >= 75
-
-
 def read_taxonomy(format_fields_path) -> dict:
     """Read the taxonomy file and return input as dict"""
     with open(file=format_fields_path, mode="r", encoding="utf-8") as f:

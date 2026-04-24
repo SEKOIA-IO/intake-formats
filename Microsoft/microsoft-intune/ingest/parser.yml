@@ -24,18 +24,30 @@ stages:
           action.type: "{{json_event.message.category}}"
           event.type: ["info"]
           microsoft.intune.compliant_state: "{{json_event.message.properties.CompliantState}}"
-          host.id: "{{json_event.message.properties.DeviceId}}"
+          microsoft.intune.correlation_id: "{{json_event.message.correlationId}}"
+          microsoft.intune.target.object_ids: "{{json_event.message.properties.TargetObjectIds}}"
+          microsoft.intune.tenant_id: "{{json_event.message.tenantId}}"
+          host.id: "{{json_event.message.properties.DeviceId or json_event.message.properties.IntuneDeviceId}}"
           host.name: "{{json_event.message.properties.DeviceHostName}}"
           host.type: "{{json_event.message.properties.Model}}"
-          host.os.full: "{{json_event.message.properties.OS}}"
-          host.os.version: "{{json_event.message.properties.OSVersion}}"
-          network.application: "{{json_event.message.ApplicationName}}"
+          host.os.full: "{{json_event.message.properties.OS or json_event.message.properties.Os or json_event.message.properties.DeviceOperatingSystem}}"
+          host.os.version: "{{json_event.message.properties.OSVersion or json_event.message.properties.OsVersion or json_event.message.properties.DeviceOperatingSystem.split(' ')[-1]}}"
+          network.application: "{{json_event.message.properties.Actor.ApplicationName}}"
           service.name: "{{json_event.message.properties.ManagedBy}}"
           source.mac: "{{json_event.message.properties.WifiMacAddress}}"
+          user.domain: "{{json_event.message.properties.UPNSuffix}}"
           user.email: "{{json_event.message.properties.UserEmail}}"
-          user.id: "{{json_event.message.properties.IntuneAccountId}}"
+          user.id: "{{json_event.message.properties.IntuneAccountId or json_event.message.properties.IntuneUserId}}"
           user.name: "{{json_event.message.properties.UserName or json_event.message.properties.Actor.UPN}}"
+          user.full_name: "{{json_event.message.properties.UserDisplayName}}"
+
+      - set:
+          microsoft.intune.target.display_names: "{{json_event.message.properties.TargetDisplayNames}}"
+        filter: "{{json_event.message.properties.get('TargetDisplayNames') not in [None, [], ['']]}}"
+
+      - set:
           user.roles: "{{json_event.message.properties.Actor.UserPermissions}}"
+        filter: "{{json_event.message.properties.Actor.UserPermissions not in [None,[],['']]}}"
 
       - set:
           host.mac: ["{{json_event.message.properties.WifiMacAddress}}"]
@@ -48,3 +60,7 @@ stages:
       - set:
           source.ip: "{{json_event.message.actor.ipAddress}}"
         filter: "{{json_event.message.actor.ipAddress | is_ipaddress}}"
+
+      - set:
+          microsoft.intune.target.modified_properties: "{{json_event.message.properties.Targets | selectattr('ModifiedProperties', '!=', []) | list}}"
+        filter: "{{json_event.message.properties.get('Targets') != None}}"

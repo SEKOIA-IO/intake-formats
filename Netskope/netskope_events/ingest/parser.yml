@@ -65,7 +65,6 @@ stages:
           source.geo.city_name: "{{parsed_event.message.src_location}}"
           source.geo.region_name: "{{parsed_event.message.src_region}}"
           source.geo.postal_code: "{{parsed_event.message.src_zipcode}}"
-          source.geo.country_iso_code: "{{parsed_event.message.src_country}}"
           source.geo.location.lat: "{{parsed_event.message.src_latitude}}"
           source.geo.location.lon: "{{parsed_event.message.src_longitude}}"
       - set:
@@ -81,7 +80,6 @@ stages:
           destination.geo.city_name: "{{parsed_event.message.dst_location}}"
           destination.geo.region_name: "{{parsed_event.message.dst_region}}"
           destination.geo.postal_code: "{{parsed_event.message.dst_zipcode}}"
-          destination.geo.country_iso_code: "{{parsed_event.message.dst_country}}"
           destination.geo.location.lat: "{{parsed_event.message.dst_latitude}}"
           destination.geo.location.lon: "{{parsed_event.message.dst_longitude}}"
           rule.id: "{{parsed_event.message.policy_id}}"
@@ -145,7 +143,7 @@ stages:
         filter: "{{parsed_event.message.conn_endtime > 0}}"
       - set:
           user.roles: '["{{parsed_event.message.user_role}}"]'
-        filter: "{{parsed_event.message.user_role != null}}"
+        filter: "{{parsed_event.message.user_role | length > 0}}"
       - set:
           user.name: "{{extract_user_name.result.user_name}}"
           user.domain: "{{extract_user_name.result.user_domain}}"
@@ -166,6 +164,7 @@ stages:
           netskope.events.application.activity: "{{parsed_event.message.app_activity}}"
           netskope.events.access_method: "{{parsed_event.message.access_method}}"
           netskope.events.ccl: "{{parsed_event.message.ccl}}"
+          netskope.events.shared_credential_user: "{{parsed_event.message.shared_credential_user}}"
 
       - set:
           netskope.events.severity_id: "{{parsed_event.message.severity_id}}"
@@ -250,16 +249,26 @@ stages:
       - set:
           event.category: ["authentication"]
         filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+
       - translate:
         dictionary:
           "Login Successful": ["start"]
           "Login Failed": ["info"]
           "Logout Successful": ["end"]
-
         mapping:
           parsed_event.message.audit_log_event: event.type
         fallback: ["info"]
         filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+
+      - translate:
+        dictionary:
+          "Login Successful": "success"
+          "Login Failed": "failure"
+          "Logout Successful": "success"
+        mapping:
+          parsed_event.message.audit_log_event: event.outcome
+        filter: '{{"Login" in parsed_event.message.audit_log_event or "Logout" in parsed_event.message.audit_log_event}}'
+
       - set:
           event.category: ["iam"]
           event.type: ["change"]

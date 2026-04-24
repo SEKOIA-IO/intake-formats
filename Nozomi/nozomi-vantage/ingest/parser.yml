@@ -1,0 +1,153 @@
+name: nozomi-vantage
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.time}}"
+        output_field: datetime
+
+  - name: parsed_update_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.update_time}}"
+        output_field: datetime
+    filter: "{{json_event.message.get('update_time') != None}}"
+
+  - name: set_ecs_fields
+
+  - name: set_alert_fields
+    filter: "{{json_event.message.event_type == 'alerts'}}"
+
+  - name: set_asset_fields
+    filter: "{{json_event.message.event_type == 'assets'}}"
+
+  - name: set_vulnerability_fields
+    filter: "{{json_event.message.event_type == 'vulnerabilities'}}"
+
+  - name: set_wireless_fields
+    filter: "{{json_event.message.event_type == 'wireless_networks'}}"
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.dataset: "{{json_event.message.event_type}}"
+          event.type: ["info"]
+
+      - translate:
+        dictionary:
+          "alerts": "alert"
+          "assets": "asset"
+        mapping:
+          json_event.message.event_type: event.kind
+        filter: "{{json_event.message.event_type in ['alerts', 'assets']}}"
+
+      - translate:
+        dictionary:
+          "wireless_networks": ["network"]
+          "assets": ["host"]
+          "vulnerabilities": ["vulnerability"]
+        mapping:
+          json_event.message.event_type: event.category
+        filter: "{{json_event.message.event_type in ['wireless_networks', 'assets', 'vulnerabilities']}}"
+
+  set_alert_fields:
+    actions:
+      - set:
+          destination.ip: "{{json_event.message.ip_dst}}"
+          destination.geo.name: "{{json_event.message.zone_dst}}"
+          destination.mac: "{{json_event.message.mac_dst}}"
+          destination.port: "{{json_event.message.port_dst}}"
+          event.severity: "{{json_event.message.severity}}"
+          event.action: "{{json_event.message.name}}"
+          event.reason: "{{json_event.message.description}}"
+          source.ip: "{{json_event.message.ip_src}}"
+          source.geo.name: "{{json_event.message.zone_src}}"
+          source.mac: "{{json_event.message.mac_src}}"
+          source.port: "{{json_event.message.port_src}}"
+          network.protocol: "{{json_event.message.protocol}}"
+          network.transport: "{{json_event.message.transport_protocol}}"
+          threat.indicator.description: "{{json_event.message.description}}"
+          nozomi.vantage.alert.status: "{{json_event.message.status}}"
+          nozomi.vantage.alert.source.roles: "{{json_event.message.src_roles.split(',') | map('trim') | list}}"
+          nozomi.vantage.alert.source.uuid: "{{json_event.message.uid_src}}"
+          nozomi.vantage.alert.source.label: "{{json_event.message.label_src}}"
+          nozomi.vantage.alert.source.types: "{{json_event.message.types_src}}"
+          nozomi.vantage.alert.source.levels: "{{json_event.message.levels_src}}"
+          nozomi.vantage.alert.source.is_reputation_bad: "{{json_event.message.properties.is_src_reputation_bad}}"
+          nozomi.vantage.alert.source.is_public: "{{json_event.message.properties.is_src_public}}"
+          nozomi.vantage.alert.source.is_node_learned: "{{json_event.message.properties.is_src_node_learned}}"
+          nozomi.vantage.alert.destination.roles: "{{json_event.message.dst_roles.split(',') | map('trim') | list}}"
+          nozomi.vantage.alert.destination.uuid: "{{json_event.message.uid_dst}}"
+          nozomi.vantage.alert.destination.label: "{{json_event.message.label_dst}}"
+          nozomi.vantage.alert.destination.types: "{{json_event.message.types_dst}}"
+          nozomi.vantage.alert.destination.levels: "{{json_event.message.levels_dst}}"
+          nozomi.vantage.alert.destination.is_reputation_bad: "{{json_event.message.properties.is_dst_reputation_bad}}"
+          nozomi.vantage.alert.destination.is_public: "{{json_event.message.properties.is_dst_public}}"
+          nozomi.vantage.alert.destination.is_node_learned: "{{json_event.message.properties.is_dst_node_learned}}"
+          nozomi.vantage.alert.is_incident: "{{json_event.message.is_incident}}"
+          nozomi.vantage.alert.is_security: "{{json_event.message.is_security}}"
+          nozomi.vantage.alert.edge_id: "{{json_event.message.edge_id}}"
+          nozomi.vantage.alert.type: "{{json_event.message.type_id}}"
+          nozomi.vantage.alert.bpf_filter: "{{json_event.message.bpf_filter}}"
+          nozomi.vantage.alert.ack: "{{json_event.message.ack}}"
+          observer.name: "{{json_event.message.appliance_host}}"
+
+  set_asset_fields:
+    actions:
+      - set:
+          host.ip: "{{json_event.message.ip}}"
+        filter: "{{json_event.message.ip | length > 0}}"
+      - set:
+          host.mac: "{{json_event.message.mac_address}}"
+        filter: "{{json_event.message.mac_address | length > 0}}"
+
+      - set:
+          host.name: "{{json_event.message.name}}"
+          host.type: "{{json_event.message.type}}"
+          host.os.platform: "{{json_event.message.os | lower}}"
+          device.id: "{{json_event.message.device_id}}"
+          device.manufacturer: "{{json_event.message.vendor}}"
+          device.model.name: "{{json_event.message.product_name}}"
+
+  set_vulnerability_fields:
+    actions:
+      - set:
+          event.reason: "{{json_event.message.category}}"
+          vulnerability.description: "{{json_event.message.summary}}"
+          vulnerability.enumeration: "CVE"
+          vulnerability.id: "{{json_event.message.cve}}"
+          vulnerability.score.environmental: "{{json_event.message.score}}"
+          nozomi.vantage.vulnerability.status: "{{json_event.message.status}}"
+          nozomi.vantage.vulnerability.probability: "{{json_event.message.probability}}"
+          nozomi.vantage.vulnerability.is_kev: "{{json_event.message.is_kev}}"
+          nozomi.vantage.vulnerability.epss_score: "{{json_event.message.epss_score}}"
+          nozomi.vantage.vulnerability.created: "{{json_event.message.creation_time}}"
+          nozomi.vantage.vulnerability.updated: "{{parsed_update_time.datetime}}"
+          nozomi.vantage.vulnerability.cpes: "{{json_event.message.matching_cpes}}"
+
+      - set:
+          vulnerability.reference: "{{json_event.message.references[0].url}}"
+        filter: "{{json_event.message.references | length > 0}}"
+
+  set_wireless_fields:
+    actions:
+      - set:
+          network.name: "{{json_event.message.name}}"
+          network.protocol: "{{json_event.message.protocol}}"
+          nozomi.vantage.wireless.enabled: "{{json_event.message.enabled}}"
+          nozomi.vantage.wireless.created: "{{json_event.message.created_at}}"
+          nozomi.vantage.wireless.updated: "{{json_event.message.updated_at}}"
+          nozomi.vantage.wireless.properties: "{{json_event.message.properties}}"
+          nozomi.vantage.wireless.edge_id: "{{json_event.message.edge_id}}"
+          nozomi.vantage.wireless.inspect_privacy_macs: "{{json_event.message.inspect_privacy_macs}}"
+          nozomi.vantage.wireless.average_snr: "{{json_event.message.avg_snr}}"
+          nozomi.vantage.wireless.average_rssi: "{{json_event.message.avg_rssi}}"
+          nozomi.vantage.wireless.average_noise: "{{json_event.message.avg_noise}}"

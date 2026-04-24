@@ -43,7 +43,11 @@ class SmartDescriptionManager(IntakeTestManager):
 
                 if condition_value is not None:
                     if isinstance(parsed[condition_field], list):
-                        condition_value_set = set(item.strip() for item in condition_value.split(","))
+                        condition_value_set = set()
+                        if isinstance(condition_value, list):
+                            condition_value_set.update(set(condition_value))
+                        else:
+                            condition_value_set.update(set(item.strip() for item in condition_value.split(",")))
 
                         if len(parsed[condition_field]) == 0 or set(parsed[condition_field]) != condition_value_set:
                             all_conditions_are_met = False
@@ -138,7 +142,7 @@ if __name__ == "__main__":
         changed_modules = set()
         changed_formats = set()
 
-        result = subprocess.run(["git", "diff", "--name-only", "origin/main"], capture_output=True)
+        result = subprocess.run(["git", "diff", "--name-only", "origin/develop"], capture_output=True)
         for changed_file in result.stdout.splitlines():
             changed_file = changed_file.decode()
             parts = changed_file.split("/")
