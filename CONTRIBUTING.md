@@ -19,7 +19,7 @@ To contribute to this repository, you will need the following development setup:
   We recommend you to use Python3.10 or higher.
   To ease python version management, you can use [pyenv](https://github.com/pyenv/pyenv#installation).
 
-- [Poetry](https://python-poetry.org/docs/#installation)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
   To execute helper scripts in the directory `utils/`
 
