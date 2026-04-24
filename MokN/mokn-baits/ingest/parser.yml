@@ -1,0 +1,107 @@
+name: mokn-bait-attempt
+ignored_values: null
+pipeline:
+  - name: json_event
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: event_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.updated_time or json_event.message.date}}"
+        output_field: datetime
+        format: null
+        timezone: UTC
+  - name: set_ecs_fields
+    description: ""
+    filter: ""
+    external: null
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          rule.name: "{{json_event.message.bait_name}}"
+          source.ip: "{{json_event.message.attack.ip}}"
+          user.name: "{{json_event.message.username.split('@',1)[0]}}"
+          "@timestamp": "{{event_date.datetime}}"
+          event.kind: alert
+          event.type:
+            - info
+          event.action: "{{json_event.message.event_type}}"
+          event.module: mokn
+          event.reason: "{{json_event.message.type}}"
+          event.dataset: mokn.bait_attempt
+          event.category:
+            - authentication
+            - threat
+          source.address: "{{json_event.message.attack.ip}}"
+          observer.vendor: MokN
+          observer.product: Baits
+          mokn.id: "{{json_event.message.id}}"
+          mokn.identification: "{{json_event.message.identification}}"
+          mokn.status: "{{json_event.message.status}}"
+          mokn.is_targeted: "{{json_event.message.is_targeted}}"
+          mokn.threat_level: "{{json_event.message.threat_level}}"
+          mokn.ja4h: "{{json_event.message.attack.ja4h}}"
+          mokn.attacker_reputation: "{{json_event.message.attack.reputation}}"
+          mokn.attacker_total_attempts: "{{json_event.message.attack.total_attempts}}"
+          mokn.attacker_total_targeted_attempts: "{{json_event.message.attack.total_targeted_attempts}}"
+          mokn.leaks: "{{json_event.message.leaks}}"
+          mokn.opportunistic_patterns: "{{json_event.message.attack.opportunistic_patterns}}"
+          mokn.opportunistic_pattern_names: "{% for pattern in json_event.message.attack.opportunistic_patterns %}{{ pattern.name }}{% if not loop.last %}, {% endif %}{% endfor %}"
+          user_agent.original: "{{json_event.message.attack.user_agent}}"
+          source.geo.country_name: "{{json_event.message.attack.country}}"
+          source.geo.country_iso_code: "{{json_event.message.attack.country_code}}"
+        filter: ""
+        name: set
+      - set:
+          mokn.first_leak_site: "{{(json_event.message.leaks | sort(attribute='date') | first).site}}"
+          mokn.first_leak_date: "{{(json_event.message.leaks | sort(attribute='date') | first).date}}"
+        filter: "{{json_event.message.leaks != None and json_event.message.leaks | length > 0}}"
+        name: set
+      - set:
+          user.email: "{{json_event.message.username}}"
+        filter: "{{'@' in json_event.message.username}}"
+        name: set
+      - set:
+          url.domain: >-
+            {% for header in json_event.message.attack.headers %}{% if header[0]
+            | lower == "host" %}{{ header[1] }}{% endif %}{% endfor %}
+        filter: >-
+          {{json_event.message.attack.get('headers') != None and
+          json_event.message.attack.headers | length > 0}}
+        name: set
+      - set:
+          http.request.referrer: >-
+            {% for header in json_event.message.attack.headers %}{% if header[0]
+            | lower == "referer" %}{{ header[1] }}{% endif %}{% endfor %}
+        filter: >-
+          {{json_event.message.attack.get('headers') != None and
+          json_event.message.attack.headers | length > 0}}
+        name: set
+      - set:
+          related.ip:
+            - "{{json_event.message.attack.ip}}"
+          related.user:
+            - "{{json_event.message.username}}"
+        filter: ""
+        name: set
+      - set:
+          event.severity: "3"
+        filter: "{{json_event.message.threat_level == 'LOW'}}"
+        name: set
+      - set:
+          event.severity: "5"
+        filter: "{{json_event.message.threat_level == 'MEDIUM'}}"
+        name: set
+      - set:
+          event.severity: "8"
+        filter: "{{json_event.message.threat_level == 'HIGH'}}"
+        name: set
