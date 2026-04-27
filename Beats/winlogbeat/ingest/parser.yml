@@ -15,6 +15,13 @@ pipeline:
         output_field: hash
         value_sep: "="
         item_sep: ","
+  - name: parsed_task_content_xml
+    filter: "{{json.event.winlog.event_data.TaskContent != null and '<?xml' in json.event.winlog.event_data.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        input_field: "{{json.event.winlog.event_data.TaskContent}}"
+        output_field: parsed_task
   - name: fields
   - name: sysmon_fields
     filter: "{{json.event.event.get('module') == 'sysmon'}}"
@@ -70,7 +77,17 @@ stages:
           network: "{{json.event.network}}"
           powershell: "{{json.event.powershell}}"
           process: "{{json.event.process}}"
-          process.command_line: "{{json.event.winlog.event_data.CommandLine}}"
+          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
+          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
+          action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
+          destination.ip: "{{json.event.winlog.event_data.DestinationIp or json.event.winlog.event_data.DestAddress}}"
+          destination.port: "{{(json.event.winlog.event_data.DestinationPort or json.event.winlog.event_data.DestPort) | int}}"
+          dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
+          dll.name: "{{json.event.winlog.event_data.OriginalFileName}}"
+          process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
+          process.args: "{{json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None}}"
           process.executable: "{{json.event.winlog.event_data.Image}}"
           process.name: "{{json.event.winlog.event_data.Image | basename}}"
           process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
@@ -692,7 +709,17 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             {{al}}
-          process.command_line: "{{json.event.winlog.event_data.CommandLine}}"
+          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
+          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
+          action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
+          destination.ip: "{{json.event.winlog.event_data.DestinationIp or json.event.winlog.event_data.DestAddress}}"
+          destination.port: "{{(json.event.winlog.event_data.DestinationPort or json.event.winlog.event_data.DestPort) | int}}"
+          dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
+          dll.name: "{{json.event.winlog.event_data.OriginalFileName}}"
+          process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
+          process.args: "{{json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None}}"
           process.executable: "{{json.event.winlog.event_data.NewProcessName}}"
           process.name: '{{json.event.winlog.event_data.NewProcessName.split("\\")|last}}'
           process.parent.executable: "{{json.event.winlog.event_data.ParentProcessName}}"
