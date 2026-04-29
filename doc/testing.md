@@ -26,9 +26,9 @@ By suppling the path of the test file in the format directory, the script will r
 
 ```shell
 $ cd utils
-$ poetry install  # optional, only when dependencies are not already installed
-$ poetry run python3 create_test.py ../My\ module/my-format/tests/test1.json "My raw event"
-$ cat /tmp/raw_event.txt | poetry run python3 create_test.py ../My\ module/my-format/tests/test2.json -
+$ uv sync  # optional, only when dependencies are not already installed
+$ uv run python3 create_test.py ../My\ module/my-format/tests/test1.json "My raw event"
+$ cat /tmp/raw_event.txt | uv run python3 create_test.py ../My\ module/my-format/tests/test2.json -
 ```
 
 ## Validate parser
@@ -37,16 +37,16 @@ To execute the test against the parser, go to the `utils` directory, then execut
 
 ```shell
 $ cd utils
-$ poetry install  # optional, only when dependencies are not already installed
-$ poetry run pytest test_formats.py -vv
+$ uv sync  # optional, only when dependencies are not already installed
+$ uv run pytest test_formats.py -vv
 ```
 
 All parsers will be verified against the tests associated to their format.
 
 To execute a subset of test, you could define some options:
 
-- `poetry run pytest test_formats.py --changes`: to only run tests for updated parsers
-- `poetry run pytest test_formats.py --module='module-name'`: to only run tests for a specific module (`module-name` correspond to the name defined in the manifest of the module)
-- `poetry run pytest test_formats.py --format='format-name'`: to only run tests for a specific format (`format-name` correspond to the name defined in the manifest of the format)
+- `uv run pytest test_formats.py --changes`: to only run tests for updated parsers
+- `uv run pytest test_formats.py --module='module-name'`: to only run tests for a specific module (`module-name` correspond to the name defined in the manifest of the module)
+- `uv run pytest test_formats.py --format='format-name'`: to only run tests for a specific format (`format-name` correspond to the name defined in the manifest of the format)
 
 The option `--fix-expectations` can be used to automatically replace the expected files with the actual result in the test files. To use carefully to avoid data loss in your test files.

@@ -80,8 +80,8 @@ Go to the directory `utils` and execute `generate.py` with the command `new-modu
 
 ```shell
 $ cd utils
-$ poetry install
-$ poetry run generate.py new-module
+$ uv sync
+$ uv run generate.py new-module
 module_name [SEKOIAIO]: My module
 module_description [The description of the module]: My first module
 module_dir [My module]:
@@ -94,7 +94,7 @@ Go to the directory `utils` and execute `generate.py` with the command `new-form
 
 ```shell
 $ cd utils
-$ poetry run generate.py new-format ../My\ module
+$ uv run generate.py new-format ../My\ module
 intake_name [The name of the intake]: My Format
 intake_slug [my-format]:
 intake_description [The description of the intake]: My First Format

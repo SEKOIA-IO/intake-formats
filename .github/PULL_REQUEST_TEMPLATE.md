@@ -36,7 +36,7 @@
 ### Required for All PRs
 
 - [ ] Code has been linted
-    - [ ] with the linter for manifest, smart-descriptions, and test files (`poetry run python linter.py check --changes` in utils/)
+    - [ ] with the linter for manifest, smart-descriptions, and test files (`uv run python linter.py check --changes` in utils/)
     - [ ] with Prettier for the parser code files (`npx prettier --write <module>/<format>/ingest/parser.yml`)
 - [ ] All CI/CD checks pass
 - [ ] Changes follow the contribution guidelines in `CONTRIBUTING.md`
@@ -53,7 +53,7 @@
 
 ### Testing
 
-- [ ] Local tests pass (`poetry run pytest` in utils/)
+- [ ] Local tests pass (`uv run pytest` in utils/)
 - [ ] Sample data is representative and **completely anonymized**
 - [ ] **No sensitive information** (PII, credentials, real IPs, real emails) in test files
 - [ ] Test data uses example.com/example.org domains and TEST-NET IP ranges
