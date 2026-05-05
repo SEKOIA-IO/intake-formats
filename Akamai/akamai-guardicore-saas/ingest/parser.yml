@@ -1,0 +1,230 @@
+name: akamai-guardicore-saas
+pipeline:
+  - name: parse_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{NETWORK_LOG}|%{AUDIT_LOG}|%{CONNECTION_LOG}|%{INCIDENT_LOG}"
+        custom_patterns:
+          AUDIT_LOG: "New [Aa]udit log entry reported by the Guardicore Security Suite;;Username: %{DATA:username};IP Address: %{DATA:ip_address};;\\s?Title: %{DATA:title};;?\\s?Description: %{GREEDYDATA:description}"
+          CONNECTION_LOG: "New (?:test )?connection entry reported by the Guardicore Security Suite;;Username: %{DATA:username};IP Address: %{DATA:ip_address};;\\s?Title: %{DATA:title};;?\\s?Description: %{GREEDYDATA:description}"
+          INCIDENT_LOG: >-
+            New \w+ severity security incident reported by the Guardicore Security Suite;;ID: %{DATA:id};URL: %{DATA:url};;Description: %{DATA:description};;Severity: %{DATA:severity};Start Time: %{DATA:start_time};End Time: %{DATA:end_time};;Rule ID: %{DATA:rule_id};Affected Assets:;%{DATA:affected_assets};;%{DATA:dest_labels};;%{DATA:tags};;Summary: ;%{DATA:summary};Direction: %{DATA:direction};%{GREEDYDATA}
+          NETWORK_LOG: >-
+            New network connection reported by the Guardicore Security Suite;ID: %{DATA:id};Connection type: %{DATA:connection_type};\s*Action: %{DATA:action};Count: %{INT:count};Time: %{DATA:start_time};Source IP: %{DATA:source_ip};Source process name: %{DATA:source_process_name};Source application name: %{DATA:source_app};Destination IP: %{DATA:dest_ip};Destination port: %{INT:dest_port};Destination asset name: %{DATA:dest_asset};Destination user name: %{DATA:dest_user};Destination process name: %{DATA:dest_process_name};Destination process path: %{DATA:dest_process_path};(?:Destination process name: %{DATA:dup_dest_process_name};\s*)?Protocol: %{DATA:protocol};Connection verdict: %{DATA:verdict};Policy rule: %{DATA:policy_rule};\s*Incidents:\s*%{GREEDYDATA:incidents}
+
+  - name: parse_start_time
+    filter: "{{parse_event.message.start_time is not none}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_event.message.start_time
+        output_field: datetime
+
+  - name: parse_end_time
+    filter: "{{parse_event.message.end_time is not none}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parse_event.message.end_time
+        output_field: datetime
+
+  - name: parse_incident_labels
+    filter: "{{parse_event.message.dest_labels is not none}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_event.message.dest_labels}}"
+        output_field: message
+        raise_errors: false
+        pattern: ".*App: %{DATA:app};Environment: %{DATA:environment};os_name: %{DATA:os_name};os_type: %{DATA:os_type}"
+
+  - name: parse_affected_assets
+    filter: "{{parse_event.message.affected_assets is not none}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_event.message.affected_assets}}"
+        output_field: message
+        raise_errors: false
+        pattern: "%{IPORHOST:source_address} \\(source\\);%{IPORHOST:destination_address} \\(destination\\)"
+
+  # --- Set fields ---
+  - name: set_common_fields
+
+  - name: set_audit_fields
+    filter: '{{ "audit log" in original.message.lower() }}'
+
+  - name: set_incident_fields
+    filter: '{{ "security incident" in original.message.lower() }}'
+
+  - name: set_network_fields
+    filter: '{{ "network connection" in original.message.lower() }}'
+
+  - name: set_test_connection_fields
+    filter: '{{ "connection entry" in original.message.lower() }}'
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "Akamai"
+          observer.product: "Guardicore"
+          observer.type: "bastion"
+
+  set_audit_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.dataset: "audit"
+          event.type: ["info"]
+
+      - set:
+          event.reason: "{{parse_event.message.description}}"
+        filter: "{{parse_event.message.description | lower != 'none'}}"
+
+      - set:
+          source.ip: "{{parse_event.message.ip_address}}"
+        filter: "{{parse_event.message.ip_address | is_ipaddress}}"
+
+      - set:
+          user.name: "{{parse_event.message.username}}"
+        filter: "{{parse_event.message.username is not none and parse_event.message.username.lower() != 'none'}}"
+
+      - set:
+          event.type: ["creation"]
+        filter: "{{parse_event.message.description is not none and 'created' in parse_event.message.description.lower()}}"
+
+      - set:
+          event.type: ["deletion"]
+        filter: "{{parse_event.message.description is not none and 'deleted' in parse_event.message.description.lower()}}"
+
+      - set:
+          event.type: ["access"]
+        filter: "{{parse_event.message.description is not none and 'access to' in parse_event.message.description.lower()}}"
+
+      - set:
+          event.type: ["change"]
+        filter: "{{parse_event.message.description is not none and ('updated' in parse_event.message.description.lower() or 'modified' in parse_event.message.description.lower())}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{"authenticated successfully" in parse_event.message.description}}'
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: '{{"authentication" in parse_event.message.description | lower and ("failure" in parse_event.message.description | lower or "invalid" in parse_event.message.description | lower)}}'
+
+  set_incident_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["threat"]
+          event.type: ["info"]
+          event.dataset: "incident"
+          "@timestamp": "{{parse_start_time.datetime}}"
+          "event.start": "{{parse_start_time.datetime}}"
+          event.end: "{{parse_end_time.datetime}}"
+          event.reference: "{{parse_event.message.url}}"
+          event.reason: "{{parse_event.message.summary}}"
+          akamai.guardicore.incident.id: "{{parse_event.message.id}}"
+          akamai.guardicore.incident.severity: "{{parse_event.message.severity}}"
+
+      - set:
+          akamai.guardicore.incident.affected_assets: "{{parse_event.message.affected_assets.split(';')}}"
+        filter: "{{parse_event.message.affected_assets is not none}}"
+
+      - set:
+          source.ip: "{{parse_affected_assets.message.source_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.source_address | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{parse_affected_assets.message.source_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.source_address is not none and  parse_affected_assets.message.source_address | is_ipaddress == False}}"
+
+      - set:
+          destination.ip: "{{parse_affected_assets.message.destination_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.destination_address | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parse_affected_assets.message.destination_address}}"
+        filter: "{{parse_event.message.affected_assets is not none and parse_affected_assets.message.destination_address is not none and  parse_affected_assets.message.destination_address | is_ipaddress == False}}"
+
+      - set:
+          rule.id: "{{parse_event.message.rule_id}}"
+        filter: "{{parse_event.message.get('rule_id') != 'No rule'}}"
+
+      - set:
+          network.direction: "{{parse_event.message.direction | lower}}"
+        filter: "{{parse_event.message.direction is not none}}"
+
+      - set:
+          network.application: "{{parse_incident_labels.message.app}}"
+          host.os.full: "{{parse_incident_labels.message.os_name}}"
+          host.os.type: "{{parse_incident_labels.message.os_type | lower}}"
+          akamai.guardicore.incident.environment: "{{parse_incident_labels.message.environment}}"
+        filter: "{{parse_incident_labels.message.app is not none}}"
+
+  set_network_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "network"
+          "@timestamp": "{{parse_start_time.datetime}}"
+          event.action: "{{parse_event.message.action}}"
+          process.name: "{{parse_event.message.source_process_name}}"
+          network.application: "{{parse_event.message.source_app}}"
+          destination.port: "{{parse_event.message.dest_port | int}}"
+          destination.domain: "{{parse_event.message.dest_asset}}"
+          destination.user.name: "{{parse_event.message.dest_user}}"
+          network.transport: "{{parse_event.message.protocol | lower}}"
+          rule.id: "{{parse_event.message.policy_rule | trim}}"
+          akamai.guardicore.network.id: "{{parse_event.message.id}}"
+          akamai.guardicore.network.connection_verdict: "{{parse_event.message.verdict}}"
+          akamai.guardicore.network.destination.process.name: "{{parse_event.message.dest_process_name}}"
+          akamai.guardicore.network.destination.process.path: "{{parse_event.message.dest_process_path}}"
+
+      - set:
+          akamai.guardicore.network.incidents: "{{parse_event.message.incidents.strip().split(',')}}"
+        filter: "{{parse_event.message.incidents is not none}}"
+
+      - set:
+          source.ip: "{{parse_event.message.source_ip}}"
+        filter: "{{parse_event.message.source_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parse_event.message.dest_ip}}"
+        filter: "{{parse_event.message.dest_ip | is_ipaddress}}"
+
+      - set:
+          event.outcome: "success"
+          event.type: ["allowed"]
+        filter: "{{parse_event.message.verdict |lower == 'allowed'}}"
+
+      - set:
+          event.outcome: "failure"
+          event.type: ["denied"]
+        filter: "{{parse_event.message.verdict is not none and (('blocked by' in (parse_event.message.verdict | lower)) or ('blocked_by' in (parse_event.message.verdict | lower)))}}"
+
+  set_test_connection_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "test"
+          event.reason: "{{parse_event.message.title}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parse_event.message.description is not none and 'successful' in parse_event.message.description | lower}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{parse_event.message.description is not none and 'failed' in parse_event.message.description | lower}}"
