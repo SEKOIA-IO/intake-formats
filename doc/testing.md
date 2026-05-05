@@ -41,7 +41,7 @@ $ mise run test -vv
 
 All parsers will be verified against the tests associated to their format.
 
-To execute a subset of test, you could define some options:
+To execute a subset of tests, you could define some options:
 
 - `mise run test --changes`: to only run tests for updated parsers
 - `mise run test --module='<module-directory>'`: to only run tests for a specific module (`<module-directory>` correspond to the name of the module directory)
