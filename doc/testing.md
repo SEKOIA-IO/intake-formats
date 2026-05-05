@@ -47,7 +47,7 @@ To execute a subset of test, you could define some options:
 - `mise run test --module='<module-directory>'`: to only run tests for a specific module (`<module-directory>` correspond to the name of the module directory)
 - `mise run test --format='<format-slug>'`: to only run tests for a specific format (`<format-slug>` correspond to the slug defined in the manifest of the format)
 
-The option `--fix-expectations` can be used to automatically replace the expected files with the actual result in the test files. To use carefully to avoid data loss in your test files.
+The option `--fix-expectations` can be used to automatically replace the expected files with the actual result in the test files. Use this option carefully to avoid data loss in your test files.
 
 
 ## Validate the format
