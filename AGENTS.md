@@ -7,7 +7,7 @@ Read doc/ for more details.
 
 ## Environment Setup
 
-- Install mise-en-place: `curl https://mise.run | sh`
+- Install mise-en-place using one of the official `mise` installation methods (for example, your system package manager). See https://mise.jdx.dev/getting-started.html
 
 ## Commands
 
