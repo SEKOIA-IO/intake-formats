@@ -1,24 +1,40 @@
 #!/usr/bin/env bash
 #MISE description="Validate changes"
 
+. .mise/tasks/helpers.sh
+
 # Validate tests, smart-descriptions files, metadata
-echo "Validate tests, smart-descriptions files and metadata"
+info "Validate tests, smart-descriptions files and metadata"
+
 uv run utils/linter.py check --changes
 
+check_for_error "Linting issues detected. Please fix" $?
+
 # Validate parsers
-echo "Validate parser(s)"
+info "Validate parser(s)"
+
+failure=0
 while IFS= read -r -d '' parser; do
   case "$parser" in
   *ingest/parser.yml)
-    npx prettier --check "$parser"
+    npx prettier --check "$parser";
+    failure=$failure+$?
     ;;
   esac
 done < <(git diff --name-only -z)
 
+check_for_error "Linting issues detected in parsers. Please fix" $failure
+
 # Validate the compliance
-echo "Check the changes against compliances"
+info "Check the changes against compliances"
+
 uv run python utils/checks --changes
 
+check_for_error "Some changes are not compliant. Please fix" $?
+
 # Execute the tests against changes
-echo "Check the tests"
+info "Check the tests"
+
 uv run pytest utils/test_formats.py --changes -vv
+
+check_for_error "Some tests have failed. Please fix" $?
