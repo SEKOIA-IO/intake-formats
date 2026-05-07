@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
 #MISE description="Fix changes"
 
+# import helpers
+. .mise/tasks/helpers.sh
+
 # Lint tests, smart-descriptions and metadata files
+info "Lint tests, smart-descriptions and metadata"
+
 uv run utils/linter.py fix --changes
 
+check_for_error "The operation failed. Please check the error to fix the issue" "$?"
+
 # Lint parsers & logos
+info "Lint parsers and logos"
+
+failure=0
 while IFS= read -r -d '' item; do
   case "$item" in
   *ingest/parser.yml)
-    npx prettier --write "$item"
+    prettier --write "$item"
+    failure=$((failure+$?))
     ;;
   *logo.png)
     dest=$(mktemp -d "${TMPDIR:-/tmp/}logo.XXXXXXXXXXXX")
     uv run utils/normalize_image.py normalize_image "$item" "$dest/logo.png"
+    failure=$failure+$?
     mv "$dest/logo.png" "$item"
+    failure=$((failure+$?))
     ;;
   esac
 done < <(git diff --name-only -z)
+
+check_for_error "The operation failed on some items. Please fix the errors manually" $failure
