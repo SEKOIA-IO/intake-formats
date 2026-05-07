@@ -7,7 +7,7 @@ function info() {
 }
 
 function check_for_error() {
-	if [ $2 != 0 ]; then
+	if [ ${2:-0} -ne 0 ]; then
 		echo -e "\e[31m$1\e[0m";
 		exit 1
 	else
