@@ -1,0 +1,50 @@
+name: ubika-cloud-protector-next-generation-traffic-logs
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["web"]
+          event.dataset: traffic logs
+          event.type: ["access"]
+          observer.product: Cloud Protector Next Generation
+          observer.vendor: Ubika
+      
+      # Dynamic fields
+      - set:
+          # Translate to rfc3339
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          event.action: "{{parsed_event.message.context.reaction}}"
+          # Success for PASSED, failure for BLOCKED
+          event.outcome: "{{parsed_event.message.context.reaction}}"
+          event.reason: "{{ parsed_event.message.reason }}"
+          http.request.bytes: "{{parsed_event.message.request.size}}"
+          http.request.id: "{{parsed_event.message.request.uid}}"
+          http.request.method: "{{parsed_event.message.request.method}}"
+          http.response.status_code: "{{parsed_event.message.response.statusCode}}"
+          url.domain: "{{parsed_event.message.request.hostname}}"
+          url.path: "{{parsed_event.message.request.path}}"
+          url.query: "{{parsed_event.message.request.query}}"
+          user_agent.full: '{{parsed_event.message.request.headers | selectattr("key", "equalto", "user-agent") | map(attribute="value")}}'
+      - set:
+          source.ip: "{{parsed_event.message.request.ipSource}}"
+        filter: "{{parsed_event.message.request.ipSource | is_ipaddress}}"
+      - set:
+          # Convert milliseconds (ms) to nanoseconds (ns)
+          network.duration: "{{ parsed_event.message.total_response_time | int * 1_000_000 }}"
+        filter: "{{ parsed_event.message.total_response_time | int > 0 }}"
+
+      # Custom fields
+      - set:
+          ubika.cloud_protector.asset.name: "{{parsed_event.message.context.assetName}}"
+          ubika.cloud_protector.asset.namespace: "{{parsed_event.message.context.assetNamespace}}"
