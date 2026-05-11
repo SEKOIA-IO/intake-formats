@@ -76,12 +76,10 @@ To generate a new module or a new format, you can use `utils/generate.py` to gui
 
 ### To generate a new module
 
-Go to the directory `utils` and execute `generate.py` with the command `new-module`. Fill the prompts with requested information.
+From the root directory, execute `mise run create-module`. Fill the prompts with requested information.
 
 ```shell
-$ cd utils
-$ uv sync
-$ uv run generate.py new-module
+$ mise run create-module
 module_name [SEKOIAIO]: My module
 module_description [The description of the module]: My first module
 module_dir [My module]:
@@ -90,11 +88,10 @@ $
 
 ### To generate a new format
 
-Go to the directory `utils` and execute `generate.py` with the command `new-format` with the path to your module as argument. Fill the prompts with requested information.
+From the root directory, execute `mise run create-format` with the path to your module as argument. Fill the prompts with requested information.
 
 ```shell
-$ cd utils
-$ uv run generate.py new-format ../My\ module
+$ mise run create-format My\ module
 intake_name [The name of the intake]: My Format
 intake_slug [my-format]:
 intake_description [The description of the intake]: My First Format
