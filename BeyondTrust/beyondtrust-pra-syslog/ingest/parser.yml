@@ -1,0 +1,254 @@
+name: beyondtrust-pra-syslog
+ignored_values: ["", "[]", "{}"]
+pipeline:
+  - name: parsed_event
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        value_sep: "="
+        item_sep: ";"
+
+  - name: parse_who
+    filter: "{{parsed_event.message.who != null and '(' in parsed_event.message.who}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.who}}"
+        output_field: message
+        pattern: '%{DATA:user_name} \(%{DATA:user_id}\)'
+
+  # The kv.parse-kv stage flattens colon-separated keys (e.g. "old_permissions:admin=1")
+  # into nested dicts, losing the full key path and causing leaf-name collisions.
+  # To reliably extract fields whose keys contain colons, we use targeted grok patterns
+  # on the raw message below. Each uses (?<name>[^;]*) to capture the value up to the
+  # next semicolon.
+
+  - name: extract_admin
+    filter: "{{'old_permissions:admin=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};old_permissions:admin=(?<admin>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_role_default
+    filter: "{{'old_permissions:jump_item_role:default:name=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};old_permissions:jump_item_role:default:name=(?<role_default>[^;]*);%{GREEDYDATA}"
+
+  - name: extract_role_teams
+    filter: "{{'old_permissions:jump_item_role:teams:name=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};old_permissions:jump_item_role:teams:name=(?<role_teams>[^;]*);%{GREEDYDATA}"
+
+  - name: extract_role_personal
+    filter: "{{'old_permissions:jump_item_role:personal:name=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};old_permissions:jump_item_role:personal:name=(?<role_personal>[^;]*);%{GREEDYDATA}"
+
+  - name: extract_role_system
+    filter: "{{'old_permissions:jump_item_role:system:name=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};old_permissions:jump_item_role:system:name=(?<role_system>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_reporting_archive
+    filter: "{{'permissions:reporting:archive=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};permissions:reporting:archive=(?<reporting_archive>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_reporting_jump_item
+    filter: "{{'permissions:reporting:jump_item=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};permissions:reporting:jump_item=(?<reporting_jump_item>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_reporting_license
+    filter: "{{'permissions:reporting:license=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};permissions:reporting:license=(?<reporting_license>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_reporting_support
+    filter: "{{'permissions:reporting:support=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};permissions:reporting:support=(?<reporting_support>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_reporting_syslog
+    filter: "{{'permissions:reporting:syslog=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};permissions:reporting:syslog=(?<reporting_syslog>[^;]*)%{GREEDYDATA}"
+
+  - name: extract_reporting_vault
+    filter: "{{'permissions:reporting:vault=' in original.message}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA};permissions:reporting:vault=(?<reporting_vault>[^;]*)%{GREEDYDATA}"
+
+  - name: set_common_fields
+  - name: set_ecs_fields
+  - name: set_event_category_type
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "BeyondTrust"
+          observer.product: "Privileged Remote Access"
+          event.dataset: "syslog"
+          event.action: "{{parsed_event.message.event}}"
+          host.name: "{{parsed_event.message.site}}"
+          "@timestamp": "{{parsed_event.message.when | to_rfc3339}}"
+
+  set_ecs_fields:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.who_ip}}"
+        filter: "{{parsed_event.message.who_ip | is_ipaddress}}"
+
+      - set:
+          user.full_name: "{{parse_who.message.user_name}}"
+          user.id: "{{parse_who.message.user_id}}"
+        filter: "{{parse_who.message != null}}"
+
+      - set:
+          user.full_name: "{{parsed_event.message.who}}"
+        filter: "{{parsed_event.message.who != null and parse_who.message == null}}"
+
+      - set:
+          event.reason: "{{parsed_event.message.target}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parsed_event.message.status == 'success'}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.status != null and parsed_event.message.status != 'success'}}"
+
+      # user_changed fields (simple keys from KV, colon keys via grok)
+      - set:
+          user.changes.user.email: "{{parsed_event.message.old_username}}"
+        filter: "{{parsed_event.message.old_username != null}}"
+
+      - set:
+          user.changes.user.full_name: "{{parsed_event.message.old_public_display_name}}"
+        filter: "{{parsed_event.message.old_public_display_name != null}}"
+
+      - set:
+          user.changes.user.roles: >-
+            [
+            {%- set roles = [] -%}
+            {%- if extract_role_default.message.role_default -%}
+              {%- set _ = roles.append('"' + extract_role_default.message.role_default + '"') -%}
+            {%- endif -%}
+            {%- if extract_role_teams.message.role_teams -%}
+              {%- set _ = roles.append('"' + extract_role_teams.message.role_teams + '"') -%}
+            {%- endif -%}
+            {%- if extract_role_personal.message.role_personal -%}
+              {%- set _ = roles.append('"' + extract_role_personal.message.role_personal + '"') -%}
+            {%- endif -%}
+            {%- if extract_role_system.message.role_system -%}
+              {%- set _ = roles.append('"' + extract_role_system.message.role_system + '"') -%}
+            {%- endif -%}
+            {{ roles | reject('equalto', '"No Access"') | join(', ') }}
+            ]
+        filter: "{{extract_role_default.message.role_default != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.admin: "{{extract_admin.message.admin}}"
+        filter: "{{extract_admin.message.admin != null}}"
+
+      # api_account_added fields (simple keys from KV + grok for colon keys)
+      - set:
+          beyondtrust.pra.syslog.client_id: "{{parsed_event.message.client_id}}"
+        filter: "{{parsed_event.message.event == 'api_account_added' and parsed_event.message.client_id != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.enabled: "{{parsed_event.message.enabled}}"
+        filter: "{{parsed_event.message.event == 'api_account_added'}}"
+
+      - set:
+          beyondtrust.pra.syslog.name: "{{parsed_event.message.name}}"
+        filter: "{{parsed_event.message.event == 'api_account_added'}}"
+
+      # Reporting permissions extracted via individual grok stages (colon-containing keys,
+      # order-independent since each field is extracted separately)
+      - set:
+          beyondtrust.pra.syslog.reporting.archive: "{{extract_reporting_archive.message.reporting_archive}}"
+        filter: "{{extract_reporting_archive.message.reporting_archive != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.reporting.jump_item: "{{extract_reporting_jump_item.message.reporting_jump_item}}"
+        filter: "{{extract_reporting_jump_item.message.reporting_jump_item != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.reporting.license: "{{extract_reporting_license.message.reporting_license}}"
+        filter: "{{extract_reporting_license.message.reporting_license != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.reporting.support: "{{extract_reporting_support.message.reporting_support}}"
+        filter: "{{extract_reporting_support.message.reporting_support != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.reporting.syslog: "{{extract_reporting_syslog.message.reporting_syslog}}"
+        filter: "{{extract_reporting_syslog.message.reporting_syslog != null}}"
+
+      - set:
+          beyondtrust.pra.syslog.reporting.vault: "{{extract_reporting_vault.message.reporting_vault}}"
+        filter: "{{extract_reporting_vault.message.reporting_vault != null}}"
+
+  set_event_category_type:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{final.event.action in ('login', 'token')}}"
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["creation"]
+        filter: "{{final.event.action == 'api_account_added'}}"
