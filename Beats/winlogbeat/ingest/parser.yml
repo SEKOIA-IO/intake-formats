@@ -15,6 +15,13 @@ pipeline:
         output_field: hash
         value_sep: "="
         item_sep: ","
+  - name: parsed_task_content_xml
+    filter: "{{json.event.winlog.event_data.TaskContent != null and '<?xml' in json.event.winlog.event_data.TaskContent}}"
+    external:
+      name: xml.parse-xml
+      properties:
+        input_field: "{{json.event.winlog.event_data.TaskContent}}"
+        output_field: parsed_task
   - name: fields
   - name: sysmon_fields
     filter: "{{json.event.event.get('module') == 'sysmon'}}"
@@ -28,6 +35,9 @@ stages:
     actions:
       - set:
           "@timestamp": '{{json.event["@timestamp"]}}'
+          observer.vendor: "Elastic"
+          observer.product: "Winlogbeat"
+          observer.type: "agent"
           action: "{{json.event.action}}"
           action.properties: "{{json.event.winlog.event_data}}"
           action.type: "{{json.event.winlog.channel}}"
@@ -70,7 +80,17 @@ stages:
           network: "{{json.event.network}}"
           powershell: "{{json.event.powershell}}"
           process: "{{json.event.process}}"
-          process.command_line: "{{json.event.winlog.event_data.CommandLine}}"
+          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
+          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
+          action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
+          destination.ip: "{{json.event.winlog.event_data.DestinationIp or json.event.winlog.event_data.DestAddress}}"
+          destination.port: "{{(json.event.winlog.event_data.DestinationPort or json.event.winlog.event_data.DestPort) | int}}"
+          dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
+          dll.name: "{{json.event.winlog.event_data.OriginalFileName}}"
+          process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
+          process.args: "{{json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None}}"
           process.executable: "{{json.event.winlog.event_data.Image}}"
           process.name: "{{json.event.winlog.event_data.Image | basename}}"
           process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
@@ -337,138 +357,130 @@ stages:
           file.path: "{{json.event.winlog.event_data.ShareLocalPath}}\\{{json.event.winlog.event_data.RelativeTargetName}}"
           file.target_path: "{{json.event.winlog.event_data.ShareName}}\\{{json.event.winlog.event_data.RelativeTargetName}}"
         filter: "{{json.event.event.get('code') in ['5140', '5145'] }}"
-      - set:
-          winlog.event_data.Category: >
-            {% set mapping = {
-              "0CCE9210-69AE-11D9-BED3-505054503030": ["Security State Change", "System"],
-              "0CCE9211-69AE-11D9-BED3-505054503030": ["Security System Extension", "System"],
-              "0CCE9212-69AE-11D9-BED3-505054503030": ["System Integrity", "System"],
-              "0CCE9213-69AE-11D9-BED3-505054503030": ["IPsec Driver", "System"],
-              "0CCE9214-69AE-11D9-BED3-505054503030": ["Other System Events", "System"],
-              "0CCE9215-69AE-11D9-BED3-505054503030": ["Logon", "Logon/Logoff"],
-              "0CCE9216-69AE-11D9-BED3-505054503030": ["Logoff", "Logon/Logoff"],
-              "0CCE9217-69AE-11D9-BED3-505054503030": ["Account Lockout", "Logon/Logoff"],
-              "0CCE9218-69AE-11D9-BED3-505054503030": ["IPsec Main Mode", "Logon/Logoff"],
-              "0CCE9219-69AE-11D9-BED3-505054503030": ["IPsec Quick Mode", "Logon/Logoff"],
-              "0CCE921A-69AE-11D9-BED3-505054503030": ["IPsec Extended Mode", "Logon/Logoff"],
-              "0CCE921B-69AE-11D9-BED3-505054503030": ["Special Logon", "Logon/Logoff"],
-              "0CCE921C-69AE-11D9-BED3-505054503030": ["Other Logon/Logoff Events", "Logon/Logoff"],
-              "0CCE9243-69AE-11D9-BED3-505054503030": ["Network Policy Server", "Logon/Logoff"],
-              "0CCE9247-69AE-11D9-BED3-505054503030": ["User / Device Claims", "Logon/Logoff"],
-              "0CCE921D-69AE-11D9-BED3-505054503030": ["File System", "Object Access"],
-              "0CCE921E-69AE-11D9-BED3-505054503030": ["Registry", "Object Access"],
-              "0CCE921F-69AE-11D9-BED3-505054503030": ["Kernel Object", "Object Access"],
-              "0CCE9220-69AE-11D9-BED3-505054503030": ["SAM", "Object Access"],
-              "0CCE9221-69AE-11D9-BED3-505054503030": ["Certification Services", "Object Access"],
-              "0CCE9222-69AE-11D9-BED3-505054503030": ["Application Generated", "Object Access"],
-              "0CCE9223-69AE-11D9-BED3-505054503030": ["Handle Manipulation", "Object Access"],
-              "0CCE9224-69AE-11D9-BED3-505054503030": ["File Share", "Object Access"],
-              "0CCE9225-69AE-11D9-BED3-505054503030": ["Filtering Platform Packet Drop", "Object Access"],
-              "0CCE9226-69AE-11D9-BED3-505054503030": ["Filtering Platform Connection ", "Object Access"],
-              "0CCE9227-69AE-11D9-BED3-505054503030": ["Other Object Access Events", "Object Access"],
-              "0CCE9244-69AE-11D9-BED3-505054503030": ["Detailed File Share", "Object Access"],
-              "0CCE9245-69AE-11D9-BED3-505054503030": ["Removable Storage", "Object Access"],
-              "0CCE9246-69AE-11D9-BED3-505054503030": ["Central Policy Staging", "Object Access"],
-              "0CCE9228-69AE-11D9-BED3-505054503030": ["Sensitive Privilege Use", "Privilege Use"],
-              "0CCE9229-69AE-11D9-BED3-505054503030": ["Non Sensitive Privilege Use", "Privilege Use"],
-              "0CCE922A-69AE-11D9-BED3-505054503030": ["Other Privilege Use Events", "Privilege Use"],
-              "0CCE922B-69AE-11D9-BED3-505054503030": ["Process Creation", "Detailed Tracking"],
-              "0CCE922C-69AE-11D9-BED3-505054503030": ["Process Termination", "Detailed Tracking"],
-              "0CCE922D-69AE-11D9-BED3-505054503030": ["DPAPI Activity", "Detailed Tracking"],
-              "0CCE922E-69AE-11D9-BED3-505054503030": ["RPC Events", "Detailed Tracking"],
-              "0CCE9248-69AE-11D9-BED3-505054503030": ["Plug and Play Events", "Detailed Tracking"],
-              "0CCE922F-69AE-11D9-BED3-505054503030": ["Audit Policy Change", "Policy Change"],
-              "0CCE9230-69AE-11D9-BED3-505054503030": ["Authentication Policy Change", "Policy Change"],
-              "0CCE9231-69AE-11D9-BED3-505054503030": ["Authorization Policy Change", "Policy Change"],
-              "0CCE9232-69AE-11D9-BED3-505054503030": ["MPSSVC Rule-Level Policy Change", "Policy Change"],
-              "0CCE9233-69AE-11D9-BED3-505054503030": ["Filtering Platform Policy Change", "Policy Change"],
-              "0CCE9234-69AE-11D9-BED3-505054503030": ["Other Policy Change Events", "Policy Change"],
-              "0CCE9235-69AE-11D9-BED3-505054503030": ["User Account Management", "Account Management"],
-              "0CCE9236-69AE-11D9-BED3-505054503030": ["Computer Account Management", "Account Management"],
-              "0CCE9237-69AE-11D9-BED3-505054503030": ["Security Group Management", "Account Management"],
-              "0CCE9238-69AE-11D9-BED3-505054503030": ["Distribution Group Management", "Account Management"],
-              "0CCE9239-69AE-11D9-BED3-505054503030": ["Application Group Management", "Account Management"],
-              "0CCE923A-69AE-11D9-BED3-505054503030": ["Other Account Management Events", "Account Management"],
-              "0CCE923B-69AE-11D9-BED3-505054503030": ["Directory Service Access", "Account Management"],
-              "0CCE923C-69AE-11D9-BED3-505054503030": ["Directory Service Changes", "Account Management"],
-              "0CCE923D-69AE-11D9-BED3-505054503030": ["Directory Service Replication", "Account Management"],
-              "0CCE923E-69AE-11D9-BED3-505054503030": ["Detailed Directory Service Replication", "Account Management"],
-              "0CCE923F-69AE-11D9-BED3-505054503030": ["Credential Validation", "Account Logon"],
-              "0CCE9240-69AE-11D9-BED3-505054503030": ["Kerberos Service Ticket Operations", "Account Logon"],
-              "0CCE9241-69AE-11D9-BED3-505054503030": ["Other Account Logon Events", "Account Logon"],
-              "0CCE9242-69AE-11D9-BED3-505054503030": ["Kerberos Authentication Service", "Account Logon"]
-              }
-            %}
-            {% set subCatGuid = json.event.winlog.event_data.get("SubcategoryGuid").replace("{","").replace("}","").toUpperCase() %}
-            {%- if subCatGuid in mapping -%}
-            {{subCatGuid[1]}}
-            {%- endif -%}
-          winlog.event_data.SubCategory: >
-            {% set mapping = {
-              "0CCE9210-69AE-11D9-BED3-505054503030": ["Security State Change", "System"],
-              "0CCE9211-69AE-11D9-BED3-505054503030": ["Security System Extension", "System"],
-              "0CCE9212-69AE-11D9-BED3-505054503030": ["System Integrity", "System"],
-              "0CCE9213-69AE-11D9-BED3-505054503030": ["IPsec Driver", "System"],
-              "0CCE9214-69AE-11D9-BED3-505054503030": ["Other System Events", "System"],
-              "0CCE9215-69AE-11D9-BED3-505054503030": ["Logon", "Logon/Logoff"],
-              "0CCE9216-69AE-11D9-BED3-505054503030": ["Logoff", "Logon/Logoff"],
-              "0CCE9217-69AE-11D9-BED3-505054503030": ["Account Lockout", "Logon/Logoff"],
-              "0CCE9218-69AE-11D9-BED3-505054503030": ["IPsec Main Mode", "Logon/Logoff"],
-              "0CCE9219-69AE-11D9-BED3-505054503030": ["IPsec Quick Mode", "Logon/Logoff"],
-              "0CCE921A-69AE-11D9-BED3-505054503030": ["IPsec Extended Mode", "Logon/Logoff"],
-              "0CCE921B-69AE-11D9-BED3-505054503030": ["Special Logon", "Logon/Logoff"],
-              "0CCE921C-69AE-11D9-BED3-505054503030": ["Other Logon/Logoff Events", "Logon/Logoff"],
-              "0CCE9243-69AE-11D9-BED3-505054503030": ["Network Policy Server", "Logon/Logoff"],
-              "0CCE9247-69AE-11D9-BED3-505054503030": ["User / Device Claims", "Logon/Logoff"],
-              "0CCE921D-69AE-11D9-BED3-505054503030": ["File System", "Object Access"],
-              "0CCE921E-69AE-11D9-BED3-505054503030": ["Registry", "Object Access"],
-              "0CCE921F-69AE-11D9-BED3-505054503030": ["Kernel Object", "Object Access"],
-              "0CCE9220-69AE-11D9-BED3-505054503030": ["SAM", "Object Access"],
-              "0CCE9221-69AE-11D9-BED3-505054503030": ["Certification Services", "Object Access"],
-              "0CCE9222-69AE-11D9-BED3-505054503030": ["Application Generated", "Object Access"],
-              "0CCE9223-69AE-11D9-BED3-505054503030": ["Handle Manipulation", "Object Access"],
-              "0CCE9224-69AE-11D9-BED3-505054503030": ["File Share", "Object Access"],
-              "0CCE9225-69AE-11D9-BED3-505054503030": ["Filtering Platform Packet Drop", "Object Access"],
-              "0CCE9226-69AE-11D9-BED3-505054503030": ["Filtering Platform Connection ", "Object Access"],
-              "0CCE9227-69AE-11D9-BED3-505054503030": ["Other Object Access Events", "Object Access"],
-              "0CCE9244-69AE-11D9-BED3-505054503030": ["Detailed File Share", "Object Access"],
-              "0CCE9245-69AE-11D9-BED3-505054503030": ["Removable Storage", "Object Access"],
-              "0CCE9246-69AE-11D9-BED3-505054503030": ["Central Policy Staging", "Object Access"],
-              "0CCE9228-69AE-11D9-BED3-505054503030": ["Sensitive Privilege Use", "Privilege Use"],
-              "0CCE9229-69AE-11D9-BED3-505054503030": ["Non Sensitive Privilege Use", "Privilege Use"],
-              "0CCE922A-69AE-11D9-BED3-505054503030": ["Other Privilege Use Events", "Privilege Use"],
-              "0CCE922B-69AE-11D9-BED3-505054503030": ["Process Creation", "Detailed Tracking"],
-              "0CCE922C-69AE-11D9-BED3-505054503030": ["Process Termination", "Detailed Tracking"],
-              "0CCE922D-69AE-11D9-BED3-505054503030": ["DPAPI Activity", "Detailed Tracking"],
-              "0CCE922E-69AE-11D9-BED3-505054503030": ["RPC Events", "Detailed Tracking"],
-              "0CCE9248-69AE-11D9-BED3-505054503030": ["Plug and Play Events", "Detailed Tracking"],
-              "0CCE922F-69AE-11D9-BED3-505054503030": ["Audit Policy Change", "Policy Change"],
-              "0CCE9230-69AE-11D9-BED3-505054503030": ["Authentication Policy Change", "Policy Change"],
-              "0CCE9231-69AE-11D9-BED3-505054503030": ["Authorization Policy Change", "Policy Change"],
-              "0CCE9232-69AE-11D9-BED3-505054503030": ["MPSSVC Rule-Level Policy Change", "Policy Change"],
-              "0CCE9233-69AE-11D9-BED3-505054503030": ["Filtering Platform Policy Change", "Policy Change"],
-              "0CCE9234-69AE-11D9-BED3-505054503030": ["Other Policy Change Events", "Policy Change"],
-              "0CCE9235-69AE-11D9-BED3-505054503030": ["User Account Management", "Account Management"],
-              "0CCE9236-69AE-11D9-BED3-505054503030": ["Computer Account Management", "Account Management"],
-              "0CCE9237-69AE-11D9-BED3-505054503030": ["Security Group Management", "Account Management"],
-              "0CCE9238-69AE-11D9-BED3-505054503030": ["Distribution Group Management", "Account Management"],
-              "0CCE9239-69AE-11D9-BED3-505054503030": ["Application Group Management", "Account Management"],
-              "0CCE923A-69AE-11D9-BED3-505054503030": ["Other Account Management Events", "Account Management"],
-              "0CCE923B-69AE-11D9-BED3-505054503030": ["Directory Service Access", "Account Management"],
-              "0CCE923C-69AE-11D9-BED3-505054503030": ["Directory Service Changes", "Account Management"],
-              "0CCE923D-69AE-11D9-BED3-505054503030": ["Directory Service Replication", "Account Management"],
-              "0CCE923E-69AE-11D9-BED3-505054503030": ["Detailed Directory Service Replication", "Account Management"],
-              "0CCE923F-69AE-11D9-BED3-505054503030": ["Credential Validation", "Account Logon"],
-              "0CCE9240-69AE-11D9-BED3-505054503030": ["Kerberos Service Ticket Operations", "Account Logon"],
-              "0CCE9241-69AE-11D9-BED3-505054503030": ["Other Account Logon Events", "Account Logon"],
-              "0CCE9242-69AE-11D9-BED3-505054503030": ["Kerberos Authentication Service", "Account Logon"]
-              }
-            %}
-            {% set subCatGuid = json.event.winlog.event_data.get("SubcategoryGuid").replace("{","").replace("}","").toUpperCase() %}
-            {%- if subCatGuid in mapping -%}
-            {{subCatGuid[0]}}
-            {%- endif -%}
+      - translate:
         filter: "{{json.event.winlog.event_data.get('SubcategoryGuid') != None}}"
+        dictionary:
+          "{0CCE9210-69AE-11D9-BED3-505054503030}": "System"
+          "{0CCE9211-69AE-11D9-BED3-505054503030}": "System"
+          "{0CCE9212-69AE-11D9-BED3-505054503030}": "System"
+          "{0CCE9213-69AE-11D9-BED3-505054503030}": "System"
+          "{0CCE9214-69AE-11D9-BED3-505054503030}": "System"
+          "{0CCE9215-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE9216-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE9217-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE9218-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE9219-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE921A-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE921B-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE921C-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE9243-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE9247-69AE-11D9-BED3-505054503030}": "Logon/Logoff"
+          "{0CCE921D-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE921E-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE921F-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9220-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9221-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9222-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9223-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9224-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9225-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9226-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9227-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9244-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9245-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9246-69AE-11D9-BED3-505054503030}": "Object Access"
+          "{0CCE9228-69AE-11D9-BED3-505054503030}": "Privilege Use"
+          "{0CCE9229-69AE-11D9-BED3-505054503030}": "Privilege Use"
+          "{0CCE922A-69AE-11D9-BED3-505054503030}": "Privilege Use"
+          "{0CCE922B-69AE-11D9-BED3-505054503030}": "Detailed Tracking"
+          "{0CCE922C-69AE-11D9-BED3-505054503030}": "Detailed Tracking"
+          "{0CCE922D-69AE-11D9-BED3-505054503030}": "Detailed Tracking"
+          "{0CCE922E-69AE-11D9-BED3-505054503030}": "Detailed Tracking"
+          "{0CCE9248-69AE-11D9-BED3-505054503030}": "Detailed Tracking"
+          "{0CCE922F-69AE-11D9-BED3-505054503030}": "Policy Change"
+          "{0CCE9230-69AE-11D9-BED3-505054503030}": "Policy Change"
+          "{0CCE9231-69AE-11D9-BED3-505054503030}": "Policy Change"
+          "{0CCE9232-69AE-11D9-BED3-505054503030}": "Policy Change"
+          "{0CCE9233-69AE-11D9-BED3-505054503030}": "Policy Change"
+          "{0CCE9234-69AE-11D9-BED3-505054503030}": "Policy Change"
+          "{0CCE9235-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE9236-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE9237-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE9238-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE9239-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE923A-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE923B-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE923C-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE923D-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE923E-69AE-11D9-BED3-505054503030}": "Account Management"
+          "{0CCE923F-69AE-11D9-BED3-505054503030}": "Account Logon"
+          "{0CCE9240-69AE-11D9-BED3-505054503030}": "Account Logon"
+          "{0CCE9241-69AE-11D9-BED3-505054503030}": "Account Logon"
+          "{0CCE9242-69AE-11D9-BED3-505054503030}": "Account Logon"
+        mapping:
+          json.event.winlog.event_data.SubcategoryGuid|upper: winlog.event_data.Category
+      - translate:
+        filter: "{{json.event.winlog.event_data.get('SubcategoryGuid') != None}}"
+        dictionary:
+          "{0CCE9210-69AE-11D9-BED3-505054503030}": "Security State Change"
+          "{0CCE9211-69AE-11D9-BED3-505054503030}": "Security System Extension"
+          "{0CCE9212-69AE-11D9-BED3-505054503030}": "System Integrity"
+          "{0CCE9213-69AE-11D9-BED3-505054503030}": "IPsec Driver"
+          "{0CCE9214-69AE-11D9-BED3-505054503030}": "Other System Events"
+          "{0CCE9215-69AE-11D9-BED3-505054503030}": "Logon"
+          "{0CCE9216-69AE-11D9-BED3-505054503030}": "Logoff"
+          "{0CCE9217-69AE-11D9-BED3-505054503030}": "Account Lockout"
+          "{0CCE9218-69AE-11D9-BED3-505054503030}": "IPsec Main Mode"
+          "{0CCE9219-69AE-11D9-BED3-505054503030}": "IPsec Quick Mode"
+          "{0CCE921A-69AE-11D9-BED3-505054503030}": "IPsec Extended Mode"
+          "{0CCE921B-69AE-11D9-BED3-505054503030}": "Special Logon"
+          "{0CCE921C-69AE-11D9-BED3-505054503030}": "Other Logon/Logoff Events"
+          "{0CCE9243-69AE-11D9-BED3-505054503030}": "Network Policy Server"
+          "{0CCE9247-69AE-11D9-BED3-505054503030}": "User / Device Claims"
+          "{0CCE921D-69AE-11D9-BED3-505054503030}": "File System"
+          "{0CCE921E-69AE-11D9-BED3-505054503030}": "Registry"
+          "{0CCE921F-69AE-11D9-BED3-505054503030}": "Kernel Object"
+          "{0CCE9220-69AE-11D9-BED3-505054503030}": "SAM"
+          "{0CCE9221-69AE-11D9-BED3-505054503030}": "Certification Services"
+          "{0CCE9222-69AE-11D9-BED3-505054503030}": "Application Generated"
+          "{0CCE9223-69AE-11D9-BED3-505054503030}": "Handle Manipulation"
+          "{0CCE9224-69AE-11D9-BED3-505054503030}": "File Share"
+          "{0CCE9225-69AE-11D9-BED3-505054503030}": "Filtering Platform Packet Drop"
+          "{0CCE9226-69AE-11D9-BED3-505054503030}": "Filtering Platform Connection"
+          "{0CCE9227-69AE-11D9-BED3-505054503030}": "Other Object Access Events"
+          "{0CCE9244-69AE-11D9-BED3-505054503030}": "Detailed File Share"
+          "{0CCE9245-69AE-11D9-BED3-505054503030}": "Removable Storage"
+          "{0CCE9246-69AE-11D9-BED3-505054503030}": "Central Policy Staging"
+          "{0CCE9228-69AE-11D9-BED3-505054503030}": "Sensitive Privilege Use"
+          "{0CCE9229-69AE-11D9-BED3-505054503030}": "Non Sensitive Privilege Use"
+          "{0CCE922A-69AE-11D9-BED3-505054503030}": "Other Privilege Use Events"
+          "{0CCE922B-69AE-11D9-BED3-505054503030}": "Process Creation"
+          "{0CCE922C-69AE-11D9-BED3-505054503030}": "Process Termination"
+          "{0CCE922D-69AE-11D9-BED3-505054503030}": "DPAPI Activity"
+          "{0CCE922E-69AE-11D9-BED3-505054503030}": "RPC Events"
+          "{0CCE9248-69AE-11D9-BED3-505054503030}": "Plug and Play Events"
+          "{0CCE922F-69AE-11D9-BED3-505054503030}": "Audit Policy Change"
+          "{0CCE9230-69AE-11D9-BED3-505054503030}": "Authentication Policy Change"
+          "{0CCE9231-69AE-11D9-BED3-505054503030}": "Authorization Policy Change"
+          "{0CCE9232-69AE-11D9-BED3-505054503030}": "MPSSVC Rule-Level Policy Change"
+          "{0CCE9233-69AE-11D9-BED3-505054503030}": "Filtering Platform Policy Change"
+          "{0CCE9234-69AE-11D9-BED3-505054503030}": "Other Policy Change Events"
+          "{0CCE9235-69AE-11D9-BED3-505054503030}": "User Account Management"
+          "{0CCE9236-69AE-11D9-BED3-505054503030}": "Computer Account Management"
+          "{0CCE9237-69AE-11D9-BED3-505054503030}": "Security Group Management"
+          "{0CCE9238-69AE-11D9-BED3-505054503030}": "Distribution Group Management"
+          "{0CCE9239-69AE-11D9-BED3-505054503030}": "Application Group Management"
+          "{0CCE923A-69AE-11D9-BED3-505054503030}": "Other Account Management Events"
+          "{0CCE923B-69AE-11D9-BED3-505054503030}": "Directory Service Access"
+          "{0CCE923C-69AE-11D9-BED3-505054503030}": "Directory Service Changes"
+          "{0CCE923D-69AE-11D9-BED3-505054503030}": "Directory Service Replication"
+          "{0CCE923E-69AE-11D9-BED3-505054503030}": "Detailed Directory Service Replication"
+          "{0CCE923F-69AE-11D9-BED3-505054503030}": "Credential Validation"
+          "{0CCE9240-69AE-11D9-BED3-505054503030}": "Kerberos Service Ticket Operations"
+          "{0CCE9241-69AE-11D9-BED3-505054503030}": "Other Account Logon Events"
+          "{0CCE9242-69AE-11D9-BED3-505054503030}": "Kerberos Authentication Service"
+        mapping:
+          json.event.winlog.event_data.SubcategoryGuid|upper: winlog.event_data.SubCategory
       - set:
           winlog.event_data.AccessMaskDescription: >
             {%- set mapping = {
@@ -692,7 +704,16 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             {{al}}
-          process.command_line: "{{json.event.winlog.event_data.CommandLine}}"
+          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
+          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
+          action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
+          action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
+          action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
+          destination.ip: "{{json.event.winlog.event_data.DestinationIp or json.event.winlog.event_data.DestAddress}}"
+          destination.port: "{{(json.event.winlog.event_data.DestinationPort or json.event.winlog.event_data.DestPort) | int}}"
+          dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
+          dll.name: "{{json.event.winlog.event_data.OriginalFileName}}"
+          process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
           process.executable: "{{json.event.winlog.event_data.NewProcessName}}"
           process.name: '{{json.event.winlog.event_data.NewProcessName.split("\\")|last}}'
           process.parent.executable: "{{json.event.winlog.event_data.ParentProcessName}}"
