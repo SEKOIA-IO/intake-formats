@@ -153,6 +153,37 @@ stages:
         filter: "{{(parse_client_ip_address.result.ip | is_ipaddress) and json_event.message.ClientIP == null}}"
 
       - set:
+          threat.enrichments: >
+            {%- set enrichments = [] -%}
+            {%- for threat in parse_data.ParsedData.get("Entities", []) -%}
+              {%- set indicator = {} -%}
+              {%- if threat.get("FirstSeen") -%}
+                {%- set _ = indicator.update({"first_seen": threat.get("FirstSeen")}) -%}
+              {%- endif -%}
+              {%- if threat.get("SenderIP") -%}
+                {%- set _ = indicator.update({"ip": threat.get("SenderIP")}) -%}
+              {%- endif -%}
+              {%- if threat.get("Recipient") -%}
+                {%- set _ = indicator.update({"email": {"address": threat.get("Recipient")}}) -%}
+              {%- endif -%}
+              {%- if threat.get("SourceEntityId")-%}
+                {%- set _ = indicator.update({"url": {"full": threat.get("SourceEntityId")}}) -%}
+              {%- elif threat.get("Url") -%}
+                {%- set _ = indicator.update({"url": {"full": threat.get("Url")}}) -%}
+              {%- endif -%}
+              {%- if threat.get("Source") -%}
+                {%- set _ = indicator.update({"provider": threat.get("Source")}) -%}
+              {%- endif -%}
+              {%- if indicator != {} and indicator.keys() | length > 2 -%}
+                {%- set _ = enrichments.append({"indicator": indicator}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if enrichments | length > 0 -%}
+              {{ enrichments }}
+            {%- endif -%}
+        filter: '{{parse_data.ParsedData.get("Category") == "ThreatManagement"}}'
+
+      - set:
           action.target: "user"
         filter: '{{json_event.message.get("UserId") != None}}'
       - translate:
@@ -288,7 +319,15 @@ stages:
                 "{{ parameter.Name }}:{{ parameter.Value }}",
               {%- endfor -%}
             ]
+
+          email.to.address: >
+            {%- for parameter in json_event.message.Parameters -%}
+              {%- if parameter.Name == 'ForwardingSmtpAddress' -%}
+              ["{{ parameter.Value.removeprefix('smtp:') }}"]
+              {%- endif -%}
+            {%- endfor -%}
         filter: '{{json_event.message.get("Parameters") != None}}'
+
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
