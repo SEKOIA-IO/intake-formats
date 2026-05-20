@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-05-04 - 1.1.0
+- Add new Zscaler Internet Access (ZIA) fields:
+    - zscaler.zia.appclass
+    - zscaler.zia.dlpengine
+    - zscaler.zia.dlpdictionaries
+    - zscaler.zia.fileclass
+    - zscaler.zia.pagerisk
+    - zscaler.zia.unscannabletype
+
 ## 2024-01-30 - 1.0.2
 
 ### Changed
