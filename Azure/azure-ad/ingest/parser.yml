@@ -309,15 +309,28 @@ stages:
           action.properties: >
             [
             {%- for targetResource in parsed_event.message.properties.targetResources -%}
+              {%- set first_loop = loop -%}
               {%- if targetResource.modifiedProperties != null -%}
                 {%- for modifiedProperty in targetResource.modifiedProperties -%}
                   {%- if modifiedProperty.displayName != "Included Updated Properties"-%}
-                    {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+                    {%- set oldValue = modifiedProperty.oldValue | from_json -%}
+                    {%- set newValue = modifiedProperty.newValue | from_json -%}
+                    {%- set nv = {"id": newValue.get("id"), "displayName": newValue.get("displayName"), "created": newValue.get("createdDateTime"), "modified": newValue.get("modifiedDateTime"), "state": newValue.get("state")} if newValue is mapping else newValue -%}
+                    {%- set ov = {"id": oldValue.get("id"), "displayName": oldValue.get("displayName"), "created": oldValue.get("createdDateTime"), "modified": oldValue.get("modifiedDateTime"), "state": oldValue.get("state")} if oldValue is mapping else oldValue -%}
+                    {%- if nv is string or none and ov is string or none -%}
+                      {'name': '{{modifiedProperty.displayName or ""}}', 'newValue': '{{nv or ""}}', 'oldValue': '{{ov or ""}}'},
+                    {%- elif nv is string or none -%}
+                      {'name': '{{modifiedProperty.displayName or ""}}', 'newValue': '{{nv or ""}}', 'oldValue': {{ov}}},
+                    {%- elif ov is string or none -%}
+                      {'name': '{{modifiedProperty.displayName or ""}}', 'newValue': {{nv}}, 'oldValue': '{{ov or ""}}'},
+                    {%- else -%}
+                      {'name': '{{modifiedProperty.displayName or ""}}', 'newValue': {{nv}}, 'oldValue': {{ov}}},
+                    {%- endif -%}
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
               {%- if targetResource.type == "User" -%}
-                {'name': '{{targetResource.userPrincipalName | lower }}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
+                {'name': '{{targetResource.userPrincipalName | lower }}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'}
               {%- endif -%}
             {%- endfor -%}
             ]
