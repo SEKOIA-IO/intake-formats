@@ -256,9 +256,6 @@ def test_intake_format_unused_fields(request, manager, format_fields_path, modul
     if request.config.getoption("prune_taxonomy"):
         if number_of_unused_fields > 0:
             prune_taxonomy(format_fields_path, {"unused": format_unused_fields})
-
-        if module_unused_fields and os.path.isfile(module_fields_path):
-            prune_taxonomy(module_fields_path, {"unused": module_unused_fields})
     elif number_of_unused_fields > 0:
         print("use --prune-taxonomy cleanup unused fields")
 
