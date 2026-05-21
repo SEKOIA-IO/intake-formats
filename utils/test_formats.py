@@ -270,6 +270,7 @@ def test_intake_format_missing_fields(manager, module, intake_format, request, f
     module_missing_fields = scoped_fields["missing"]["module"]
 
     number_of_missing_fields = len(format_missing_fields)
+    number_of_module_missing_fields = len(module_missing_fields)
 
     print(f"Missing fields ({number_of_missing_fields}) in {format_fields_path}:\n")
 
@@ -277,17 +278,21 @@ def test_intake_format_missing_fields(manager, module, intake_format, request, f
         print(missing)
 
     if module_missing_fields:
-        print(f"Ignored module-level missing fields ({len(module_missing_fields)}) for {module_fields_path}:\n")
+        print(f"Module-level missing fields ({number_of_module_missing_fields}) for {module_fields_path}:\n")
         for missing in module_missing_fields:
             print(missing)
 
     # Add missing fields to the taxonomy
-    if request.config.getoption("fix_missing_fields") and number_of_missing_fields > 0:
-        fix_unused_fields(format_fields_path=format_fields_path, taxonomy={"missing": format_missing_fields})
+    if request.config.getoption("fix_missing_fields"):
+        if number_of_missing_fields > 0:
+            fix_unused_fields(format_fields_path=format_fields_path, taxonomy={"missing": format_missing_fields})
+        if number_of_module_missing_fields > 0:
+            fix_unused_fields(format_fields_path=module_fields_path, taxonomy={"missing": module_missing_fields})
     else:
         print("use --fix-missing-fields to add missing fields")
 
     assert number_of_missing_fields == 0
+    assert number_of_module_missing_fields == 0
 
 
 def merge_dict(dst, src):
