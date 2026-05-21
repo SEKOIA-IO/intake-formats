@@ -1,0 +1,55 @@
+name: aleph-alerts
+ignored_values: []
+pipeline:
+  - name: parsed_json
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: message
+  - name: parsed_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_json.message.timestamp}}"
+        output_field: timedate
+        format: "%Y-%m-%dT%H:%M:%SZ"
+        timezone: UTC
+  - name: set_common_fields
+    description: ""
+    filter: ""
+    external: null
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parsed_date.timedate }}"
+          observer.type: threat-intel
+          observer.vendor: ALEPH
+          observer.product: ALEPH Alerts
+          event.category: ["threat"]
+          event.type: ["info"]
+          event.action: "alert-triggered"
+          event.kind: alert
+        filter: ""
+        name: set
+      - set:
+          alert.name: "{{ parsed_json.message.alertName }}"
+          alert.document_score: "{{ parsed_json.message.score | float }}"
+          alert.document_title: "{{ parsed_json.message.title }}"
+          alert.document_content: "{{ parsed_json.message.content }}"
+          url.path: "{{ parsed_json.message.url }}"
+        filter: ""
+        name: set
+      - set:
+          url.domain: "{{ parsed_json.message.domain }}"
+        filter: "{{ parsed_json.message.domain not in [None, ''] }}"
+        name: set
+      - set:
+          related.hosts: "{{ [parsed_json.message.domain] }}"
+        filter: "{{ parsed_json.message.domain not in [None, ''] }}"
+        name: set
