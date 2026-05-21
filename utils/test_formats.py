@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+from typing import Any, TypedDict
 
 import yaml
 
@@ -16,6 +17,16 @@ constant_fields = {
     },
     "event": {"id": "00000000-0000-0000-0000-000000000000"},
 }
+
+
+class TaxonomyReport(TypedDict):
+    missing: list[str]
+    unused: list[str]
+
+
+class ScopedTaxonomyReport(TypedDict):
+    unused: dict[str, list[str]]
+    missing: dict[str, list[str]]
 
 # Tests inside this file are actually parametrized depending on arguments
 # See `pytest_generate_tests` in conftest.py for details
@@ -134,13 +145,29 @@ def taxonomy_prefixes(field_names: set[str]) -> set[str]:
     return prefixes
 
 
-def split_taxonomy_fields(taxonomy, module_fields_path: str, format_fields_path: str) -> dict:
+def _normalize_taxonomy_report(taxonomy: dict[str, Any]) -> TaxonomyReport:
+    """Validate and normalize taxonomy payload returned by validation API"""
+    missing = taxonomy.get("missing", [])
+    unused = taxonomy.get("unused", [])
+
+    if not isinstance(missing, list) or not all(isinstance(field, str) for field in missing):
+        raise TypeError("taxonomy['missing'] must be a list of strings")
+
+    if not isinstance(unused, list) or not all(isinstance(field, str) for field in unused):
+        raise TypeError("taxonomy['unused'] must be a list of strings")
+
+    return {"missing": missing, "unused": unused}
+
+
+def split_taxonomy_fields(taxonomy: dict[str, Any], module_fields_path: str, format_fields_path: str) -> ScopedTaxonomyReport:
     """
     Split missing/unused fields by where taxonomy is declared.
 
     Unknown missing fields are attached to module scope when module-level taxonomy
     exists, otherwise they are attached to format scope.
     """
+    report = _normalize_taxonomy_report(taxonomy)
+
     module_field_names = taxonomy_field_names(module_fields_path)
     format_field_names = taxonomy_field_names(format_fields_path)
 
@@ -152,13 +179,13 @@ def split_taxonomy_fields(taxonomy, module_fields_path: str, format_fields_path:
         "missing": {"module": [], "format": []},
     }
 
-    for field in taxonomy.get("unused", []):
+    for field in report["unused"]:
         if field in format_field_names:
             scoped["unused"]["format"].append(field)
         else:
             scoped["unused"]["module"].append(field)
 
-    for field in taxonomy.get("missing", []):
+    for field in report["missing"]:
         field_prefix = field.split(".", 1)[0]
         if field_prefix in format_prefixes:
             scoped["missing"]["format"].append(field)
@@ -230,7 +257,7 @@ def test_intake_format_unused_fields(request, manager, format_fields_path, modul
         if number_of_unused_fields > 0:
             prune_taxonomy(format_fields_path, {"unused": format_unused_fields})
 
-        if module_unused_fields:
+        if module_unused_fields and os.path.isfile(module_fields_path):
             prune_taxonomy(module_fields_path, {"unused": module_unused_fields})
     elif number_of_unused_fields > 0:
         print("use --prune-taxonomy cleanup unused fields")
