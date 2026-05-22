@@ -185,5 +185,33 @@ stages:
           darktrace.threat_visualizer.userTriggered: "{{json_event.message.userTriggered}}"
           darktrace.threat_visualizer.title: "{{json_event.message.title}}"
           darktrace.threat_visualizer.summary: "{{json_event.message.summary}}"
-          darktrace.threat_visualizer.details: "{{json_event.message.details}}"
+          darktrace.threat_visualizer.details: >
+            {%- set new_details = [] -%}
+            {%- for group in json_event.message.details or [] -%}
+              {%- set group_iter = group if group is sequence and group is not mapping else [group] -%}
+              {%- set new_group = [] -%}
+              {%- for item in group_iter -%}
+                {%- set new_contents = [] -%}
+                {%- for content in item.get("contents") or [] -%}
+                  {%- set new_values = [] -%}
+                  {%- for v in content.get("values") or [] -%}
+                    {%- if v is string -%}
+                      {%- set _ = new_values.append(v) -%}
+                    {%- else -%}
+                      {%- set _ = new_values.append(v | to_json) -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- set new_content = {} -%}
+                  {%- set _ = new_content.update(content) -%}
+                  {%- set _ = new_content.update({"values": new_values}) -%}
+                  {%- set _ = new_contents.append(new_content) -%}
+                {%- endfor -%}
+                {%- set new_item = {} -%}
+                {%- set _ = new_item.update(item) -%}
+                {%- set _ = new_item.update({"contents": new_contents}) -%}
+                {%- set _ = new_group.append(new_item) -%}
+              {%- endfor -%}
+              {%- set _ = new_details.append(new_group) -%}
+            {%- endfor -%}
+            {{ new_details }}
           darktrace.threat_visualizer.summariser: "{{json_event.message.summariser}}"
