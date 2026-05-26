@@ -1,121 +1,126 @@
 name: cyberrisk-analysis
+ignored_values:
+  - ""
 pipeline:
   - name: parsed_event
+    description: ""
+    filter: ""
     external:
-      name: dsv.parse-dsv
+      name: json.parse-json
       properties:
-        input_field: original.message
+        input_field: "{{original.message}}"
         output_field: message
-        delimiter: ";"
-        columnnames:
-          - date
-          - risk
-          - score
-          - cvss
-          - ip
-          - location
-          - type
-          - id
-          - details
-          - uid
-          - link
-          - falsepositive
-          - contact
-          - comment
-          - tags
-          - problem
-          - risks
-          - measures
-          - epss
-          - cves
-
+  - name: parsed_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.date}}"
+        output_field: datetime
+        format: null
+        timezone: UTC
   - name: set_base_fields
-
+    description: ""
+    filter: "{{parsed_event.message.date != ''}}"
+    external: null
   - name: set_cvss
-    filter: '{{parsed_event.message.cvss != ""}}'
-
+    description: ""
+    filter: "{{parsed_event.message.cvss != ''}}"
+    external: null
   - name: set_false_positive
-    filter: '{{parsed_event.message.falsepositive == "[fp]"}}'
-
+    description: ""
+    filter: "{{parsed_event.message.falsepositive == '[fp]'}}"
+    external: null
 stages:
   set_base_fields:
     actions:
       - set:
-          "@timestamp": "{{parsed_event.message.date}}"
-          event.risk_score: "{{parsed_event.message.risk | int}}"
+          "@timestamp": "{{event.created}}"
           event.reference: "{{parsed_event.message.link}}"
-          host.ip: "{{parsed_event.message.ip}}"
-          vulnerability.id: "{{parsed_event.message.id}}"
-          vulnerability.description: "{{parsed_event.message.details}}"
-          observer.vendor: "LocateRisk"
-          observer.product: "CyberRisk Analysis"
-          locaterisk.score: "{{parsed_event.message.score}}"
-          locaterisk.problem: "{{parsed_event.message.problem}}"
+          observer.vendor: LocateRisk
+          event.risk_score: "{{parsed_event.message.risk | int}}"
           locaterisk.risks: "{{parsed_event.message.risks}}"
-          locaterisk.measures: "{{parsed_event.message.measures}}"
-
-      - set:
-          host.domain: '{{parsed_event.message.location.split(", ")}}'
-        filter: '{{parsed_event.message.location != ""}}'
-
-      - set:
-          vulnerability.epss: "{{parsed_event.message.epss}}"
-        filter: '{{parsed_event.message.epss != ""}}'
-
-      - set:
-          vulnerability.cves: '{{parsed_event.message.cves.split("\\n")}}'
-        filter: '{{parsed_event.message.cves != ""}}'
-
-      - set:
-          locaterisk.contact: "{{parsed_event.message.contact}}"
-        filter: '{{parsed_event.message.contact != ""}}'
-
-      - set:
+          locaterisk.score: "{{parsed_event.message.score | float}}"
+          observer.product: CyberRisk Analysis
+          vulnerability.id: "{{parsed_event.message.id}}"
           locaterisk.comment: "{{parsed_event.message.comment}}"
-        filter: '{{parsed_event.message.comment != ""}}'
-
+          locaterisk.contact: "{{parsed_event.message.contact}}"
+          locaterisk.problem: "{{parsed_event.message.problem}}"
+          locaterisk.measures: "{{parsed_event.message.measures}}"
+          vulnerability.description: "{{parsed_event.message.details}}"
+        filter: ""
+        name: set
       - set:
-          locaterisk.tags: '{{parsed_event.message.tags.split(", ")}}'
-        filter: '{{parsed_event.message.tags != ""}}'
-
-      - translate:
+          host.ip: "{{parsed_event.message.ip}}"
+        filter: >-
+          {{parsed_event.message.ip != '' and parsed_event.message.ip |
+          is_ipaddress}}
+        name: set
+      - set:
+          locaterisk.scan_date: "{{parsed_date.datetime}}"
+        filter: ""
+        name: set
+      - set:
+          host.domain: "{{parsed_event.message.location.split(', ')}}"
+        filter: "{{parsed_event.message.location != ''}}"
+        name: set
+      - set:
+          vulnerability.epss: "{{parsed_event.message.epss | float}}"
+        filter: "{{parsed_event.message.epss != ''}}"
+        name: set
+      - set:
+          vulnerability.cves: |-
+            {{parsed_event.message.cves.split('
+            ')}}
+        filter: "{{parsed_event.message.cves != ''}}"
+        name: set
+      - set:
+          locaterisk.tags: "{{parsed_event.message.tags.split(', ')}}"
+        filter: "{{parsed_event.message.tags != ''}}"
+        name: set
+      - fallback: ""
         dictionary:
-          "app": ["App"]
-          "app_nested": ["App"]
-          "network": ["Network"]
-          "ssl": ["Encryption (SSL)"]
-          "ssl_nested": ["Encryption (SSL)"]
-          "breach": ["Breach"]
-          "infection": ["IP Reputation"]
-          "dns": ["DNS"]
-          "web": ["Web"]
-          "fonts_nested": ["Data Privacy"]
-          "fonts": ["Data Privacy"]
-          "dsgvo": ["Data Privacy"]
-          "dsgvo_nested": ["Data Privacy"]
-          "ddos": ["DDoS"]
-          "ddos_nested": ["DDoS"]
-          "nessus_nested": ["Import"]
-          "nessus": ["Import"]
-          "greenbone_nested": ["Import"]
-          "greenbone": ["Import"]
-          "pingcastle_nested": ["Import"]
-          "pingcastle": ["Import"]
-          "csv": ["Import"]
-          "qualys_nested": ["Import"]
-          "qualys": ["Import"]
-          "enginsight_nested": ["Import"]
-          "enginsight": ["Import"]
-          "import": ["Import"]
+          app: App
+          csv: Import
+          dns: DNS
+          ssl: Encryption (SSL)
+          web: Web
+          ddos: DDoS
+          dsgvo: Data Privacy
+          fonts: Data Privacy
+          breach: Breach
+          import: Import
+          nessus: Import
+          qualys: Import
+          network: Network
+          greenbone: Import
+          infection: IP Reputation
+          app_nested: App
+          enginsight: Import
+          pingcastle: Import
+          ssl_nested: Encryption (SSL)
+          ddos_nested: DDoS
+          dsgvo_nested: Data Privacy
+          fonts_nested: Data Privacy
+          nessus_nested: Import
+          qualys_nested: Import
+          greenbone_nested: Import
+          enginsight_nested: Import
+          pingcastle_nested: Import
         mapping:
           parsed_event.message.type: event.category
-
+        filter: ""
+        name: translate
   set_cvss:
     actions:
       - set:
           vulnerability.score.base: "{{parsed_event.message.cvss | float}}"
-
+        filter: ""
+        name: set
   set_false_positive:
     actions:
       - set:
           vulnerability.false_positive: "true"
+        filter: ""
+        name: set
