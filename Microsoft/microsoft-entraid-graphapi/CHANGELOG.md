@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased] - 2026-05-27
-
 ### Added
 
 - Added `azuread.properties` aliases matching existing `azure.entraid.properties` mappings:
