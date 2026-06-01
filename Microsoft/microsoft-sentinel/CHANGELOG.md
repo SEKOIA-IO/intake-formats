@@ -6,3 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- Set `event.severity` from Microsoft Sentinel textual severity with numeric mapping (`Informational`->1, `Low`->3, `Medium`->5, `High`->8) while keeping `log.level` unchanged.
+- Added `microsoft.sentinel.incident.severity` to preserve the original Sentinel severity as a vendor field.
