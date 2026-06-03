@@ -78,7 +78,6 @@ stages:
           powershell: "{{json.event.powershell}}"
           process: "{{json.event.process}}"
           process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
-          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
           action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
           action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
           action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
@@ -87,7 +86,7 @@ stages:
           dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
           dll.name: "{{json.event.winlog.event_data.ImageLoaded | basename}}"
           process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
-          process.args: "{{json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None}}"
+          process.args: "{{json.event.process.args or (json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None)}}"
           process.executable: "{{json.event.winlog.event_data.Image}}"
           process.name: "{{json.event.winlog.event_data.Image | basename}}"
           process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
@@ -703,30 +702,33 @@ stages:
         filter: '{{json.event.event.get("code") in ["1100", "1102", "1104", "1105", "1108", "4624", "4648", "4625","4670", "4673", "4674", "4689", "4697", "4719", "4720", "4722","4723", "4724", "4725", "4726", "4727", "4728", "4729", "4730","4731", "4732", "4733", "4734", "4735", "4737", "4738", "4740","4741", "4742", "4743", "4744", "4745", "4746", "4747", "4748","4749", "4750", "4751", "4752", "4753", "4754", "4755", "4756","4757", "4758", "4759", "4760", "4761", "4762", "4763", "4764","4767", "4768", "4769", "4770", "4771", "4798", "4799", "4817","4904", "4905", "4907", "4912", "5140", "5145"]}}'
       - set:
           process.args: >
-            {%- set start = 0 -%}
-            {%- set end = 0 -%}
-            {%- set in_quote = false -%}
-            {%- set al = [] -%}
-            {%- for i in range (len(json.event.winlog.event_data.CommandLine)) -%}
-              {%- set end = i -%}
-              {%- if json.event.winlog.event_data.CommandLine[i] == '\"' -%}
-                {%- if in_quote -%}
-                  {%- set in_quote = false -%}
-                {%- else -%}
-                  {%- set in_quote = true -%}
+            {%- if json.event.process.args != None -%}
+              {{json.event.process.args}}
+            {%- elif json.event.winlog.event_data.get("CommandLine") != None -%}
+              {%- set start = 0 -%}
+              {%- set end = 0 -%}
+              {%- set in_quote = false -%}
+              {%- set al = [] -%}
+              {%- for i in range (len(json.event.winlog.event_data.CommandLine)) -%}
+                {%- set end = i -%}
+                {%- if json.event.winlog.event_data.CommandLine[i] == '\"' -%}
+                  {%- if in_quote -%}
+                    {%- set in_quote = false -%}
+                  {%- else -%}
+                    {%- set in_quote = true -%}
+                  {%- endif -%}
                 {%- endif -%}
-              {%- endif -%}
-              {%- if json.event.winlog.event_data.CommandLine[i] == " " and in_quote == false -%}
-                {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end]) -%}
-                {%- set start = i + 1 -%}
-              {%- endif -%}
-              {%- if (i == len(json.event.winlog.event_data.CommandLine) - 1) -%}
-                {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end+1]) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{al}}
+                {%- if json.event.winlog.event_data.CommandLine[i] == " " and in_quote == false -%}
+                  {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end]) -%}
+                  {%- set start = i + 1 -%}
+                {%- endif -%}
+                {%- if (i == len(json.event.winlog.event_data.CommandLine) - 1) -%}
+                  {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end+1]) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {{al}}
+            {%- endif -%}
           process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
-          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
           action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
           action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
           action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
