@@ -36,12 +36,8 @@ stages:
       - set:
           "@timestamp": '{{json.event["@timestamp"]}}'
           action: "{{json.event.action}}"
-          action.name: "{{json.event.winlog.event_data.EventType or json.event.event.action or json.event.action}}"
-          action.properties: "{{json.event.winlog.event_data or {}}}"
-          action.properties.EventType: "{{json.event.winlog.event_data.EventType or (json.event.event.action if json.event.event.code == '4769' else None)}}"
-          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
-          action.properties.ParentCommandLine: "{{(json.event.winlog.event_data.get('ParentCommandLine') if json.event.winlog and json.event.winlog.get('event_data') else None) or json.event.process.parent.command_line}}"
-          action.properties.ScriptBlockText: "{{json.event.winlog.event_data.ScriptBlockText or json.event.winlog.event_data.CommandLine}}"
+          action.name: "{{json.event.action.name or (json.event.event.action if json.event.event.code == '8' else None)}}"
+          action.properties: "{{json.event.winlog.event_data}}"
           action.type: "{{json.event.winlog.channel}}"
           action.record_id: "{{json.event.winlog.record_id}}"
           action.id: "{{json.event.event.code | string}}"
@@ -82,7 +78,7 @@ stages:
           network: "{{json.event.network}}"
           powershell: "{{json.event.powershell}}"
           process: "{{json.event.process}}"
-          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine or json.event.winlog.event_data.Application}}"
+          process.parent.command_line: "{{json.event.winlog.event_data.ParentCommandLine}}"
           action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
           action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
           action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
@@ -91,12 +87,12 @@ stages:
           dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
           dll.name: "{{json.event.winlog.event_data.ImageLoaded | basename}}"
           process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
-          process.args: '{{json.event.process.args or ((json.event.winlog.event_data.CommandLine or json.event.process.command_line).split(" ") if (json.event.winlog.event_data.CommandLine or json.event.process.command_line) else None)}}'
+          process.args: "{{json.event.process.args or (json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None)}}"
           process.executable: "{{json.event.winlog.event_data.Image}}"
-          process.name: "{{(json.event.winlog.event_data.Image or json.event.winlog.event_data.SourceImage) | basename}}"
+          process.name: "{{json.event.winlog.event_data.Image | basename}}"
           process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
-          process.parent.name: "{{(json.event.winlog.event_data.ParentImage or json.event.winlog.event_data.Image) | basename}}"
-          process.working_directory: "{{json.event.winlog.event_data.CurrentDirectory or (json.event.winlog.event_data.ImageLoaded | dirname)}}"
+          process.parent.name: "{{json.event.winlog.event_data.ParentImage| basename}}"
+          process.working_directory: "{{json.event.winlog.event_data.CurrentDirectory}}"
           process.pe.original_file_name: "{{json.event.winlog.event_data.OriginalFileName}}"
           registry: "{{json.event.registry}}"
           registry.path: "{{json.event.winlog.event_data.TargetObject}}"
@@ -117,8 +113,31 @@ stages:
           winlog.activity_id: "{{json.event.winlog.activity_id | lower}}"
         filter: '{{json.event.winlog.get("activity_id") != None}}'
       - set:
+          action.properties.ParentCommandLine: "{{json.event.process.parent.command_line}}"
+        filter: '{{(json.event.event.code | string) == "1" and json.event.event.action == "process-created" and json.event.process.parent.command_line != None and json.event.process.parent.name == "mshta.exe"}}'
+      - set:
           process.args: '{{json.event.winlog.event_data.CommandLine.split(" ")}}'
-        filter: '{{json.event.event.code == "1" and json.event.winlog.get("event_data") != None and json.event.winlog.event_data.get("CommandLine") != None}}'
+          action.properties.ScriptBlockText: "{{json.event.winlog.event_data.CommandLine}}"
+        filter: '{{(json.event.event.code | string) == "1" and json.event.winlog.event_data.get("RuleName") == "technique_id=T1218.011,technique_name=rundll32.exe" and json.event.winlog.event_data.get("CommandLine") != None}}'
+      - set:
+          process.working_directory: "{{json.event.winlog.event_data.ImageLoaded | dirname}}"
+        filter: '{{(json.event.event.code | string) == "7" and json.event.winlog.event_data.get("RuleName") == "technique_id=T1574.002,technique_name=DLL Side-Loading" and json.event.winlog.event_data.get("CurrentDirectory") == None and json.event.winlog.event_data.get("ImageLoaded") != None}}'
+      - set:
+          process.parent.command_line: "{{json.event.winlog.event_data.Application}}"
+        filter: '{{(json.event.event.code | string) == "5156" and json.event.winlog.event_data.get("ParentCommandLine") == None and json.event.winlog.event_data.get("Application") != None and "lsass.exe" in (json.event.winlog.event_data.get("Application") | lower)}}'
+      - set:
+          process.parent.name: "{{json.event.winlog.event_data.Image | basename}}"
+        filter: '{{(json.event.event.code | string) == "3" and json.event.winlog.event_data.get("RuleName") == "technique_id=T1059.001,technique_name=PowerShell" and json.event.winlog.event_data.get("ParentImage") == None and json.event.winlog.event_data.get("Image") != None}}'
+      - set:
+          process.name: "{{json.event.winlog.event_data.SourceImage | basename}}"
+          action.name: "{{json.event.event.action}}"
+        filter: '{{(json.event.event.code | string) == "8" and json.event.winlog.event_data.get("SourceImage") != None and json.event.event.action != None}}'
+      - set:
+          action.properties.MessEventType: "{{json.event.winlog.event_data.EventType}}"
+        filter: '{{(json.event.event.code | string) == "13" and json.event.winlog.event_data.get("RuleName") != None and json.event.winlog.event_data.get("EventType") != None}}'
+      - set:
+          action.properties.EventType: "{{json.event.event.action}}"
+        filter: '{{(json.event.event.code | string) == "4769" and json.event.event.action == "Kerberos Service Ticket Operations"}}'
       - set:
           process.hash.md5: "{{parse_kv_hashes.hash.MD5| lower }}"
           process.hash.sha1: "{{parse_kv_hashes.hash.SHA1| lower }}"
