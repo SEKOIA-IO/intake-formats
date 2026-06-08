@@ -103,7 +103,6 @@ stages:
           host.os.version: "{{parse_json.message.meta_os_version}}"
           host.domain: "{{parse_json.message.subject_domain}}"
 
-          vulnerability.reference: "{{parse_json.message.ioc_detection_references[2:-2]}}"
           vulnerability.description: "{{parse_json.message.ioc_detection_description}}"
 
           process.pid: "{{parse_json.message.pid}}"
@@ -111,7 +110,7 @@ stages:
           process.hash.sha1: "{{parse_json.message.sha1}}"
           process.hash.sha256: "{{parse_json.message.sha256 or parse_json.message.lolbins_ml_results.sha256}}"
           process.parent.name: "{{parse_json.message.process_parent_name or parse_json.message.parent_name}}"
-          process.command_line: "{{parse_json.message.process_cmd_line or parse_json.message.cmdline}}"
+          process.command_line: "{{parse_json.message.process_cmd_line}}"
           process.parent.executable: "{{parse_json.message.parent_path}}"
           process.parent.command_line: "{{parse_json.message.parent_cmdline}}"
           process.parent.working_directory: "{{parse_json.message.process_parent_path}}"
@@ -126,6 +125,18 @@ stages:
           file.size: "{{parse_json.message.file_size or parse_json.message.process_file_size}}"
           file.hash.sha1: "{{parse_json.message.sha1}}"
           file.hash.sha256: "{{parse_json.message.sha256}}"
+
+      - set:
+          process.command_line: "{{parse_json.message.cmdline}}"
+        filter: '{{parse_json.message.get("cmdline") != None and parse_json.message.get("process_cmd_line") == None and not parse_json.message.cmdline.startswith("[")}}'
+
+      - set:
+          process.args: "{{parse_json.message.cmdline}}"
+        filter: '{{parse_json.message.get("cmdline") != None and parse_json.message.cmdline.startswith("[") and parse_json.message.cmdline.endswith("]")}}'
+
+      - set:
+          vulnerability.reference: "{{parse_json.message.ioc_detection_references[2:-2]}}"
+        filter: '{{parse_json.message.get("ioc_detection_references") not in [None, ""] and parse_json.message.ioc_detection_references|length > 2}}'
 
       - set:
           process.hash.sha256: "{{parse_json.message.process_sha256}}"
@@ -181,37 +192,56 @@ stages:
           sophos.threat_center.ioc.ttp_summary: "{{parse_json.message.ioc_event_ttp_summary}}"
           sophos.threat_center.ioc.log_type: "{{parse_json.message.ioc_log_type}}"
           sophos.threat_center.ioc.attack_type: "{{parse_json.message.ioc_attack_type}}"
-          sophos.threat_center.ioc.unix_time: "{{parsed_unix_date.date}}"
           sophos.threat_center.ioc.detection.attack: "{{parse_json.message.ioc_detection_attack}}"
           sophos.threat_center.ioc.detection.cvss: "{{parse_json.message.ioc_detection_cvss}}"
           sophos.threat_center.ioc.detection.weight: "{{parse_json.message.ioc_detection_weight}}"
           sophos.threat_center.ioc.detection.licences: "{{parse_json.message.ioc_detection_licenses}}"
           sophos.threat_center.ioc.detection.type: "{{parse_json.message.ioc_detection_type}}"
           sophos.threat_center.ioc.detection.category: "{{parse_json.message.ioc_detection_category}}"
-          sophos.threat_center.ioc.detection.impact.availability: "{{parsed_impact.message.availability}}"
-          sophos.threat_center.ioc.detection.impact.integrity: "{{parsed_impact.message.integrity}}"
-          sophos.threat_center.ioc.detection.impact.confidentiality: "{{parsed_impact.message.confidentiality}}"
-          sophos.threat_center.ioc.detection.access.authentication: "{{parsed_access.message.authentication}}"
-          sophos.threat_center.ioc.detection.access.complexity: "{{parsed_access.message.complexity}}"
-          sophos.threat_center.ioc.detection.access.vector: "{{parsed_access.message.vector}}"
-          sophos.threat_center.ioc.detection.sigma.id: "{{parsed_sigma.message.id}}"
+          sophos.threat_center.ml.score: "{{parse_json.message.ml_score or parse_json.message.lolbins_ml_results.score}}"
+          sophos.threat_center.ml.score_band: "{{parse_json.message.process_ml_score_band or parse_json.message.ml_score_band}}"
 
           sophos.threat_center.query.source: "{{parse_json.message.query_source}}"
           sophos.threat_center.query.action: "{{parse_json.message.osquery_action}}"
           sophos.threat_center.query.pack_version: "{{parse_json.message.meta_query_pack_version}}"
           sophos.threat_center.query.name: "{{parse_json.message.query_name}}"
+          sophos.threat_center.file.original.name: "{{parse_json.message.original_filename}}"
+          sophos.threat_center.pua.score: "{{parse_json.message.pua_score}}"
+          sophos.threat_center.global_rep: "{{parse_json.message.global_rep}}"
 
-          sophos.threat_center.ml.score: "{{parse_json.message.ml_score or parse_json.message.lolbins_ml_results.score}}"
-          sophos.threat_center.ml.score_band: "{{parse_json.message.process_ml_score_band or parse_json.message.ml_score_band}}"
+      - set:
           sophos.threat_center.lolbins_ml_results.score: "{{parse_json.message.lolbins_ml_results.score}}"
           sophos.threat_center.lolbins_ml_results.score_label: "{{parse_json.message.lolbins_ml_results.score_label}}"
           sophos.threat_center.lolbins_ml_results.sha256: "{{parse_json.message.lolbins_ml_results.sha256}}"
-          sophos.threat_center.file.original.name: "{{parse_json.message.original_filename}}"
+        filter: '{{parse_json.message.get("lolbins_ml_results") != None}}'
 
+      - set:
+          sophos.threat_center.ioc.unix_time: "{{parsed_unix_date.date}}"
+        filter: '{{parse_json.message.get("ioc_unix_time") != None }}'
+
+      - set:
+          sophos.threat_center.ioc.detection.impact.availability: "{{parsed_impact.message.availability}}"
+          sophos.threat_center.ioc.detection.impact.integrity: "{{parsed_impact.message.integrity}}"
+          sophos.threat_center.ioc.detection.impact.confidentiality: "{{parsed_impact.message.confidentiality}}"
+        filter: '{{parse_json.message.get("ioc_detection_impact") != None }}'
+
+      - set:
+          sophos.threat_center.ioc.detection.access.authentication: "{{parsed_access.message.authentication}}"
+          sophos.threat_center.ioc.detection.access.complexity: "{{parsed_access.message.complexity}}"
+          sophos.threat_center.ioc.detection.access.vector: "{{parsed_access.message.vector}}"
+        filter: '{{parse_json.message.get("ioc_detection_access") != None }}'
+
+      - set:
+          sophos.threat_center.ioc.detection.sigma.id: "{{parsed_sigma.message.id}}"
+        filter: '{{parse_json.message.get("ioc_detection_sigma") != None}}'
+
+      - set:
           sophos.threat_center.analysis: "{{parsed_analysis.message}}"
-          sophos.threat_center.pua.score: "{{parse_json.message.pua_score}}"
-          sophos.threat_center.global_rep: "{{parse_json.message.global_rep}}"
+        filter: '{{parse_json.message.get("analysis") != None }}'
+
+      - set:
           sophos.threat_center.password.last_set: "{{parsed_password_date.date}}"
+        filter: '{{parse_json.message.get("password_last_set") not in [None, "-"] and not parse_json.message.get("password_last_set").startswith("%%") }}'
 
       - set:
           sophos.threat_center.ml_score_data.config_version: "{{parsed_ml_score_data.message.configVersion}}"
