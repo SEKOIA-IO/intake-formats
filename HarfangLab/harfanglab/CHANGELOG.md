@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse new custom fields in the `network_info` stage:
   - `harfanglab.network.kind`
 
+### Changed
+
+- Update DNS resolution parsing to support values under `details_dns_resolution`
+- Improve parsing of ECS fields:
+  - `dns.question.name`
+  - `dns.question.name`
+  - `dns.resolved_ip`
+- Improve parsing of custom fields:
+  - `harfanglab.dns.raw_windows_resolver_results`
+
 ## [1.3.2] - 2026-08-11
 
 ### Fixed
