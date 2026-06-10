@@ -60,7 +60,7 @@ stages:
           event.hash: "{{json_event.message.header.content_hash or json_event.message.metadata.payload_digest}}"
           event.reason: "{{json_event.message.header.title}}"
           event.provider: "{{json_event.message.header.source_name}}"
-          event.risk_score: "{{json_event.message.header.risk.score}}"
+          event.risk_score: "{{json_event.message.header.risk.score if json_event.message.header.risk is not none else none}}"
           event.severity: "{{(json_event.message.header.risk.score | int) * 20 if json_event.message.header.risk is not none else none}}"
           event.url: "{{json_event.message.metadata.flare_url}}"
 
@@ -82,8 +82,8 @@ stages:
           event.action: "{{json_event.message.header.verb}}"
           flare.events.external_url: "{{json_event.message.header.external_url}}"
           flare.events.contains_secrets: "{{json_event.message.header.contains_secrets}}"
-          flare.events.severity_override: "{{json_event.message.header.tenant_metadata.severity.override}}"
-          flare.events.severity_original: "{{json_event.message.header.tenant_metadata.severity.original}}"
+          flare.events.severity_override: "{{json_event.message.header.tenant_metadata.severity.override if json_event.message.header.tenant_metadata is not none and json_event.message.header.tenant_metadata.severity is not none else none}}"
+          flare.events.severity_original: "{{json_event.message.header.tenant_metadata.severity.original if json_event.message.header.tenant_metadata is not none and json_event.message.header.tenant_metadata.severity is not none else none}}"
           flare.events.victim_name: "{{json_event.message.header.victim_name}}"
           flare.events.emails: "{{json_event.message.data.features.emails}}"
           flare.events.usernames: "{{json_event.message.data.features.usernames}}"
@@ -225,29 +225,41 @@ stages:
   set_stealer_log_fields:
     actions:
       - set:
-          host.ip: ["{{json_event.message.data.user_information.ip_address}}"]
-          source.ip: "{{json_event.message.data.user_information.ip_address}}"
           host.geo.country_iso_code: "{{json_event.message.data.user_information.country_code}}"
           host.geo.postal_code: "{{json_event.message.data.user_information.zip_code}}"
           host.geo.name: "{{json_event.message.data.user_information.location}}"
           host.os.full: "{{json_event.message.data.user_information.os}}"
           host.user.name: "{{json_event.message.data.user_information.username}}"
           host.id: "{{json_event.message.data.user_information.hwid}}"
-          threat.software.name: "{{json_event.message.data.malware_information.malware_family}}"
+          flare.events.stealer_log.timezone: "{{json_event.message.data.user_information.timezone}}"
+          flare.events.stealer_log.screen_resolution: "{{json_event.message.data.user_information.screensize_width}}x{{json_event.message.data.user_information.screensize_height}}"
+          flare.events.stealer_log.hardware: "{{json_event.message.data.user_information.hardware}}"
+          flare.events.stealer_log.anti_viruses: "{{json_event.message.data.user_information.anti_viruses}}"
+        filter: "{{json_event.message.data.user_information is not none}}"
 
+      - set:
+          host.ip: ["{{json_event.message.data.user_information.ip_address}}"]
+          source.ip: "{{json_event.message.data.user_information.ip_address}}"
+        filter: "{{json_event.message.data.user_information is not none and json_event.message.data.user_information.ip_address is not none}}"
+
+      - set:
+          threat.software.name: "{{json_event.message.data.malware_information.malware_family}}"
           flare.events.stealer_log.malware_family: "{{json_event.message.data.malware_information.malware_family}}"
           flare.events.stealer_log.build_id: "{{json_event.message.data.malware_information.build_id}}"
           flare.events.stealer_log.infection_date: "{{json_event.message.data.malware_information.infection_date or json_event.message.header.infection_date}}"
+        filter: "{{json_event.message.data.malware_information is not none}}"
+
+      - set:
+          flare.events.stealer_log.infection_date: "{{json_event.message.header.infection_date}}"
+        filter: "{{json_event.message.data.malware_information is none and json_event.message.header.infection_date is not none}}"
+
+      - set:
           flare.events.stealer_log.installed_at: "{{json_event.message.data.installed_at}}"
           flare.events.stealer_log.seller_id: "{{json_event.message.data.seller_id}}"
           host.isp: "{{json_event.message.data.isp}}"
           flare.events.stealer_log.isp: "{{json_event.message.data.isp}}"
           flare.events.stealer_log.price: "{{json_event.message.data.price}}"
           flare.events.stealer_log.currency: "{{json_event.message.data.currency}}"
-          flare.events.stealer_log.timezone: "{{json_event.message.data.user_information.timezone}}"
-          flare.events.stealer_log.screen_resolution: "{{json_event.message.data.user_information.screensize_width}}x{{json_event.message.data.user_information.screensize_height}}"
-          flare.events.stealer_log.hardware: "{{json_event.message.data.user_information.hardware}}"
-          flare.events.stealer_log.anti_viruses: "{{json_event.message.data.user_information.anti_viruses}}"
           flare.events.stealer_log.credential_count: "{{json_event.message.header.credential_count}}"
           flare.events.stealer_log.credentials_count: "{{json_event.message.data.credentials | length if json_event.message.data.credentials is not none else none}}"
           flare.events.stealer_log.cookies_count: "{{json_event.message.data.cookies | length if json_event.message.data.cookies is not none else none}}"
