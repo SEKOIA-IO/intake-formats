@@ -3,9 +3,15 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-from checks.validators.anonymization import ACCEPTED_DOMAINS, ACCEPTED_USERNAMES
+from checks.validators.anonymization import (
+    ACCEPTED_DOMAINS,
+    ACCEPTED_USERNAMES,
+    URL_FIELDS,
+    USERNAME_FIELDS,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,6 +19,39 @@ logging.basicConfig(
     datefmt="%d-%b-%y %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+# --- Utility Functions for Nested JSON Manipulation ---
+def parse_path(path) -> list[str]:
+    """
+    Parses a dot-separated path string, potentially containing array indices
+    (e.g., 'a.b[0].c'), into a list of individual keys/indices.
+    Example: 'a.b[0].c' -> ['a', 'b', '0', 'c']
+    """
+    return re.findall(r"[^.[\\]+", path)
+
+
+def deep_get(data: Any, path: str) -> Any:
+    """
+    Retrieves a value from a deeply nested dictionary or list structure using a
+    dot-separated path string. It handles both dictionary keys and list indices.
+    Returns None if the path does not exist or is invalid.
+    """
+    keys = parse_path(path)
+    current_level = data
+    for key in keys:
+        if not hasattr(current_level, "__getitem__"):
+            return None  # Cannot traverse further
+        if key.isdigit() and isinstance(current_level, list):
+            try:
+                current_level = current_level[int(key)]
+            except IndexError:
+                return None  # Index out of bounds
+        elif isinstance(current_level, dict):
+            current_level = current_level.get(key)
+        else:
+            return None  # Not a dict or list at this level
+    return current_level
 
 
 def gather_files(paths: list) -> list[Path]:
@@ -143,32 +182,40 @@ def replace_ips(t: str):
     return t
 
 
-def replace_emails_and_usernames(text: str) -> str:
-    re_email = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-    all_emails = set(re.findall(re_email, text))
+def any_pattern(field_value: str, patterns: list[str]) -> bool:
+    for pattern in patterns:
+        if re.match(pattern, field_value, re.IGNORECASE):
+            return True
+
+    return False
+
+
+def replace_emails_and_usernames(raw: dict[str, Any], text: str) -> str:
+    usernames_to_replace = set()
 
     email_mapping = {}
-    usernames_to_replace = set()
     username_mapping = {}
+
+    # Try to use extracted fields first
+    for field_name in USERNAME_FIELDS:
+        field_value = deep_get(raw["expected"], field_name)
+        if field_value:
+            if not any_pattern(field_value, ACCEPTED_USERNAMES):
+                usernames_to_replace.add(field_value)
+
+    # Search trough raw message
+    re_email = r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"
+    all_emails = set(re.findall(re_email, text))
 
     for email in all_emails:
         username, domain = email.split("@")
 
         # First, we have to check email's address domain
-        for pattern in ACCEPTED_DOMAINS:
-            if re.match(pattern, domain, re.IGNORECASE):
-                break
-
-        else:
-            # no break
+        if not any_pattern(domain, ACCEPTED_DOMAINS):
             email_mapping[email] = f"{username}@example.com"
 
         # Then check username as well
-        for pattern in ACCEPTED_USERNAMES:
-            if re.match(pattern, username, re.IGNORECASE):
-                break
-
-        else:
+        if not any_pattern(username, ACCEPTED_USERNAMES):
             # as we identified username, we can now replace it through the whole event
             usernames_to_replace.add(username)
 
@@ -186,21 +233,23 @@ def replace_emails_and_usernames(text: str) -> str:
     return text
 
 
-def replace_urls(text: str) -> str:
-    re_url = r"(?:http|https):\/\/(?:[\w_-]+(?:(?:\.[\w_-]+)+))(?:[\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])"
-
+def replace_urls(raw: dict[str, Any], text: str) -> str:
+    re_url = r"\b(?:http|https):\/\/(?:[\w_-]+(?:(?:\.[\w_-]+)+))(?:[\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])\b"
     all_urls = set(re.findall(re_url, text))
     url_mapping = {}
+
+    # Try to use extracted fields as well
+    for field_name in URL_FIELDS:
+        field_value = deep_get(raw["expected"], field_name)
+        if field_value:
+            if not any_pattern(field_value, ACCEPTED_USERNAMES):
+                all_urls.add(field_value)
 
     if all_urls:
         for url in all_urls:
             parsed_url = urlparse(url)
             domain = parsed_url.netloc
-            for pattern in ACCEPTED_DOMAINS:
-                if re.match(pattern, domain, re.IGNORECASE):
-                    break
-
-            else:
+            if not any_pattern(domain, ACCEPTED_DOMAINS):
                 new_domain = "example.com"
                 updated_url = parsed_url._replace(netloc=new_domain)
                 url_mapping[url] = urlunparse(updated_url)
@@ -219,8 +268,8 @@ def process_file(path: Path):
     msg = raw["input"]["message"]
     old_msg = msg
 
-    msg = replace_emails_and_usernames(msg)
-    msg = replace_urls(msg)
+    msg = replace_emails_and_usernames(raw, msg)
+    msg = replace_urls(raw, msg)
     msg = replace_uuids(msg)
     msg = replace_hashes(msg)
     msg = replace_ips(msg)
