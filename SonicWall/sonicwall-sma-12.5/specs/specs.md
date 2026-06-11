@@ -95,7 +95,7 @@ Syslog
 | event.type | ["info"] |
 | event.dataset | "sonicwall.sma.system" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ Management service operational log
 | event.type | ["info"] |
 | event.dataset | "sonicwall.sma.management_message" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -203,7 +203,7 @@ Info 6/3/2025 00:31:02 admin Applied configuration changes
 | event.type | ["change"] |
 | event.dataset | "sonicwall.sma.management_audit" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -251,7 +251,7 @@ Common Log Format (CLF) for HTTP
 | event.type | ["info"] |
 | event.dataset | "sonicwall.sma.management_access" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -305,7 +305,7 @@ Custom tunnel/flow records
 | event.type | ["connection"] |
 | event.dataset | "sonicwall.sma.network_tunnel" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -321,8 +321,6 @@ Custom tunnel/flow records
 | network.protocol | “flow:”protocol | Flow protocol extraction |
 | process.name | platform prefix | Platform code |
 | server.bytes | bytes sent | Server->client bytes |
-| sonicwall.sma.equipment_id | equipment id | Device/session ID |
-| sonicwall.sma.tunnel_version | tunnel protocol version | Custom version |
 | source.ip | source ip | Source IP |
 | source.port | source ip | Source port extraction |
 
@@ -332,6 +330,8 @@ Custom tunnel/flow records
 | --- | --- | --- |
 | sonicwall.sma.connection_type | “tunnel” | tunnel |
 | sonicwall.sma.connection_type | “flow:”protocol | flow:tcp/udp/icmp... |
+| sonicwall.sma.equipment_id | equipment id | Device/session ID |
+| sonicwall.sma.tunnel_version | tunnel protocol version | Custom version |
 
 ---
 
@@ -365,7 +365,7 @@ W3C Common Log Format (CLF)
 | event.type | ["info"] |
 | event.dataset | "sonicwall.sma.web_proxy" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -413,7 +413,7 @@ HTTP endpoint exporting XML content
 | event.type | ["info"] |
 | event.dataset | "sonicwall.sma.unregistered_device" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -470,7 +470,7 @@ WorkPlace troubleshooting logs (syslog-style prefixes)
 | event.type | ["info"] |
 | event.dataset | "sonicwall.sma.workplace" |
 
-##### Dynamic Fields
+##### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
