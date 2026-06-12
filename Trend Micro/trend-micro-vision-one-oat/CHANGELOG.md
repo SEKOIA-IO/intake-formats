@@ -52,3 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - user.name
 - Complete the parsing of existing custom fields:
     - trendmicro.visionone.oat.riskLevel
+
+### Fixed
+
+- Anonymize JSON test files
