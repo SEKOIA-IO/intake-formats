@@ -60,3 +60,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - domains
     - hostnames
     - usernames
+- Cast some fields with the right type to match the ECS reference
