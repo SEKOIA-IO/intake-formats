@@ -1,0 +1,169 @@
+name: universal-mfa
+ignored_values:
+  - n/a
+  - N/A
+  - undefined
+  - '"n/a"'
+  - '"N/A"'
+pipeline:
+  - name: parsed_event
+    description: ""
+    filter: >-
+      {{original.message.startswith("CEF:") or
+      (original.message.startswith("0|Silverfort") and "DailyAuthStatistic" not in
+      original.message)}}
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: >-
+          {{original.message if original.message.startswith("CEF:") else "CEF:" +
+          original.message}}
+        output_field: message
+  - name: parsed_event_daily
+    description: ""
+    filter: >-
+      {{original.message.startswith("0|Silverfort") and "DailyAuthStatistic" in
+      original.message}}
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+  - name: parsed_date_rt
+    description: ""
+    filter: '{{parsed_event.message is defined and parsed_event.message.get("rt") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.rt}}"
+        output_field: date
+        format: ""
+        timezone: UTC
+  - name: parsed_date_timestamp
+    description: ""
+    filter: '{{parsed_event_daily.message is defined and parsed_event_daily.message.get("timestamp") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event_daily.message.timestamp}}"
+        output_field: date
+        format: ""
+        timezone: UTC
+  - name: set_date
+    description: ""
+    filter: >-
+      {{ (parsed_date_rt is defined and parsed_date_rt.date is defined) or
+      (parsed_date_timestamp is defined and parsed_date_timestamp.date is
+      defined) }}
+    external: null
+  - name: set_ecs_fields
+    description: ""
+    filter: ""
+    external: null
+stages:
+  set_date:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date_rt.date}}"
+        filter: "{{parsed_date_rt.date is defined}}"
+        name: set
+      - set:
+          "@timestamp": "{{parsed_date_timestamp.date}}"
+        filter: "{{parsed_date_timestamp.date is defined}}"
+        name: set
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "{{parsed_event.message.DeviceVendor}}"
+          observer.product: "{{parsed_event.message.DeviceProduct}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          observer.hostname: "{{parsed_event.message.server_name}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          event.kind: event
+          event.type:
+            - info
+          event.action: "{{parsed_event.message.DeviceEventClassID}}"
+          event.reason: "{{parsed_event.message.Name}}"
+          event.category:
+            - authentication
+          event.severity: "{{parsed_event.message.Severity}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          event.outcome: success
+        filter: '{{parsed_event.message is defined and parsed_event.message.cs2 is defined and parsed_event.message.cs2.startswith("Allowed")}}'
+        name: set
+      - set:
+          event.outcome: failure
+        filter: '{{parsed_event.message is defined and parsed_event.message.cs2 is defined and (parsed_event.message.cs2.startswith("Denied") or parsed_event.message.cs2.startswith("denied"))}}'
+        name: set
+      - set:
+          source.ip: "{{parsed_event.message.src}}"
+          source.domain: "{{parsed_event.message.sntdom}}"
+        filter: >-
+          {{parsed_event.message is defined and parsed_event.message.src is
+          defined and parsed_event.message.src != "undefined"}}
+        name: set
+      - set:
+          host.name: "{{parsed_event.message.shost}}"
+          host.domain: "{{parsed_event.message.sntdom}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          user.name: "{{parsed_event.message.suser}}"
+          user.domain: "{{parsed_event.message.sntdom}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          destination.domain: "{{parsed_event.message.dntdom}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          service.name: "{{parsed_event.message.destinationServiceName}}"
+        filter: >-
+          {{parsed_event.message is defined and
+          parsed_event.message.destinationServiceName is defined and
+          parsed_event.message.destinationServiceName != ""}}
+        name: set
+      - set:
+          network.protocol: "{{parsed_event.message.app | lower}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          silverfort.city: "{{parsed_event.message.cs10}}"
+          silverfort.risk: "{{parsed_event.message.cs1}}"
+          silverfort.result: "{{parsed_event.message.cs2}}"
+          silverfort.country: "{{parsed_event.message.cs9}}"
+          silverfort.policy_id: "{{parsed_event.message.cs4}}"
+          silverfort.syslog_id: "{{parsed_event.message.syslog_id}}"
+          silverfort.request_id: "{{parsed_event.message.cs12}}"
+          silverfort.coordinates: "{{parsed_event.message.cs11}}"
+          silverfort.policy_name: "{{parsed_event.message.cs8}}"
+          silverfort.source_host: "{{parsed_event.message.shost}}"
+          silverfort.mfa_response: "{{parsed_event.message.cs5}}"
+          silverfort.policy_action: "{{parsed_event.message.cs3}}"
+          silverfort.risk_indicators: "{{parsed_event.message.cs7}}"
+          silverfort.destination_host: "{{parsed_event.message.dhost}}"
+          silverfort.mfa_response_time: "{{parsed_event.message.cs6}}"
+        filter: "{{parsed_event.message is defined}}"
+        name: set
+      - set:
+          event.kind: metric
+          event.type:
+            - info
+          event.category:
+            - authentication
+          observer.vendor: "Silverfort"
+          observer.product: "Universal MFA"
+          observer.version: "{{parsed_event_daily.message.DeviceVersion}}"
+          observer.hostname: "{{parsed_event_daily.message.server_name}}"
+          silverfort.data_type: "{{parsed_event_daily.message.dataType}}"
+          silverfort.authentications: "{{parsed_event_daily.message.authentications | int}}"
+        filter: >-
+          {{parsed_event_daily.message is defined and
+          parsed_event_daily.message.dataType == "DailyAuthStatistic"}}
+        name: set
