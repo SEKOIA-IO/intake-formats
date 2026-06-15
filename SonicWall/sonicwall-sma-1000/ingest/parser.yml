@@ -1,0 +1,353 @@
+name: sonicwall-sma-1000
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: result
+        pattern: "%{MANAGEMENT_MESSAGE}|%{SYSTEM_MESSAGE}|%{MANAGEMENT_AUDIT}|%{MANAGEMENT_ACCESS}|%{NETWORK_TUNNEL}|%{WEB_PROXY}|%{WORKPLACE_SERVICE}|%{WORKPLACE_CLIENT_PAIR}"
+        custom_patterns:
+          MANAGEMENT_MESSAGE: "(?P<management_datestamp>\\S+) (?P<management_service>[^@\\s]+)@(?P<management_hostname>\\S+) (?P<management_facility>[^.\\s]+)\\.(?P<management_syslog_level>\\S+) AMC: (?P<management_internal_date>\\d{4}-\\d{2}-\\d{2}) (?P<management_internal_time>\\d{2}:\\d{2}:\\d{2}) (?P<management_timezone>[+-]\\d{4}) (?P<management_level>\\S+) (?P<management_message>.*)"
+          SYSTEM_MESSAGE: "\\[(?P<system_datestamp>[^\\]]+)\\] (?P<system_hostname>\\S+) (?P<system_pid>\\S+) (?P<system_app_id>\\S+) (?P<system_source_id>\\S+) (?P<system_level>\\S+) (?P<system_type>\\S+) (?P<system_message>.*)"
+          MANAGEMENT_AUDIT: "(?P<audit_level>Error|Warning|Info|Verbose) (?P<audit_date>\\d{1,2}/\\d{1,2}/\\d{4}) (?P<audit_time>\\d{2}:\\d{2}:\\d{2}) (?P<audit_username>\\S+) (?P<audit_message>.*)"
+          MANAGEMENT_ACCESS: "(?P<mgmt_source_ip>\\S+) \\- (?P<mgmt_username>\\S+) \\[(?P<mgmt_datestamp>[^\\]]+)\\] \"(?P<mgmt_http_method>[A-Z]+) (?P<mgmt_url_path>\\S+) HTTP/(?P<mgmt_http_version>[^\"]+)\" (?P<mgmt_status>\\d{3}) (?P<mgmt_bytesout>\\d+)"
+          NETWORK_TUNNEL: "(?P<tunnel_source_endpoint>\\S+) \\- \"(?P<tunnel_user_realm>[^\"]+)\" \"(?P<tunnel_datestamp>[^\"]+)\" (?P<tunnel_version>\\S+) (?P<tunnel_connection_type>tunnel|flow:[^\\s]+) (?P<tunnel_target>\\S+) (?P<tunnel_error_code>-?\\d+) (?P<tunnel_bytes_received>\\d+) (?P<tunnel_bytes_sent>\\d+) (?P<tunnel_duration>\\d+) (?P<tunnel_platform_prefix>\\S+)\\\"(?P<tunnel_equipment_id>.*)"
+          WEB_PROXY: "(?P<web_source_ip>\\S+) \\- \\((?P<web_username>[^)]*)\\)@\\((?P<web_realm>[^)]*)\\) \\[(?P<web_datestamp>[^\\]]+)\\] \"(?P<web_http_method>[A-Z]+) (?P<web_url_path>\\S+) HTTP/(?P<web_http_version>[^\"]+)\" (?P<web_status>\\d{3}) (?P<web_bytes_sent>\\d+)"
+          WORKPLACE_SERVICE: "(?P<workplace_datestamp>\\S+) (?P<workplace_service>[^@\\s]+)@(?P<workplace_hostname>\\S+) (?P<workplace_facility>[^.\\s]+)\\.(?P<workplace_syslog_level>\\S+) (?P<workplace_provider>WP:) (?P<workplace_message>.*)"
+          WORKPLACE_CLIENT_PAIR: "(?P<workplace_datestamp>\\S+) (?P<workplace_client_pair>\\S+) (?P<workplace_facility>[^.\\s]+)\\.(?P<workplace_syslog_level>\\S+) (?P<workplace_level>\\S+) (?P<workplace_message>.*)"
+
+  - name: parse_system_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.system_datestamp }}"
+        output_field: date
+    filter: "{{ parsed_event.result.system_datestamp != None }}"
+
+  - name: parse_management_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.management_datestamp }}"
+        output_field: date
+    filter: "{{ parsed_event.result.management_datestamp != None }}"
+
+  - name: parse_management_audit_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.audit_date ~ ' ' ~ parsed_event.result.audit_time }}"
+        output_field: date
+    filter: "{{ parsed_event.result.audit_date != None and parsed_event.result.audit_time != None }}"
+
+  - name: parse_management_access_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.mgmt_datestamp }}"
+        output_field: date
+    filter: "{{ parsed_event.result.mgmt_datestamp != None }}"
+
+  - name: parse_network_tunnel_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.tunnel_datestamp }}"
+        output_field: date
+    filter: "{{ parsed_event.result.tunnel_datestamp != None }}"
+
+  - name: parse_web_proxy_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.web_datestamp }}"
+        output_field: date
+    filter: "{{ parsed_event.result.web_datestamp != None }}"
+
+  - name: parse_workplace_datetime
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.workplace_datestamp }}"
+        output_field: date
+    filter: "{{ parsed_event.result.workplace_datestamp != None }}"
+
+  - name: set_common_fields
+  - name: set_system_message
+    filter: "{{ parsed_event.result.system_datestamp != None }}"
+  - name: set_management_message
+    filter: "{{ parsed_event.result.management_datestamp != None }}"
+  - name: set_management_audit
+    filter: "{{ parsed_event.result.audit_date != None and parsed_event.result.audit_time != None }}"
+  - name: set_management_access
+    filter: "{{ parsed_event.result.mgmt_datestamp != None }}"
+  - name: set_network_tunnel
+    filter: "{{ parsed_event.result.tunnel_datestamp != None }}"
+  - name: set_web_proxy
+    filter: "{{ parsed_event.result.web_datestamp != None }}"
+  - name: set_workplace
+    filter: "{{ parsed_event.result.workplace_datestamp != None }}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          observer.product: "Secure Mobile Access"
+          observer.type: "firewall"
+          observer.vendor: "SonicWall"
+
+  set_system_message:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["host"]
+          event.dataset: "sonicwall.sma.1000.system"
+          event.type: ["info"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_system_datetime.date }}"
+          event.severity: "{{ parsed_event.result.system_level }}"
+          message: "{{ parsed_event.result.system_message }}"
+          observer.hostname: "{{ parsed_event.result.system_hostname }}"
+          process.name: "{{ parsed_event.result.system_app_id }}"
+          process.pid: "{{ parsed_event.result.system_pid }}"
+          source.address: "{{ parsed_event.result.system_source_id }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.app_id: "{{ parsed_event.result.system_app_id }}"
+
+      - set:
+          sonicwall.sma.1000.policy.log_type: "{{ parsed_event.result.system_type }}"
+        filter: "{{ parsed_event.result.system_type in ('CSACL', 'EWACL', 'WPACL', 'NEACL') }}"
+
+      - set:
+          sonicwall.sma.1000.certificate.error_code: "{{ parsed_event.result.system_message.split('err = ')[-1].split(',')[0] }}"
+        filter: "{{ 'err = ' in parsed_event.result.system_message }}"
+
+      - set:
+          sonicwall.sma.1000.certificate.error_reason: "{{ parsed_event.result.system_message.split('reason = ')[-1] }}"
+        filter: "{{ 'reason = ' in parsed_event.result.system_message }}"
+
+      - set:
+          sonicwall.sma.1000.epc.query_result: "{{ parsed_event.result.system_message.split('results: ')[-1] }}"
+        filter: "{{ 'results: ' in parsed_event.result.system_message }}"
+
+  set_management_message:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["host"]
+          event.dataset: "sonicwall.sma.1000.management_message"
+          event.type: ["info"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_management_datetime.date }}"
+          event.provider: "AMC:"
+          event.severity: "{{ parsed_event.result.management_level }}"
+          log.level: "{{ parsed_event.result.management_syslog_level }}"
+          message: "{{ parsed_event.result.management_message }}"
+          observer.hostname: "{{ parsed_event.result.management_hostname }}"
+          service.name: "{{ parsed_event.result.management_service }}"
+
+      - set:
+          event.start: "{{ parsed_event.result.management_internal_date ~ ' ' ~ parsed_event.result.management_internal_time }}"
+          event.timezone: "{{ parsed_event.result.management_timezone }}"
+        filter: "{{ parsed_event.result.management_internal_date != None and parsed_event.result.management_internal_time != None }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.management.class_name: "{{ parsed_event.result.management_message.split(' - ')[0] }}"
+          sonicwall.sma.1000.syslog_facility: "{{ parsed_event.result.management_facility }}"
+
+  set_management_audit:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["configuration"]
+          event.dataset: "sonicwall.sma.1000.management_audit"
+          event.type: ["change"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_management_audit_datetime.date }}"
+          event.severity: "{{ parsed_event.result.audit_level }}"
+          message: "{{ parsed_event.result.audit_message }}"
+          user.name: "{{ parsed_event.result.audit_username }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.change_type: "{{ parsed_event.result.audit_message.split(' ')[0] }}"
+        filter: "{{ parsed_event.result.audit_message != None }}"
+
+  set_management_access:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["network"]
+          event.dataset: "sonicwall.sma.1000.management_access"
+          event.type: ["info"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_management_access_datetime.date }}"
+          http.request.method: "{{ parsed_event.result.mgmt_http_method }}"
+          http.response.bytes: "{{ parsed_event.result.mgmt_bytesout }}"
+          http.response.status_code: "{{ parsed_event.result.mgmt_status }}"
+          http.version: "{{ parsed_event.result.mgmt_http_version }}"
+          source.ip: "{{ parsed_event.result.mgmt_source_ip }}"
+          url.path: "{{ parsed_event.result.mgmt_url_path }}"
+          user.name: "{{ parsed_event.result.mgmt_username }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.console_action: "{{ parsed_event.result.mgmt_url_path }}"
+          sonicwall.sma.1000.http_status_class: "{{ parsed_event.result.mgmt_status[0] ~ 'xx' }}"
+        filter: "{{ parsed_event.result.mgmt_status != None }}"
+
+  set_network_tunnel:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["network"]
+          event.dataset: "sonicwall.sma.1000.network_tunnel"
+          event.type: ["connection"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_network_tunnel_datetime.date }}"
+          client.bytes: "{{ parsed_event.result.tunnel_bytes_received }}"
+          client.user.domain: "{{ parsed_event.result.tunnel_user_realm.split('@')[-1].strip('()') }}"
+          client.user.name: "{{ parsed_event.result.tunnel_user_realm.split('@')[0].strip('()') }}"
+          event.duration: "{{ parsed_event.result.tunnel_duration | int * 1000000000 }}"
+          process.name: "{{ parsed_event.result.tunnel_platform_prefix }}"
+          server.bytes: "{{ parsed_event.result.tunnel_bytes_sent }}"
+          source.address: "{{ parsed_event.result.tunnel_source_endpoint }}"
+
+      - set:
+          source.ip: "{{ parsed_event.result.tunnel_source_endpoint.rsplit(':', 1)[0].strip('[]') }}"
+          source.port: "{{ parsed_event.result.tunnel_source_endpoint.rsplit(':', 1)[1] }}"
+        filter: "{{ parsed_event.result.tunnel_source_endpoint != None and ':' in parsed_event.result.tunnel_source_endpoint }}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{ parsed_event.result.tunnel_error_code == '-1' }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ parsed_event.result.tunnel_error_code != '-1' }}"
+
+      - set:
+          client.ip: "{{ parsed_event.result.tunnel_target }}"
+        filter: "{{ parsed_event.result.tunnel_connection_type == 'tunnel' }}"
+
+      - set:
+          destination.address: "{{ parsed_event.result.tunnel_target }}"
+          network.protocol: "{{ parsed_event.result.tunnel_connection_type.split(':')[-1] }}"
+        filter: "{{ parsed_event.result.tunnel_connection_type.startswith('flow:') }}"
+
+      - set:
+          destination.ip: "{{ parsed_event.result.tunnel_target.rsplit(':', 1)[0] }}"
+          destination.port: "{{ parsed_event.result.tunnel_target.rsplit(':', 1)[1] }}"
+        filter: "{{ parsed_event.result.tunnel_connection_type.startswith('flow:') and ':' in parsed_event.result.tunnel_target }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.connection_type: "{{ parsed_event.result.tunnel_connection_type }}"
+          sonicwall.sma.1000.equipment_id: "{{ parsed_event.result.tunnel_equipment_id }}"
+          sonicwall.sma.1000.tunnel_version: "{{ parsed_event.result.tunnel_version }}"
+
+  set_web_proxy:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["network"]
+          event.dataset: "sonicwall.sma.1000.web_proxy"
+          event.type: ["info"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_web_proxy_datetime.date }}"
+          client.user.domain: "{{ parsed_event.result.web_realm }}"
+          client.user.name: "{{ parsed_event.result.web_username }}"
+          http.request.method: "{{ parsed_event.result.web_http_method }}"
+          http.response.bytes: "{{ parsed_event.result.web_bytes_sent }}"
+          http.response.status_code: "{{ parsed_event.result.web_status }}"
+          http.version: "{{ parsed_event.result.web_http_version }}"
+          source.ip: "{{ parsed_event.result.web_source_ip }}"
+          url.path: "{{ parsed_event.result.web_url_path }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.api_endpoint: "{{ parsed_event.result.web_url_path }}"
+          sonicwall.sma.1000.http_status_class: "{{ parsed_event.result.web_status[0] ~ 'xx' }}"
+        filter: "{{ parsed_event.result.web_status != None }}"
+
+  set_workplace:
+    actions:
+      # Static fields
+      - set:
+          event.category: ["network", "authentication"]
+          event.dataset: "sonicwall.sma.1000.workplace"
+          event.type: ["info"]
+
+      # Dynamic fields (ECS)
+      - set:
+          "@timestamp": "{{ parse_workplace_datetime.date }}"
+          log.level: "{{ parsed_event.result.workplace_syslog_level }}"
+          message: "{{ parsed_event.result.workplace_message }}"
+
+      - set:
+          event.provider: "{{ parsed_event.result.workplace_provider }}"
+        filter: "{{ parsed_event.result.workplace_provider != None }}"
+
+      - set:
+          observer.hostname: "{{ parsed_event.result.workplace_hostname }}"
+          service.name: "{{ parsed_event.result.workplace_service }}"
+        filter: "{{ parsed_event.result.workplace_hostname != None }}"
+
+      - set:
+          source.address: "{{ parsed_event.result.workplace_client_pair }}"
+          source.ip: "{{ parsed_event.result.workplace_client_pair.split('/')[0] }}"
+        filter: "{{ parsed_event.result.workplace_client_pair != None and '/' in parsed_event.result.workplace_client_pair }}"
+
+      - set:
+          event.action: "authorize:exit"
+        filter: "{{ '<authorize:exit>' in parsed_event.result.workplace_message }}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{ 'status=SUCCESS' in parsed_event.result.workplace_message or 'status=PCL_STATUS_SUCCES' in parsed_event.result.workplace_message }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ 'status=FAILURE' in parsed_event.result.workplace_message or ('status=PCL_STATUS_' in parsed_event.result.workplace_message and 'SUCCESS' not in parsed_event.result.workplace_message) }}"
+
+      - set:
+          url.original: "{{ parsed_event.result.workplace_message.split('uri=')[-1].split(' ')[0] }}"
+        filter: "{{ 'uri=' in parsed_event.result.workplace_message }}"
+
+      - set:
+          user.name: "{{ parsed_event.result.workplace_message.split('username=')[-1].split('}')[0].split(',')[0] }}"
+        filter: "{{ 'username=' in parsed_event.result.workplace_message }}"
+
+      # Custom fields
+      - set:
+          sonicwall.sma.1000.workplace.policy_status: "{{ parsed_event.result.workplace_message.split('status=')[-1].split(' ')[0] }}"
+        filter: "{{ 'status=' in parsed_event.result.workplace_message }}"
+
+      - set:
+          sonicwall.sma.1000.workplace.shortcut_type: "web"
+        filter: "{{ 'uri=http' in parsed_event.result.workplace_message }}"
+
+      - set:
+          sonicwall.sma.1000.workplace.shortcut_type: "network"
+        filter: "{{ 'uri=smb' in parsed_event.result.workplace_message }}"
+
+      - set:
+          sonicwall.sma.1000.workplace.team_session_id: "{{ parsed_event.result.workplace_message.split('teamSessionId=')[-1].split(',')[0] }}"
+        filter: "{{ 'teamSessionId=' in parsed_event.result.workplace_message }}"
