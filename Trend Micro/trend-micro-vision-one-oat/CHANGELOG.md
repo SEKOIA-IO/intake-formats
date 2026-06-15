@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased] - 2026-06-12
+## [Unreleased] - 2026-06-15
 
 ### Added
 
@@ -22,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - file.name
     - network.application
     - observer.name
-    - rule.id
     - source.as.organization.name
     - source.geo.city_name
     - source.geo.country_name
@@ -33,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - trendmicro.visionone.oat.attackphase.source
     - trendmicro.visionone.oat.attackphase.target
     - trendmicro.visionone.oat.count
+    - trendmicro.visionone.oat.filter.id
     - trendmicro.visionone.oat.malName
     - trendmicro.visionone.oat.malType
     - trendmicro.visionone.oat.riskLevel (extended fallback mapping)
