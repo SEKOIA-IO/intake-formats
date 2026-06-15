@@ -27,25 +27,26 @@ All test data, sample logs, and example files **MUST be completely anonymized** 
 - admin@localhost
 
 **Standard test domains (RFC 2606)**: `example.com`, `example.org`, `example.net`, `*.test`, `*.invalid`,  `*.example`
-**Project-specific example domains** (not RFC standards, for anonymization only): `mycorp.com`, `mycorp.org`, `mycorp.net`, `localhost`, `hostname`, `test.com`, `test.org`, `test.net`
+**Additional project test domains** (for anonymization examples): `mycorp.com`, `mycorp.org`, `mycorp.net`, `localhost`, `hostname`, `test.com`, `test.org`, `test.net`
 
 ### 2. IP Addresses ✅
 
 #### ❌ DO NOT USE:
-- Real public IP addresses (e.g., 203.0.113.5 if it's real)
-- Real internal IP addresses from actual networks
+- Real public IP addresses assigned to real systems
+- Real internal IP addresses from production or corporate networks
+- Any IPv6 address copied from real infrastructure
 
-#### ✅ USE INSTEAD (TEST-NET Ranges):
+#### ✅ USE INSTEAD (Documentation/Test Ranges):
 - **192.0.2.0/24** → 192.0.2.1, 192.0.2.100, 192.0.2.254
 - **198.51.100.0/24** → 198.51.100.1, 198.51.100.50
 - **203.0.113.0/24** → 203.0.113.1, 203.0.113.200
+- **2001:db8::/32** (IPv6 documentation range) → 2001:db8::1, 2001:db8:100::25
 
-**Also acceptable**:
-- 10.0.0.x (private range)
-- 172.16.0.x to 172.31.0.x (private range)
-- 192.168.0.x (private range)
-- 127.0.0.1 (localhost)
-- 1.2.3.4, 5.6.7.8, 3.4.5.6, 4.3.2.1, 8.7.6.5 (obviously fake)
+**Limited exceptions**:
+- 127.0.0.1 and ::1 for localhost-only examples
+- Explicitly fake placeholders like 1.2.3.4 when no routable semantics are needed
+
+**Important**: Avoid 10.x, 172.16-31.x, and 192.168.x in public test data because they can match real internal addressing plans.
 
 ### 3. Passwords & API Keys ✅
 
@@ -155,6 +156,19 @@ All test data, sample logs, and example files **MUST be completely anonymized** 
 - `$2b$12$FAKE_HASH_1234567890abcdefghijklmnopqrstuvwxy`
 - `<FAKE_SESSION_ID_123456>`
 
+### 11. Device and Persistent Identifiers ✅
+
+#### ❌ DO NOT USE:
+- Real MAC addresses
+- Real UUIDs or host IDs
+- Real serial numbers or hardware fingerprints
+- Real cloud account IDs, tenant IDs, subscription IDs, project IDs
+
+#### ✅ USE INSTEAD:
+- MAC: `02:00:00:aa:bb:cc` (locally administered/test style)
+- UUID: `00000000-0000-4000-8000-000000000000`
+- Tenant/account/project IDs: clearly fake placeholders like `tenant-000000-test`
+
 ## How to Anonymize Existing Data
 
 ### Method 1: Find and Replace
@@ -162,29 +176,80 @@ All test data, sample logs, and example files **MUST be completely anonymized** 
 1. Export your test data
 2. Use find/replace in your editor:
    - Find: `@yourdomain\.com` → Replace with: `@example.com`
-   - Find real IPs → Replace with TEST-NET ranges
+    - Find real IPv4/IPv6 values → Replace with documentation ranges
    - Find real names → Replace with John Doe, Jane Smith
+3. Keep referential consistency:
+    - If one source user appears in multiple events, replace it with the same anonymized value everywhere.
+    - If one host appears in multiple events, keep a stable replacement for that host.
 
 ### Method 2: Use Anonymization Scripts
 
 ```python
+import hashlib
+import ipaddress
 import re
 
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+IPV6_RE = re.compile(r"\b(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f]{0,4}\b")
+
+_email_map = {}
+_ip_map = {}
+
+
+def _stable_token(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()[:8]
+
 def anonymize_email(text):
-    return re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', 
-                  'user@example.com', text)
+    def repl(match):
+        email = match.group(0)
+        if email not in _email_map:
+            _email_map[email] = f"user-{_stable_token(email)}@example.com"
+        return _email_map[email]
+
+    return EMAIL_RE.sub(repl, text)
 
 def anonymize_ip(text):
-    return re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', 
-                  '192.0.2.1', text)
+    def map_ipv4(ip_str):
+        if ip_str in _ip_map:
+            return _ip_map[ip_str]
+        octet = int(_stable_token(ip_str)[:2], 16)
+        _ip_map[ip_str] = f"192.0.2.{1 + (octet % 254)}"
+        return _ip_map[ip_str]
+
+    def map_ipv6(ip_str):
+        if ip_str in _ip_map:
+            return _ip_map[ip_str]
+        token = _stable_token(ip_str)
+        _ip_map[ip_str] = f"2001:db8::{token[:4]}:{token[4:8]}"
+        return _ip_map[ip_str]
+
+    def replace_ipv4(match):
+        value = match.group(0)
+        try:
+            ipaddress.IPv4Address(value)
+            return map_ipv4(value)
+        except ipaddress.AddressValueError:
+            return value
+
+    def replace_ipv6(match):
+        value = match.group(0)
+        try:
+            ipaddress.IPv6Address(value)
+            return map_ipv6(value)
+        except ipaddress.AddressValueError:
+            return value
+
+    text = IPV4_RE.sub(replace_ipv4, text)
+    return IPV6_RE.sub(replace_ipv6, text)
 ```
 
 ### Method 3: Ask Copilot
 
 ```
 @copilot please anonymize all sensitive data in this test file:
-- Replace emails with user@example.com pattern
-- Replace IPs with TEST-NET ranges
+- Replace emails with a stable one-to-one mapping (same source email => same anonymized email)
+- Replace IPv4 and IPv6 addresses with documentation ranges
 - Replace real names with John Doe, Jane Smith
 - Replace any credentials with fake values
 ```
@@ -193,12 +258,18 @@ def anonymize_ip(text):
 
 Our CI/CD workflow automatically scans for:
 - Email patterns not using test domains
-- IP addresses outside TEST-NET ranges
+- IPv4 and IPv6 addresses outside approved documentation ranges
 - Potential API keys and tokens
 - JWT token patterns
 - Phone number patterns
+- MAC address patterns
+- UUID and host identifier patterns
+- Cloud tenant/account/project identifier patterns
+- Common credential field names (`password`, `secret`, `token`, `api_key`) with suspicious values
 
 **If the scan detects issues, your PR will be flagged and must be corrected before merge.**
+
+**Note**: Automated scanning reduces risk but cannot guarantee perfect detection. Always perform manual review on nested, encoded, or binary-like payloads.
 
 ## Examples
 
@@ -243,7 +314,8 @@ Our CI/CD workflow automatically scans for:
 ## Checklist Before Committing
 
 - [ ] All email addresses use test domains (example.com, example.org, test.com)
-- [ ] All IP addresses use TEST-NET ranges or private ranges
+- [ ] All IPv4 addresses use TEST-NET/documentation ranges
+- [ ] All IPv6 addresses use the documentation range (2001:db8::/32)
 - [ ] All passwords and API keys are obvious fakes
 - [ ] All personal names are generic test names
 - [ ] All phone numbers use test ranges (555-xxxx)
@@ -251,7 +323,18 @@ Our CI/CD workflow automatically scans for:
 - [ ] All company names are generic or anonymized
 - [ ] All domain names use example.com or similar
 - [ ] No JWT tokens, hashes, or session IDs from real systems
+- [ ] No real MACs, UUIDs, tenant IDs, or account IDs
+- [ ] Nested/encoded payloads were reviewed (JSON strings, URL params, base64 blocks)
 - [ ] Reviewed entire file for any missed sensitive data
+
+## If Non-Anonymized Data Was Already Committed
+
+If non-anonymized data is discovered after commit:
+
+1. Replace sensitive values with anonymized equivalents in the source test files.
+2. Rewrite git history to remove previously committed sensitive values.
+3. Re-run anonymization checks to confirm the data is fully sanitized.
+4. Add or improve detection rules so the same pattern is caught next time.
 
 ## Need Help?
 
