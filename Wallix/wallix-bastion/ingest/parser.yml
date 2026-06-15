@@ -18,6 +18,14 @@ pipeline:
         custom_patterns:
           EVENT_REASON: "session (opened|closed)"
 
+  - name: parse_session_recording
+    filter: '{{original.message.startswith("[sessionintegrity]") and (" file=[" in original.message or " files=[" in original.message)}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: '.* (file|files)=\[%{GREEDYDATA:recording_path}\]'
+
   - name: set_extracted_fields
   - name: set_ecs_fields
   - name: set_provider
@@ -95,6 +103,22 @@ stages:
           source.port: "{{parsed_event.message.src_port}}"
           event.reason: "{{ parsed_event.message.infos }}"
           process.working_directory: "{{ parsed_event.message.PWD }}"
+
+      - set:
+          event.start: "{{ parsed_event.message.begin }}"
+        filter: '{{"begin" in parsed_event.message}}'
+
+      - set:
+          event.end: "{{ parsed_event.message.end }}"
+        filter: '{{"end" in parsed_event.message}}'
+
+      - set:
+          file.path: "{{ parse_session_recording.message.recording_path.replace(',', '/') }}"
+        filter: "{{parse_session_recording.message.recording_path is not none}}"
+
+      - set:
+          file.extension: "{{ parse_session_recording.message.recording_path.split('.')[-1] }}"
+        filter: "{{parse_session_recording.message.recording_path is not none}}"
 
       - set:
           host.name: "{{ parsed_event.message.device }}"
