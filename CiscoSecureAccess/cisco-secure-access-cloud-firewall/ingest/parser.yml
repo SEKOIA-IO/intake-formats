@@ -1,0 +1,130 @@
+name: cisco-secure-access-cloud-firewall
+pipeline:
+  - name: parsed_dsv
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - timestamp
+          - origin_ids
+          - identities
+          - identity_type
+          - direction
+          - protocol
+          - packet_size
+          - source_ip
+          - source_port
+          - destination_ip
+          - destination_port
+          - data_center
+          - rule_id
+          - action
+          - fqdns
+          - destination_list_ids
+          - first_packet_timestamp
+          - last_packet_timestamp
+          - packets_sent
+          - packets_received
+          - bytes_sent
+          - bytes_received
+          - fw_event_id
+          - destination_country
+          - aws_region
+          - app_id
+          - private_app_group_id
+          - private_flow
+          - posture_id
+          - casi_category_ids
+          - traffic_source
+          - content_category_ids
+          - content_category_list_ids
+          - organization_id
+          - egress_ip
+          - egress
+          - event_correlation_id
+          - destination_sgt_origin_id
+          - fw_block_reason
+        delimiter: ","
+
+  - name: set_ecs_fields
+
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+          observer.vendor: "Cisco"
+          observer.product: "Secure Access"
+          observer.type: "firewall"
+          event.dataset: "cloud-firewall"
+
+      - set:
+          "@timestamp": "{{parsed_dsv.message.timestamp | to_rfc3339}}"
+          network.direction: "{{parsed_dsv.message.direction | lower}}"
+
+      - set:
+          network.transport: "{{parsed_dsv.message.protocol}}"
+        filter: "{{parsed_dsv.message.protocol.isalpha()}}"
+
+      - set:
+          source.ip: "{{parsed_dsv.message.source_ip}}"
+        filter: "{{parsed_dsv.message.source_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_dsv.message.destination_ip}}"
+        filter: "{{parsed_dsv.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          source.port: "{{parsed_dsv.message.source_port}}"
+          destination.port: "{{parsed_dsv.message.destination_port}}"
+          rule.id: "{{parsed_dsv.message.rule_id}}"
+          event.action: "{{parsed_dsv.message.action | lower}}"
+          destination.domain: "{{parsed_dsv.message.fqdns.split(',') | first}}"
+
+          event.end: "{{parsed_dsv.message.last_packet_timestamp | to_rfc3339}}"
+          source.packets: "{{parsed_dsv.message.packets_sent}}"
+          destination.packets: "{{parsed_dsv.message.packets_received}}"
+          source.bytes: "{{parsed_dsv.message.bytes_sent}}"
+          destination.bytes: "{{parsed_dsv.message.bytes_received}}"
+          destination.geo.country_iso_code: "{{parsed_dsv.message.destination_country}}"
+          cloud.region: "{{parsed_dsv.message.aws_region}}"
+          organization.id: "{{parsed_dsv.message.organization_id}}"
+
+      - translate:
+        dictionary:
+          "block": ["failure"]
+          "allow": ["success"]
+        mapping:
+          final.event.action: event.outcome
+
+  set_custom_fields:
+    actions:
+      - set:
+          cisco_secure_access.firewall.start_time: "{{parsed_dsv.message.first_packet_timestamp | to_rfc3339}}"
+          cisco_secure_access.firewall.origin_ids: "{{parsed_dsv.message.origin_ids}}"
+          cisco_secure_access.firewall.identities: "{{parsed_dsv.message.identities.split(',')}}"
+          cisco_secure_access.firewall.identity_type: "{{parsed_dsv.message.identity_type}}"
+          cisco_secure_access.firewall.protocol: "{{parsed_dsv.message.protocol}}"
+          cisco_secure_access.firewall.packet_size: "{{parsed_dsv.message.packet_size}}"
+          cisco_secure_access.firewall.data_center: "{{parsed_dsv.message.data_center}}"
+          cisco_secure_access.firewall.fqdns: "{{parsed_dsv.message.fqdns.split(',')}}"
+          cisco_secure_access.firewall.destination_list_ids: "{{parsed_dsv.message.destination_list_ids.split(',')}}"
+          cisco_secure_access.firewall.fw_event_id: "{{parsed_dsv.message.fw_event_id}}"
+          cisco_secure_access.firewall.app_id: "{{parsed_dsv.message.app_id}}"
+          cisco_secure_access.firewall.private_app_group_id: "{{parsed_dsv.message.private_app_group_id}}"
+          cisco_secure_access.firewall.private_flow: "{{parsed_dsv.message.private_flow}}"
+          cisco_secure_access.firewall.posture_id: "{{parsed_dsv.message.posture_id}}"
+          cisco_secure_access.firewall.casi_category_ids: "{{parsed_dsv.message.casi_category_ids}}"
+          cisco_secure_access.firewall.traffic_source: "{{parsed_dsv.message.traffic_source}}"
+          cisco_secure_access.firewall.content_category_ids: "{{parsed_dsv.message.content_category_ids.split(',')}}"
+          cisco_secure_access.firewall.content_category_list_ids: "{{parsed_dsv.message.content_category_list_ids.split(',')}}"
+          cisco_secure_access.firewall.egress_ip: "{{parsed_dsv.message.egress_ip}}"
+          cisco_secure_access.firewall.egress: "{{parsed_dsv.message.egress}}"
+          cisco_secure_access.firewall.event_correlation_id: "{{parsed_dsv.message.event_correlation_id}}"
+          cisco_secure_access.firewall.destination_sgt_origin_id: "{{parsed_dsv.message.destination_sgt_origin_id}}"
+          cisco_secure_access.firewall.fw_block_reason: "{{parsed_dsv.message.fw_block_reason}}"
