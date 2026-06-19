@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-06-17
+
+### Added
+
+- Set `event.type` to `["info"]` and `observer.type` to `scanner`
+- Set `event.action` from the scanner finding type
+- Add `locaterisk.location` field for scanned locations (URLs / host:port)
+
+### Changed
+
+- Set `event.category` as an array to comply with ECS
+- Map scanned locations to `locaterisk.location` instead of `host.domain` (values are URLs / host:port, not DNS domain names)
+- Change `vulnerability.epss` field type from `keyword` to `scaled_float`
+
+### Fixed
+
+- Set `@timestamp` from the parsed log date instead of the ingestion time (`event.created`)
+- Parse `vulnerability.epss` into an EPSS probability (0-1) by stripping the `%` before casting, instead of producing `0.0`
+
 ## 2026-05-28
 
 ### Changed
