@@ -13,13 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Set `event.type` to `["info"]`, `observer.type` to `scanner`, and `event.action` from the scanner finding type
 - Add `locaterisk.location` field for scanned locations (URLs / host:port)
-- Add a format-level logo
+- Add a square format-level logo
 
 ### Changed
 
 - Map `event.category` to valid ECS categories (`vulnerability`, plus `network`/`web`/`threat`); every finding includes `vulnerability`
 - Map scanned locations to `locaterisk.location` instead of `host.domain` (values are URLs / host:port, not DNS domain names)
-- Move non-ECS custom fields to the vendor/product namespace: `locaterisk.cyberrisk_analysis.cves`, `locaterisk.cyberrisk_analysis.epss`, and `locaterisk.cyberrisk_analysis.false_positive` (previously under `vulnerability.*`), with `epss` typed as `scaled_float`
+- Move non-ECS custom fields to the vendor/product namespace: `locaterisk.cyberrisk_analysis.cves`, `locaterisk.cyberrisk_analysis.epss`, and `locaterisk.cyberrisk_analysis.false_positive` (previously under `vulnerability.*`)
+- Change `locaterisk.score` and `locaterisk.cyberrisk_analysis.epss` field type to `float`
+- Declare supported `data_sources` (`Asset management`, `DNS records`, `SSL/TLS certificates`, `Network protocol analysis`)
+- Replace the module logo with a square version
+- Update smart descriptions to use the renamed `locaterisk.cyberrisk_analysis.false_positive` field and `event.action` for the finding type label
 - Rename the format to `CyberRisk Analysis` and clarify the description as an EASM report
 
 ### Fixed
