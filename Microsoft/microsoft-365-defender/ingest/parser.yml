@@ -145,12 +145,15 @@ stages:
           email.local_id: "{{json_event.message.properties.NetworkMessageId or parse_raw_event_data.data.get('Entities', [])[0].get('NetworkMessageId')}}"
           email.message_id: "{{json_event.message.properties.InternetMessageId or parse_raw_event_data.data.get('Entities', [])[0].get('InternetMessageId')}}"
           email.subject: "{{json_event.message.properties.EmailSubject or json_event.message.properties.Subject or parse_raw_event_data.data.get('Entities', [])[0].get('Subject')}}"
+          email.cc.address: "{{json_event.message.properties.Cc}}"
+          email.bcc.address: "{{json_event.message.properties.Cci}}"
           file.directory: "{{json_event.message.properties.FolderPath}}"
           file.hash.md5: "{{json_event.message.properties.MD5}}"
           file.hash.sha1: "{{json_event.message.properties.SHA1}}"
           file.hash.sha256: "{{json_event.message.properties.SHA256}}"
           file.name: "{{json_event.message.properties.FileName}}"
           file.size: "{{json_event.message.properties.FileSize}}"
+          file.type: "{{json_event.message.properties.FileType}}"
           host.architecture: "{{json_event.message.properties.OSArchitecture}}"
           host.id: "{{json_event.message.properties.DeviceId}}"
           host.name: "{{json_event.message.properties.DeviceName}}"
@@ -215,6 +218,12 @@ stages:
           microsoft.defender.threat.names: "{{json_event.message.properties.ThreatNames}}"
           microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
           microsoft.defender.url_location: "{{json_event.message.properties.UrlLocation}}"
+
+      - set:
+          file.type: >
+            {%- set d = json_event.message.properties.AdditionalFields if json_event.message.properties.AdditionalFields is mapping else json_event.message.properties.AdditionalFields|from_json -%}
+            {{ d.FileType }}
+        filter: '{{json_event.message.properties.get("FileType") == None and json_event.message.properties.get("AdditionalFields") != None}}'
 
       - set:
           microsoft.defender.campaign.id: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignID')}}"
@@ -282,7 +291,20 @@ stages:
         filter: '{{json_event.message.properties.get("RemoteUrl", "").startswith("http") or json_event.message.properties.get("RemoteUrl", "").startswith("uri")}}'
       - set:
           email.to.address: '["{{json_event.message.properties.RecipientEmailAddress}}"]'
-        filter: '{{json_event.message.properties.get("RecipientEmailAddress") != None}}'
+        filter: '{{json_event.message.properties.get("RecipientEmailAddress") != None and json_event.message.properties.To == None}}'
+
+      - set:
+          email.to.address: >
+            [
+              {%- if json_event.message.properties.get("RecipientEmailAddress") != None -%}
+                "{{json_event.message.properties.RecipientEmailAddress}}",
+              {%- endif -%}
+              {%- for elt in json_event.message.properties.To -%}
+                "{{elt}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("To") != None}}'
+
       - set:
           email.from.address: '["{{json_event.message.properties.SenderFromAddress}}"]'
         filter: '{{json_event.message.properties.get("SenderFromAddress") != None}}'
