@@ -1,0 +1,124 @@
+name: cisco-secure-access-ips
+pipeline:
+  - name: parsed_dsv
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - timestamp
+          - identities
+          - identity_types
+          - generator_id
+          - signature_id
+          - signature_message
+          - signature_list_id
+          - severity
+          - attack_classification
+          - cves
+          - ip_protocol
+          - session_id
+          - source_ip
+          - source_port
+          - destination_ip
+          - destination_port
+          - action
+          - operation_mode
+          - policy_resource_id
+          - direction
+          - firewall_rule_id
+          - ips_config_type
+          - aws_region
+          - application_id
+          - casi_category_ids
+          - data_center
+          - organization_id
+          - egress_ip
+          - egress
+          - enforced_by
+          - ftd_enforcement_id
+          - ftd_enforcement_name
+          - event_correlation_id
+        delimiter: ","
+
+  - name: set_ecs_fields
+
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection", "network"]
+          event.type: ["info"]
+          observer.vendor: "Cisco"
+          observer.product: "Secure Access"
+          observer.type: "ids"
+          event.dataset: "ips"
+
+      - set:
+          "@timestamp": "{{parsed_dsv.message.timestamp | to_rfc3339}}"
+          event.action: "{{parsed_dsv.message.action | lower}}"
+          rule.name: "{{parsed_dsv.message.signature_message}}"
+          rule.id: "{{parsed_dsv.message.firewall_rule_id}}"
+          network.transport: "{{parsed_dsv.message.ip_protocol | lower}}"
+          source.port: "{{parsed_dsv.message.source_port}}"
+          destination.port: "{{parsed_dsv.message.destination_port}}"
+          cloud.region: "{{parsed_dsv.message.aws_region}}"
+          organization.id: "{{parsed_dsv.message.organization_id}}"
+
+      - set:
+          vulnerability.id: "{{parsed_dsv.message.cves.split(',')}}"
+        filter: "{{parsed_dsv.message.cves | length > 0}}"
+
+      - set:
+          source.ip: "{{parsed_dsv.message.source_ip}}"
+        filter: "{{parsed_dsv.message.source_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_dsv.message.destination_ip}}"
+        filter: "{{parsed_dsv.message.destination_ip | is_ipaddress}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{ 'block' not in parsed_dsv.message.action.lower() }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ 'block' in parsed_dsv.message.action.lower() }}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          cisco_secure_access.ips.identities: "{{parsed_dsv.message.identities.split(',')}}"
+        filter: "{{parsed_dsv.message.identities | length > 0}}"
+
+      - set:
+          cisco_secure_access.ips.identity_types: "{{parsed_dsv.message.identity_types.split(',')}}"
+        filter: "{{parsed_dsv.message.identity_types | length > 0}}"
+
+      - set:
+          cisco_secure_access.ips.casi_category_ids: "{{parsed_dsv.message.casi_category_ids.split(',')}}"
+        filter: "{{parsed_dsv.message.casi_category_ids | length > 0}}"
+
+      - set:
+          cisco_secure_access.ips.generator_id: "{{parsed_dsv.message.generator_id}}"
+          cisco_secure_access.ips.signature_id: "{{parsed_dsv.message.signature_id}}"
+          cisco_secure_access.ips.signature_list_id: "{{parsed_dsv.message.signature_list_id}}"
+          cisco_secure_access.ips.severity: "{{parsed_dsv.message.severity}}"
+          cisco_secure_access.ips.attack_classification: "{{parsed_dsv.message.attack_classification}}"
+          cisco_secure_access.ips.session_id: "{{parsed_dsv.message.session_id}}"
+          cisco_secure_access.ips.operation_mode: "{{parsed_dsv.message.operation_mode}}"
+          cisco_secure_access.ips.policy_resource_id: "{{parsed_dsv.message.policy_resource_id}}"
+          cisco_secure_access.ips.direction: "{{parsed_dsv.message.direction}}"
+          cisco_secure_access.ips.config_type: "{{parsed_dsv.message.ips_config_type}}"
+          cisco_secure_access.ips.application_id: "{{parsed_dsv.message.application_id}}"
+          cisco_secure_access.ips.data_center: "{{parsed_dsv.message.data_center}}"
+          cisco_secure_access.ips.egress_ip: "{{parsed_dsv.message.egress_ip}}"
+          cisco_secure_access.ips.egress: "{{parsed_dsv.message.egress}}"
+          cisco_secure_access.ips.enforced_by: "{{parsed_dsv.message.enforced_by}}"
+          cisco_secure_access.ips.ftd_enforcement_id: "{{parsed_dsv.message.ftd_enforcement_id}}"
+          cisco_secure_access.ips.ftd_enforcement_name: "{{parsed_dsv.message.ftd_enforcement_name}}"
+          cisco_secure_access.ips.event_correlation_id: "{{parsed_dsv.message.event_correlation_id}}"
