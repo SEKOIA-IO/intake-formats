@@ -82,12 +82,9 @@ stages:
           action.properties.ThreatName: "{{json.event.winlog.event_data.get('Threat Name')}}"
           action.properties.TaskContentNew_Args: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments}}"
           action.properties.TaskContentNew_Command: "{{parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command}}"
-          destination.ip: "{{json.event.winlog.event_data.DestinationIp or json.event.winlog.event_data.DestAddress}}"
-          destination.port: "{{(json.event.winlog.event_data.DestinationPort or json.event.winlog.event_data.DestPort) | int}}"
           dll.path: "{{json.event.winlog.event_data.ImageLoaded}}"
           dll.name: "{{json.event.winlog.event_data.ImageLoaded | basename}}"
           process.command_line: "{{json.event.winlog.event_data.CommandLine or (parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command ~ ' ' ~ parsed_task_content_xml.parsed_task.Task.Actions.Exec.Arguments if parsed_task_content_xml.parsed_task.Task.Actions.Exec.Command else None)}}"
-          process.args: "{{json.event.process.args or (json.event.winlog.event_data.CommandLine.split(' ') if json.event.winlog.event_data.CommandLine else None)}}"
           process.executable: "{{json.event.winlog.event_data.Image}}"
           process.name: "{{json.event.winlog.event_data.Image | basename}}"
           process.parent.executable: "{{json.event.winlog.event_data.ParentImage}}"
@@ -107,6 +104,41 @@ stages:
           user: "{{json.event.user}}"
           winlog: "{{json.event.winlog}}"
       - set:
+          process.args: >
+            {%- if json.event.process.args != None -%}
+              {{json.event.process.args}}
+            {%- elif json.event.winlog.event_data.get("CommandLine") != None -%}
+              {%- set start = 0 -%}
+              {%- set end = 0 -%}
+              {%- set in_quote = false -%}
+              {%- set al = [] -%}
+              {%- for i in range (len(json.event.winlog.event_data.CommandLine)) -%}
+                {%- set end = i -%}
+                {%- if json.event.winlog.event_data.CommandLine[i] == '\"' -%}
+                  {%- if in_quote -%}
+                    {%- set in_quote = false -%}
+                  {%- else -%}
+                    {%- set in_quote = true -%}
+                  {%- endif -%}
+                {%- endif -%}
+                {%- if json.event.winlog.event_data.CommandLine[i] == " " and in_quote == false -%}
+                  {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end]) -%}
+                  {%- set start = i + 1 -%}
+                {%- endif -%}
+                {%- if (i == len(json.event.winlog.event_data.CommandLine) - 1) -%}
+                  {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end+1]) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {{al}}
+            {%- endif -%}
+        filter: '{{json.event.process.args == None and json.event.winlog.event_data.get("CommandLine") != None}}'
+      - set:
+          destination.ip: "{{json.event.winlog.event_data.DestinationIp or json.event.winlog.event_data.DestAddress}}"
+        filter: '{{json.event.winlog.event_data.get("DestinationIp") != None or json.event.winlog.event_data.get("DestAddress") != None}}'
+      - set:
+          destination.port: "{{(json.event.winlog.event_data.DestinationPort or json.event.winlog.event_data.DestPort) | int}}"
+        filter: '{{json.event.winlog.event_data.get("DestinationPort") != None or json.event.winlog.event_data.get("DestPort") != None}}'
+      - set:
           winlog.provider_guid: "{{json.event.winlog.provider_guid | lower}}"
         filter: '{{json.event.winlog.get("provider_guid") != None}}'
       - set:
@@ -116,17 +148,43 @@ stages:
           action.properties.ParentCommandLine: "{{json.event.process.parent.command_line}}"
         filter: '{{(json.event.event.code | string) == "1" and json.event.event.action == "process-created" and json.event.process.parent.command_line != None and json.event.process.parent.name == "mshta.exe"}}'
       - set:
-          process.args: '{{json.event.winlog.event_data.CommandLine.split(" ")}}'
+          process.args: >
+            {%- if json.event.process.args != None -%}
+              {{json.event.process.args}}
+            {%- elif json.event.winlog.event_data.get("CommandLine") != None -%}
+              {%- set start = 0 -%}
+              {%- set end = 0 -%}
+              {%- set in_quote = false -%}
+              {%- set al = [] -%}
+              {%- for i in range (len(json.event.winlog.event_data.CommandLine)) -%}
+                {%- set end = i -%}
+                {%- if json.event.winlog.event_data.CommandLine[i] == '\"' -%}
+                  {%- if in_quote -%}
+                    {%- set in_quote = false -%}
+                  {%- else -%}
+                    {%- set in_quote = true -%}
+                  {%- endif -%}
+                {%- endif -%}
+                {%- if json.event.winlog.event_data.CommandLine[i] == " " and in_quote == false -%}
+                  {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end]) -%}
+                  {%- set start = i + 1 -%}
+                {%- endif -%}
+                {%- if (i == len(json.event.winlog.event_data.CommandLine) - 1) -%}
+                  {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end+1]) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {{al}}
+            {%- endif -%}
           action.properties.ScriptBlockText: "{{json.event.winlog.event_data.CommandLine}}"
         filter: '{{(json.event.event.code | string) == "1" and json.event.winlog.event_data.get("RuleName") == "technique_id=T1218.011,technique_name=rundll32.exe" and json.event.winlog.event_data.get("CommandLine") != None}}'
       - set:
           process.working_directory: "{{json.event.winlog.event_data.ImageLoaded | dirname}}"
         filter: '{{(json.event.event.code | string) == "7" and json.event.winlog.event_data.get("RuleName") == "technique_id=T1574.002,technique_name=DLL Side-Loading" and json.event.winlog.event_data.get("CurrentDirectory") == None and json.event.winlog.event_data.get("ImageLoaded") != None}}'
       - set:
-          process.parent.command_line: "{{json.event.winlog.event_data.Application}}"
+          process.command_line: "{{json.event.winlog.event_data.Application}}"
         filter: '{{(json.event.event.code | string) == "5156" and json.event.winlog.event_data.get("ParentCommandLine") == None and json.event.winlog.event_data.get("Application") != None and "lsass.exe" in (json.event.winlog.event_data.get("Application") | lower)}}'
       - set:
-          process.parent.name: "{{json.event.winlog.event_data.Image | basename}}"
+          process.name: "{{json.event.winlog.event_data.Image | basename}}"
         filter: '{{(json.event.event.code | string) == "3" and json.event.winlog.event_data.get("RuleName") == "technique_id=T1059.001,technique_name=PowerShell" and json.event.winlog.event_data.get("ParentImage") == None and json.event.winlog.event_data.get("Image") != None}}'
       - set:
           process.name: "{{json.event.winlog.event_data.SourceImage | basename}}"
@@ -1943,8 +2001,60 @@ stages:
           powershell.runspace_id: "{{json.event.winlog.event_data.RunspaceId}}"
           powershell.sequence: "{{json.event.winlog.event_data.DetailSequence or json.event.winlog.event_data.MessageNumber}}"
           powershell.total: "{{json.event.winlog.event_data.DetailTotal or json.event.winlog.event_data.MessageTotal}}"
-          process.args: '{{json.event.process.command_line.split(" ")}}'
-          process.args_count: '{{json.event.process.command_line.split(" ")|length}}'
+          process.args: >
+            {%- if json.event.process.args != None -%}
+              {{json.event.process.args}}
+            {%- elif json.event.process.command_line != None -%}
+              {%- set start = 0 -%}
+              {%- set end = 0 -%}
+              {%- set in_quote = false -%}
+              {%- set al = [] -%}
+              {%- for i in range (len(json.event.process.command_line)) -%}
+                {%- set end = i -%}
+                {%- if json.event.process.command_line[i] == '\"' -%}
+                  {%- if in_quote -%}
+                    {%- set in_quote = false -%}
+                  {%- else -%}
+                    {%- set in_quote = true -%}
+                  {%- endif -%}
+                {%- endif -%}
+                {%- if json.event.process.command_line[i] == " " and in_quote == false -%}
+                  {%- set al = al.append(json.event.process.command_line[start:end]) -%}
+                  {%- set start = i + 1 -%}
+                {%- endif -%}
+                {%- if (i == len(json.event.process.command_line) - 1) -%}
+                  {%- set al = al.append(json.event.process.command_line[start:end+1]) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {{al}}
+            {%- endif -%}
+          process.args_count: >
+            {%- if json.event.process.args != None -%}
+              {{json.event.process.args|length}}
+            {%- elif json.event.process.command_line != None -%}
+              {%- set start = 0 -%}
+              {%- set end = 0 -%}
+              {%- set in_quote = false -%}
+              {%- set al = [] -%}
+              {%- for i in range (len(json.event.process.command_line)) -%}
+                {%- set end = i -%}
+                {%- if json.event.process.command_line[i] == '\"' -%}
+                  {%- if in_quote -%}
+                    {%- set in_quote = false -%}
+                  {%- else -%}
+                    {%- set in_quote = true -%}
+                  {%- endif -%}
+                {%- endif -%}
+                {%- if json.event.process.command_line[i] == " " and in_quote == false -%}
+                  {%- set al = al.append(json.event.process.command_line[start:end]) -%}
+                  {%- set start = i + 1 -%}
+                {%- endif -%}
+                {%- if (i == len(json.event.process.command_line) - 1) -%}
+                  {%- set al = al.append(json.event.process.command_line[start:end+1]) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {{al|length}}
+            {%- endif -%}
           process.command_line: "{{json.event.winlog.event_data.HostApplication}}"
           process.entity_id: "{{json.event.winlog.event_data.HostId}}"
           process.title: "{{json.event.winlog.event_data.HostName}}"
