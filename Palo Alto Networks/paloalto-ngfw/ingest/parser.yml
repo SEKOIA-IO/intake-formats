@@ -1,5 +1,5 @@
 name: Palo Alto networks next-generation firewall
-ignored_values: ["N/A", "unknown"]
+ignored_values: ["N/A", "unknown", "no"]
 pipeline:
   - name: parsed_event
     external:
@@ -380,6 +380,21 @@ pipeline:
           - DestinationDynamicAddressGroup
           - PartialHash
           - HighResolutionTimestamp
+          - DataFilteringReason
+          - DataFilteringJustification
+          - NSSAISST
+          - ApplicationSubcategory
+          - ApplicationCategory
+          - ApplicationTechnology
+          - ApplicationRisk
+          - ApplicationCharacteristic
+          - ApplicationContainer
+          - TunneledApplication
+          - ApplicationSaaS
+          - ApplicationSanctionedState
+          - CloudReportID
+          - ClusterName
+          - FlowType
         delimiter: ","
 
   # HIPMATCH CSV
@@ -702,33 +717,47 @@ pipeline:
           CONNECTION_SUCCESS: "Successfully connect to address: %{IP:dst} port: %{NUMBER:dport}, conn id: %{DATA:connection_id}"
           CONNECTION_TO_SERVER: "Connection to %{DATA} server: %{DATA:dst_addr} completed successfully, initiated by %{IP:src}"
           CONNECTION_REGISTERED: "Successfully registered to Public Cloud %{DATA:dst_domain}"
+
           WILDFIRE: "%{WILDFIRE_GENERIC}|%{WILDFIRE_CLOUD_FAILED}"
           WILDFIRE_NAME: "WildFire"
           WILDFIRE_GENERIC: "%{WILDFIRE_NAME:module} %{DATA}"
           WILDFIRE_CLOUD_FAILED: "Failed to perform task resulting in connection timeout with %{WILDFIRE_NAME:module} Cloud %{HOSTNAME:dst_domain}"
+
           NETWORK: "%{DHCP_RENEW}|%{NTP_SYNC}|%{PORT_UP}"
           DHCP_RENEW: "DHCP RENEW: interface %{NOTSPACE:intf}, ip %{IP:src} netmask %{IP} dhcp server: %{IPORHOST:dst_addr}"
           NTP_SYNC: "NTP sync to server %{HOSTNAME:dst_addr}"
           PORT_UP: "Port %{NOTSPACE:intf}: %{DATA:action} %{DATA}"
+
           PANDB_NAME: "PAN-DB"
           PANDB_GENERIC: "%{PANDB_NAME:module} %{DATA}"
+
           CONTENT: "%{CONTENT_INSTALLATION}|%{CONTENT_UPDATE}|%{CONTENT_UPGRADE}"
           CONTENT_INSTALLATION: "Installed %{NOTSPACE:module} package: %{DATA:filename}"
           CONTENT_UPDATE: "Content update job succeeded  for user %{USERNAME:user}"
           CONTENT_UPGRADE: "Content package upgraded from version %{DATA} by %{USERNAME:user}"
           CLOUD_ELECTION: "CLOUD ELECTION: %{HOSTNAME:dst_domain} IP: %{IP:dst} was elected, %{DATA}\\."
-          AUTHENTICATION: "%{AUTHENTICATION_CONSOLE}|%{AUTHENTICATION_WEB}"
-          AUTHENTICATION_CONSOLE: "authenticated for user '%{USERNAME:user}'\\.   From: %{IP:src}\\."
-          AUTHENTICATION_WEB: "User %{USERNAME:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
-          REASON: "%{REASON1}|%{REASON2}|%{REASON3}|%{REASON4}|%{REASON5}|%{REASON5_1}|%{REASON6}|%{REASON7}"
+
+          AUTHENTICATION: "%{AUTHENTICATION_CONSOLE}|%{AUTHENTICATION_WEB}|%{AUTHENTICATION_FAILED}"
+          AUTHENTICATION_WEB: "User %{DATA:user} logged in via %{DATA} from %{IP:src} using %{DATA:proto}"
+          AUTHENTICATION_CONSOLE: "(?P<reason>(%{DATA} )?authenticated for user '?%{DATA:user}'?)\\.(\\s+)?%{AUTHENTICATION_DETAILS}"
+          AUTHENTICATION_FAILED: "failed authentication for user '?%{DATA:user}'?\\.\\s+Reason: %{DATA:reason}\\.%{AUTHENTICATION_DETAILS}"
+          AUTHENTICATION_DETAILS: "%{AUTHENTICATION_DETAILS_REALM}?%{AUTHENTICATION_DETAILS_IDENTITY}?%{AUTHENTICATION_DETAILS_AUTH_PROFILE}?%{AUTHENTICATION_DETAILS_VSYS}?%{AUTHENTICATION_DETAILS_SERVER_PROFILE}?%{AUTHENTICATION_DETAILS_SERVER_ADDR}?%{AUTHENTICATION_DETAILS_AUTH_PROTO}?%{AUTHENTICATION_DETAILS_ADMIN_ROLE}?%{AUTHENTICATION_DETAILS_IDP_ENTITY}?%{AUTHENTICATION_DETAILS_FROM}?"
+          AUTHENTICATION_DETAILS_VSYS: "( vsys '?%{WORD:vsys}'?,)"
+          AUTHENTICATION_DETAILS_ADMIN_ROLE: "( admin role '?%{DATA:admin_role}'?,)"
+          AUTHENTICATION_DETAILS_SERVER_PROFILE: "( server profile '?%{DATA:server_profile}'?,)"
+          AUTHENTICATION_DETAILS_AUTH_PROTO: "( auth protocol '?%{DATA:auth_protocol}'?,)"
+          AUTHENTICATION_DETAILS_SERVER_ADDR: "( server address '?%{IPORHOST:dst}'?,)"
+          AUTHENTICATION_DETAILS_IDP_ENTITY: "( IdP entityID '%{DATA}',)"
+          AUTHENTICATION_DETAILS_AUTH_PROFILE: "(\\s+auth profile '?%{DATA:auth_profile}'?,)"
+          AUTHENTICATION_DETAILS_IDENTITY: "(\\s+EAP outer identity '?%{DATA}'?,\\s+inner identity '?%{USERNAME}'?,)"
+          AUTHENTICATION_DETAILS_FROM: "\\s+From: '?%{IP:source_ip}'?\\."
+          AUTHENTICATION_DETAILS_REALM: "(\\s+realm '?%{DATA}'?,)"
+
+          REASON: "%{REASON1}|%{REASON2}|%{REASON3}"
           REASON1: 'User-ID server monitor %{HOSTNAME:hostname}\(%{WORD:vsys}\) %{GREEDYDATA:message}'
           REASON2: "ldap cfg %{WORD:config_name} connected to server %{IP:destination_ip}:%{INT:port}, initiated by: %{IP:source_ip}"
           REASON3: "When authenticating user '?%{WORD:user}'? from '?%{IP:source_ip}'?, a less secure authentication method %{WORD:auth_method} is used\\. Please migrate to %{WORD:recommended_methods1} or %{DATA:recommended_methods2}\\. Authentication Profile '?%{WORD:auth_profile}'?, vsys '?%{WORD:vsys}'?, Server Profile '?%{WORD:server_profile}'?, Server Address '?%{IPORHOST:dst}'?"
-          REASON4: "failed authentication for user '?%{USERNAME:user}'?\\.%{DATA}Reason: %{GREEDYDATA:reason} auth profile '?%{DATA:auth_profile}'?,( vsys '?%{WORD:vsys}'?,)?( server profile '?%{DATA:server_profile}'?,)?( server address '?%{IPORHOST:dst}'?,)?( auth protocol '?%{DATA:auth_protocol}'?,)?( admin role '?%{DATA:admin_role}'?,)? From: '?%{IP:source_ip}'?\\."
-          REASON5: "authenticated for user '?%{USERNAME:user}'?\\.(\\s+EAP outer identity '?%{USERNAME}'?,\\s+inner identity '?%{USERNAME}'?,)?\\s+auth profile '?%{DATA:auth_profile}'?,( vsys '?%{WORD:vsys}'?,)?( server profile '?%{DATA:server_profile}'?,)?( server address '?%{IPORHOST:dst}'?,)?( auth protocol '?%{DATA:auth_protocol}'?,)?( admin role '?%{DATA:admin_role}'?,)? From: '?%{IP:source_ip}'?\\."
-          REASON5_1: "%{DATA} authenticated for user '?%{USERNAME:user}'%{GREEDYDATA}"
-          REASON6: "failed authentication for user '?%{USERNAME:user}'?\\.%{DATA}Reason: %{DATA:reason} From: '?%{IP:source_ip}'?\\."
-          REASON7: "failed authentication for user '?%{USERNAME:user}'?\\.%{DATA}Reason: %{DATA:reason}"
+
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
   - name: parsed_threat
@@ -803,8 +832,14 @@ stages:
           action.outcome: "success"
         filter: "{{parsed_event.message.get('Action') != None}}"
       - set:
-          action.outcome: "{{parsed_event.message.Status or parsed_event.message.PanOSEventStatus}}"
-        filter: "{{parsed_event.message.Status != None or parsed_event.message.PanOSEventStatus != None}}"
+          action.outcome: "{{parsed_event.message.Status}}"
+        filter: "{{parsed_event.message.Status in ['success','failure', 'unknown']}}"
+      - set:
+          action.outcome: "{{parsed_event.message.PanOSEventStatus}}"
+        filter: "{{parsed_event.message.PanOSEventStatus in ['success','failure', 'unknown']}}"
+      - set:
+          action.outcome: "{{parsed_event.message.EventStatus}}"
+        filter: "{{parsed_event.message.EventStatus in ['success','failure', 'unknown']}}"
 
   set_event_outcome:
     actions:
@@ -910,6 +945,10 @@ stages:
         filter: "{{ parsed_description.message.get('reason') != None }}"
 
       - set:
+          error.message: "{{parsed_event.message.ConnectionError}}"
+        filter: "{{parsed_event.message.get('ConnectionError') != None}}"
+
+      - set:
           destination.port: "{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}"
           destination.user.name: "{{parsed_event.message.duser or parsed_event.message.DestinationUser}}"
           event.action: "{{parsed_event.message.act or parsed_event.message.Action or parsed_description.message.action}}"
@@ -928,6 +967,7 @@ stages:
           event.timezone: "{{parsed_event.message.dtz}}"
           event.dataset: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
           event.module: "{{parsed_description.message.module}}"
+          event.risk_score: "{{parsed_event.message.ApplicationRisk}}"
           host.hostname: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}"
           host.name: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost or parsed_event.message.EndpointDeviceName or parsed_event.message.SourceDeviceHost or parsed_description.message.hostname}}"
           host.id: "{{parsed_event.message.deviceExternalId or parsed_event.message.HostID}}"
@@ -1072,6 +1112,10 @@ stages:
         filter: '{{parsed_event.message.PanOSEventIDValue not in ["0",0,None]}}'
 
       - set:
+          action.name: "{{parsed_event.message.EventIDValue}}"
+        filter: '{{parsed_event.message.EventIDValue not in ["0",0,None]}}'
+
+      - set:
           source.nat.port: "{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}"
           source.packets: "{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}"
           source.port: "{{parsed_event.message.SourcePort or parsed_event.message.spt}}"
@@ -1103,6 +1147,20 @@ stages:
           paloalto.tls.sni: "{{parsed_event.message.ServerNameIndication}}"
           paloalto.session.id: "{{parsed_event.message.SessionID}}"
           paloalto.session.end_reason: "{{parsed_event.message.SessionEndReason}}"
+          paloalto.data_filtering.reason: "{{parsed_event.message.Reason}}"
+          paloalto.data_filtering.justification: "{{parsed_event.message.Justification}}"
+          paloalto.nssai_sst: "{{parsed_event.message.NSSAISST}}"
+          paloalto.application.subcategory: "{{parsed_event.message.ApplicationSubcategory}}"
+          paloalto.application.category: "{{parsed_event.message.ApplicationCategory}}"
+          paloalto.application.technology: "{{parsed_event.message.ApplicationTechnology}}"
+          paloalto.application.characteristic: "{{parsed_event.message.ApplicationCharacteristic}}"
+          paloalto.application.container: "{{parsed_event.message.ApplicationContainer}}"
+          paloalto.application.tunneled: "{{parsed_event.message.TunneledApplication}}"
+          paloalto.application.is_saas: "{{parsed_event.message.ApplicationSaaS}}"
+          paloalto.application.sanctioned_state: "{{parsed_event.message.ApplicationSanctionedState}}"
+          paloalto.cloud_reportid: "{{parsed_event.message.CloudReportID}}"
+          paloalto.cluster_name: "{{parsed_event.message.ClusterName}}"
+          paloalto.flow_type: "{{parsed_event.message.FlowType}}"
 
       - set:
           paloalto.URLCategoryList: "{{parsed_event.message.URLCategoryList.split(',')}}"
@@ -1134,6 +1192,10 @@ stages:
           source.user.name: "{{parsed_event.message.SourceUser}}"
           user.name: "{{parsed_event.message.SourceUser}}"
         filter: '{{parsed_event.message.SourceUser.startswith("x-fwd-for") == False}}'
+
+      - set:
+          user.email: "{{parsed_description.message.user}}"
+        filter: "{{parsed_description.message.user != None and '@' in parsed_description.message.user}}"
 
       - set:
           user.email: "{{parsed_event.message.SourceUser}}"
@@ -1224,6 +1286,7 @@ stages:
           login: ["start"]
           logout: ["end"]
           "auth-success": ["start"]
+          "auth-fail": ["start"]
         mapping:
           parsed_event.message.Subtype: event.type
           parsed_event.message.Name: event.type
