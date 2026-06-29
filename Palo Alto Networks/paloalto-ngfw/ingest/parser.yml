@@ -1,5 +1,5 @@
 name: Palo Alto networks next-generation firewall
-ignored_values: ["N/A", "unknown"]
+ignored_values: ["N/A", "unknown", "no"]
 pipeline:
   - name: parsed_event
     external:
@@ -380,6 +380,21 @@ pipeline:
           - DestinationDynamicAddressGroup
           - PartialHash
           - HighResolutionTimestamp
+          - DataFilteringReason
+          - DataFilteringJustification
+          - NSSAISST
+          - ApplicationSubcategory
+          - ApplicationCategory
+          - ApplicationTechnology
+          - ApplicationRisk
+          - ApplicationCharacteristic
+          - ApplicationContainer
+          - TunneledApplication
+          - ApplicationSaaS
+          - ApplicationSanctionedState
+          - CloudReportID
+          - ClusterName
+          - FlowType
         delimiter: ","
 
   # HIPMATCH CSV
@@ -817,8 +832,14 @@ stages:
           action.outcome: "success"
         filter: "{{parsed_event.message.get('Action') != None}}"
       - set:
-          action.outcome: "{{parsed_event.message.Status or parsed_event.message.PanOSEventStatus}}"
-        filter: "{{parsed_event.message.Status != None or parsed_event.message.PanOSEventStatus != None}}"
+          action.outcome: "{{parsed_event.message.Status}}"
+        filter: "{{parsed_event.message.Status in ['success','failure', 'unknown']}}"
+      - set:
+          action.outcome: "{{parsed_event.message.PanOSEventStatus}}"
+        filter: "{{parsed_event.message.PanOSEventStatus in ['success','failure', 'unknown']}}"
+      - set:
+          action.outcome: "{{parsed_event.message.EventStatus}}"
+        filter: "{{parsed_event.message.EventStatus in ['success','failure', 'unknown']}}"
 
   set_event_outcome:
     actions:
@@ -924,6 +945,10 @@ stages:
         filter: "{{ parsed_description.message.get('reason') != None }}"
 
       - set:
+          error.message: "{{parsed_event.message.ConnectionError}}"
+        filter: "{{parsed_event.message.get('ConnectionError') != None}}"
+
+      - set:
           destination.port: "{{parsed_event.message.DestinationPort or parsed_event.message.dpt or parsed_description.message.dport}}"
           destination.user.name: "{{parsed_event.message.duser or parsed_event.message.DestinationUser}}"
           event.action: "{{parsed_event.message.act or parsed_event.message.Action or parsed_description.message.action}}"
@@ -942,6 +967,7 @@ stages:
           event.timezone: "{{parsed_event.message.dtz}}"
           event.dataset: "{{parsed_event.message.DeviceEventClassID|lower or parsed_event.message.Type|lower or parsed_event.message.LogType|lower}}"
           event.module: "{{parsed_description.message.module}}"
+          event.risk_score: "{{parsed_event.message.ApplicationRisk}}"
           host.hostname: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName}}"
           host.name: "{{parsed_event.message.dvchost or parsed_event.message.PanOSEndpointDeviceName or parsed_event.message.LogSourceName or parsed_event.message.MachineName or parsed_event.message.shost or parsed_event.message.EndpointDeviceName or parsed_event.message.SourceDeviceHost or parsed_description.message.hostname}}"
           host.id: "{{parsed_event.message.deviceExternalId or parsed_event.message.HostID}}"
@@ -1086,6 +1112,10 @@ stages:
         filter: '{{parsed_event.message.PanOSEventIDValue not in ["0",0,None]}}'
 
       - set:
+          action.name: "{{parsed_event.message.EventIDValue}}"
+        filter: '{{parsed_event.message.EventIDValue not in ["0",0,None]}}'
+
+      - set:
           source.nat.port: "{{parsed_event.message.NATSourcePort or parsed_event.message.sourceTranslatedPort}}"
           source.packets: "{{parsed_event.message.PanOSPacketsSent or parsed_event.message.pkts_sent}}"
           source.port: "{{parsed_event.message.SourcePort or parsed_event.message.spt}}"
@@ -1117,6 +1147,20 @@ stages:
           paloalto.tls.sni: "{{parsed_event.message.ServerNameIndication}}"
           paloalto.session.id: "{{parsed_event.message.SessionID}}"
           paloalto.session.end_reason: "{{parsed_event.message.SessionEndReason}}"
+          paloalto.data_filtering.reason: "{{parsed_event.message.Reason}}"
+          paloalto.data_filtering.justification: "{{parsed_event.message.Justification}}"
+          paloalto.nssai_sst: "{{parsed_event.message.NSSAISST}}"
+          paloalto.application.subcategory: "{{parsed_event.message.ApplicationSubcategory}}"
+          paloalto.application.category: "{{parsed_event.message.ApplicationCategory}}"
+          paloalto.application.technology: "{{parsed_event.message.ApplicationTechnology}}"
+          paloalto.application.characteristic: "{{parsed_event.message.ApplicationCharacteristic}}"
+          paloalto.application.container: "{{parsed_event.message.ApplicationContainer}}"
+          paloalto.application.tunneled: "{{parsed_event.message.TunneledApplication}}"
+          paloalto.application.is_saas: "{{parsed_event.message.ApplicationSaaS}}"
+          paloalto.application.sanctioned_state: "{{parsed_event.message.ApplicationSanctionedState}}"
+          paloalto.cloud_reportid: "{{parsed_event.message.CloudReportID}}"
+          paloalto.cluster_name: "{{parsed_event.message.ClusterName}}"
+          paloalto.flow_type: "{{parsed_event.message.FlowType}}"
 
       - set:
           paloalto.URLCategoryList: "{{parsed_event.message.URLCategoryList.split(',')}}"
