@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-06-30 - 1.1.1
+
+### Changed
+
+- Improve firewall log parsing for blocked policy events by supporting additional field variants (`clt_sport`, `srv_dport`, `cip`, `dip`, `locationname`, `nwapp`, `elogin`) and setting `event.outcome` to `failure` when action indicates block/deny/drop.
+
 ## 2026-05-04 - 1.1.0
 - Add new Zscaler Internet Access (ZIA) fields:
     - zscaler.zia.appclass
