@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Set ECS `event.module` to `sentinelone` for consistent ECS mapping across integrations
+
 ## 2024-01-29 - 1.0.1
 
 ### Changed
