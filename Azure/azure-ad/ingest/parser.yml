@@ -44,6 +44,7 @@ stages:
     actions:
       - set:
           action.type: "{{parsed_event.message.properties.operationType |lower}}"
+          device.id: "{{parsed_event.message.properties.C_DeviceId}}"
           event.reason: "{{ parsed_event.message.properties.riskType }}"
           error.code: "{{parsed_event.message.properties.status.errorCode}}"
           host.id: "{{parsed_event.message.properties.deviceDetail.deviceId}}"
@@ -89,6 +90,18 @@ stages:
           azuread.properties.servicePrincipalName: "{{parsed_event.message.properties.servicePrincipalName}}"
           azuread.properties.servicePrincipalId: "{{parsed_event.message.properties.servicePrincipalId}}"
           azuread.properties.resourceOwnerTenantId: "{{parsed_event.message.properties.resourceOwnerTenantId}}"
+          azuread.properties.identityType: "{{parsed_event.message.properties.C_Idtyp}}"
+          azuread.properties.issuedAt: "{{parsed_event.message.properties.C_Iat | to_rfc3339}}"
+          azuread.properties.security_identifier: "{{parsed_event.message.properties.C_Sid}}"
+          azuread.properties.authenticationMethod.code: "{{parsed_event.message.properties.clientAuthMethod}}"
+
+      - translate:
+        dictionary:
+          0: "public client"
+          1: "private client"
+          2: "client certificate"
+        mapping:
+          parsed_event.message.properties.clientAuthMethod: azuread.properties.authenticationMethod.type
 
       - set:
           azuread.properties.network_location.network_type: "{{(parsed_event.message.properties.networkLocationDetails | first).networkType}}"
@@ -120,8 +133,12 @@ stages:
   read_message_properties_location_geoCoordinates:
     actions:
       - set:
+          source.geo.name: "{{ parsed_event.message.properties.location}}"
+        filter: "{{ parsed_event.message.properties.location != null and parsed_event.message.properties.location is string}}"
+
+      - set:
           source.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
-          source.geo.region_name: "{{ parsed_event.message.properties.location.state }}"
+          source.geo.region_name: "{{ parsed_event.message.properties.location.state or parsed_event.message.properties.__UDI_RequiredFields_RegionScope}}"
 
       - set:
           source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
@@ -308,20 +325,43 @@ stages:
       - set:
           action.properties: >
             [
+              {%- for targetResource in parsed_event.message.properties.targetResources -%}
+                {%- if targetResource.modifiedProperties != null -%}
+                  {%- for modifiedProperty in targetResource.modifiedProperties -%}
+                    {%- if modifiedProperty.displayName != "Included Updated Properties"-%}
+                      {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+                    {%- endif -%}
+                  {%- endfor -%}
+                {%- endif -%}
+                {%- if targetResource.type == "User" -%}
+                  {'name': '{{targetResource.userPrincipalName | lower }}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
+                {%- endif -%}
+              {%- endfor -%}
+            ]
+
+          azuread.properties.modified: >
+            [
             {%- for targetResource in parsed_event.message.properties.targetResources -%}
               {%- if targetResource.modifiedProperties != null -%}
                 {%- for modifiedProperty in targetResource.modifiedProperties -%}
                   {%- if modifiedProperty.displayName != "Included Updated Properties"-%}
-                    {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+                    {%- set oldValue = modifiedProperty.oldValue | from_json -%}
+                    {%- set newValue = modifiedProperty.newValue | from_json -%}
+                    {%- set nv = {"id": newValue.get("id"), "displayName": newValue.get("displayName"), "created": newValue.get("createdDateTime"), "modified": newValue.get("modifiedDateTime"), "state": newValue.get("state")} if newValue is mapping else newValue -%}
+                    {%- set ov = {"id": oldValue.get("id"), "displayName": oldValue.get("displayName"), "created": oldValue.get("createdDateTime"), "modified": oldValue.get("modifiedDateTime"), "state": oldValue.get("state")} if oldValue is mapping else oldValue -%}
+                    {%- if nv is mapping and ov is mapping -%}
+                      {'name': '{{modifiedProperty.displayName or ""}}', 'newValue': {{nv}}, 'oldValue': {{ov}}},
+                    {%- endif -%}
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
-              {%- if targetResource.type == "User" -%}
-                {'name': '{{targetResource.userPrincipalName | lower }}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
-              {%- endif -%}
             {%- endfor -%}
             ]
-        filter: "{{parsed_event.message.properties.targetResources != [] }}"
+        filter: "{{parsed_event.message.properties.targetResources != []}}"
+
+      - delete:
+          - azuread.properties.modified
+        filter: "{{final.azuread.properties.modified == []}}"
 
       - set:
           azuread.properties.targetUserPrincipalName: "{{parsed_event.message.properties.targetResources[0].userPrincipalName}}"
