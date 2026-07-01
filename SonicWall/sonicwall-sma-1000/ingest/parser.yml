@@ -1,0 +1,237 @@
+name: sonicwall-sma-1000
+pipeline:
+  - name: parsed_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{ original.message }}"
+        output_field: result
+        pattern: "%{SYSTEM_MESSAGE}|%{MANAGEMENT_MESSAGE}|%{MANAGEMENT_AUDIT}|%{MANAGEMENT_ACCESS}|%{NETWORK_TUNNEL_AUDIT}|%{WEB_PROXY_AUDIT}|%{WORKPLACE}"
+        custom_patterns:
+          SYSTEMDATE: "%{MONTHDAY}/%{MONTHNUM}/%{YEAR} %{TIME}( %{ISO8601_TIMEZONE})?"
+          MGTDATE: "%{TIMESTAMP_ISO8601} %{ISO8601_TIMEZONE}"
+          MGTDATE2: "%{YEAR}-%{MONTHNUM}-%{MONTHDAY}[T]%{HOUR}:?%{MINUTE}(?::?%{SECOND})?%{ISO8601_TIMEZONE}?"
+          PROC: "ap|cp|dc|ev|ew|fm|kp|ks|kt|ls|ps|pt|uk|up|us"
+          CONNECTION_TYPE: "tunnel|flow"
+          SYSTEM_MESSAGE: "\\[(?:%{HTTPDATE:http_datestamp}|%{SYSTEMDATE:datestamp})\\] %{GREEDYDATA:hostname} %{BASE16NUM:pid} %{PROC:process} %{BASE16NUM:source_id} %{WORD:system_level} %{GREEDYDATA:message}"
+          MANAGEMENT_MESSAGE: "%{MGTDATE2:datestamp} %{DATA:service}@%{DATA:hostname} local4.%{WORD:level} AMC: %{MGTDATE:timestamp} %{WORD:system_level} %{GREEDYDATA:message}"
+          MANAGEMENT_AUDIT: "%{WORD:level} %{DATESTAMP:datestamp} %{USER:username} %{GREEDYDATA:message}"
+          MANAGEMENT_ACCESS: '%{IPORHOST:source} - %{USER:username} \[%{HTTPDATE:http_datestamp}\] "%{WORD:method} %{GREEDYDATA:path} %{WORD:protocol}/%{NUMBER:http_version}" %{NUMBER:status} %{NUMBER:bytes}'
+          NETWORK_TUNNEL_AUDIT: "(\\[)?%{IP:source}(\\])?:%{NUMBER:source_port} - \"\\(%{USER:username}\\)@\\(%{DATA:realm}\\)\" \"%{HTTPDATE:http_datestamp}\" %{NUMBER:version} %{CONNECTION_TYPE:connection_type}(:%{WORD:transport})? %{IP:destination}(:%{NUMBER:destination_port})? %{NUMBER:error_code} %{NUMBER:bytes_in} %{NUMBER:bytes_out} %{NUMBER:duration} %{WORD:platform_prefix}\"%{GREEDYDATA:equipment_id}\""
+          WEB_PROXY_AUDIT: '%{IPORHOST:source} - \(%{USER:username}\)@\(%{DATA:realm}\) \[%{SYSTEMDATE:datestamp}\] "%{WORD:method} %{GREEDYDATA:path} %{WORD:protocol}/%{NUMBER:http_version}" %{NUMBER:status} %{NUMBER:bytes}'
+          WORKPLACE: "%{MGTDATE2:datestamp} (%{DATA:service}@%{DATA:hostname}|%{IP:source}/%{IP:proxy}) local7.%{WORD:level} (WP: %{MGTDATE:timestamp} )?%{WORD:system_level} (\\[%{GREEDYDATA}\\]|-) %{WORD:component}: (<%{GREEDYDATA:action}> )?(uri=%{GREEDYDATA:uri} status=%{WORD:status}|%{GREEDYDATA:message})"
+ 
+  - name: parsed_date
+    filter: "{{ parsed_event.result.http_datestamp != None and parsed_event.result.MANAGEMENT_ACCESS == None }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parsed_event.result.http_datestamp
+        output_field: date
+        format: "%d/%b/%Y:%H:%M:%S.%f %z"
+
+  - name: parsed_date
+    filter: "{{ parsed_event.result.http_datestamp != None and parsed_event.result.MANAGEMENT_ACCESS != None }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: parsed_event.result.http_datestamp
+        output_field: date
+        format: "%d/%b/%Y:%H:%M:%S %z"
+
+  - name: set_system_fields
+    filter: "{{ parsed_event.result.SYSTEM_MESSAGE != None }}"
+  - name: set_management_message_fields
+    filter: "{{ parsed_event.result.MANAGEMENT_MESSAGE != None }}"
+  - name: set_management_audit_fields
+    filter: "{{ parsed_event.result.MANAGEMENT_AUDIT != None }}"
+  - name: set_management_access_fields
+    filter: "{{ parsed_event.result.MANAGEMENT_ACCESS != None }}"
+  - name: set_network_tunnel_audit_fields
+    filter: "{{ parsed_event.result.NETWORK_TUNNEL_AUDIT != None }}"
+  - name: set_web_proxy_audit_fields
+    filter: "{{ parsed_event.result.WEB_PROXY_AUDIT != None }}"
+  - name: set_workplace_fields
+    filter: "{{ parsed_event.result.WORKPLACE != None }}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          observer.vendor: "SonicWall"
+          observer.product: "Secure Mobile Access 1000"
+          observer.type: "firewall"
+
+      - translate:
+        dictionary:
+          "Error": 3
+          "Warning": 4
+          "Info": 6
+          "Verbose": 7
+          "Internal": 0
+        mapping:
+          sonicwall.sma.1000.level: log.syslog.severity.code
+
+  set_system_fields:
+    actions:
+      - set:
+          event.category: ["host"]
+          event.type: ["info"]
+          event.dataset: "sonicwall.sma.1000.system"
+          event.reason: "{{ parsed_event.result.message }}"
+          observer.hostname: "{{ parsed_event.result.hostname }}"
+          process.name: "{{ parsed_event.result.process }}"
+          process.pid: "{{ parsed_event.result.pid }}"
+          source.address: "{{ parsed_event.result.source_id }}"
+          "@timestamp": "{{parsed_event.result.datestamp | to_rfc3339 or parsed_date.date }}" #datestamp does not always contains a timezone, not sure if we need to filter or always let it be parsed
+          sonicwall.sma.1000.level: "{{ parsed_event.result.system_level }}"
+
+      
+      - translate:
+        dictionary:
+          "Error": 3
+          "Warning": 4
+          "Info": 6
+          "Verbose": 7
+          "Internal": 0
+        mapping:
+          parsed_event.result.system_level: event.severity
+        fallback: 0
+
+  set_management_message_fields:
+    actions:
+      - set:
+          event.category: ["host"]
+          event.type: ["info"]
+          event.dataset: "sonicwall.sma.1000.management_message"
+          "@timestamp": "{{ parsed_event.result.timestamp | to_rfc3339 }}"
+          event.provider: "AMC"
+          event.start: "{{ parsed_event.result.datestamp | to_rfc3339 }}"
+          log.level: "{{ parsed_event.result.level | lower}}"
+          event.reason: "{{ parsed_event.result.message }}"
+          observer.hostname: "{{ parsed_event.result.hostname }}"
+          service.name: "{{ parsed_event.result.service }}"
+
+  set_management_audit_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          event.dataset: "sonicwall.sma.1000.management_audit"
+          "@timestamp": "{{ parsed_event.result.datestamp | to_rfc3339 }}"
+          event.reason: "{{ parsed_event.result.message }}"
+          user.name: "{{ parsed_event.result.username }}"
+
+  set_management_access_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "sonicwall.sma.1000.management_access"
+          "@timestamp": "{{ parsed_date.date }}"
+          http.request.method: "{{ parsed_event.result.method }}"
+          http.version: "{{ parsed_event.result.http_version }}"
+          http.response.status_code: "{{ parsed_event.result.status }}"
+          http.response.bytes: "{{ parsed_event.result.bytes }}"
+          url.path: "{{ parsed_event.result.path }}"
+          user.name: "{{ parsed_event.result.username }}"
+          network.protocol: "{{ parsed_event.result.protocol }}"
+          event.outcome: > # event.outcome is defined but event.type is set to info, not sure the outcome is relevant
+            {%- if parsed_event.result.status | length == 3 and parsed_event.result.status[0] in ["2", "3"] -%}
+              success
+            {%- elif parsed_event.result.status | length == 3 and parsed_event.result.status[0] in ["4", "5"] -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+
+      - set:
+          source.ip: "{{ parsed_event.result.source }}"
+        filter: "{{ parsed_event.result.source | is_ipaddress }}"
+
+      - set:
+          source.domain: "{{ parsed_event.result.source }}"
+        filter: "{{ parsed_event.result.source | is_ipaddress == False }}"
+
+  set_network_tunnel_audit_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.dataset: "sonicwall.sma.1000.network_tunnel"
+          "@timestamp": "{{ parsed_date.date}}"
+          client.bytes: "{{ parsed_event.result.bytes_in }}"
+          client.ip: "{{ parsed_event.result.source }}"
+          client.port: "{{ parsed_event.result.source_port }}"
+          client.user.domain: "{{ parsed_event.result.realm }}"
+          client.user.name: "{{ parsed_event.result.username }}"
+          destination.ip: "{{ parsed_event.result.destination }}"
+          destination.port: "{{ parsed_event.result.destination_port }}"
+          event.duration: "{{ (parsed_event.result.duration | int) * 1000000000 }}" # convert from s to ns
+          error.code: "{{ parsed_event.result.error_code }}"
+          network.transport: "{{ parsed_event.result.transport }}"
+          process.name: "{{ parsed_event.result.platform_prefix }}"
+          server.bytes: "{{ parsed_event.result.bytes_out }}"
+          source.ip: "{{ parsed_event.result.source }}"
+          source.port: "{{ parsed_event.result.source_port }}"
+          sonicwall.sma.1000.connection_type: "{{ parsed_event.result.connection_type }}"
+          sonicwall.sma.1000.equipment_id: "{{ parsed_event.result.equipment_id }}"
+          sonicwall.sma.1000.tunnel_version: "{{ parsed_event.result.version }}"
+          event.outcome: >
+            {%- if parsed_event.result.error_code == "-1" -%}
+              success
+            {%- else -%}
+              failure
+            {%- endif -%}
+
+  set_web_proxy_audit_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "sonicwall.sma.1000.web_proxy"
+          "@timestamp": "{{ parsed_event.result.datestamp | to_rfc3339 }}"
+          client.user.domain: "{{ parsed_event.result.realm }}"
+          client.user.name: "{{ parsed_event.result.username }}"
+          http.request.method: "{{ parsed_event.result.method }}"
+          http.version: "{{ parsed_event.result.http_version }}"
+          http.response.status_code: "{{ parsed_event.result.status }}"
+          http.response.bytes: "{{ parsed_event.result.bytes }}"
+          url.path: "{{ parsed_event.result.path }}"
+          network.protocol: "{{ parsed_event.result.protocol }}"
+
+      - set:
+          source.ip: "{{ parsed_event.result.source }}"
+        filter: "{{ parsed_event.result.source | is_ipaddress }}"
+
+      - set:
+          source.domain: "{{ parsed_event.result.source }}"
+        filter: "{{ parsed_event.result.source | is_ipaddress == False }}"
+
+  set_workplace_fields:
+    actions:
+      - set:
+          event.category: ["network", "authentication"]
+          event.type: ["info"]
+          event.dataset: "sonicwall.sma.1000.workplace"
+          event.action: "{{ parsed_event.result.action }}"
+          "@timestamp": "{{ parsed_event.result.datestamp | to_rfc3339 }}"
+          log.level: "{{ parsed_event.result.level | lower}}"
+          event.reason: "{{ parsed_event.result.message }}"
+          observer.hostname: "{{ parsed_event.result.hostname }}"
+          service.name: "{{ parsed_event.result.service }}"
+          source.ip: "{{ parsed_event.result.source }}"
+          url.original: "{{parsed_event.result.uri}}"
+          event.outcome: > # event.outcome is defined but event.type is set to info, not sure the outcome is relevant
+            {%- if "success" in parsed_event.result.status | lower -%}
+              success
+            {%- elif "fail" in parsed_event.result.status | lower -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+
+      - set:
+          event.provider: "WP"
+        filter: "{{ parsed_event.result.timestamp != None }}"
