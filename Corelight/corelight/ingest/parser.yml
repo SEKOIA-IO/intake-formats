@@ -1,0 +1,202 @@
+name: corelight
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        # Corelight Zeek logs carry the event time in "ts"; the export adds "_write_ts".
+        input_field: '{{json_event.message.get("ts") or json_event.message.get("_write_ts")}}'
+        output_field: datetime
+        format: null
+        timezone: UTC
+
+  # ---- routing per Corelight log type (Zeek "_path") ----
+  - name: set_common_fields
+  - name: set_conn_fields
+    filter: '{{json_event.message.get("_path") == "conn"}}'
+  - name: set_dns_fields
+    filter: '{{json_event.message.get("_path") == "dns"}}'
+  - name: set_http_fields
+    filter: '{{json_event.message.get("_path") == "http"}}'
+  - name: set_ssl_fields
+    filter: '{{json_event.message.get("_path") == "ssl"}}'
+  - name: set_files_fields
+    filter: '{{json_event.message.get("_path") == "files"}}'
+  - name: set_suricata_fields
+    filter: '{{json_event.message.get("_path") == "suricata_corelight"}}'
+  - name: set_intel_fields
+    filter: '{{json_event.message.get("_path") == "intel"}}'
+  - name: set_notice_fields
+    filter: '{{json_event.message.get("_path") == "notice"}}'
+
+stages:
+  # ----------------------------------------------------------------
+  # Fields common to every Corelight log
+  # ----------------------------------------------------------------
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          observer.vendor: "Corelight"
+          observer.product: "Open NDR"
+          observer.type: "ndr"
+          event.dataset: '{{json_event.message.get("_path")}}'
+          event.module: "corelight"
+          network.community_id: '{{json_event.message.get("community_id")}}'
+          source.ip: '{{json_event.message.get("id.orig_h")}}'
+          source.port: '{{json_event.message.get("id.orig_p")}}'
+          destination.ip: '{{json_event.message.get("id.resp_h")}}'
+          destination.port: '{{json_event.message.get("id.resp_p")}}'
+          observer.name: '{{json_event.message.get("_system_name")}}'
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+
+  # ----------------------------------------------------------------
+  # conn.log
+  # ----------------------------------------------------------------
+  set_conn_fields:
+    actions:
+      - set:
+          network.transport: '{{json_event.message.get("proto")}}'
+          network.protocol: '{{json_event.message.get("service")}}'
+          source.bytes: '{{json_event.message.get("orig_bytes")}}'
+          destination.bytes: '{{json_event.message.get("resp_bytes")}}'
+          event.duration: '{{json_event.message.get("duration") | float * 1000000000}}' # Zeek duration is in seconds; ECS event.duration is in nanoseconds
+          corelight.conn.state: '{{json_event.message.get("conn_state")}}'
+          corelight.conn.history: '{{json_event.message.get("history")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      # Native Corelight entity enrichment (role / user / location)
+      - set:
+          source.user.name: '{{json_event.message.get("enrichment_orig.user")}}'
+        filter: '{{json_event.message.get("enrichment_orig.user") != None}}'
+      - set:
+          source.user.roles: '{{json_event.message.get("enrichment_orig.role")}}'
+        filter: '{{json_event.message.get("enrichment_orig.role") != None}}'
+      - set:
+          source.geo.name: '{{json_event.message.get("enrichment_orig.city_location")}}'
+        filter: '{{json_event.message.get("enrichment_orig.city_location") != None}}'
+
+  # ----------------------------------------------------------------
+  # dns.log
+  # ----------------------------------------------------------------
+  set_dns_fields:
+    actions:
+      - set:
+          dns.question.name: '{{json_event.message.get("query")}}'
+          dns.question.type: '{{json_event.message.get("qtype_name")}}'
+          dns.response_code: '{{json_event.message.get("rcode_name")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          dns.answers: >
+            [
+                {% for item in json_event.message.get("answers") %}
+                {"data": "{{item}}"},
+                {% endfor %}
+            ]
+        filter: '{{json_event.message.get("answers") != None}}'
+
+  # ----------------------------------------------------------------
+  # http.log
+  # ----------------------------------------------------------------
+  set_http_fields:
+    actions:
+      - set:
+          url.domain: '{{json_event.message.get("host")}}'
+          url.path: '{{json_event.message.get("uri")}}'
+          http.request.method: '{{json_event.message.get("method")}}'
+          http.response.status_code: '{{json_event.message.get("status_code")}}'
+          http.request.body.bytes: '{{json_event.message.get("request_body_len")}}'
+          http.response.body.bytes: '{{json_event.message.get("response_body_len")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          user_agent.original: '{{json_event.message.get("user_agent")}}'
+        filter: '{{json_event.message.get("user_agent") != None}}'
+
+  # ----------------------------------------------------------------
+  # ssl.log
+  # ----------------------------------------------------------------
+  set_ssl_fields:
+    actions:
+      - set:
+          tls.version: '{{json_event.message.get("version")}}'
+          tls.cipher: '{{json_event.message.get("cipher")}}'
+          tls.curve: '{{json_event.message.get("curve")}}'
+          tls.client.server_name: '{{json_event.message.get("server_name")}}'
+          tls.client.ja3: '{{json_event.message.get("ja3")}}'
+          tls.server.ja3s: '{{json_event.message.get("ja3s")}}'
+          tls.established: '{{json_event.message.get("established")}}'
+          corelight.ssl.validation_status: '{{json_event.message.get("validation_status")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+
+  # ----------------------------------------------------------------
+  # files.log
+  # ----------------------------------------------------------------
+  set_files_fields:
+    actions:
+      - set:
+          file.hash.md5: '{{json_event.message.get("md5")}}'
+          file.hash.sha1: '{{json_event.message.get("sha1")}}'
+          file.hash.sha256: '{{json_event.message.get("sha256")}}'
+          file.mime_type: '{{json_event.message.get("mime_type")}}'
+          file.size: '{{json_event.message.get("seen_bytes")}}'
+          corelight.files.source: '{{json_event.message.get("source")}}'
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # suricata_corelight (IDS alerts)
+  # Note: alert fields are flat keys ("alert.signature", not nested).
+  # ----------------------------------------------------------------
+  set_suricata_fields:
+    actions:
+      - set:
+          rule.name: '{{json_event.message.get("alert.signature")}}'
+          rule.category: '{{json_event.message.get("alert.category")}}'
+          rule.id: '{{json_event.message.get("alert.signature_id")}}'
+          event.severity: '{{json_event.message.get("alert.severity")}}'
+          action.name: '{{json_event.message.get("alert.action")}}'
+          network.protocol: '{{json_event.message.get("service")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.kind: "alert"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # intel.log (Zeek Intelligence Framework matches)
+  # ----------------------------------------------------------------
+  set_intel_fields:
+    actions:
+      - set:
+          threat.indicator.name: '{{json_event.message.get("seen.indicator")}}'
+          threat.indicator.type: '{{json_event.message.get("seen.indicator_type")}}'
+          corelight.intel.where: '{{json_event.message.get("seen.where")}}'
+          corelight.intel.sources: '{{json_event.message.get("sources")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.kind: "enrichment"
+          event.category: ["threat"]
+          event.type: ["indicator"]
+
+  # ----------------------------------------------------------------
+  # notice.log
+  # ----------------------------------------------------------------
+  set_notice_fields:
+    actions:
+      - set:
+          rule.name: '{{json_event.message.get("note")}}'
+          message: '{{json_event.message.get("msg")}}'
+          corelight.notice.sub: '{{json_event.message.get("sub")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.kind: "alert"
+          event.type: ["info"]
