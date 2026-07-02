@@ -71,7 +71,10 @@ pipeline:
 
           PROCESS_HEADER: '^(%{WORD}: )?(?:\s*)(?:%{WORD:log_lvl}) %{PROCESS_WITH_PID}' # e.g. `error hostd[2099655]` or `hostd: error hostd[2099655]`
           PROCESS_WITH_PID: '%{DATA:process}\[%{NUMBER:pid}\]' # e.g. `hostd[2099655]`
-          PROCESS_ORIGINATOR: '\[%{WORD}\@%{NUMBER}( sub=%{NOTSPACE:sub})?( opID=%{NOTSPACE:op_id})?( sid=%{NOTSPACE})?( user=(%{WORD:user_domain}\\%{USERNAME:username}|%{USERNAME:username}(\:%{NOTSPACE:user_domain})?))?%{DATA}?\]' # e.g. `[Originator@6876 sub=Vimsvc.ha-eventmgr]` or `[Originator@6876 user=domain\username]`
+          PROCESS_ORIGINATOR: '\[%{WORD}\@%{NUMBER}( sub=%{ORIGINATOR_SUB})?( opID=%{NOTSPACE:op_id})?( sid=%{NOTSPACE})?( user=%{ORIGINATOR_USER})?%{DATA}?\]' # e.g. `[Originator@6876 sub=Vimsvc.ha-eventmgr]` or `[Originator@6876 user=vpxuser:DOMAIN\username]`
+          ORIGINATOR_SUB: "%{ORIGINATOR_SUB_VMX}|%{NOTSPACE:sub}"
+          ORIGINATOR_SUB_VMX: 'Vmsvc\.vm\:%{NOTSPACE:vmx_path}'
+          ORIGINATOR_USER: '(%{USER:username}\:%{NOTSPACE:source_user_domain}\\%{USER:source_user_name})|(%{WORD:user_domain}\\%{USERNAME:username})|(%{USERNAME:username}(\:%{NOTSPACE:user_domain})?)'
           PROCESS_HEADER_WITH_ORIGINATOR: "%{PROCESS_HEADER} %{PROCESS_ORIGINATOR}" # e.g. `error hostd[2099655] [Originator@6876 sub=Vimsvc.ha-eventmgr]`
 
           ## This is log pattern to work with ssh process. Based on `DEFAULT_PROCESS_LOG_WITH_ADDITIONAL_INFO`
@@ -232,7 +235,8 @@ stages:
           source.domain: "{{parsed_event.result.source_domain}}"
           source.ip: "{{parsed_event.result.ip_address}}"
           source.port: "{{parsed_event.result.port}}"
-          source.user.name: "{{parsed_event.result.source_username}}"
+          source.user.name: "{{parsed_event.result.source_username or parsed_event.result.source_user_name}}"
+          source.user.domain: "{{parsed_event.result.source_user_domain}}"
           user_agent.original: "{{parsed_event.result.user_agent | trim}}"
           file.path: "{{parsed_event.result.filename | dirname}}"
           file.name: "{{parsed_event.result.filename | basename}}"
@@ -247,6 +251,13 @@ stages:
           process.name: "{{parsed_event.result.process}}"
           vmware.esxi.operation.id: "{{parsed_event.result.op_id}}"
           vmware.esxi.log.category: "{{parsed_event.result.auth_category or parsed_event.result.log_category}}"
+
+      - set:
+          file.path: "{{parsed_event.result.vmx_path}}"
+          vmware.esxi.vm.name: "{{parsed_event.result.vmx_path.split('.', 1)[0] | basename}}"
+          event.category: ["configuration"]
+          event.type: ["info"]
+        filter: "{{parsed_event.result.get('vmx_path') != None}}"
 
       - set:
           log.level: "{{parsed_event.result.log_lvl or parsed_event.result.network_category | lower }}"

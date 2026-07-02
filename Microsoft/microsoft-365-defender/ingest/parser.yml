@@ -46,6 +46,13 @@ pipeline:
       properties:
         input_field: "{{json_event.message.properties.AuthenticationDetails}}"
         output_field: "data"
+  - name: parse_attack_techniques
+    filter: '{{json_event.message.get("properties", {}).get("AttackTechniques") not in [None, ""]}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json_event.message.properties.AttackTechniques}}"
+        output_field: "techniques"
   - name: set_common_fields
   - name: set_process_events
     filter: '{{json_event.message.get("category") != "AdvancedHunting-DeviceProcessEvents"}}'
@@ -195,6 +202,7 @@ stages:
           action.properties.IsInitiatingProcessRemoteSession: "{{json_event.message.properties.IsInitiatingProcessRemoteSession}}"
           action.properties.SourceComputerId: "{{json_event.message.properties.AdditionalFields.SourceComputerId}}"
           action.properties.SourceComputerObjectGuid: "{{json_event.message.properties.AdditionalFields.SourceComputerObjectGuid}}"
+          action.properties.WasRemediated: "{{parse_additional_fields.fields.WasRemediated}}"
           microsoft.defender.activity.objects: "{{json_event.message.properties.ActivityObjects}}"
           microsoft.defender.activity.type: "{{json_event.message.properties.ActivityType}}"
           microsoft.defender.alert.id: "{{json_event.message.properties.AlertId}}"
@@ -488,6 +496,23 @@ stages:
           process.name: "{{parse_additional_fields.fields.ImageFile.Name}}"
           process.parent.pid: "{{parse_additional_fields.fields.ParentProcess.ProcessId}}"
           process.parent.command_line: "{{parse_additional_fields.fields.ParentProcess.CommandLine}}"
+
+      - set:
+          event.action: "{{parse_additional_fields.fields.DeliveryAction}}"
+          action.properties.DeliveryLocation: "{{parse_additional_fields.fields.DeliveryLocation}}"
+        filter: '{{parse_additional_fields.fields.get("DeliveryAction") != None or parse_additional_fields.fields.get("DeliveryLocation") != None}}'
+
+      - set:
+          microsoft.defender.threat.names: "{{parse_additional_fields.fields.Threats}}"
+        filter: '{{parse_additional_fields.fields.get("Threats") != None}}'
+
+      - set:
+          microsoft.defender.threat.intelligence: "{{parse_additional_fields.fields.ThreatIntelligence}}"
+        filter: '{{parse_additional_fields.fields.get("ThreatIntelligence") != None}}'
+
+      - set:
+          threat.technique.name: "{{parse_attack_techniques.techniques}}"
+        filter: '{{parse_attack_techniques.get("techniques") != None}}'
 
   set_alert_info_fields:
     actions:
