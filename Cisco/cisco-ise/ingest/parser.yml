@@ -147,7 +147,7 @@ stages:
           event.category: ["network"]
           host.name: "{{parsed_kv_sentence.result.get('host-name') or parsed_kv_sentence.result.get('Subject Alternative Name - Other Name') or parsed_kv_sentence.result.get('cisco-av-pair-dhcp-option-host-name') or parsed_kv_sentence.result.get('Subject Alternative Name')}}"
           host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System') or parsed_kv_sentence.result.get('OperatingSystem')}}"
-          user.name: '{{parsed_kv_sentence.result.get("AdminName") or parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("UserName")}}'
+          user.name: '{{parsed_kv_sentence.result.get("AdminName") or parsed_kv_sentence.result.get("Device login username") or (parsed_kv_sentence.result.get("UserName") if not (parsed_kv_sentence.result.get("UserName", "") | re_match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")) else none)}}'
           source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
           source.ip: '{{parsed_kv_sentence.result.get("AdminIPAddress") or parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAS-IP-Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address") or parsed_kv_sentence.result.get("EndpointIPAddress")}}'
           destination.ip: '{{parsed_kv_sentence.result.get("DestinationIPAddress")}}'
@@ -212,6 +212,10 @@ stages:
       - set:
           source.mac: "{{parsed_kv_response.result.get('User-Name') | to_mac_address}}"
         filter: "{{ parsed_kv_response.result.get('User-Name', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$') }}"
+
+      - set:
+          source.mac: "{{parsed_kv_sentence.result.get('UserName') | to_mac_address}}"
+        filter: "{{ parsed_kv_sentence.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$') }}"
 
       - set:
           source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
@@ -305,8 +309,12 @@ stages:
               failure
             {%- endif -%}
           source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
-          user.name: "{{parsed_kv_sentence.result.get('UserName') or parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
+          user.name: "{{(parsed_kv_sentence.result.get('UserName') if not (parsed_kv_sentence.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')) else none) or parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
         filter: '{{"Authentication" in parsed_kv_sentence.result.get("AuthenticationStatus")}}'
+
+      - set:
+          source.mac: "{{parsed_kv_sentence.result.get('UserName') | to_mac_address}}"
+        filter: "{{ 'Authentication' in parsed_kv_sentence.result.get('AuthenticationStatus') and (parsed_kv_sentence.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')) }}"
 
       - set:
           event.category: ["authentication"]
