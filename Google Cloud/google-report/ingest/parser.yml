@@ -39,6 +39,8 @@ pipeline:
     filter: '{{ json_event.message.id.applicationName == "chrome"}}'
   - name: set_parameters_fields
     filter: '{{ json_event.message.events[0].name == "SUSPEND_USER"}}'
+  - name: set_user_accounts_fields
+    filter: '{{ json_event.message.id.applicationName == "user_accounts"}}'
 
 stages:
   set_ecs_fields:
@@ -71,7 +73,7 @@ stages:
         filter: "{{json_event.message.events|length == 1}}"
 
       - set:
-          user.target.email: "{{(json_event.message.events[0].parameters | selectattr('name', 'in', ['USER_EMAIL', 'affected_email_address']) | first).value}}"
+          user.target.email: "{{(json_event.message.events[0].parameters | selectattr('name', 'in', ['member_id', 'USER_EMAIL', 'affected_email_address']) | first).value}}"
         filter: "{{json_event.message.events|length > 0}}"
 
       - set:
@@ -90,6 +92,16 @@ stages:
             {% set events = events.append({"name": event.name, "type": event.type}) %}
             {% endfor %}
             {{ events }}
+
+      - set:
+          google.report.parameters_all: >
+            {%- set parameters = [] -%}
+            {%- for event in json_event.message.events -%}
+              {%- for param in event.parameters -%}
+                {%- set parameters = parameters.append(param) -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {{ parameters }}
 
   set_drive_fields:
     actions:
@@ -155,6 +167,11 @@ stages:
             {{mails}}
             {%- endif -%}
 
+      - set:
+          google.report.drive.old_classification: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "old_value" %}{{param.multiValue}}{% endif %}{% endfor %}'
+          google.report.drive.new_classification: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "new_value" %}{{param.multiValue}}{% endif %}{% endfor %}'
+        filter: '{{ json_event.message.events[0].name == "label_field_changed" and (json_event.message.events[0].parameters | selectattr("name", "==", "field") | first).value == "Classification"  }}'
+
   set_token_fields:
     actions:
       - set:
@@ -165,6 +182,17 @@ stages:
 
           google.report.token.type: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "client_type" %}{{param.value}}{% endif %}{% endfor %}'
           google.report.token.app_name: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "app_name" %}{{param.value}}{% endif %}{% endfor %}'
+
+      # https://developers.google.com/workspace/admin/reports/v1/appendix/activity/token
+      - set:
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: "{{final.event.action == 'authorize'}}"
+
+      - set:
+          event.type: ["end"]
+          event.outcome: "success"
+        filter: "{{final.event.action == 'revoke'}}"
 
   set_meet_fields:
     actions:
@@ -185,7 +213,7 @@ stages:
       - set:
           event.category: ["iam"]
           event.type: ["admin"]
-          user.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "member_id" %}{{param.value}}{% endif %}{% endfor %}'
+          user.target.email: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "member_id" %}{{param.value}}{% endif %}{% endfor %}'
           user.group.id: '{% for param in json_event.message.events[0].parameters %}{% if param.name == "group_id" %}{{param.value}}{% endif %}{% endfor %}'
 
   set_chat_fields:
@@ -255,6 +283,10 @@ stages:
                 {%- endif -%}
             {% endfor %}
             {{ types|unique|list }}
+
+      - set:
+          action.name: "{{ (json_event.message.events[0].parameters | selectattr('name', '==', 'INVESTIGATION_ACTION') | first).value }}"
+          google.report.rule.data_source: "{{ (json_event.message.events[0].parameters | selectattr('name', '==', 'INVESTIGATION_DATA_SOURCE') | first).value }}"
 
   set_parameters_fields:
     actions:
@@ -353,6 +385,7 @@ stages:
       - set:
           event.category: ["authentication"]
           event.type: ["start"]
+          event.outcome: "success"
         filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGIN_EVENT", "CHROMEOS_AFFILIATED_LOGIN"] }}'
 
       - set:
@@ -364,6 +397,7 @@ stages:
       - set:
           event.category: ["authentication"]
           event.type: ["end"]
+          event.outcome: "success"
         filter: '{{ json_event.message.events[0].name in ["CHROME_OS_LOGOUT_EVENT", "CHROMEOS_AFFILIATED_LOCK_SUCCESS", "CHROMEOS_AFFILIATED_LOGOUT"] }}'
 
       - set:
@@ -415,3 +449,17 @@ stages:
           event.category: ["iam"]
           event.type: ["creation"]
         filter: '{{ json_event.message.events[0].name == "CHROME_OS_ADD_USER"}}'
+
+  set_user_accounts_fields:
+    actions:
+      - set:
+          email.cc.address: >
+            {%- set result = [] -%}
+            {%- for event in json_event.message.events -%}
+              {%- for param in event.parameters -%}
+                {%- if param.name == 'email_forwarding_destination_address' -%}
+                  {%- set result = result.append(param.value) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {%- if result | length > 0 -%}{{ result }}{%- endif -%}

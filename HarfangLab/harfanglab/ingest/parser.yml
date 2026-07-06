@@ -1,5 +1,5 @@
 name: harfanglab
-ignored_values: [None, "", "-"]
+ignored_values: [None, ""]
 pipeline:
   - name: json_event
     external:
@@ -124,6 +124,9 @@ pipeline:
 
   - name: alert_antivirus_info
     filter: "{{json_event.message.alert_subtype == 'antivirus'}}"
+
+  - name: alert_firewall_self_protection_info
+    filter: "{{json_event.message.alert_subtype == 'firewall_self_protection'}}"
 
   - name: injectedthread_info
     filter: "{{json_event.message.log_type == 'injectedthread'}}"
@@ -299,6 +302,15 @@ stages:
       - set:
           destination.port: "{{json_event.message.dport}}"
 
+      - set:
+          dns.answers: >
+            [
+              {%- for item in json_event.message.dnames -%}
+                {"class": "IN", "type": "PTR", "name": "{{json_event.message.daddr.split('.') | reverse | join('.')}}.in-addr.arpa", "data": "{{item}}"},
+              {%- endfor -%}
+            ]
+        filter: "{{json_event.message.dnames | length > 0}}"
+
       - translate:
         dictionary:
           "in": "inbound"
@@ -406,6 +418,13 @@ stages:
           action.properties.Path: "{{json_event.message.script_path}}"
           process.executable: "{{json_event.message.process_image_path}}"
 
+          file.hash.md5: "{{json_event.message.hashes.md5}}"
+          file.hash.sha256: "{{json_event.message.hashes.sha256}}"
+          file.hash.sha1: "{{json_event.message.hashes.sha1}}"
+
+          harfanglab.signature.signed_catalog: "{{json_event.message.signature_info.signed_catalog}}"
+          harfanglab.signature.signed_authenticode: "{{json_event.message.signature_info.signed_authenticode}}"
+
   alert_info:
     actions:
       - set:
@@ -415,6 +434,7 @@ stages:
           rule.name: "{{json_event.message.rule_name}}"
           rule.category: "{{json_event.message.alert_type}}"
           rule.id: "{{json_event.message.rule_id}}"
+          harfanglab.agent.dns_domain_name: "{{json_event.message.agent.dnsdomainname}}"
           harfanglab.alert_time: "{{json_event.message.alert_time}}"
           harfanglab.alert_unique_id: "{{json_event.message.alert_unique_id}}"
           harfanglab.alert_subtype: "{{json_event.message.alert_subtype}}"
@@ -424,6 +444,18 @@ stages:
           harfanglab.process.powershell.command: "{{json_event.message.details_powershell.PowershellCommand}}"
           harfanglab.process.powershell.script_path: "{{json_event.message.details_powershell.PowershellScriptPath}}"
           harfanglab.threat_key: "{{json_event.message.threat_key}}"
+
+      - translate:
+        dictionary:
+          0: "UNKNOWN"
+          1: "SUCCESS"
+          2: "FAIL"
+          3: "CANNOT_QUARANTINE"
+          4: "NO_ACTION"
+          5: "DELAYED"
+        mapping:
+          json_event.message.quarantine: harfanglab.quarantine_label
+        filter: "{{json_event.message.quarantine | int(-1) > -1}}"
 
   alert_process_info:
     actions:
@@ -502,10 +534,6 @@ stages:
         filter: "{{json_event.message.event_id == 4625}}"
 
       - set:
-          user.name: "{{json_event.message.event_data.SubjectUserName}}"
-          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
-          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
-          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
           action.properties.DeviceID: "{{json_event.message.event_data.DeviceId}}"
           action.properties.ASsecurityintelligencecreationtime: "{{json_event.message.event_data.get('AS security intelligence creation time')}}"
           action.properties.ASsecurityintelligenceversion: "{{json_event.message.event_data.get('AS security intelligence version')}}"
@@ -530,6 +558,7 @@ stages:
           action.properties.CertThumbprint: "{{json_event.message.event_data.get('CertThumbprint')}}"
           action.properties.ClientProcessId: "{{json_event.message.event_data.get('ClientProcessId')}}"
           action.properties.ClientProcessStartKey: "{{json_event.message.event_data.get('ClientProcessStartKey')}}"
+          action.properties.Destination: "{{json_event.message.event_data.get('Destination')}}"
           action.properties.DetectionID: "{{json_event.message.event_data.get('Detection ID')}}"
           action.properties.DetectionTime: "{{json_event.message.event_data.get('Detection Time')}}"
           action.properties.DetectionUser: "{{json_event.message.event_data.get('Detection User')}}"
@@ -670,6 +699,7 @@ stages:
           action.properties.VerificationError: "{{json_event.message.event_data.get('VerificationError')}}"
           action.properties.VirtualAccount: "{{json_event.message.event_data.get('VirtualAccount')}}"
           action.properties.WorkstationName: "{{json_event.message.event_data.get('WorkstationName')}}"
+          action.properties.Workstation: "{{json_event.message.event_data.get('Workstation')}}"
           action.properties.ClassName: "{{json_event.message.event_data.get('ClassName')}}"
           action.properties.param0: "{{json_event.message.event_data.get('param0')}}"
           action.properties.param10: "{{json_event.message.event_data.get('param10')}}"
@@ -699,6 +729,26 @@ stages:
         filter: "{{json_event.message.event_data != None}}"
 
       - set:
+          user.name: "{{json_event.message.event_data.AccountName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.AccountName != '-'}}"
+
+      - set:
+          user.name: "{{json_event.message.event_data.SubjectUserName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.SubjectUserName != '-'}}"
+
+      - set:
+          user.domain: "{{json_event.message.event_data.SubjectDomainName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.SubjectDomainName != '-'}}"
+
+      - set:
+          user.target.name: "{{json_event.message.event_data.TargetUserName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.TargetUserName != '-'}}"
+
+      - set:
+          user.target.domain: "{{json_event.message.event_data.TargetDomainName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.TargetDomainName != '-'}}"
+
+      - set:
           action.properties.MemberName: "{{parse_member_name.message.first_name + ' ' + parse_member_name.message.last_name}}"
         filter: "{{(parse_member_name.message.first_name | length > 0) and (parse_member_name.message.last_name | length > 0)}}"
 
@@ -709,6 +759,10 @@ stages:
       - set:
           source.ip: "{{json_event.message.event_data.IpAddress}}"
         filter: "{{json_event.message.event_data.IpAddress | is_ipaddress}}"
+
+      - set:
+          source.ip: "{{json_event.message.event_data.CallingStationID}}"
+        filter: "{{json_event.message.event_data.CallingStationID | is_ipaddress}}"
 
       - set:
           user.name: "{{json_event.message.eventlog.event_data.SubjectUserName}}"
@@ -739,6 +793,7 @@ stages:
           action.properties.CertThumbprint: "{{json_event.message.eventlog.event_data.get('CertThumbprint')}}"
           action.properties.ClientProcessId: "{{json_event.message.eventlog.event_data.get('ClientProcessId')}}"
           action.properties.ClientProcessStartKey: "{{json_event.message.eventlog.event_data.get('ClientProcessStartKey')}}"
+          action.properties.Destination: "{{json_event.message.eventlog.event_data.get('Destination')}}"
           action.properties.DetectionID: "{{json_event.message.eventlog.event_data.get('Detection ID')}}"
           action.properties.DetectionTime: "{{json_event.message.eventlog.event_data.get('Detection Time')}}"
           action.properties.DetectionUser: "{{json_event.message.eventlog.event_data.get('Detection User')}}"
@@ -911,6 +966,10 @@ stages:
       - set:
           source.ip: "{{json_event.message.eventlog.event_data.IpAddress}}"
         filter: "{{json_event.message.eventlog.event_data.IpAddress | is_ipaddress}}"
+
+      - set:
+          url.original: "{{json_event.message.event_data.Destination}}"
+        filter: "{{json_event.message.event_data.Destination != None and json_event.message.event_data.Destination.startswith('http')}}"
 
   authentication_info:
     actions:
@@ -1095,6 +1154,16 @@ stages:
           harfanglab.av.detection.signature_name: "{{json_event.message.av_detection_details.signature_name}}"
           harfanglab.av.detection.kind: "{{json_event.message.av_detection_details.kind}}"
           harfanglab.av.detection.file_type: "{{json_event.message.av_detection_details.file_type}}"
+
+  alert_firewall_self_protection_info:
+    actions:
+      - set:
+          harfanglab.firewall_self_protection.filter_description: "{{json_event.message.firewall_self_protection.filter_description}}"
+          harfanglab.firewall_self_protection.filter_id: "{{json_event.message.firewall_self_protection.filter_id}}"
+          harfanglab.firewall_self_protection.filter_name: "{{json_event.message.firewall_self_protection.filter_name}}"
+          harfanglab.firewall_self_protection.provider_description: "{{json_event.message.firewall_self_protection.provider_description}}"
+          harfanglab.firewall_self_protection.provider_name: "{{json_event.message.firewall_self_protection.provider_name}}"
+          harfanglab.firewall_self_protection.provider_service_name: "{{json_event.message.firewall_self_protection.provider_service_name}}"
 
   injectedthread_info:
     actions:

@@ -30,6 +30,17 @@ pipeline:
         value_sep: ":"
         item_sep: \r\n
 
+  - name: parsed_message_request_client_info
+    filter: "{{parsed_message_kv.result.RequestClientInfo != null}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.result.RequestClientInfo}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: \n\t
+
   - name: parsed_hashes_kv
     description: "Extract fields from hashes field"
     filter: "{{json.event.Hashes != null or json.event.Hash != null}}"
@@ -206,6 +217,15 @@ pipeline:
         input_field: "{{parse_event_2500.event.json_params}}"
         output_field: event
 
+  - name: parse_member_name
+    filter: "{{json.event.get('MemberName') != None }}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{json.event.MemberName}}"
+        output_field: message
+        pattern: "[Cc][Nn]=%{DATA:member_name},%{GREEDYDATA}"
+
   - name: delete_process_name
   - name: main_stage
   - name: set_action_properties
@@ -341,6 +361,9 @@ stages:
         filter: "{{final.destination.domain != null}}"
 
       - set:
+          process.name: "{{parsed_message_request_client_info.result.Process}}"
+
+      - set:
           process.name: "{{final.process.executable | basename}}"
         filter: "{{final.process.executable != null and final.process.name == null}}"
 
@@ -467,12 +490,11 @@ stages:
           action.properties.New Value: '{{ json.event.get("New Value") }}'
           action.properties.NewValue: '{{ json.event.get("NewValue") }}'
           action.properties.Old Value: '{{ json.event.get("Old Value") }}'
-          action.properties.NewUAC: '{{ json.event.get("NewUacValue") }}'
-          action.properties.OldUAC: '{{ json.event.get("OldUacValue") }}'
           action.properties.SentUpdateServer: '{{ json.event.get("Sent UpdateServer") }}'
           action.properties.ServiceFileName: '{{ json.event.get("Service File Name") or json.event.ServiceFileName }}'
           action.properties.StatusInformation: '{{ json.event.get("Status Information") }}'
           action.properties.Subject: '{{ json.event.get("Subject") }}'
+          action.properties.TransmittedServices: '{{ json.event.get("TransmittedServices") }}'
 
           action.properties.BytesTotal: "{{json.event.bytesTotal}}"
           action.properties.ConfigurationFile: "{{ json.event.Configuration }}"
@@ -483,7 +505,20 @@ stages:
 
       - set:
           action.properties.OperationType: "{{ patch_5136.event.OperationType }}"
-        filter: "{{ patch_5136.event.get('OperationType') != None }}"
+        filter:
+          "{{ patch_5136.event.get('OperationType') != None }}"
+          # extracting this directly rather than from mapping codes to messages
+      - set:
+          action.properties.UserAccountControl: >
+            {%- set message = json.event.Message -%}
+            {%- set start_idx = message.index('User Account Control:') + 'User Account Control:' | length-%}
+            {%- set end_idx = message.index('User Parameters:', start_idx) -%}
+            {%- set result = [] -%}
+            {%- for item in message[start_idx:end_idx].strip().split('\n') -%}
+              {%- set result = result.append(item.strip()) -%}
+            {%- endfor -%}
+            {{ result }}
+        filter: '{{ "User Account Control:" in json.event.get("Message", "")}}'
 
       - set:
           action.properties.Keywords: "{{ '%d' | format(final.action.properties.Keywords | int) }}"
@@ -517,6 +552,9 @@ stages:
       - set:
           action.properties.AdditionalActionsID: "{{ json.event.get('Additional Actions ID') }}"
           action.properties.AdditionalActionsString: "{{ json.event.get('Additional Actions String') }}"
+
+      - set:
+          action.properties.SubcategoryGuid: "{{ json.event.SubcategoryGuid }}"
 
   action_target:
     actions:
@@ -685,6 +723,10 @@ stages:
           url.original: >
             {% for component in parsed_message_xml.result.AuditBase.ContextComponents.Component   %}{%if "RelyingParty" in component%}{{component["RelyingParty"]}}{% endif %}{% endfor %}
         filter: "{{json.event.SourceName == 'AD FS Auditing'}}"
+
+      - set:
+          user.target.name: "{{parse_member_name.message.member_name}}"
+        filter: "{{json.event.EventID in (4728, 4729)}}" # a member was added/a member was removed
 
   action_name:
     actions:

@@ -27,6 +27,8 @@ pipeline:
 
   - name: set_common_fields
 
+  - name: set_ecs_category
+
 stages:
   set_common_fields:
     actions:
@@ -36,7 +38,7 @@ stages:
           cloud.provider: "Azure"
           cloud.service.name: "Azure EntraId"
 
-          event.code: "{{json_event.message.status.errorCode}}"
+          error.code: "{{json_event.message.status.errorCode}}"
           event.outcome: "{{json_event.message.result}}"
           event.action: "{{json_event.message.activityDisplayName}}"
           error.message: "{{json_event.message.status.failureReason}}"
@@ -78,6 +80,11 @@ stages:
           azure.entraid.properties.resourceId: "{{json_event.message.resourceId}}"
           azure.entraid.properties.appliedConditionalAccessPolicies: "{{json_event.message.appliedConditionalAccessPolicies}}"
           azure.entraid.properties.operationType: "{{json_event.message.operationType}}"
+          azuread.correlationId: "{{json_event.message.correlationId}}"
+
+      # For the backward compatibility with Entra ID format
+      - set:
+          azuread.properties.status.errorCode: "{{json_event.message.status.errorCode}}"
 
       - set:
           user.email: "{{json_event.message.targetResources[0].userPrincipalName}}"
@@ -100,3 +107,113 @@ stages:
           host.name: "{{json_event.message.targetResources[0].displayName}}"
           host.os.name: "{{json_event.message.targetResources[0].operatingSystem}}"
         filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'device'}}"
+
+      - set:
+          service.id: "{{json_event.message.targetResources[0].id}}"
+          service.name: "{{json_event.message.targetResources[0].displayName}}"
+        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'application'}}"
+
+      # action.properties - aligned with azure-ad Event Hub parser
+      - set:
+          action.properties: >
+            [
+            {%- for targetResource in json_event.message.targetResources -%}
+              {%- if targetResource.modifiedProperties != null -%}
+                {%- for modifiedProperty in targetResource.modifiedProperties -%}
+                  {%- if modifiedProperty.displayName != "Included Updated Properties" -%}
+                    {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+              {%- if targetResource.type == "User" and targetResource.userPrincipalName != null -%}
+                {'name': '{{targetResource.userPrincipalName | lower}}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
+              {%- endif -%}
+            {%- endfor -%}
+            ]
+        filter: "{{json_event.message.targetResources | length > 0}}"
+
+      - set:
+          azure.entraid.properties.conditionalAccessPolicy.displayName: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.modifiedProperties != null -%}
+                {%- for prop in item.modifiedProperties -%}
+                  {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
+                    {{(prop.newValue | from_json).displayName}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endfor -%}
+
+          azure.entraid.properties.conditionalAccessPolicy.newState: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.modifiedProperties != null -%}
+                {%- for prop in item.modifiedProperties -%}
+                  {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
+                    {{(prop.newValue | from_json).state}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endfor -%}
+
+          azure.entraid.properties.conditionalAccessPolicy.oldState: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.modifiedProperties != null -%}
+                {%- for prop in item.modifiedProperties -%}
+                  {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.oldValue != null -%}
+                    {{(prop.oldValue | from_json).state}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endfor -%}
+
+        filter: "{{json_event.message.targetResources | length > 0}}"
+
+      # For PIM events, the initiatedBy user is "Azure AD PIM" (the service).
+      # The actual user is in targetResources with type "User".
+      - set:
+          user.name: >
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type == 'User' -%}{{ item.displayName }}{%- endif -%}
+            {%- endfor -%}
+          user.email: >
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type == 'User' -%}{{ item.userPrincipalName }}{%- endif -%}
+            {%- endfor -%}
+          user.id: >
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type == 'User' -%}{{ item.id }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.loggedByService == 'PIM' and json_event.message.targetResources | length > 0}}"
+
+      # azure.entraid.properties.targetServicePrincipalDisplayName - aligned with azure-ad Event Hub parser
+      - set:
+          azure.entraid.properties.targetServicePrincipalDisplayName: "{{json_event.message.targetResources[0].displayName}}"
+        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type == 'ServicePrincipal'}}"
+
+      # azure.entraid.properties.appId - aligned with azure-ad Event Hub parser
+      - set:
+          azure.entraid.properties.appId: >
+            {%- for item in json_event.message.additionalDetails -%}
+              {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
+
+  set_ecs_category:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+
+      - set:
+          event.action: "Sign-in activity"
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{json_event.message.riskLevelDuringSignIn | length > 0}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{json_event.message.status.errorCode | int(-1) == 0}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{json_event.message.status.errorCode | int(-1) > 0}}"

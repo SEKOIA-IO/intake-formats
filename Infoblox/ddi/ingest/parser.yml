@@ -1,11 +1,17 @@
 name: infoblox-ddi
 pipeline:
+  # CEF parsing for Infoblox Data Connector events
+  - name: parsed_cef
+    external:
+      name: cef.parse-cef
+    filter: '{{original.message.startswith("CEF:") and "Data Connector" in original.message}}'
+
   - name: parse_event
     external:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{DNS_FORMERR}|%{DNS_OTHER}|%{DNS_0}|%{DNS_1}|%{DNS_2}|%{DNS_3}|%{DNS_4}|%{DNS_5}|%{DNS_6}|%{DNS_7}|%{DNS_8}|%{DNS_9}|%{DNS_10}|%{DNS_11}|%{DNS_12}|%{DNS_13}|%{DNS_14}"
+        pattern: "%{DNS_FORMERR}|%{DNS_REFUSED}|%{DNS_OTHER}|%{DNS_0}|%{DNS_1}|%{DNS_2}|%{DNS_3}|%{DNS_4}|%{DNS_5}|%{DNS_6}|%{DNS_7}|%{DNS_8}|%{DNS_9}|%{DNS_10}|%{DNS_11}|%{DNS_12}|%{DNS_13}|%{DNS_14}|%{BIND_UPDATE}|%{ADMIN_LOGIN}|%{INTERNAL_SEND}|%{SOCKET_ERROR}|%{STORAGE_OVERFLOW}|%{FAILOVER_PEER}|%{BALANCED_POOL}|%{BALANCING_POOL}"
         custom_patterns:
           QUERY_FLAGS: "%{QUERY_FLAGS_RD:flags_rd}%{QUERY_FLAGS_EDNS:flags_edns}?%{QUERY_FLAGS_TCP:flags_tcp}?%{QUERY_FLAGS_DNSSEC:flags_dnssec}?%{QUERY_FLAGS_CD:flags_cd}?%{QUERY_FLAGS_DNS_SERVER_COOKIE}?%{QUERY_FLAGS_DNS_SERVER_COOKIE_WITHOUT_VALID_SERVER}?"
           QUERY_FLAGS_RD: '[\+\-]'
@@ -42,48 +48,96 @@ pipeline:
           # Other patterns
 
           ## For DNS message like:
-          ## FORMERR resolving 'test.testing.io/AAAA/IN': 192.168.1.136#53
+          ## FORMERR resolving 'host.example.test/AAAA/IN': 198.51.100.136#53
           DNS_FORMERR: "%{WORD:event_action} resolving '%{DATA:dns_question_name}/%{DATA:dns_question_type}/%{DATA:dns_question_class}': %{IP:destination_ip}#%{NUMBER:destination_port}"
 
+          ## For DNS message like:
+          ## REFUSED unexpected RCODE resolving 'maps.example.com/A/IN': 203.0.113.99#53
+          DNS_REFUSED: "%{WORD:event_action} unexpected RCODE resolving '%{DATA:dns_question_name}/%{DATA:dns_question_type}/%{DATA:dns_question_class}': %{IP:destination_ip}#%{NUMBER:destination_port}"
+
           ## For other message like:
-          ## r-l-e:192.168.1.113,Fixed,P76984,c4:d0:e3:b4:08:4d,1732119022,1732291822,,$
+          ## r-l-e:198.51.100.113,Fixed,LEASE001,00:11:22:33:44:55,1732119022,1732291822,,$
           DNS_OTHER: "r-l-e:%{IP:client_ip},%{DATA:infoblox_nios_log_dns_category},%{DATA:infoblox_nios_log_dns_client_hostname},%{MAC:client_mac},%{NUMBER:infoblox_nios_log_dns_lease_start},%{NUMBER:infoblox_nios_log_dns_lease_end},%{GREEDYDATA:infoblox_nios_log_dns_message}"
 
+          ## For bind update message like:
+          ## bind update on 192.0.2.27 from DHCP-FAILOVER(1770103776p) rejected: incoming update is less critical than outgoing update
+          BIND_UPDATE: "bind update on %{IP:client_ip} from %{DATA:infoblox_nios_log_dns_source} rejected: %{GREEDYDATA:infoblox_nios_log_dns_message}"
+
+          ## For admin login message like:
+          ## 2026-03-02 16:41:03.302Z [adminsec]: Login_Allowed - - to=AdminConnector ip=192.0.2.50 auth=LOCAL group=G-ADMIN apparently_via=API
+          ADMIN_LOGIN: "%{TIMESTAMP_ISO8601:_tmp_admin_timestamp} \\[%{WORD:infoblox_nios_log_auth_category}\\]: %{WORD:event_action} - - to=%{DATA:infoblox_nios_log_auth_connector} ip=%{IP:client_ip} auth=%{DATA:infoblox_nios_log_auth_method} group=%{DATA:infoblox_nios_log_auth_group} apparently_via=%{GREEDYDATA:infoblox_nios_log_auth_via}"
+
+          ## For internal_send error message like:
+          ## internal_send: 192.0.2.231#53: Invalid argument
+          INTERNAL_SEND: "internal_send: %{IP:destination_ip}#%{NUMBER:destination_port}: %{GREEDYDATA:infoblox_nios_log_dns_message}"
+
+          ## For socket error message like:
+          ## socket.c:1771: unexpected error:
+          SOCKET_ERROR: "socket\\.c:%{NUMBER:infoblox_nios_log_line_number}: %{GREEDYDATA:infoblox_nios_log_dns_message}"
+
+          ## For storage overflow message like:
+          ## Log file /storage/reporting-capture-data/captured-dns-ns1-1771869582-1771869642.gz was deleted cause of logs directory overflow.
+          STORAGE_OVERFLOW: "%{DATA:infoblox_nios_log_file_type} file %{DATA:file_path} was deleted cause of %{GREEDYDATA:infoblox_nios_log_dns_message}"
+
+          ## For DHCP failover peer message like:
+          ## failover peer DHCP-FAILOVER(1770103776p): 1 leases added to send queue from pool 563a3ae5f670 192.0.2.64/28
+          FAILOVER_PEER: "failover peer %{DATA:infoblox_nios_log_dhcp_failover_peer}: %{NUMBER:infoblox_nios_log_dhcp_lease_count} leases added to send queue from pool %{DATA:infoblox_nios_log_dhcp_pool} %{GREEDYDATA:infoblox_nios_log_dhcp_subnet}"
+
+          ## For balanced pool message like:
+          ## balanced pool 563a3ae5f670 192.0.2.64/28  total 11  free 0  backup 1  lts 0  max-misbal 0  queue 1
+          BALANCED_POOL: "balanced pool %{DATA:infoblox_nios_log_dhcp_pool} %{DATA:infoblox_nios_log_dhcp_subnet}  total %{NUMBER:infoblox_nios_log_dhcp_total}  free %{NUMBER:infoblox_nios_log_dhcp_free}  backup %{NUMBER:infoblox_nios_log_dhcp_backup}  lts %{NUMBER:infoblox_nios_log_dhcp_lts}  max-misbal %{NUMBER:infoblox_nios_log_dhcp_max_misbal}  queue %{GREEDYDATA:infoblox_nios_log_dhcp_queue}"
+
+          ## For balancing pool message like:
+          ## balancing pool 563a3ae5f670 192.0.2.64/28  total 11  free 1  backup 0  lts 1  max-own (+/-)0
+          BALANCING_POOL: "balancing pool %{DATA:infoblox_nios_log_dhcp_pool} %{DATA:infoblox_nios_log_dhcp_subnet}  total %{NUMBER:infoblox_nios_log_dhcp_total}  free %{NUMBER:infoblox_nios_log_dhcp_free}  backup %{NUMBER:infoblox_nios_log_dhcp_backup}  lts %{NUMBER:infoblox_nios_log_dhcp_lts}  max-own %{GREEDYDATA:infoblox_nios_log_dhcp_max_own}"
+
   - name: parse_event
-    filter: "{{'REQUEST DHCP' in original.message or 'DHCPREQUEST' in original.message}}"
+    filter: "{{'REQUEST DHCP' in original.message or 'DISCOVER DHCP' in original.message or 'DHCPREQUEST' in original.message or 'DHCPDISCOVER' in original.message or 'DHCPINFORM' in original.message}}"
     external:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{DHCP_1}|%{DHCP_2}|%{DHCP_3}|%{DHCP_4}|%{DHCP_5}|%{DHCP_6}|%{DHCP_7}|%{DHCP_8}|%{DHCP_9}|%{DHCP_10}|%{DHCP_11}|%{DHCP_12}|%{DHCP_13}|%{DHCP_OTHER}"
+        pattern: "%{DHCP_1}|%{DHCP_2}|%{DHCP_3}|%{DHCP_4}|%{DHCP_5}|%{DHCP_6}|%{DHCP_7}|%{DHCP_8}|%{DHCP_9}|%{DHCP_10}|%{DHCP_11}|%{DHCP_12}|%{DHCP_13}|%{DHCP_INFORM}|%{DHCP_OTHER_CIRCUIT_LINK}|%{DHCP_OTHER_LINK}|%{DHCP_OTHER}"
         custom_patterns:
-          DHCP_1: '%{WORD:event_action} for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\) from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
-          DHCP_2: '%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
-          DHCP_3: '%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}'
-          DHCP_4: '%{WORD:event_action} for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\) from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{GREEDYDATA:infoblox_nios_log_dhcp_uid}'
-          DHCP_5: '%{WORD:event_action} for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\) from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
-          DHCP_6: '%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
-          DHCP_7: '%{WORD:event_action} for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\) from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}'
-          DHCP_8: "%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}"
-          DHCP_9: '%{WORD:event_action} for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\) from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{GREEDYDATA:infoblox_nios_log_dhcp_trans_id}'
-          DHCP_10: "%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{GREEDYDATA:infoblox_nios_log_dhcp_uid}"
-          DHCP_11: "%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{GREEDYDATA:infoblox_nios_log_dhcp_trans_id}"
-          DHCP_12: "%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name})"
-          DHCP_13: '%{WORD:event_action} for %{IP:client_ip} from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} \(%{GREEDYDATA:infoblox_nios_log_dhcp_request_message}\)'
+          DHCP_1: '%{WORD:event_action}( for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\))? from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
+          DHCP_2: '%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
+          DHCP_3: '%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}'
+          DHCP_4: '%{WORD:event_action}( for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\))? from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{GREEDYDATA:infoblox_nios_log_dhcp_uid}'
+          DHCP_5: '%{WORD:event_action}( for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\))? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
+          DHCP_6: '%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{DATA:infoblox_nios_log_dhcp_uid} \(%{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}\)'
+          DHCP_7: '%{WORD:event_action}( for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\))? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}'
+          DHCP_8: "%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}"
+          DHCP_9: '%{WORD:event_action}( for %{IP:client_ip} \(%{IP:infoblox_nios_log_dhcp_router_ip}\))? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{GREEDYDATA:infoblox_nios_log_dhcp_trans_id}'
+          DHCP_10: "%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id} uid %{GREEDYDATA:infoblox_nios_log_dhcp_uid}"
+          DHCP_11: "%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{GREEDYDATA:infoblox_nios_log_dhcp_trans_id}"
+          DHCP_12: "%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name})"
+          DHCP_13: '%{WORD:event_action}( for %{IP:client_ip})? from %{MAC:client_mac} \(%{DATA:infoblox_nios_log_dhcp_client_hostname}\) via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) TransID %{DATA:infoblox_nios_log_dhcp_trans_id}( \(%{GREEDYDATA:infoblox_nios_log_dhcp_request_message}\))?'
+
+          ## For DHCPINFORM message like:
+          ## DHCPINFORM from 192.0.2.50 via 192.0.2.2 TransID 34df1cdc: not authoritative for subnet 192.0.2.0
+          DHCP_INFORM: "%{WORD:event_action} from %{IP:client_ip} via %{IP:infoblox_nios_log_dhcp_interface_ip} TransID %{DATA:infoblox_nios_log_dhcp_trans_id}: %{GREEDYDATA:infoblox_nios_log_dhcp_request_message}"
 
           # Other patterns
 
-          ## For DHCP message like:
-          ## Option 82: received a REQUEST DHCP packet from relay-agent eth2 with a circuit-id of "1a:02:30:00:00:00:00:76:00:00:00:00:00:00:2a:f0", a remote-id of "0a:44:70:46" for 192.168.1.222 (00:50:56:ae:b3:44) lease time is undefined seconds. (NEW)
+          ## For DHCP like:
+          ## Option 82: received a REQUEST DHCP packet from relay-agent 203.0.113.5 with a circuit-id of "00:04:05:06:07:08", a link-selection of "203.0.113.128", a server-id-override of "203.0.113.129" for 203.0.113.131 (00:11:22:33:44:ee) lease time is undefined seconds. (NEW)
+          DHCP_OTHER_CIRCUIT_LINK: 'Option %{NUMBER}: received a %{DATA:event_action} packet from %{NOTSPACE} %{DATA:infoblox_nios_log_dhcp_relay_interface_name} with a circuit-id of \"%{DATA:infoblox_nios_log_dhcp_circuit_id}\", a link-selection of \"%{DATA:infoblox_nios_log_dhcp_link_selection}\", a server-id-override of \"%{DATA:infoblox_nios_log_dhcp_server_id_override}\" for %{IP:client_ip} \(%{MAC:client_mac}\) %{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}'
+
+          ## For DHCP like:
+          ## Option 82: received a DISCOVER DHCP packet from relay-agent 203.0.113.1 with a link-selection of "203.0.113.0", a server-id-override of "203.0.113.2" for 203.0.113.10 (00:11:22:33:44:dd) lease time is undefined seconds. (NEW)
+          DHCP_OTHER_LINK: 'Option %{NUMBER}: received a %{DATA:event_action} packet from %{NOTSPACE} %{DATA:infoblox_nios_log_dhcp_relay_interface_name} with a link-selection of \"%{DATA:infoblox_nios_log_dhcp_link_selection}\", a server-id-override of \"%{DATA:infoblox_nios_log_dhcp_server_id_override}\" for %{IP:client_ip} \(%{MAC:client_mac}\) %{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}'
+
+          ## For DHCP Option 82 message with circuit-id and remote-id like:
+          ## Option 82: received a REQUEST DHCP packet from relay-agent eth2 with a circuit-id of "01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:10", a remote-id of "0a:0b:0c:0d" for 198.51.100.222 (00:11:22:33:44:66) lease time is undefined seconds. (NEW)
           DHCP_OTHER: 'Option %{NUMBER}: received a %{DATA:event_action} packet from %{NOTSPACE} %{DATA:infoblox_nios_log_dhcp_relay_interface_name} with a circuit-id of \"%{DATA:infoblox_nios_log_dhcp_circuit_id}\", a remote-id of \"%{DATA:infoblox_nios_log_dhcp_remote_id}\" for %{IP:client_ip} \(%{MAC:client_mac}\) %{GREEDYDATA:infoblox_nios_log_dhcp_lease_message}'
 
   - name: parse_event
-    filter: "{{'DHCPACK' in original.message or 'DHCPOFFER' in original.message}}"
+    filter: "{{'DHCPACK' in original.message or 'DHCPOFFER' in original.message or 'DHCPEXPIRE' in original.message}}"
     external:
       name: grok.match
       properties:
         output_field: message
-        pattern: "%{DHCPACK_1}|%{DHCPACK_2}|%{DHCPACK_3}|%{DHCPACK_4}|%{DHCPACK_5}|%{DHCPACK_6}|%{DHCPACK_7}|%{DHCPACK_8}|%{DHCPACK_9}|%{DHCPACK_10}|%{DHCPACK_11}|%{DHCPACK_12}"
+        pattern: "%{DHCPACK_1}|%{DHCPACK_2}|%{DHCPACK_3}|%{DHCPACK_4}|%{DHCPACK_5}|%{DHCPACK_6}|%{DHCPACK_7}|%{DHCPACK_8}|%{DHCPACK_9}|%{DHCPACK_10}|%{DHCPACK_11}|%{DHCPACK_12}|%{DHCPACK_EXPIRE}"
         custom_patterns:
           # Patterns are inspired by
           # https://github.com/elastic/integrations/blob/main/packages/infoblox_nios/data_stream/log/elasticsearch/ingest_pipeline/pipeline_dhcp.yml
@@ -100,6 +154,10 @@ pipeline:
           DHCPACK_11: "%{WORD:event_action} on %{IP:client_ip} to %{MAC:client_mac} via (%{IP:infoblox_nios_log_dhcp_interface_ip}|%{WORD:observer_ingress_interface_name}) relay (%{IP:infoblox_nios_log_dhcp_relay_interface_ip}|%{WORD:infoblox_nios_log_dhcp_relay_interface_name}) lease-duration %{GREEDYDATA:infoblox_nios_log_dhcp_lease_duration}"
           DHCPACK_12: "%{WORD:event_action} to %{IP:client_ip} \\(%{MAC:client_mac}\\) via %{WORD:observer_ingress_interface_name}"
 
+          ## For DHCPEXPIRE message like:
+          ## DHCPEXPIRE on 192.0.2.100 to 00:11:22:33:44:cc
+          DHCPACK_EXPIRE: "%{WORD:event_action} on %{IP:client_ip} to %{MAC:client_mac}"
+
   - name: parse_datetime
     external:
       name: date.parse
@@ -108,9 +166,65 @@ pipeline:
         output_field: result
         format: "%d-%b-%Y %H:%M:%S.%f"
 
+  - name: set_cef_fields
+    filter: '{{original.message.startswith("CEF:") and "Data Connector" in original.message}}'
   - name: set_ecs_fields
 
 stages:
+  set_cef_fields:
+    actions:
+      - set:
+          event.action: "{{parsed_cef.message.DeviceEventClassID}}"
+
+          source.port: "{{parsed_cef.message.spt}}"
+
+          network.transport: "{{parsed_cef.message.proto | lower}}"
+          network.protocol: "{{parsed_cef.message.app | lower}}"
+
+          dns.question.name: "{{parsed_cef.message.destinationDnsDomain}}"
+          dns.question.class: "{{parsed_cef.message.InfobloxDNSQClass}}"
+          dns.question.type: "{{parsed_cef.message.InfobloxDNSQType}}"
+
+          #          TODO: Maybe add this as well?
+          #          infoblox.ddi.dns_view: "{{parsed_cef.message.InfobloxDNSView}}"
+
+          observer.vendor: "{{parsed_cef.message.DeviceVendor}}"
+          observer.product: "{{parsed_cef.message.DeviceProduct}}"
+          observer.version: "{{parsed_cef.message.DeviceVersion}}"
+
+      - set:
+          source.ip: "{{parsed_cef.message.src}}"
+        filter: "{{parsed_cef.message.src | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_cef.message.dst}}"
+        filter: "{{parsed_cef.message.dst | is_ipaddress}}"
+
+      - set:
+          dns.type: query
+        filter: '{{parsed_cef.message.DeviceEventClassID == "DNS Query"}}'
+
+      - set:
+          dns.type: answer
+          dns.response_code: "{{parsed_cef.message.InfobloxDNSRCode}}"
+        filter: '{{parsed_cef.message.DeviceEventClassID == "DNS Response"}}'
+      #      TODO: all events does not have this, but maybe we should add?
+      #      - set:
+      #          dns.header_flags: >
+      #            [
+      #              {% if parsed_cef.message.InfobloxDNSQFlags is defined and "+" in parsed_cef.message.InfobloxDNSQFlags %}"RD",{% endif %}
+      #            ]
+
+      - set:
+          dns.answers: |
+            [
+                {%- set record = parsed_cef.message.msg.strip().split(' ') -%}
+                {%- if record | length >= 5 -%}
+                  {"name": "{{record[0]}}", "ttl": {{record[1]}}, "class": "{{record[2]}}", "type": "{{record[3]}}", "data": "{{record[4]}}"},
+                {%- endif -%}
+            ]
+        filter: '{{parsed_cef.message.get("msg") != None and parsed_cef.message.msg | length > 0}}'
+
   set_ecs_fields:
     actions:
       - set:

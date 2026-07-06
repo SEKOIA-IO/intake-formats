@@ -32,6 +32,22 @@ pipeline:
         pattern: "::ffff:%{IP:ip}|%{IP:ip}(:%{INT:port})?"
     filter: '{{json_event.message.ClientIPAddress != null and json_event.message.ClientIPAddress != "" and json_event.message.ClientIPAddress != "<null>" }}'
 
+  - name: parse_display_name
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'DisplayName') | list)[0].NewValue}}"
+        output_field: values
+
+  - name: parse_app_id
+    filter: "{{json_event.message.ModifiedProperties | length > 0 and json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list | length == 1}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list)[0].NewValue}}"
+        output_field: values
+
   - name: set_common_fields
   - name: set_office365_fields
   - name: parse_exchange_admin
@@ -70,7 +86,7 @@ pipeline:
     filter: "{{json_event.message.RecordType == 20}}"
   - name: parse_threat_intelligence_url
     filter: "{{json_event.message.RecordType == 41}}"
-  - name: parse_office_email
+  - name: parse_mip_label
     filter: "{{json_event.message.RecordType == 43}}"
 
 stages:
@@ -83,7 +99,7 @@ stages:
           event.reason: "{{json_event.message.ActionName}}"
           organization.id: "{{json_event.message.OrganizationId}}"
           action.id: "{{json_event.message.RecordType}}"
-          user.target.name: "{{json_event.message.TargetUserOrGroupName}}"
+          host.name: "{{json_event.message.DeviceName}}"
           office365.dprm: "{{parse_data.ParsedData.dprm}}"
           office365.eop: "{{parse_data.ParsedData.eop}}"
           office365.enmd: "{{parse_data.ParsedData.enmd}}"
@@ -93,10 +109,27 @@ stages:
           office365.dn: "{{parse_data.ParsedData.dn}}"
           office365.tfph: "{{parse_data.ParsedData.tfph}}"
 
+          # https://learn.microsoft.com/en-us/office/office-365-management-api/office-365-management-activity-api-schema#complex-type-identitytypevaluepair
+          office365.target.displayName: "{{(json_event.message.Target | selectattr('Type', '==', 1) | list | first).get('ID')}}"
+          office365.target.upn: "{{(json_event.message.Target | selectattr('Type', '==', 5) | list | first).get('ID')}}"
+
+      - set:
+          user.target.name: "{{json_event.message.TargetUserOrGroupName or final.office365.target.upn}}"
+        filter: "{{json_event.message.TargetUserOrGroupType != 'SharePointGroup'}}"
+
       - set:
           user.name: "{{json_event.message.UserId.removeprefix('urn:spo:guest#')}}"
           user.id: "{{json_event.message.UserKey}}"
         filter: "{{json_event.message.RecordType not in [40]}}"
+
+      - set:
+          user.id: "{{json_event.message.UserId}}"
+        filter: "{{json_event.message.RecordType not in [40] and json_event.message.UserKey == '00000000-0000-0000-0000-000000000000'}}"
+
+      - set:
+          office365.application.id: "{{ parse_app_id.values[0] }}"
+          office365.application.name: "{{ parse_display_name.values[0] }}"
+        filter: "{{parse_display_name.values | length > 0 and parse_app_id.values | length > 0}}"
 
       - set:
           event.action: "{{json_event.message.Operation.rstrip('.')}}"
@@ -122,6 +155,37 @@ stages:
         filter: "{{(parse_client_ip_address.result.ip | is_ipaddress) and json_event.message.ClientIP == null}}"
 
       - set:
+          threat.enrichments: >
+            {%- set enrichments = [] -%}
+            {%- for threat in parse_data.ParsedData.get("Entities", []) -%}
+              {%- set indicator = {} -%}
+              {%- if threat.get("FirstSeen") -%}
+                {%- set _ = indicator.update({"first_seen": threat.get("FirstSeen")}) -%}
+              {%- endif -%}
+              {%- if threat.get("SenderIP") -%}
+                {%- set _ = indicator.update({"ip": threat.get("SenderIP")}) -%}
+              {%- endif -%}
+              {%- if threat.get("Recipient") -%}
+                {%- set _ = indicator.update({"email": {"address": threat.get("Recipient")}}) -%}
+              {%- endif -%}
+              {%- if threat.get("SourceEntityId")-%}
+                {%- set _ = indicator.update({"url": {"full": threat.get("SourceEntityId")}}) -%}
+              {%- elif threat.get("Url") -%}
+                {%- set _ = indicator.update({"url": {"full": threat.get("Url")}}) -%}
+              {%- endif -%}
+              {%- if threat.get("Source") -%}
+                {%- set _ = indicator.update({"provider": threat.get("Source")}) -%}
+              {%- endif -%}
+              {%- if indicator != {} and indicator.keys() | length > 2 -%}
+                {%- set _ = enrichments.append({"indicator": indicator}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if enrichments | length > 0 -%}
+              {{ enrichments }}
+            {%- endif -%}
+        filter: '{{parse_data.ParsedData.get("Category") == "ThreatManagement"}}'
+
+      - set:
           action.target: "user"
         filter: '{{json_event.message.get("UserId") != None}}'
       - translate:
@@ -135,6 +199,8 @@ stages:
   set_office365_fields:
     actions:
       - set:
+          office365.device.id: "{{json_event.message.DeviceId}}"
+          office365.device.is_managed: "{{json_event.message.IsManagedDevice}}"
           office365.record_id: "{{json_event.message.Id}}"
           office365.record_type: "{{json_event.message.RecordType}}"
           office365.result_status: "{{json_event.message.ResultStatus}}"
@@ -255,7 +321,15 @@ stages:
                 "{{ parameter.Name }}:{{ parameter.Value }}",
               {%- endfor -%}
             ]
+
+          email.to.address: >
+            {%- for parameter in json_event.message.Parameters -%}
+              {%- if parameter.Name == 'ForwardingSmtpAddress' -%}
+              ["{{ parameter.Value.removeprefix('smtp:') }}"]
+              {%- endif -%}
+            {%- endfor -%}
         filter: '{{json_event.message.get("Parameters") != None}}'
+
       - set:
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
@@ -327,6 +401,10 @@ stages:
       - set:
           user.id: "{{json_event.message.LogonUserSid}}"
           office365.exchange.mailbox_guid: "{{json_event.message.MailboxGuid}}"
+          office365.exchange.send_as_user.mailbox_guid: "{{json_event.message.SendAsUserMailboxGuid}}"
+          office365.exchange.send_as_user.smtp: "{{json_event.message.SendAsUserSmtp}}"
+          office365.exchange.mailbox_owner.sid: "{{json_event.message.MailboxOwnerSid}}"
+          office365.exchange.mailbox_owner.upn: "{{json_event.message.MailboxOwnerUPN}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
 
@@ -389,6 +467,8 @@ stages:
 
       - set:
           process.name: "{{json_event.message.ClientProcessName}}"
+          office365.exchange.mailbox_owner.sid: "{{json_event.message.MailboxOwnerSid}}"
+          office365.exchange.mailbox_owner.upn: "{{json_event.message.MailboxOwnerUPN}}"
           office365.exchange.client_version: "{{json_event.message.ClientVersion}}"
           office365.exchange.email.subjects: >
             [
@@ -475,6 +555,8 @@ stages:
           office365.audit.event_source: "{{json_event.message.EventSource}}"
           office365.audit.item_type: "{{json_event.message.ItemType}}"
           office365.audit.platform: "{{json_event.message.Platform}}"
+          office365.audit.search_query: "{{json_event.message.SearchQueryText}}"
+          office365.audit.event_data: "{{json_event.message.EventData}}"
 
           user_agent.original: "{{json_event.message.UserAgent}}"
 
@@ -484,6 +566,8 @@ stages:
           user.id: "{{json_event.message.LogonUserSid}}"
           office365.context.aad_session_id: "{{json_event.message.SessionId}}"
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
+          office365.exchange.mailbox_owner.sid: "{{json_event.message.MailboxOwnerSid}}"
+          office365.exchange.mailbox_owner.upn: "{{json_event.message.MailboxOwnerUPN}}"
 
       - translate:
         dictionary:
@@ -661,6 +745,7 @@ stages:
               }
             ]
           office365.audit.item_type: "{{json_event.message.ItemType}}"
+          office365.audit.platform: "{{json_event.message.Platform}}"
 
   parse_team:
     actions:
@@ -1085,11 +1170,15 @@ stages:
       - set:
           url.original: "{{json_event.message.Url}}"
 
-  parse_office_email:
+  parse_mip_label:
     actions:
       - set:
           email.sender.address: "{{json_event.message.Sender}}"
           email.subject: "{{json_event.message.ItemName}}"
+
       - set:
           email.to.address: "{{json_event.message.Receivers}}"
         filter: '{{json_event.message.get("Receivers", []) != []}}'
+
+      - set:
+          office365.mip.label_name: "{{json_event.message.LabelName}}"

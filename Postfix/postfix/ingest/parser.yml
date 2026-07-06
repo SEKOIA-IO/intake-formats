@@ -7,27 +7,30 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern_key: "{{original.get('log', {}).get('syslog', {}).get('appname') or '-'}}"
+        pattern_key: "{{ (original.get('log', {}).get('syslog', {}).get('appname') or '-') | replace('/','-') }}"
         patterns:
-          "postfix/smtp": "%{POSTFIX_SMTP}"
-          "postfix/smtpd": "%{CASE_POSTFIX_SMTPD}"
-          "postfix/cleanup": "%{CASE_POSTFIX_CLEANUP}"
-          "postfix/scache": "%{POSTFIX_SCACHE}"
+          "opendkim": "%{POSTFIX_OPENDKIM}"
+          "postfix-smtp": "%{POSTFIX_SMTP}"
+          "postfix-smtpd": "%{CASE_POSTFIX_SMTPD}"
+          "postfix-smtps": "%{CASE_POSTFIX_SMTPD}"
+          "postfix-cleanup": "%{CASE_POSTFIX_CLEANUP}"
+          "postfix-scache": "%{POSTFIX_SCACHE}"
           "policyd-spf": "%{POSTFIX_POLCY_SPF}"
-          "postfix/qmgr": "%{POSTFIX_QMGR}"
-          "postfix-nospam/smtpd": "%{POSTFIX_SMTPD}"
-          "postfix-nospam/cleanup": "%{CASE_POSTFIX_CLEANUP}"
-          "postfix-nospam/smtp": "%{POSTFIX_SMTP}"
-          "postfix-nospam/qmgr": "%{POSTFIX_QMGR}"
-          "postfix/pipe": "%{CASE_POSTFIX_LOCAL}"
+          "postfix-qmgr": "%{POSTFIX_QMGR}"
+          "postfix-nospam-smtpd": "%{POSTFIX_SMTPD}"
+          "postfix-nospam-smtps": "%{POSTFIX_SMTPD}"
+          "postfix-nospam-cleanup": "%{CASE_POSTFIX_CLEANUP}"
+          "postfix-nospam-smtp": "%{POSTFIX_SMTP}"
+          "postfix-nospam-qmgr": "%{POSTFIX_QMGR}"
+          "postfix-pipe": "%{CASE_POSTFIX_LOCAL}"
           "spamd": "%{SPAMD}"
           "postgrey": "%{POSTFIX_POSTGREY}"
-          "postfix/local": "%{CASE_POSTFIX_LOCAL}"
-          "postfix/error": "%{POSTFIX_DISCARD}"
-          "postfix/anvil": "%{POSTFIX_ANVIL}"
-          "postfix/pickup": "%{POSTFIX_PICKUP}"
+          "postfix-local": "%{CASE_POSTFIX_LOCAL}"
+          "postfix-error": "%{POSTFIX_DISCARD}"
+          "postfix-anvil": "%{POSTFIX_ANVIL}"
+          "postfix-pickup": "%{POSTFIX_PICKUP}"
           "postfix": "%{POSTFIX}"
-          "-": "%{POSTFIX_POSTGREY}|%{POSTFIX}|%{SPAMD}|%{POSTFIX_POLCY_SPF}|%{POSTFIX_CLEANUP}|%{POSTFIX_QMGR}|%{POSTFIX_SMTPD}"
+          "-": "%{POSTFIX_OPENDKIM}|%{POSTFIX_POSTGREY}|%{POSTFIX}|%{SPAMD}|%{POSTFIX_POLCY_SPF}|%{POSTFIX_CLEANUP}|%{POSTFIX_QMGR}|%{POSTFIX_SMTPD}"
 
         custom_patterns:
           CASE_POSTFIX_LOCAL: "%{POSTFIX_SMTP_RELAY}|%{POSTFIX_KEYVALUE}|%{POSTFIX_WARNING}"
@@ -36,6 +39,7 @@ pipeline:
 
           POSTFIX: "%{POSTFIX_START}|%{POSTFIX_NOQUEUE}|%{POSTFIX_TLS}|%{POSTFIX_SMTP}|%{POSTFIX_PIPE}|%{POSTFIX_POSTSCREEN}|%{POSTFIX_DNSBLOG}|%{POSTFIX_ANVIL}|%{POSTFIX_DISCARD}|%{POSTFIX_PICKUP}|%{POSTFIX_TLSPROXY}|%{POSTFIX_MASTER}|%{POSTFIX_BOUNCE}|%{POSTFIX_SCACHE}|%{POSTFIX_ERROR}|%{POSTFIX_POSTSUPER}|%{POSTFIX_PASS}|%{POSTFIX_PROXY}"
           POSTFIX_PICKUP: "%{POSTFIX_KEYVALUE}"
+          POSTFIX_OPENDKIM: "%{HOSTNAME:host_name} %{DATA:process_name}\\[%{INT:process_pid}\\]: %{POSTFIX_QUEUEID:local_queue}: DKIM-Signature field added \\(s=%{DATA:opendkim_selector}, d=%{HOSTNAME:opendkim_signing_domain}\\)"
 
           "POSTFIX_START": "Starting"
           EMAILLOCALPART: "[a-zA-Z0-9_.+-=:]+"
@@ -326,6 +330,20 @@ stages:
 
       - set:
           action.name: "{{event.message.action_name or event.message.STATUS_WORD}}"
+
+      - set:
+          host.name: "{{event.message.host_name}}"
+        filter: "{{event.message.host_name != None}}"
+
+      - set:
+          process.name: "{{event.message.process_name}}"
+          process.pid: "{{event.message.process_pid}}"
+        filter: "{{event.message.process_name != None}}"
+
+      - set:
+          postfix.opendkim.selector: "{{event.message.opendkim_selector}}"
+          postfix.opendkim.signing_domain: "{{event.message.opendkim_signing_domain}}"
+        filter: "{{event.message.opendkim_signing_domain != None}}"
 
       - set:
           postfix.orig_to: "{{parsed_message_kv.message.orig_to.replace('<','').replace('>','').replace(',','') }}"
