@@ -20,6 +20,8 @@ pipeline:
   - name: linux_authentication_related_fields
     filter: '{{ "authentication" in final.event.category and final.host.os.type == "linux"}}'
 
+  - name: finalize
+
 stages:
   linux_authentication_related_fields:
     actions:
@@ -63,6 +65,7 @@ stages:
           event.type: "{{json.event.event.type}}"
           event.start: "{{json.event.event.start}}"
           event.end: "{{json.event.event.end}}"
+          event.outcome: "{{json.event.event.outcome}}"
           action.outcome: "{{json.event.event.outcome}}"
           file: "{{json.event.file}}"
           host: "{{json.event.host}}"
@@ -148,7 +151,17 @@ stages:
           user.target.domain: "{{json.event.action.properties.TargetDomainName}}"
           user.target.name: "{{json.event.action.properties.TargetUserName}}"
 
+      # Map ClientIP from action properties to source.ip when source.ip is not already set
+      - set:
+          source.ip: "{{json.event.action.properties.ClientIP}}"
+        filter: "{{json.event.action.properties.ClientIP != null and (json.event.source == null or json.event.source.ip == null)}}"
+
       # Improve backward compatibility with legacy agents which don't provide os type
       - set:
           host.os.type: "windows"
         filter: "{{json.event.action.properties.SourceName | length > 0 and json.event.action.properties.SourceName.startswith('Microsoft-Windows')}}"
+
+  finalize:
+    actions:
+      - set:
+          host.hostname: "{{final.host.hostname | lower}}"

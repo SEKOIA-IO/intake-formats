@@ -302,6 +302,15 @@ stages:
       - set:
           destination.port: "{{json_event.message.dport}}"
 
+      - set:
+          dns.answers: >
+            [
+              {%- for item in json_event.message.dnames -%}
+                {"class": "IN", "type": "PTR", "name": "{{json_event.message.daddr.split('.') | reverse | join('.')}}.in-addr.arpa", "data": "{{item}}"},
+              {%- endfor -%}
+            ]
+        filter: "{{json_event.message.dnames | length > 0}}"
+
       - translate:
         dictionary:
           "in": "inbound"
@@ -409,6 +418,13 @@ stages:
           action.properties.Path: "{{json_event.message.script_path}}"
           process.executable: "{{json_event.message.process_image_path}}"
 
+          file.hash.md5: "{{json_event.message.hashes.md5}}"
+          file.hash.sha256: "{{json_event.message.hashes.sha256}}"
+          file.hash.sha1: "{{json_event.message.hashes.sha1}}"
+
+          harfanglab.signature.signed_catalog: "{{json_event.message.signature_info.signed_catalog}}"
+          harfanglab.signature.signed_authenticode: "{{json_event.message.signature_info.signed_authenticode}}"
+
   alert_info:
     actions:
       - set:
@@ -418,6 +434,7 @@ stages:
           rule.name: "{{json_event.message.rule_name}}"
           rule.category: "{{json_event.message.alert_type}}"
           rule.id: "{{json_event.message.rule_id}}"
+          harfanglab.agent.dns_domain_name: "{{json_event.message.agent.dnsdomainname}}"
           harfanglab.alert_time: "{{json_event.message.alert_time}}"
           harfanglab.alert_unique_id: "{{json_event.message.alert_unique_id}}"
           harfanglab.alert_subtype: "{{json_event.message.alert_subtype}}"
@@ -710,6 +727,10 @@ stages:
           action.properties.TaskContentNew_Command: "{{parse_task_info.message.Task.Actions.Exec.Command}}"
           action.properties.TaskContentNew_Args: "{{parse_task_info.message.Task.Actions.Exec.Arguments}}"
         filter: "{{json_event.message.event_data != None}}"
+
+      - set:
+          user.name: "{{json_event.message.event_data.AccountName}}"
+        filter: "{{json_event.message.event_data != None and json_event.message.event_data.AccountName != '-'}}"
 
       - set:
           user.name: "{{json_event.message.event_data.SubjectUserName}}"

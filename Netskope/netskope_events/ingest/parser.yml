@@ -91,6 +91,7 @@ stages:
           observer.name: "{{parsed_event.message.instance_name}}"
           observer.type: "{{parsed_event.message.instance_type}}"
           file.hash.md5: "{{parsed_event.message.md5}}"
+          file.hash.sha1: "{{parsed_event.message.sha1}}"
           file.hash.sha256: "{{parsed_event.message.sha256}}"
           file.name: "{{parsed_event.message.filename}}"
       - set:
@@ -143,7 +144,7 @@ stages:
         filter: "{{parsed_event.message.conn_endtime > 0}}"
       - set:
           user.roles: '["{{parsed_event.message.user_role}}"]'
-        filter: "{{parsed_event.message.user_role != null}}"
+        filter: "{{parsed_event.message.user_role | length > 0}}"
       - set:
           user.name: "{{extract_user_name.result.user_name}}"
           user.domain: "{{extract_user_name.result.user_domain}}"
@@ -164,6 +165,7 @@ stages:
           netskope.events.application.activity: "{{parsed_event.message.app_activity}}"
           netskope.events.access_method: "{{parsed_event.message.access_method}}"
           netskope.events.ccl: "{{parsed_event.message.ccl}}"
+          netskope.events.shared_credential_user: "{{parsed_event.message.shared_credential_user}}"
 
       - set:
           netskope.events.severity_id: "{{parsed_event.message.severity_id}}"
@@ -240,6 +242,58 @@ stages:
       - set:
           netskope.dlp.incident.parent_id: "{{parsed_event.message.dlp_parent_id}}"
         filter: "{{parsed_event.message.dlp_incident_id not in [None, 0] and parsed_event.message.dlp_parent_id != parsed_event.message.dlp_incident_id}}"
+
+      - set:
+          netskope.dlp.exposure: "{{parsed_event.message.exposure}}"
+        filter: '{{parsed_event.message.exposure not in [None, ""]}}'
+
+      - set:
+          netskope.dlp.classification_name: "{{parsed_event.message.classification_name}}"
+        filter: '{{parsed_event.message.classification_name not in [None, ""]}}'
+
+      - set:
+          netskope.dlp.fingerprint.classification: "{{parsed_event.message.dlp_fingerprint_classification}}"
+          netskope.dlp.fingerprint.match: "{{parsed_event.message.dlp_fingerprint_match}}"
+          netskope.dlp.fingerprint.score: "{{parsed_event.message.dlp_fingerprint_score}}"
+        filter: '{{parsed_event.message.dlp_fingerprint_classification not in [None, ""] or parsed_event.message.dlp_fingerprint_match not in [None, ""]}}'
+
+      - set:
+          netskope.malware.id: "{{parsed_event.message.malware_id}}"
+          netskope.malware.name: "{{parsed_event.message.malware_name}}"
+          netskope.malware.type: "{{parsed_event.message.malware_type}}"
+          netskope.malware.severity: "{{parsed_event.message.malware_severity}}"
+          netskope.malware.profile: "{{parsed_event.message.malware_profile}}"
+          netskope.malware.detection_engine: "{{parsed_event.message.detection_engine}}"
+          netskope.malware.scan_type: "{{parsed_event.message.scan_type}}"
+        filter: '{{parsed_event.message.malware_name not in [None, ""] or parsed_event.message.detection_engine not in [None, ""] or parsed_event.message.scan_type not in [None, ""]}}'
+
+      - set:
+          netskope.malware.scan_time: "{{parsed_event.message.scan_time | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.scan_time | int(0) > 0}}"
+
+      - set:
+          netskope.malsite.id: "{{parsed_event.message.malsite_id}}"
+          netskope.malsite.category: "{{parsed_event.message.malsite_category}}"
+          netskope.malsite.confidence: "{{parsed_event.message.malsite_confidence}}"
+          netskope.malsite.reputation: "{{parsed_event.message.malsite_reputation}}"
+          netskope.malsite.active: "{{parsed_event.message.malsite_active}}"
+          netskope.malsite.hostility: "{{parsed_event.message.malsite_hostility}}"
+        filter: '{{parsed_event.message.type == "malsite" or parsed_event.message.alert_type == "malsite"}}'
+
+      - set:
+          netskope.malsite.first_seen: "{{parsed_event.message.malsite_first_seen | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.malsite_first_seen | int(0) > 0}}"
+
+      - set:
+          netskope.malsite.last_seen: "{{parsed_event.message.malsite_last_seen | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.malsite_last_seen | int(0) > 0}}"
+
+      - set:
+          netskope.malsite.threat.source_id: "{{parsed_event.message.threat_source_id}}"
+          netskope.malsite.threat.match_field: "{{parsed_event.message.threat_match_field}}"
+          netskope.malsite.threat.match_value: "{{parsed_event.message.threat_match_value}}"
+        filter: '{{parsed_event.message.threat_match_field not in [None, ""] or parsed_event.message.threat_match_value not in [None, ""]}}'
+
   categorize_events_for_admin_audit_logs:
     actions:
       - set:
