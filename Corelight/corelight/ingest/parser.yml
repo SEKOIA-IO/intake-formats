@@ -75,14 +75,14 @@ stages:
       # Zeek duration is in seconds; ECS event.duration is in nanoseconds.
       # Guard: only set when present and numeric (Zeek may emit "-" or omit it).
       - set:
-          event.duration: '{{json_event.message.get("duration") | float * 1000000000}}'
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
         filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
       # Native Corelight entity enrichment (role / user / location)
       - set:
           source.user.name: '{{json_event.message.get("enrichment_orig.user")}}'
         filter: '{{json_event.message.get("enrichment_orig.user") != None}}'
       - set:
-          source.user.roles: '{{json_event.message.get("enrichment_orig.role")}}'
+          source.user.roles: '["{{json_event.message.get("enrichment_orig.role")}}"]'
         filter: '{{json_event.message.get("enrichment_orig.role") != None}}'
       - set:
           source.geo.name: '{{json_event.message.get("enrichment_orig.city_location")}}'
@@ -168,6 +168,7 @@ stages:
           rule.id: '{{json_event.message.get("alert.signature_id")}}'
           event.severity: '{{json_event.message.get("alert.severity")}}'
           action.name: '{{json_event.message.get("alert.action")}}'
+          event.action: '{{json_event.message.get("alert.action")}}'
           network.protocol: '{{json_event.message.get("service")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
@@ -196,9 +197,11 @@ stages:
   # ----------------------------------------------------------------
   set_notice_fields:
     actions:
+      # Do NOT overwrite the top-level `message` field (the raw event is kept
+      # for every other log type); expose the notice text as a dedicated field.
       - set:
           rule.name: '{{json_event.message.get("note")}}'
-          message: '{{json_event.message.get("msg")}}'
+          corelight.notice.message: '{{json_event.message.get("msg")}}'
           corelight.notice.sub: '{{json_event.message.get("sub")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
