@@ -5,13 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- Do not populate `user.target.name` when `TargetUserOrGroupType` is `SharePointGroup`, since the value is a SharePoint group name rather than a person
-
-## 2026-05-29 - 1.0.3
+## [Unreleased] - 2026-07-06
 
 ### Added
 
@@ -20,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse Exchange `RecordType: 2` `Item.Subject` and robust `Item.InternetMessageId` normalization
 - Add Exchange email smart descriptions using subject, recipients, message id, and attachments
 - Add anonymized Exchange test fixtures for recipient and attachment parsing, including an edge case with attachments without size
+
+## [Unreleased] - 2026-07-03
+
+### Changed
+
+- Do not populate `user.target.name` when `TargetUserOrGroupType` is `SharePointGroup`, since the value is a SharePoint group name rather than a person
 
 ## 2023-12-08 - 1.0.2
 
