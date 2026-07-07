@@ -7,6 +7,27 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  - name: parsed_event_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.header.timestamp or json_event.message.metadata.estimated_created_at}}"
+        output_field: date
+
+  - name: parsed_event_start
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.metadata.first_crawled_at}}"
+        output_field: date
+
+  - name: parsed_event_end
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.metadata.last_crawled_at}}"
+        output_field: date
+
   - name: set_common_fields
   - name: set_chat_message_fields
     filter: "{{json_event.message.header.type in ['chat_message', 'attachment']}}"
@@ -47,9 +68,9 @@ stages:
   set_common_fields:
     actions:
       - set:
-          "@timestamp": "{{json_event.message.header.timestamp or json_event.message.metadata.estimated_created_at}}"
-          event.start: "{{json_event.message.metadata.first_crawled_at}}"
-          event.end: "{{json_event.message.metadata.last_crawled_at}}"
+          "@timestamp": "{{parsed_event_timestamp.date}}"
+          event.start: "{{parsed_event_start.date}}"
+          event.end: "{{parsed_event_end.date}}"
           event.category: ["threat"]
           event.type: ["indicator"]
           event.kind: "alert"
@@ -142,7 +163,7 @@ stages:
           user.name: "{{json_event.message.data.actor_name or json_event.message.data.actor}}"
           user.id: "{{json_event.message.data.actor_id}}"
           threat.indicator.provider: "{{json_event.message.data.actor_name or json_event.message.data.actor}}"
-          event.original: "{{json_event.message.data.message}}"
+          flare.events.chat_message.content: "{{json_event.message.data.message}}"
           flare.events.chat_message.account: "{{json_event.message.data.account}}"
           flare.events.chat_message.conversation_id: "{{json_event.message.data.conversation_id}}"
           flare.events.chat_message.conversation_name: "{{json_event.message.data.conversation_name}}"
@@ -160,7 +181,7 @@ stages:
           user.id: "{{json_event.message.data.actor_id}}"
           url.full: "{{json_event.message.data.url}}"
           flare.events.forum.browser_url: "{{json_event.message.data.browser_url}}"
-          event.original: "{{json_event.message.data.content}}"
+          flare.events.forum.content: "{{json_event.message.data.content}}"
           flare.events.forum.posted_at: "{{json_event.message.data.posted_at}}"
           flare.events.forum.topic_id: "{{json_event.message.data.topic_id}}"
           flare.events.forum.topic_title: "{{json_event.message.data.topic_title}}"
@@ -173,7 +194,7 @@ stages:
           user.name: "{{json_event.message.data.actor_name or json_event.message.data.seller_name or json_event.message.data.actor}}"
           user.id: "{{json_event.message.data.seller_id or json_event.message.data.actor_id}}"
           url.full: "{{json_event.message.data.url}}"
-          event.original: "{{json_event.message.data.description}}"
+          flare.events.listing.content: "{{json_event.message.data.description}}"
           flare.events.listing.title: "{{json_event.message.data.title}}"
           flare.events.listing.price: "{{json_event.message.data.price}}"
           flare.events.listing.currency: "{{json_event.message.data.currency}}"
@@ -205,7 +226,7 @@ stages:
       - set:
           user.name: "{{json_event.message.data.actor_name or json_event.message.data.actor}}"
           url.full: "{{json_event.message.data.url}}"
-          event.original: "{{json_event.message.data.content}}"
+          flare.events.paste.content: "{{json_event.message.data.content}}"
           flare.events.paste.title: "{{json_event.message.data.title}}"
           flare.events.paste.syntax: "{{json_event.message.data.syntax}}"
           flare.events.paste.expire_at: "{{json_event.message.data.expire_at}}"
@@ -278,7 +299,7 @@ stages:
     actions:
       - set:
           url.full: "{{json_event.message.data.url}}"
-          event.original: "{{json_event.message.data.content}}"
+          flare.events.source_code.content: "{{json_event.message.data.content}}"
           host.os.name: "{{json_event.message.data.os}}"
           host.os.version: "{{json_event.message.data.os_version}}"
           flare.events.source_code.digest: "{{json_event.message.data.digest}}"
@@ -335,7 +356,7 @@ stages:
           url.full: "{{json_event.message.data.url}}"
           flare.events.blog_post.browser_url: "{{json_event.message.data.browser_url}}"
           flare.events.blog_post.description: "{{json_event.message.data.description}}"
-          event.original: "{{json_event.message.data.content}}"
+          flare.events.blog_post.content: "{{json_event.message.data.content}}"
           user.name: "{{json_event.message.data.actor or json_event.message.header.actor}}"
 
   set_bucket_fields:
@@ -353,7 +374,7 @@ stages:
       - set:
           flare.events.ransomleak.title: "{{json_event.message.data.title or json_event.message.header.title}}"
           url.full: "{{json_event.message.data.url}}"
-          event.original: "{{json_event.message.data.content or json_event.message.data.main}}"
+          flare.events.ransomleak.content: "{{json_event.message.data.content or json_event.message.data.main}}"
           organization.name: "{{json_event.message.header.victim_name}}"
           flare.events.ransomleak.victim_name: "{{json_event.message.header.victim_name}}"
           destination.geo.country_name: "{{json_event.message.header.country}}"
@@ -364,7 +385,7 @@ stages:
       - set:
           url.full: "{{json_event.message.data.url}}"
           flare.events.google.title: "{{json_event.message.data.title}}"
-          event.original: "{{json_event.message.data.snippet or json_event.message.data.content}}"
+          flare.events.google.content: "{{json_event.message.data.snippet or json_event.message.data.content}}"
 
   set_seller_fields:
     actions:
