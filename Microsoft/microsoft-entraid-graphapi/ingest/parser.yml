@@ -27,6 +27,8 @@ pipeline:
 
   - name: set_common_fields
 
+  - name: set_ecs_category
+
 stages:
   set_common_fields:
     actions:
@@ -36,7 +38,7 @@ stages:
           cloud.provider: "Azure"
           cloud.service.name: "Azure EntraId"
 
-          event.code: "{{json_event.message.status.errorCode}}"
+          error.code: "{{json_event.message.status.errorCode}}"
           event.outcome: "{{json_event.message.result}}"
           event.action: "{{json_event.message.activityDisplayName}}"
           error.message: "{{json_event.message.status.failureReason}}"
@@ -78,6 +80,11 @@ stages:
           azure.entraid.properties.resourceId: "{{json_event.message.resourceId}}"
           azure.entraid.properties.appliedConditionalAccessPolicies: "{{json_event.message.appliedConditionalAccessPolicies}}"
           azure.entraid.properties.operationType: "{{json_event.message.operationType}}"
+          azuread.correlationId: "{{json_event.message.correlationId}}"
+
+      # For the backward compatibility with Entra ID format
+      - set:
+          azuread.properties.status.errorCode: "{{json_event.message.status.errorCode}}"
 
       - set:
           user.email: "{{json_event.message.targetResources[0].userPrincipalName}}"
@@ -190,3 +197,23 @@ stages:
               {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
             {%- endfor -%}
         filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
+
+  set_ecs_category:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["info"]
+
+      - set:
+          event.action: "Sign-in activity"
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{json_event.message.riskLevelDuringSignIn | length > 0}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{json_event.message.status.errorCode | int(-1) == 0}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{json_event.message.status.errorCode | int(-1) > 0}}"
