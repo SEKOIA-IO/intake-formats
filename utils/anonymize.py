@@ -7,10 +7,10 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from checks.validators.anonymization import (
-    ACCEPTED_DOMAINS,
-    ACCEPTED_USERNAMES,
+    ACCEPTED_GENERIC_VALUES,
     URL_FIELDS,
     USERNAME_FIELDS,
+    AnonymizationValidator,
 )
 
 logging.basicConfig(
@@ -71,217 +71,311 @@ def gather_files(paths: list) -> list[Path]:
     return result
 
 
-def generate_fake_uuids():
-    # Generate all-numeric UUIDs
+class Anonymizer:
+    def __init__(self) -> None:
+        self.anonymization_check = AnonymizationValidator()
 
-    # Starting from the same number (e.g. 11111111-1111-1111-1111-111111111111)
-    for digit in range(1, 10):
-        d = str(digit)
-        yield f"{d * 8}-{d * 4}-{d * 4}-{d * 4}-{d * 12}"
+    @staticmethod
+    def generate_fake_uuids():
+        # Generate all-numeric UUIDs
 
-    # After 99999999-9999-9999-9999-999999999999, change numbers by one group
-    groups = [1, 1, 1, 1, 2]
+        # Starting from the same number (e.g. 11111111-1111-1111-1111-111111111111)
+        for digit in range(1, 10):
+            d = str(digit)
+            yield f"{d * 8}-{d * 4}-{d * 4}-{d * 4}-{d * 12}"
 
-    while True:
-        uuid_str = (
-            f"{str(groups[0]) * 8}-"
-            f"{str(groups[1]) * 4}-"
-            f"{str(groups[2]) * 4}-"
-            f"{str(groups[3]) * 4}-"
-            f"{str(groups[4]) * 12}"
-        )
-        yield uuid_str
+        # After 99999999-9999-9999-9999-999999999999, change numbers by one group
+        groups = [1, 1, 1, 1, 2]
 
-        groups[4] += 1
+        while True:
+            uuid_str = (
+                f"{str(groups[0]) * 8}-"
+                f"{str(groups[1]) * 4}-"
+                f"{str(groups[2]) * 4}-"
+                f"{str(groups[3]) * 4}-"
+                f"{str(groups[4]) * 12}"
+            )
+            yield uuid_str
 
-        for i in range(4, -1, -1):
-            if groups[i] > 9:
-                groups[i] = 1
-                if i > 0:
-                    groups[i - 1] += 1
+            groups[4] += 1
 
+            for i in range(4, -1, -1):
+                if groups[i] > 9:
+                    groups[i] = 1
+                    if i > 0:
+                        groups[i - 1] += 1
 
-def replace_uuids(t: str):
-    re_uuid = (
-        "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
-    )
-    all_uuids = set(re.findall(re_uuid, t))
+    @staticmethod
+    def generate_fake_sids():
+        for digit in range(1, 10):
+            d = str(digit)
+            yield f"S-1-5-21-{d * 9}-{d * 9}-{d * 9}-{d * 9}"
 
-    uuid_to_replace = {}
+        groups = [1, 1, 1, 2]
 
-    for uuid_old, uuid_new in zip(all_uuids, generate_fake_uuids()):
-        uuid_to_replace[uuid_old] = uuid_new
+        while True:
+            uuid_str = (
+                f"S-1-5-21-"
+                f"{str(groups[0]) * 9}-"
+                f"{str(groups[1]) * 9}-"
+                f"{str(groups[2]) * 9}-"
+                f"{str(groups[3]) * 9}"
+            )
+            yield uuid_str
 
-    for uuid_old, uuid_new in uuid_to_replace.items():
-        logger.warning(f"Will replace {uuid_old} with {uuid_new}")
-        t = t.replace(uuid_old, uuid_new)
+            groups[3] += 1
 
-    return t
+            for i in range(3, -1, -1):
+                if groups[i] > 9:
+                    groups[i] = 1
+                    if i > 0:
+                        groups[i - 1] += 1
 
+    def replace_uuids(self, t: str):
+        re_uuid = "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+        all_uuids = set(re.findall(re_uuid, t))
 
-def replace_hash(t: str, ln: int, c: str):
-    re_hash = '"([0-9A-Fa-f]{%d})"' % ln
-    all_hashes = set(re.findall(re_hash, t))
+        uuids_correct = set()
+        uuids_to_fix = set()
+        for u in all_uuids:
+            if self.anonymization_check.validate_uuid(u):
+                uuids_correct.add(u)
 
-    hash_to_new = {}
-    for hash in all_hashes:
-        hash_to_new[hash] = c
+            else:
+                uuids_to_fix.add(u)
 
-    for hash_old, hash_new in hash_to_new.items():
-        logger.warning(f"Will replace {hash_old} with {hash_new}")
-        t = t.replace(hash_old, hash_new)
+        uuid_to_replace = {}
 
-    return t
+        # We don't want to overwrite correct UUIDs
+        fake_uuids = self.generate_fake_uuids()
+        for uuid_old in uuids_to_fix:
+            uuid_new = next(fake_uuids)
+            while uuid_new in uuids_correct:
+                uuid_new = next(fake_uuids)
 
+            uuid_to_replace[uuid_old] = uuid_new
 
-def replace_hashes(t: str):
-    # these are hashes from anonymization checker
-    t = replace_hash(
-        t,
-        128,
-        "be688838ca8686e5c90689bf2ab585cef1137c999b48c70b92f67a5c34dc15697b5d11c982ed6d71be1e1e7f7b4e0733884aa97c3f7a339a8ed03577cf74be09",
-    )  # sha-512
-    t = replace_hash(
-        t, 64, "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
-    )  # sha-256
-    t = replace_hash(t, 40, "adc83b19e793491b1c6ea0fd8b46cd9f32e592fc")  # sha-1
-    t = replace_hash(t, 32, "68b329da9893e34099c7d8ad5cb9c940")  # md5
-    return t
+        for uuid_old, uuid_new in uuid_to_replace.items():
+            logger.warning(f"Will replace {uuid_old} with {uuid_new}")
+            t = t.replace(uuid_old, uuid_new)
 
+        return t
 
-def replace_ips(t: str):
-    re_ips = r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
-    all_ips = set(re.findall(re_ips, t))
+    def replace_hash(self, t: str, ln: int, c: str):
+        re_hash = '"([0-9A-Fa-f]{%d})"' % ln
+        all_hashes = set(re.findall(re_hash, t))
 
-    # hacks
-    chrome_versions = set(re.findall(r"Chrome/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", t))
-    mozilla_versions = set(re.findall(r"rv:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", t))
+        hash_to_new = {}
+        for hash in all_hashes:
+            if hash != c:
+                hash_to_new[hash] = c
 
-    all_ips = all_ips - chrome_versions - mozilla_versions
+        for hash_old, hash_new in hash_to_new.items():
+            logger.warning(f"Will replace {hash_old} with {hash_new}")
+            t = t.replace(hash_old, hash_new)
 
-    ip_to_new = {}
-    unique_ips = set()
-    for ip in all_ips:
-        if ip in ("127.0.0.1",):
-            continue
+        return t
 
-        unique_ips.add(ip)
+    def replace_hashes(self, t: str):
+        # these are hashes from anonymization checker
+        t = self.replace_hash(
+            t,
+            128,
+            "be688838ca8686e5c90689bf2ab585cef1137c999b48c70b92f67a5c34dc15697b5d11c982ed6d71be1e1e7f7b4e0733884aa97c3f7a339a8ed03577cf74be09",
+        )  # sha-512
+        t = self.replace_hash(
+            t, 64, "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        )  # sha-256
+        t = self.replace_hash(
+            t, 40, "adc83b19e793491b1c6ea0fd8b46cd9f32e592fc"
+        )  # sha-1
+        t = self.replace_hash(t, 32, "68b329da9893e34099c7d8ad5cb9c940")  # md5
+        return t
 
-    n = 1
-    for ip in unique_ips:
-        tmp = [str(n)] * 4
-        new_ip = ".".join(tmp)
-        ip_to_new[ip] = new_ip
+    def replace_ips(self, t: str):
+        re_ips = r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
+        all_ips = set(re.findall(re_ips, t))
 
-        n += 1
+        # hacks
+        chrome_versions = set(re.findall(r"Chrome/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", t))
+        mozilla_versions = set(re.findall(r"rv:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", t))
 
-    for ip_old, ip_new in ip_to_new.items():
-        logger.warning(f"Will replace {ip_old} with {ip_new}")
-        t = t.replace(ip_old, ip_new)
+        all_ips = all_ips - chrome_versions - mozilla_versions
 
-    return t
+        ips_correct = set()
+        ips_to_fix = set()
+        for ip in all_ips:
+            if self.anonymization_check.validate_ip(ip):
+                ips_correct.add(ip)
+            else:
+                ips_to_fix.add(ip)
 
+        ip_to_new = {}
 
-def any_pattern(field_value: str, patterns: list[str]) -> bool:
-    for pattern in patterns:
-        if re.match(pattern, field_value, re.IGNORECASE):
+        n = 1
+        for ip in ips_to_fix:
+            tmp = [str(n)] * 4
+            new_ip = ".".join(tmp)
+
+            while new_ip in ips_correct:
+                n += 1
+                tmp = [str(n)] * 4
+                new_ip = ".".join(tmp)
+
+            ip_to_new[ip] = new_ip
+
+            n += 1
+
+        for ip_old, ip_new in ip_to_new.items():
+            logger.warning(f"Will replace {ip_old} with {ip_new}")
+            t = t.replace(ip_old, ip_new)
+
+        return t
+
+    def validate_username(self, v: str) -> bool:
+        if str(v).lower() in ACCEPTED_GENERIC_VALUES:
             return True
 
-    return False
+        return self.anonymization_check.validate_username(v)
 
+    def validate_url(self, v: str) -> bool:
+        if str(v).lower() in ACCEPTED_GENERIC_VALUES:
+            return True
 
-def replace_emails_and_usernames(raw: dict[str, Any], text: str) -> str:
-    usernames_to_replace = set()
+        return self.anonymization_check.validate_url(v)
 
-    email_mapping = {}
-    username_mapping = {}
+    def validate_domain(self, v: str) -> bool:
+        if str(v).lower() in ACCEPTED_GENERIC_VALUES:
+            return True
 
-    # Try to use extracted fields first
-    for field_name in USERNAME_FIELDS:
-        field_value = deep_get(raw["expected"], field_name)
-        if field_value:
-            if not any_pattern(field_value, ACCEPTED_USERNAMES):
-                usernames_to_replace.add(field_value)
+        return self.anonymization_check.validate_domain(v)
 
-    # Search trough raw message
-    re_email = r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"
-    all_emails = set(re.findall(re_email, text))
+    def replace_emails_and_usernames(self, raw: dict[str, Any], text: str) -> str:
+        usernames_to_replace = set()
 
-    for email in all_emails:
-        username, domain = email.split("@")
+        email_mapping = {}
+        username_mapping = {}
 
-        # First, we have to check email's address domain
-        if not any_pattern(domain, ACCEPTED_DOMAINS):
-            email_mapping[email] = f"{username}@example.com"
+        # Try to use extracted fields first
+        for field_name in USERNAME_FIELDS:
+            field_value = deep_get(raw["expected"], field_name)
+            if field_value:
+                if not self.validate_username(field_value):
+                    usernames_to_replace.add(field_value)
 
-        # Then check username as well
-        if not any_pattern(username, ACCEPTED_USERNAMES):
-            # as we identified username, we can now replace it through the whole event
-            usernames_to_replace.add(username)
+        # Search trough raw message
+        # (?<!\\) in order to avoid grabbing escaped characters (e.g. \\t) along with an email
+        re_email = r"\b(?<!\\)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"
+        all_emails = set(re.findall(re_email, text))
 
-    for i, username in enumerate(usernames_to_replace, start=1):
-        logger.warning(f"Will replace {username} with user{i}")
-        username_mapping[f"user{i}"] = re.compile(re.escape(username), re.IGNORECASE)
+        for email in all_emails:
+            username, domain = email.split("@")
 
-    for email_from, email_to in email_mapping.items():
-        logger.warning(f"Will replace {email_from} with {email_to}")
-        text = text.replace(email_from, email_to)
+            # First, we have to check email's address domain
+            if not self.validate_domain(domain):
+                email_mapping[email] = f"{username}@example.com"
 
-    for username_to, username_re in username_mapping.items():
-        text = username_re.sub(username_to, text)
+            # Then check username as well
+            if not self.validate_username(username):
+                # as we identified username, we can now replace it through the whole event
+                usernames_to_replace.add(username)
 
-    return text
+        for i, username in enumerate(usernames_to_replace, start=1):
+            logger.warning(f"Will replace {username} with user{i}")
+            username_mapping[f"user{i}"] = re.compile(
+                re.escape(username), re.IGNORECASE
+            )
 
+        for email_from, email_to in email_mapping.items():
+            logger.warning(f"Will replace {email_from} with {email_to}")
+            text = text.replace(email_from, email_to)
 
-def replace_urls(raw: dict[str, Any], text: str) -> str:
-    re_url = r"\b(?:http|https):\/\/(?:[\w_-]+(?:(?:\.[\w_-]+)+))(?:[\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])\b"
-    all_urls = set(re.findall(re_url, text))
-    url_mapping = {}
+        for username_to, username_re in username_mapping.items():
+            text = username_re.sub(username_to, text)
 
-    # Try to use extracted fields as well
-    for field_name in URL_FIELDS:
-        field_value = deep_get(raw["expected"], field_name)
-        if field_value:
-            if not any_pattern(field_value, ACCEPTED_USERNAMES):
-                all_urls.add(field_value)
+        return text
 
-    if all_urls:
-        for url in all_urls:
-            parsed_url = urlparse(url)
-            domain = parsed_url.netloc
-            if not any_pattern(domain, ACCEPTED_DOMAINS):
-                new_domain = "example.com"
-                updated_url = parsed_url._replace(netloc=new_domain)
-                url_mapping[url] = urlunparse(updated_url)
+    def replace_urls(self, raw: dict[str, Any], text: str) -> str:
+        re_url = r"\b(?:http|https):\/\/(?:[\w_-]+(?:(?:\.[\w_-]+)+))(?:[\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])\b"
+        all_urls = set(re.findall(re_url, text))
+        url_mapping = {}
 
-    for url_from, url_to in url_mapping.items():
-        logger.warning(f"Replacing {url_from} with {url_to}")
-        text = text.replace(url_from, url_to)
+        # Try to use extracted fields as well
+        for field_name in URL_FIELDS:
+            field_value = deep_get(raw["expected"], field_name)
+            if field_value:
+                if not self.validate_url(field_value):
+                    all_urls.add(field_value)
 
-    return text
+        if all_urls:
+            for url in all_urls:
+                parsed_url = urlparse(url)
+                domain = parsed_url.netloc
+                if not self.validate_domain(domain):
+                    new_domain = "example.com"
+                    updated_url = parsed_url._replace(netloc=new_domain)
+                    url_mapping[url] = urlunparse(updated_url)
 
+        for url_from, url_to in url_mapping.items():
+            logger.warning(f"Replacing {url_from} with {url_to}")
+            text = text.replace(url_from, url_to)
 
-def process_file(path: Path):
-    with path.open("rt") as file:
-        raw = json.load(file)
+        return text
 
-    msg = raw["input"]["message"]
-    old_msg = msg
+    def replace_session_ids(self, t: str) -> str:
+        re_sid = r"S-1-\d{1,3}-\d{1,3}(?:-\d{1,9}){1,10}"
 
-    msg = replace_emails_and_usernames(raw, msg)
-    msg = replace_urls(raw, msg)
-    msg = replace_uuids(msg)
-    msg = replace_hashes(msg)
-    msg = replace_ips(msg)
+        all_sids = re.findall(re_sid, t)
 
-    raw["input"]["message"] = msg
-    raw["expected"]["message"] = msg
+        sids_correct = set()
+        sids_to_fix = set()
 
-    with path.open("wt") as file:
-        json.dump(raw, file, indent=2)
+        for sid in all_sids:
+            if self.anonymization_check.validate_session_id(sid):
+                sids_correct.add(sid)
 
-    if old_msg != msg:
-        logger.info(f"Processed {path}")
+            else:
+                sids_to_fix.add(sid)
+
+        fake_sids = self.generate_fake_sids()
+        sid_to_replace = {}
+
+        for sid_old in sids_to_fix:
+            sid_new = next(fake_sids)
+            # We don't want to overwrite correct SIDs
+            while sid_new in sids_correct:
+                sid_new = next(fake_sids)
+
+            sid_to_replace[sid_old] = sid_new
+
+        for sid_old, sid_new in sid_to_replace.items():
+            logger.warning(f"Will replace {sid_old} with {sid_new}")
+            t = t.replace(sid_old, sid_new)
+
+        return t
+
+    def process_file(self, path: Path):
+        with path.open("rt") as file:
+            raw = json.load(file)
+
+        msg = raw["input"]["message"]
+        old_msg = msg
+
+        msg = self.replace_emails_and_usernames(raw, msg)
+        msg = self.replace_urls(raw, msg)
+        msg = self.replace_uuids(msg)
+        msg = self.replace_hashes(msg)
+        msg = self.replace_ips(msg)
+        msg = self.replace_session_ids(msg)
+
+        raw["input"]["message"] = msg
+        raw["expected"]["message"] = msg
+
+        with path.open("wt") as file:
+            json.dump(raw, file, indent=2)
+
+        if old_msg != msg:
+            logger.info(f"Processed {path}")
 
 
 if __name__ == "__main__":
@@ -294,5 +388,6 @@ if __name__ == "__main__":
         logger.info("No files found")
         exit()
 
+    anon = Anonymizer()
     for test_path in tests_to_process:
-        process_file(test_path)
+        anon.process_file(test_path)
