@@ -1,7 +1,7 @@
 name: nutanix_prism
 pipeline:
   - name: parse_api_header
-    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    filter: "{{original.message is not none and 'clientType=' in original.message and '||httpMethod=' in original.message and '||restEndpoint=' in original.message and (original.message.startswith('INFO ') or original.message.startswith('WARN ') or original.message.startswith('ERROR ') or original.message.startswith('DEBUG '))}}"
     external:
       name: grok.match
       properties:
@@ -10,7 +10,7 @@ pipeline:
         pattern: "^%{WORD:level}\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{GREEDYDATA:kv_part}$"
 
   - name: parse_api_kv
-    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    filter: "{{original.message is not none and 'clientType=' in original.message and '||httpMethod=' in original.message and '||restEndpoint=' in original.message and (original.message.startswith('INFO ') or original.message.startswith('WARN ') or original.message.startswith('ERROR ') or original.message.startswith('DEBUG '))}}"
     external:
       name: kv.parse-kv
       properties:
@@ -21,7 +21,7 @@ pipeline:
         raise_errors: false
 
   - name: parse_api_date
-    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    filter: "{{original.message is not none and 'clientType=' in original.message and '||httpMethod=' in original.message and '||restEndpoint=' in original.message and (original.message.startswith('INFO ') or original.message.startswith('WARN ') or original.message.startswith('ERROR ') or original.message.startswith('DEBUG '))}}"
     external:
       name: date.parse
       properties:
@@ -30,14 +30,14 @@ pipeline:
         format: "%Y-%m-%d %H:%M:%S,%f"
 
   - name: parse_audit_json
-    filter: "{{original.log.syslog.appname == 'consolidated_audit'}}"
+    filter: "{{original.message is not none and original.message.startswith('{') and 'creationTimestampUsecs' in original.message and 'operationType' in original.message and 'userUuid' in original.message}}"
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
 
   - name: parse_audit_created
-    filter: "{{original.log.syslog.appname == 'consolidated_audit' and parse_audit_json.message.creationTimestampUsecs is not none}}"
+    filter: "{{original.message is not none and original.message.startswith('{') and 'creationTimestampUsecs' in original.message and 'operationType' in original.message and 'userUuid' in original.message and parse_audit_json.message.creationTimestampUsecs is not none}}"
     external:
       name: date.parse
       properties:
@@ -46,7 +46,7 @@ pipeline:
         format: "timestamp"
 
   - name: parse_audit_start
-    filter: "{{original.log.syslog.appname == 'consolidated_audit' and parse_audit_json.message.opStartTimestampUsecs is not none}}"
+    filter: "{{original.message is not none and original.message.startswith('{') and 'creationTimestampUsecs' in original.message and 'operationType' in original.message and 'userUuid' in original.message and parse_audit_json.message.opStartTimestampUsecs is not none}}"
     external:
       name: date.parse
       properties:
@@ -55,7 +55,7 @@ pipeline:
         format: "timestamp"
 
   - name: parse_audit_end
-    filter: "{{original.log.syslog.appname == 'consolidated_audit' and parse_audit_json.message.opEndTimestampUsecs is not none}}"
+    filter: "{{original.message is not none and original.message.startswith('{') and 'creationTimestampUsecs' in original.message and 'operationType' in original.message and 'userUuid' in original.message and parse_audit_json.message.opEndTimestampUsecs is not none}}"
     external:
       name: date.parse
       properties:
@@ -64,7 +64,7 @@ pipeline:
         format: "timestamp"
 
   - name: parse_flow_header
-    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message) and ('policy' not in (original.message | lower))}}"
     external:
       name: grok.match
       properties:
@@ -73,7 +73,7 @@ pipeline:
         pattern: "^%{WORD:level}:%{YEAR:flow_year}/%{MONTHNUM:flow_month}/%{MONTHDAY:flow_day} %{TIME:flow_time}\\s+\\[%{DATA:flow_uuid}\\]\\s+%{DATA:flow_service}\\s+\\[%{DATA:hint_action}\\]\\s+%{GREEDYDATA:kv_part}$"
 
   - name: parse_flow_date
-    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message) and ('policy' not in (original.message | lower))}}"
     external:
       name: date.parse
       properties:
@@ -82,7 +82,7 @@ pipeline:
         format: "%Y/%m/%d %H:%M:%S"
 
   - name: parse_flow_kv
-    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message) and ('policy' not in (original.message | lower))}}"
     external:
       name: kv.parse-kv
       properties:
@@ -93,7 +93,7 @@ pipeline:
         raise_errors: false
 
   - name: parse_security_policy_header
-    filter: "{{original.log.syslog.appname is not none and 'security' in (original.log.syslog.appname | lower) and 'policy' in (original.log.syslog.appname | lower) and 'hit' in (original.log.syslog.appname | lower)}}"
+    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message) and ('policy' in (original.message | lower))}}"
     external:
       name: grok.match
       properties:
@@ -124,13 +124,13 @@ pipeline:
 
   - name: set_common
   - name: set_api_audit_fields
-    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    filter: "{{original.message is not none and 'clientType=' in original.message and '||httpMethod=' in original.message and '||restEndpoint=' in original.message and (original.message.startswith('INFO ') or original.message.startswith('WARN ') or original.message.startswith('ERROR ') or original.message.startswith('DEBUG '))}}"
   - name: set_audit_fields
-    filter: "{{original.log.syslog.appname == 'consolidated_audit'}}"
+    filter: "{{original.message is not none and original.message.startswith('{') and 'creationTimestampUsecs' in original.message and 'operationType' in original.message and 'userUuid' in original.message}}"
   - name: set_flow_fields
-    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message) and ('policy' not in (original.message | lower))}}"
   - name: set_security_policy_hit_fields
-    filter: "{{original.log.syslog.appname is not none and 'security' in (original.log.syslog.appname | lower) and 'policy' in (original.log.syslog.appname | lower) and 'hit' in (original.log.syslog.appname | lower)}}"
+    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message) and ('policy' in (original.message | lower))}}"
 
 stages:
   set_common:
