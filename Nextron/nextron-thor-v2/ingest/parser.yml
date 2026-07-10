@@ -1,0 +1,1049 @@
+name: nextron-thor-v2
+ignored_values: [""]
+
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  # HotfixCheck installed_on arrives as M/D/YYYY -> ISO for package.installed
+  - name: parsed_hotfix_date
+    filter: '{{parsed_event.message.get("module") == "HotfixCheck" and parsed_event.message.get("installed_on") != none}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.installed_on}}"
+        output_field: date
+        format: "%m/%d/%Y"
+
+  # Startup "Running as user: DOMAIN\user" -> user.name (older builds without run_as_user)
+  - name: grok_user
+    filter: '{{parsed_event.message.get("message") != none and parsed_event.message.message.startswith("Running as user:")}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.message}}"
+        output_field: user
+        pattern: "Running as user: %{GREEDYDATA:name}"
+
+  - name: set_common_fields
+  - name: set_taxonomy
+  - name: set_rule_fields
+    filter: '{{parsed_event.message.get("reasons") != none and parsed_event.message.get("reasons") | length > 0}}'
+  - name: set_file_object_fields
+    filter: '{{parsed_event.message.get("module") in ["Filescan", "SHIMCache", "ScheduledTasks"] and parsed_event.message.get("file") != none}}'
+  - name: set_file_path_fields
+  - name: set_files0_fields
+    filter: '{{parsed_event.message.get("module") in ["AtJobs", "Autoruns", "Lnk", "WMIStartup"] and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
+  - name: set_mft_merge_fields
+    filter: '{{parsed_event.message.get("module") == "MFT" and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
+  - name: set_referenced_file_hashes
+    filter: '{{parsed_event.message.get("module") in ["LogScan", "EVTX", "ETL", "Eventlog"] and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
+  - name: set_eventlog_fields
+    filter: '{{parsed_event.message.get("module") in ["Eventlog", "EVTX", "ETL"]}}'
+  - name: set_process_fields
+    filter: '{{parsed_event.message.get("module") in ["ProcessCheck", "ProcessIntegrity", "ProcessConnections"]}}'
+  - name: set_network_fields
+    filter: '{{parsed_event.message.get("module") in ["ProcessConnections", "NetworkSessions"]}}'
+  - name: set_service_fields
+    filter: '{{parsed_event.message.get("module") == "ServiceCheck"}}'
+  - name: set_task_fields
+    filter: '{{parsed_event.message.get("module") in ["ScheduledTasks", "AtJobs"]}}'
+  - name: set_autoruns_fields
+    filter: '{{parsed_event.message.get("module") in ["Autoruns", "WMIStartup"]}}'
+  - name: set_registry_fields
+    filter: '{{parsed_event.message.get("module") == "RegistryChecks"}}'
+  - name: set_shimcache_amcache_fields
+    filter: '{{parsed_event.message.get("module") in ["SHIMCache", "Amcache"]}}'
+  - name: set_dns_fields
+    filter: '{{parsed_event.message.get("module") == "DNSCache"}}'
+  - name: set_flat_signature_fields
+    filter: '{{parsed_event.message.get("module") in ["DNSCache", "ProcessConnections", "Firewall"]}}'
+  - name: set_firewall_fields
+    filter: '{{parsed_event.message.get("module") == "Firewall"}}'
+  - name: set_wmi_fields
+    filter: '{{parsed_event.message.get("module") == "WMIPersistence"}}'
+  - name: set_hotfix_fields
+    filter: '{{parsed_event.message.get("module") == "HotfixCheck"}}'
+  - name: set_share_env_fields
+    filter: '{{parsed_event.message.get("module") in ["NetworkShares", "EnvCheck"]}}'
+  - name: set_wer_fields
+    filter: '{{parsed_event.message.get("module") == "WER"}}'
+  - name: set_lnk_dump_fields
+    filter: '{{parsed_event.message.get("module") in ["Lnk", "DumpScan"]}}'
+  - name: set_timestomp_fields
+    filter: '{{parsed_event.message.get("module") == "Timestomp"}}'
+  - name: set_users_fields
+    filter: '{{parsed_event.message.get("module") in ["Users", "UserDir", "LoggedIn", "LSASessions"]}}'
+  - name: set_platform_fields
+    filter: '{{parsed_event.message.get("module") in ["Startup", "Init", "Report", "Yara", "ThorDB", "Sigma"]}}'
+  - name: set_cron_fields
+    filter: '{{parsed_event.message.get("module") == "Cron"}}'
+  - name: set_hosts_fields
+    filter: '{{parsed_event.message.get("module") == "Hosts"}}'
+  - name: set_generic_fields
+
+stages:
+  # ---------------------------------------------------------------- common ---
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event.message.time}}"
+          host.name: "{{parsed_event.message.hostname}}"
+          log.level: "{{parsed_event.message.level}}"
+          event.module: "{{parsed_event.message.module}}"
+          message: "{{parsed_event.message.message}}"
+          thor.uid: "{{parsed_event.message.uid}}"
+          event.risk_score: "{{parsed_event.message.score}}"
+          event.reason: "{{parsed_event.message.reason}}"
+          thor.scan_id: "{{parsed_event.message.scanid}}"
+          thor.score: "{{parsed_event.message.score}}"
+          thor.log_version: "{{parsed_event.message.log_version}}"
+          thor.entry: "{{parsed_event.message.entry}}"
+          observer.vendor: "Nextron Systems"
+          observer.product: "THOR"
+          observer.type: "ids"
+          related.hosts: '["{{parsed_event.message.hostname}}"]'
+
+      # THOR level -> numeric severity (Sekoia addition; Elastic does not set it).
+      # event.severity is a number field: translate cannot target it (it only
+      # converts cleanly to the Boolean thor.* fields), so it is set per level
+      # with a string value the field coerces to a number (the Suricata pattern).
+      - set:
+          event.severity: "1"
+        filter: '{{parsed_event.message.level in ["Debug", "Info"]}}'
+      - set:
+          event.severity: "2"
+        filter: '{{parsed_event.message.level == "Notice"}}'
+      - set:
+          event.severity: "3"
+        filter: '{{parsed_event.message.level in ["Warning", "Error"]}}'
+      - set:
+          event.severity: "4"
+        filter: '{{parsed_event.message.level == "Alert"}}'
+
+      # Alert semantics: exact Elastic-integration behavior (level Alert only)
+      - set:
+          event.kind: "alert"
+        filter: '{{parsed_event.message.level == "Alert"}}'
+
+      # THOR user field -> user.name (Elastic parity: unconditional rename)
+      - set:
+          user.name: "{{parsed_event.message.user}}"
+          related.user: '["{{parsed_event.message.user}}"]'
+        filter: '{{parsed_event.message.get("user") not in [none, ""]}}'
+
+      # Startup "Running as user:" grok (older builds); run_as_user covers newer ones
+      - set:
+          user.name: "{{grok_user.user.name}}"
+          related.user: '["{{grok_user.user.name}}"]'
+        filter: '{{grok_user.user is not none and grok_user.user.get("name") is not none}}'
+
+      # scan errors recorded while fetching events (Eventlog module Info lines)
+      - set:
+          error.message: "{{parsed_event.message.error}}"
+        filter: '{{parsed_event.message.get("error") != none and parsed_event.message.module != "WER"}}'
+
+  # ------------------------------------------------------------- taxonomy ---
+  # Base table = official Elastic categorize.yml, verbatim. Modules absent from
+  # the Elastic table (EVTX, ETL, ThorDB -> configuration; MFT, Lnk, DumpScan ->
+  # file; ProcessIntegrity -> process) follow the same logic.
+  # intrusion_detection is APPENDED on alerts (agreed Sekoia addition).
+  set_taxonomy:
+    actions:
+      - set:
+          event.type: ["info"]
+          event.category: ["configuration"]
+
+      - set:
+          event.type: ["error"]
+        filter: '{{parsed_event.message.get("error") != none and parsed_event.message.module != "WER"}}'
+
+      # registry family (Elastic: type=access)
+      - set:
+          event.category: ["registry"]
+          event.type: ["access"]
+        filter: '{{parsed_event.message.module in ["Amcache", "RegistryChecks", "RegistryHive", "SHIMCache"]}}'
+      - set:
+          event.category: ["registry", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["Amcache", "RegistryChecks", "RegistryHive", "SHIMCache"] and parsed_event.message.level == "Alert"}}'
+
+      # configuration family: default above; alert variant
+      - set:
+          event.category: ["configuration", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["AtJobs", "Autoruns", "EnvCheck", "EtwWatcher", "Eventlog", "EVTX", "ETL", "Events", "HotfixCheck", "Init", "Report", "Rootkit", "ScheduledTasks", "ServiceCheck", "Sigma", "Startup", "ThorDB", "WER", "WMIPersistence", "WMIStartup", "Yara"] and parsed_event.message.level == "Alert"}}'
+
+      # network family
+      - set:
+          event.category: ["network"]
+        filter: '{{parsed_event.message.module in ["DNSCache", "Firewall", "NetworkShares"]}}'
+      - set:
+          event.category: ["network", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["DNSCache", "Firewall", "NetworkShares"] and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["network", "session"]
+        filter: '{{parsed_event.message.module == "NetworkSessions"}}'
+      - set:
+          event.category: ["network", "session", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "NetworkSessions" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["session", "iam"]
+        filter: '{{parsed_event.message.module == "LSASessions"}}'
+      - set:
+          event.category: ["session", "iam", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "LSASessions" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["iam"]
+        filter: '{{parsed_event.message.module == "LoggedIn"}}'
+      - set:
+          event.category: ["iam", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "LoggedIn" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["info", "user"]
+        filter: '{{parsed_event.message.module in ["UserDir", "Users"]}}'
+      - set:
+          event.category: ["iam", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["UserDir", "Users"] and parsed_event.message.level == "Alert"}}'
+
+      # file family
+      - set:
+          event.category: ["file"]
+        filter: '{{parsed_event.message.module in ["Filescan", "LogScan", "Timestomp", "MFT", "Lnk", "DumpScan"]}}'
+      - set:
+          event.category: ["file", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["Filescan", "LogScan", "Timestomp", "MFT", "Lnk", "DumpScan"] and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["host"]
+        filter: '{{parsed_event.message.module == "Hosts"}}'
+
+      # process family
+      - set:
+          event.category: ["process"]
+        filter: '{{parsed_event.message.module in ["Mutex", "Pipes", "ProcessCheck", "ProcessIntegrity"]}}'
+      - set:
+          event.category: ["process", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["Mutex", "Pipes", "ProcessCheck", "ProcessIntegrity"] and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["process", "network"]
+          event.type: ["info", "connection"]
+        filter: '{{parsed_event.message.module == "ProcessConnections"}}'
+      - set:
+          event.category: ["process", "network", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "ProcessConnections" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["vulnerability"]
+        filter: '{{parsed_event.message.module == "VulnerabilityCheck"}}'
+      - set:
+          event.category: ["vulnerability", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "VulnerabilityCheck" and parsed_event.message.level == "Alert"}}'
+
+      # "Malware file found" -> append malware (Elastic parity)
+      - set:
+          event.category: ["file", "malware"]
+        filter: '{{parsed_event.message.message == "Malware file found" and parsed_event.message.level != "Alert"}}'
+      - set:
+          event.category: ["file", "malware", "intrusion_detection"]
+        filter: '{{parsed_event.message.message == "Malware file found" and parsed_event.message.level == "Alert"}}'
+
+  # ------------------------------------------------- detection rule fields ---
+  # Elastic parity: rule.name = reasons[0].name, rule.id = signature.rulename,
+  # rule.author = [signature.author]. Additions (correct ECS, vendor-side in
+  # Elastic): rule.uuid, rule.reference, rule.category, rule.ruleset.
+  set_rule_fields:
+    actions:
+      - set:
+          rule.name: '{{parsed_event.message.reasons[0].get("name", "")}}'
+          rule.id: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename", "")}}'
+          rule.uuid: '{{parsed_event.message.reasons[0].get("signature", {}).get("id", "")}}'
+          rule.reference: '{{parsed_event.message.reasons[0].get("signature", {}).get("ref", "")}}'
+          rule.description: '{{parsed_event.message.reasons[0].get("signature", {}).get("description", "")}}'
+          rule.author: '{{parsed_event.message.reasons[0].get("signature", {}).get("author", "")}}'
+          rule.category: '{{parsed_event.message.reasons[0].get("sigclass", "")}}'
+          rule.ruleset: '{{parsed_event.message.reasons[0].get("sigtype", "")}}'
+          thor.reason_count: "{{parsed_event.message.reasons | length}}"
+          thor.rule_date: '{{parsed_event.message.reasons[0].get("signature", {}).get("ruledate", "")}}'
+          thor.signature_tags: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags", []) | join(", ")}}'
+
+      # matched[0].data = the actual bytes/string that triggered the top match
+      - set:
+          thor.matched: '{{parsed_event.message.reasons[0].get("matched", [{}])[0].get("data", "")}}'
+        filter: '{{parsed_event.message.reasons[0].get("matched") != none and parsed_event.message.reasons[0].get("matched") | length > 0}}'
+
+      # Sigma-engine matches expose the rule title in a dedicated field; it wins.
+      # (NOT for Firewall, where "rule" is the inspected firewall rule)
+      - set:
+          rule.name: "{{parsed_event.message.rule}}"
+        filter: '{{parsed_event.message.get("rule") != none and parsed_event.message.module in ["Eventlog", "LogScan", "EVTX"]}}'
+
+  # ----------------------------------------- file entity: object variants ---
+  set_file_object_fields:
+    actions:
+      - set:
+          file.path: "{{parsed_event.message.file.get('path', '')}}"
+          file.size: "{{parsed_event.message.file.get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.file.get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.file.get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.file.get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.file.get('imphash', '')}}"
+          file.created: "{{parsed_event.message.file.get('created', '')}}"
+          file.mtime: "{{parsed_event.message.file.get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.file.get('accessed', '')}}"
+          file.ctime: "{{parsed_event.message.file.get('changed', '')}}"
+          file.owner: "{{parsed_event.message.file.get('owner', '')}}"
+          file.group: "{{parsed_event.message.file.get('group', '')}}"
+          file.pe.company: "{{parsed_event.message.file.get('company', '')}}"
+          file.pe.description: "{{parsed_event.message.file.get('desc', '')}}"
+          file.pe.product: "{{parsed_event.message.file.get('product', '')}}"
+          file.pe.original_file_name: "{{parsed_event.message.file.get('original_name', '')}}"
+          thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
+          thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
+          thor.file.permissions: "{{parsed_event.message.file.get('permissions', '')}}"
+          thor.file.internal_name: "{{parsed_event.message.file.get('internal_name', '')}}"
+          thor.file.legal_copyright: "{{parsed_event.message.file.get('legal_copyright', '')}}"
+          related.hash: '["{{parsed_event.message.file.get(''md5'', '''')}}", "{{parsed_event.message.file.get(''sha1'', '''')}}", "{{parsed_event.message.file.get(''sha256'', '''')}}", "{{parsed_event.message.file.get(''imphash'', '''')}}"]'
+
+      - set:
+          file.name: "{{parsed_event.message.file.get('path', '').split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.file.get("path") not in [none, ""]}}'
+
+      - set:
+          file.extension: "{{parsed_event.message.file.get('ext', '').replace('.', '')}}"
+        filter: '{{parsed_event.message.file.get("ext") != none}}'
+
+      # THOR emits exists as "yes"/"no" (or "true"/"false"). A set action can
+      # only assign strings, so the boolean is produced with translate — the
+      # same construct used for every other thor.* boolean in this file.
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.file.exists: thor.file.exists
+
+      # Filescan: containing archive (secondary entity)
+      - set:
+          thor.archive.path: "{{parsed_event.message.archive.get('path', '')}}"
+          thor.archive.type: "{{parsed_event.message.archive.get('type', '')}}"
+          thor.archive.size: "{{parsed_event.message.archive.get('size', '')}}"
+          thor.archive.md5: "{{parsed_event.message.archive.get('md5', '')}}"
+          thor.archive.sha1: "{{parsed_event.message.archive.get('sha1', '')}}"
+          thor.archive.sha256: "{{parsed_event.message.archive.get('sha256', '')}}"
+          thor.archive.first_bytes: "{{parsed_event.message.archive.get('firstbytes', '')}}"
+        filter: '{{parsed_event.message.get("archive") != none}}'
+
+  # ----------------------------------------- file entity: string variants ---
+  set_file_path_fields:
+    actions:
+      # Elastic parity: `file` as string -> file.path (LogScan/EVTX/ETL/MFT/
+      # Timestomp/Amcache/WER)
+      - set:
+          file.path: "{{parsed_event.message.file}}"
+          file.name: "{{parsed_event.message.file.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") in ["LogScan", "EVTX", "ETL", "MFT", "Timestomp", "Amcache", "WER"] and parsed_event.message.get("file") != none}}'
+
+      # LogScan: log_* timestamps belong to the scanned log file
+      - set:
+          file.created: "{{parsed_event.message.log_created}}"
+          file.mtime: "{{parsed_event.message.log_modified}}"
+          file.accessed: "{{parsed_event.message.log_accessed}}"
+        filter: '{{parsed_event.message.get("module") == "LogScan"}}'
+
+      # MFT: $SI timestamps + USN fields
+      - set:
+          file.created: "{{parsed_event.message.created}}"
+          file.mtime: "{{parsed_event.message.modified}}"
+          file.accessed: "{{parsed_event.message.accessed}}"
+          file.name: "{{parsed_event.message.filename}}"
+          file.directory: "{{parsed_event.message.folder}}"
+          thor.flags: "{{parsed_event.message.flags}}"
+          thor.usnChangeTime: "{{parsed_event.message.usnChangeTime}}"
+        filter: '{{parsed_event.message.get("module") == "MFT"}}'
+
+      # AtJobs: the job/task XML file is the subject
+      - set:
+          file.path: "{{parsed_event.message.job}}"
+          file.name: "{{parsed_event.message.job.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "AtJobs" and parsed_event.message.get("job") != none}}'
+
+      # Autoruns: resolved autostart binary
+      - set:
+          file.path: "{{parsed_event.message.image_path}}"
+          file.name: "{{parsed_event.message.image_name}}"
+          file.hash.md5: "{{parsed_event.message.md5}}"
+          file.hash.sha256: "{{parsed_event.message.sha256}}"
+          related.hash: '["{{parsed_event.message.md5}}", "{{parsed_event.message.sha256}}"]'
+        filter: '{{parsed_event.message.get("module") == "Autoruns"}}'
+
+  # ------------------------- files[0] -> file.* promotion (resolved subject) ---
+  set_files0_fields:
+    actions:
+      - set:
+          file.path: "{{parsed_event.message.files[0].get('path', '')}}"
+          file.size: "{{parsed_event.message.files[0].get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.files[0].get('imphash', '')}}"
+          file.created: "{{parsed_event.message.files[0].get('created', '')}}"
+          file.mtime: "{{parsed_event.message.files[0].get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.files[0].get('accessed', '')}}"
+          file.ctime: "{{parsed_event.message.files[0].get('changed', '')}}"
+          file.owner: "{{parsed_event.message.files[0].get('owner', '')}}"
+          file.pe.company: "{{parsed_event.message.files[0].get('company', '')}}"
+          file.pe.description: "{{parsed_event.message.files[0].get('desc', '')}}"
+          file.pe.product: "{{parsed_event.message.files[0].get('product', '')}}"
+          file.pe.original_file_name: "{{parsed_event.message.files[0].get('original_name', '')}}"
+          thor.file.type: "{{parsed_event.message.files[0].get('type', '')}}"
+          related.hash: '["{{parsed_event.message.files[0].get(''md5'', '''')}}", "{{parsed_event.message.files[0].get(''sha1'', '''')}}", "{{parsed_event.message.files[0].get(''sha256'', '''')}}", "{{parsed_event.message.files[0].get(''imphash'', '''')}}"]'
+
+      - set:
+          file.name: "{{parsed_event.message.files[0].get('path', '').split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.files[0].get("path") not in [none, ""] and parsed_event.message.get("module") != "Autoruns"}}'
+
+      # files[0].exists -> boolean. set cannot assign a boolean, so translate
+      # directly from the input path (target thor.file.exists is declared; the
+      # source reads the parsed event, so no undeclared field is produced).
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.files[0].exists: thor.file.exists
+
+  # MFT: merge files[0] metadata only when it resolves the same path
+  set_mft_merge_fields:
+    actions:
+      - set:
+          file.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.files[0].get('imphash', '')}}"
+          file.owner: "{{parsed_event.message.files[0].get('owner', '')}}"
+          file.size: "{{parsed_event.message.files[0].get('size', '')}}"
+          thor.file.type: "{{parsed_event.message.files[0].get('type', '')}}"
+          related.hash: '["{{parsed_event.message.files[0].get(''md5'', '''')}}", "{{parsed_event.message.files[0].get(''sha1'', '''')}}", "{{parsed_event.message.files[0].get(''sha256'', '''')}}"]'
+        filter: '{{parsed_event.message.files[0].get("path") == parsed_event.message.get("file")}}'
+
+  # ---------------- referenced binaries inside matched log lines (v1: [0]) ---
+  set_referenced_file_hashes:
+    actions:
+      - set:
+          related.hash: '["{{parsed_event.message.files[0].get(''md5'', '''')}}", "{{parsed_event.message.files[0].get(''sha1'', '''')}}", "{{parsed_event.message.files[0].get(''sha256'', '''')}}"]'
+
+  # ------------------------------------------- embedded eventlog metadata ---
+  set_eventlog_fields:
+    actions:
+      - set:
+          event.code: "{{parsed_event.message.event_id}}"
+          thor.event_channel: "{{parsed_event.message.event_channel}}"
+          thor.event_computer: "{{parsed_event.message.event_computer}}"
+          thor.event_time: "{{parsed_event.message.event_time}}"
+          thor.event_level: "{{parsed_event.message.event_level}}"
+
+      - set:
+          related.hosts: '["{{parsed_event.message.hostname}}", "{{parsed_event.message.event_computer}}"]'
+        filter: '{{parsed_event.message.get("event_computer") != none}}'
+
+      # Info progress lines: "Analyzing eventlog <channel>"
+      - set:
+          thor.event_channel: "{{parsed_event.message.name}}"
+          thor.scanned: "{{parsed_event.message.scanned}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("name") != none}}'
+
+  # ---------------------------------------------------- observed processes ---
+  set_process_fields:
+    actions:
+      - set:
+          process.pid: "{{parsed_event.message.pid}}"
+          process.parent.pid: "{{parsed_event.message.ppid}}"
+          process.name: "{{parsed_event.message.process_name}}"
+          process.command_line: "{{parsed_event.message.command}}"
+          process.parent.executable: "{{parsed_event.message.parent}}"
+          thor.session: "{{parsed_event.message.session}}"
+          thor.connection_count: "{{parsed_event.message.connection_count}}"
+          thor.listen_ports: "{{parsed_event.message.listen_ports}}"
+
+      - set:
+          process.start: "{{parsed_event.message.created}}"
+        filter: '{{parsed_event.message.get("created") not in [none, "1970-01-01T00:00:00Z", "0001-01-01T00:00:00Z"]}}'
+
+      # owner "DOMAIN\user" -> process.user.* (effective user; ECS 9.4 reuse)
+      - set:
+          process.user.name: '{{parsed_event.message.owner.split("\\")[-1]}}'
+          related.user: '["{{parsed_event.message.owner.split("\\")[-1]}}"]'
+        filter: '{{parsed_event.message.get("owner") not in [none, ""]}}'
+      # Sekoia's ECS exposes process.user.name but not the process.user.domain
+      # reuse, so the owner's domain part goes to a vendor field.
+      - set:
+          thor.process_user_domain: '{{parsed_event.message.owner.split("\\")[0]}}'
+        filter: '{{parsed_event.message.get("owner") not in [none, ""] and "\\" in parsed_event.message.owner}}'
+
+      # image object -> the process executable (hashes/PE are Sekoia additions)
+      - set:
+          process.executable: "{{parsed_event.message.image.get('path', '')}}"
+          process.hash.md5: "{{parsed_event.message.image.get('md5', '')}}"
+          process.hash.sha1: "{{parsed_event.message.image.get('sha1', '')}}"
+          process.hash.sha256: "{{parsed_event.message.image.get('sha256', '')}}"
+          process.pe.imphash: "{{parsed_event.message.image.get('imphash', '')}}"
+          process.pe.company: "{{parsed_event.message.image.get('company', '')}}"
+          process.pe.description: "{{parsed_event.message.image.get('desc', '')}}"
+          process.pe.product: "{{parsed_event.message.image.get('product', '')}}"
+          process.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
+          thor.image.created: "{{parsed_event.message.image.get('created', '')}}"
+          thor.image.modified: "{{parsed_event.message.image.get('modified', '')}}"
+          thor.image.accessed: "{{parsed_event.message.image.get('accessed', '')}}"
+          thor.image.changed: "{{parsed_event.message.image.get('changed', '')}}"
+          thor.image.owner: "{{parsed_event.message.image.get('owner', '')}}"
+          thor.image.permissions: "{{parsed_event.message.image.get('permissions', '')}}"
+          thor.image.type: "{{parsed_event.message.image.get('type', '')}}"
+          thor.image.size: "{{parsed_event.message.image.get('size', '')}}"
+          thor.image.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
+          related.hash: '["{{parsed_event.message.image.get(''md5'', '''')}}", "{{parsed_event.message.image.get(''sha1'', '''')}}", "{{parsed_event.message.image.get(''sha256'', '''')}}"]'
+        filter: '{{parsed_event.message.get("image") != none}}'
+
+      # PE-Sieve counters (ProcessIntegrity) — THOR names kept verbatim (Elastic parity)
+      - set:
+          thor.Suspicious_sections: "{{parsed_event.message.Suspicious_sections}}"
+          thor.replaced: "{{parsed_event.message.replaced}}"
+          thor.hdr_mod: "{{parsed_event.message.hdr_mod}}"
+          thor.iat_hooked: "{{parsed_event.message.iat_hooked}}"
+          thor.implanted: "{{parsed_event.message.implanted}}"
+          thor.patched: "{{parsed_event.message.patched}}"
+          thor.unreachable_file: "{{parsed_event.message.unreachable_file}}"
+          thor.other: "{{parsed_event.message.other}}"
+          thor.skipped: "{{parsed_event.message.skipped}}"
+          thor.scanned: "{{parsed_event.message.scanned}}"
+          thor.reference: "{{parsed_event.message.reference}}"
+          thor.reference_2: "{{parsed_event.message.reference_2}}"
+        filter: '{{parsed_event.message.get("module") == "ProcessIntegrity"}}'
+
+  # ------------------------------------------------ per-process connection ---
+  set_network_fields:
+    actions:
+      - set:
+          network.transport: "{{parsed_event.message.protocol | lower}}"
+
+      # "*" is a THOR wildcard placeholder, not a real address (Elastic parity)
+      - set:
+          source.ip: "{{parsed_event.message.ip}}"
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
+      - set:
+          source.port: "{{parsed_event.message.port}}"
+        filter: '{{parsed_event.message.get("port") not in [none, "", "*"]}}'
+      - set:
+          destination.ip: "{{parsed_event.message.rip}}"
+        filter: '{{parsed_event.message.get("rip") not in [none, "", "*"]}}'
+      - set:
+          destination.port: "{{parsed_event.message.rport}}"
+        filter: '{{parsed_event.message.get("rport") not in [none, "", "*"]}}'
+
+      - set:
+          related.ip: '["{{parsed_event.message.ip}}", "{{parsed_event.message.rip}}"]'
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"] and parsed_event.message.get("rip") not in [none, "", "*"]}}'
+      - set:
+          related.ip: '["{{parsed_event.message.ip}}"]'
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"] and parsed_event.message.get("rip") in [none, "", "*"]}}'
+      - set:
+          related.ip: '["{{parsed_event.message.rip}}"]'
+        filter: '{{parsed_event.message.get("rip") not in [none, "", "*"] and parsed_event.message.get("ip") in [none, "", "*"]}}'
+
+  # ------------------------------------------------------ Windows services ---
+  set_service_fields:
+    actions:
+      - set:
+          registry.key: "{{parsed_event.message.key}}"
+          thor.service_name: "{{parsed_event.message.service_name}}"
+          thor.key_name: "{{parsed_event.message.key_name}}"
+          thor.image.path: "{{parsed_event.message.image_path}}"
+          thor.start_type: "{{parsed_event.message.start_type}}"
+          thor.description: "{{parsed_event.message.description}}"
+          thor.modified: "{{parsed_event.message.modified}}"
+          thor.failure_command: "{{parsed_event.message.failure_command}}"
+
+      # service binary -> file.* (Sekoia addition; stays thor.image.* in Elastic)
+      - set:
+          file.path: "{{parsed_event.message.image.get('path', '')}}"
+          file.size: "{{parsed_event.message.image.get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.image.get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.image.get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.image.get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.image.get('imphash', '')}}"
+          file.created: "{{parsed_event.message.image.get('created', '')}}"
+          file.mtime: "{{parsed_event.message.image.get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.image.get('accessed', '')}}"
+          file.owner: "{{parsed_event.message.image.get('owner', '')}}"
+          file.pe.company: "{{parsed_event.message.image.get('company', '')}}"
+          file.pe.description: "{{parsed_event.message.image.get('desc', '')}}"
+          file.pe.product: "{{parsed_event.message.image.get('product', '')}}"
+          file.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
+          thor.file.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
+          related.hash: '["{{parsed_event.message.image.get(''md5'', '''')}}", "{{parsed_event.message.image.get(''sha1'', '''')}}", "{{parsed_event.message.image.get(''sha256'', '''')}}", "{{parsed_event.message.image.get(''imphash'', '''')}}"]'
+        filter: '{{parsed_event.message.get("image") != none}}'
+
+      # Linux systemd services (log_version v2.x): flat unit/executable layout,
+      # not the Windows service_name/registry/ImagePath model above.
+      - set:
+          thor.service_name: "{{parsed_event.message.unit}}"
+          thor.unit_path: "{{parsed_event.message.unit_path}}"
+          thor.command: "{{parsed_event.message.command}}"
+          thor.unit_group: "{{parsed_event.message.unit_group}}"
+          thor.unit_mode: "{{parsed_event.message.unit_mode}}"
+          thor.exe_mode: "{{parsed_event.message.exe_mode}}"
+          thor.run_as_group: "{{parsed_event.message.run_as_group}}"
+        filter: '{{parsed_event.message.get("unit") != none}}'
+
+      # systemd service binary -> file.* (executable + hash + magic + ownership)
+      - set:
+          file.path: "{{parsed_event.message.executable}}"
+          file.name: "{{parsed_event.message.executable.split('/')[-1]}}"
+          file.hash.sha1: "{{parsed_event.message.sha1}}"
+          file.owner: "{{parsed_event.message.exe_owner}}"
+          file.group: "{{parsed_event.message.exe_group}}"
+          thor.file.type: "{{parsed_event.message.exe_magic}}"
+          related.hash: '["{{parsed_event.message.sha1}}"]'
+        filter: '{{parsed_event.message.get("executable") not in [none, ""]}}'
+
+  # ------------------------------------------------------- scheduled tasks ---
+  set_task_fields:
+    actions:
+      - set:
+          thor.name: "{{parsed_event.message.name}}"
+          thor.path: "{{parsed_event.message.path}}"
+          thor.command: "{{parsed_event.message.command}}"
+          thor.last_run: "{{parsed_event.message.lastrun}}"
+          thor.next_run: "{{parsed_event.message.nextrun}}"
+          thor.runlevel: "{{parsed_event.message.runlevel}}"
+          thor.logontype: "{{parsed_event.message.logontype}}"
+
+      # AtJobs schedule time may be multi-valued ("t1, t2"); keep the first
+      - set:
+          thor.start: '{{parsed_event.message.start.split(",")[0] | trim}}'
+        filter: '{{parsed_event.message.get("start") not in [none, ""]}}'
+
+  # ------------------------------------------------------ autostart entries ---
+  set_autoruns_fields:
+    actions:
+      - set:
+          thor.location: "{{parsed_event.message.location}}"
+          thor.type: "{{parsed_event.message.type}}"
+          thor.caption: "{{parsed_event.message.caption}}"
+          thor.command: "{{parsed_event.message.command}}"
+          thor.arguments: "{{parsed_event.message.arguments}}"
+          thor.launch_string: "{{parsed_event.message.launch_string}}"
+
+      # registry-based autostarts: derive hive + key
+      - set:
+          registry.hive: "HKLM"
+          registry.key: '{{parsed_event.message.location.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("location") != none and parsed_event.message.location.split("\\")[0] in ["HKLM", "LOCAL_MACHINE", "HKEY_LOCAL_MACHINE"]}}'
+      - set:
+          registry.hive: "HKCU"
+          registry.key: '{{parsed_event.message.location.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("location") != none and parsed_event.message.location.split("\\")[0] in ["HKCU", "CURRENT_USER", "HKEY_CURRENT_USER"]}}'
+
+      # Autoruns entry is a run-key value NAME -> registry.value
+      - set:
+          registry.value: "{{parsed_event.message.entry}}"
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") != none}}'
+
+  # ------------------------------------------------------- registry checks ---
+  set_registry_fields:
+    actions:
+      - set:
+          thor.string: "{{parsed_event.message.string}}"
+          thor.modified: "{{parsed_event.message.modified}}"
+          registry.value: "{{parsed_event.message.name}}"
+
+      - set:
+          registry.hive: '{{parsed_event.message.key.split("\\")[0]}}'
+          registry.key: '{{parsed_event.message.key.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("key") != none and parsed_event.message.key.split("\\")[0] in ["HKLM", "HKCU", "HKU", "HKCR", "HKEY_LOCAL_MACHINE", "HKEY_CURRENT_USER"]}}'
+      - set:
+          registry.key: "{{parsed_event.message.key}}"
+        filter: '{{parsed_event.message.get("key") != none and parsed_event.message.key.split("\\")[0] not in ["HKLM", "HKCU", "HKU", "HKCR", "HKEY_LOCAL_MACHINE", "HKEY_CURRENT_USER"]}}'
+
+  # -------------------------------------------- execution-evidence stores ---
+  set_shimcache_amcache_fields:
+    actions:
+      # SHIMCache: 'hive' holds a hive-relative key -> registry.key
+      # (deliberate divergence: Elastic puts it in registry.path)
+      - set:
+          registry.key: "{{parsed_event.message.hive}}"
+          thor.timestamp: "{{parsed_event.message.timestamp}}"
+          thor.path: "{{parsed_event.message.path}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache"}}'
+
+      # Amcache store-entry attributes
+      - set:
+          file.hash.sha1: "{{parsed_event.message.sha1}}"
+          file.size: "{{parsed_event.message.size}}"
+          file.pe.product: "{{parsed_event.message.product}}"
+          file.pe.company: "{{parsed_event.message.company}}"
+          file.pe.description: "{{parsed_event.message.description}}"
+          thor.first_run: "{{parsed_event.message.first_run}}"
+          thor.element: "{{parsed_event.message.element}}"
+          related.hash: '["{{parsed_event.message.sha1}}"]'
+        filter: '{{parsed_event.message.get("module") == "Amcache"}}'
+
+      - set:
+          file.created: "{{parsed_event.message.created}}"
+        filter: '{{parsed_event.message.get("module") == "Amcache" and parsed_event.message.get("created") not in [none, "0001-01-01T00:00:00Z", "1970-01-01T00:00:00Z"]}}'
+
+  # ------------------------------------------------------------- DNS cache ---
+  # Deliberate divergence: the cached/resolved IP is dns.resolved_ip, NOT
+  # source.ip (Elastic maps it to source.ip via its generic network gate).
+  set_dns_fields:
+    actions:
+      - set:
+          dns.question.name: "{{parsed_event.message.entry}}"
+          related.hosts: '["{{parsed_event.message.hostname}}", "{{parsed_event.message.entry}}"]'
+
+      - set:
+          dns.resolved_ip: '["{{parsed_event.message.ip}}"]'
+          related.ip: '["{{parsed_event.message.ip}}"]'
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
+
+      # the DNS cache entry is fully represented in dns.question.name
+      - delete:
+          - thor.entry
+
+  # --------------------------- flat signature triple (older representation) ---
+  set_flat_signature_fields:
+    actions:
+      - set:
+          thor.signature: "{{parsed_event.message.signature}}"
+          thor.description: "{{parsed_event.message.desc}}"
+          thor.sigtype: "{{parsed_event.message.sigtype}}"
+          event.reason: "{{parsed_event.message.desc}}"
+
+  # --------------------------------------------------------- firewall rules ---
+  # 'rule'/'rule_name' = the INSPECTED firewall rule (not a detection rule);
+  # 'port' is a rule definition, not observed traffic -> vendor-side.
+  set_firewall_fields:
+    actions:
+      - set:
+          thor.rule_name: "{{parsed_event.message.rule_name}}"
+          thor.rule: "{{parsed_event.message.rule}}"
+          thor.port: "{{parsed_event.message.port}}"
+
+  # -------------------------------------------------------- WMI persistence ---
+  set_wmi_fields:
+    actions:
+      - set:
+          thor.key: "{{parsed_event.message.key}}"
+          thor.filter_type: "{{parsed_event.message.filtertype}}"
+          thor.event_filter_name: "{{parsed_event.message.eventfiltername}}"
+          thor.event_consumer_name: "{{parsed_event.message.eventconsumername}}"
+          thor.event_filter: "{{parsed_event.message.eventfilter}}"
+          thor.event_consumer: "{{parsed_event.message.eventconsumer}}"
+
+  # ---------------------------------------------------------------- hotfixes ---
+  set_hotfix_fields:
+    actions:
+      - set:
+          package.name: "{{parsed_event.message.hotfix_id}}"
+          package.reference: "{{parsed_event.message.caption}}"
+          package.installed: "{{parsed_hotfix_date.date}}"
+          thor.installed_by: "{{parsed_event.message.installed_by}}"
+
+      - set:
+          related.user: '["{{parsed_event.message.installed_by}}"]'
+        filter: '{{parsed_event.message.get("installed_by") not in [none, ""]}}'
+
+  # ---------------------------------------------------- shares / env vars ---
+  set_share_env_fields:
+    actions:
+      - set:
+          thor.share_name: "{{parsed_event.message.share_name}}"
+          thor.path: "{{parsed_event.message.path}}"
+          thor.share_perms: "{{parsed_event.message.share_perms}}"
+        filter: '{{parsed_event.message.get("module") == "NetworkShares"}}'
+
+      - set:
+          thor.var: "{{parsed_event.message.var}}"
+          thor.value: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.get("module") == "EnvCheck"}}'
+
+  # ------------------------------------------------- WER crash diagnostics ---
+  set_wer_fields:
+    actions:
+      - set:
+          thor.exe: "{{parsed_event.message.exe}}"
+          thor.apppath: "{{parsed_event.message.apppath}}"
+          thor.date: "{{parsed_event.message.date}}"
+          thor.error: "{{parsed_event.message.error}}"
+          thor.fault_in_module: "{{parsed_event.message.fault_in_module}}"
+
+      # crashed application object: hashes only (raw event keeps the rest)
+      - set:
+          related.hash: '["{{parsed_event.message.app.get(''md5'', '''')}}", "{{parsed_event.message.app.get(''sha1'', '''')}}", "{{parsed_event.message.app.get(''sha256'', '''')}}"]'
+        filter: '{{parsed_event.message.get("app") != none}}'
+
+  # --------------------------------------------------------- LNK / dumps ---
+  set_lnk_dump_fields:
+    actions:
+      - set:
+          file.path: "{{parsed_event.message.link_file}}"
+          file.name: "{{parsed_event.message.link_file.split('\\\\')[-1].split('/')[-1]}}"
+          thor.target: "{{parsed_event.message.target}}"
+        filter: '{{parsed_event.message.get("module") == "Lnk" and parsed_event.message.get("link_file") != none}}'
+
+      - set:
+          file.path: "{{parsed_event.message.target}}"
+          file.name: "{{parsed_event.message.target.split('\\\\')[-1].split('/')[-1]}}"
+          thor.type: "{{parsed_event.message.type}}"
+        filter: '{{parsed_event.message.get("module") == "DumpScan" and parsed_event.message.get("target") != none}}'
+
+  # -------------------------------------------------------------- timestomp ---
+  set_timestomp_fields:
+    actions:
+      - set:
+          file.mtime: "{{parsed_event.message.modified}}"
+          file.accessed: "{{parsed_event.message.access}}"
+          file.ctime: "{{parsed_event.message.changed}}"
+          file.created: "{{parsed_event.message.created}}"
+          thor.MFT_FILE_NAME_modified: "{{parsed_event.message.MFT_FILE_NAME_modified}}"
+          thor.MFT_FILE_NAME_accessed: "{{parsed_event.message.MFT_FILE_NAME_accessed}}"
+          thor.MFT_FILE_NAME_changed: "{{parsed_event.message.MFT_FILE_NAME_changed}}"
+          thor.MFT_FILE_NAME_created: "{{parsed_event.message.MFT_FILE_NAME_created}}"
+          thor.directory: "{{parsed_event.message.directory}}"
+          thor.drive: "{{parsed_event.message.drive}}"
+
+  # ------------------------------------- user inventory (Linux/macOS/Win) ---
+  set_users_fields:
+    actions:
+      - set:
+          user.id: "{{parsed_event.message.userid}}"
+          user.domain: "{{parsed_event.message.domain}}"
+          thor.last_logon: "{{parsed_event.message.last_logon}}"
+          thor.num_logons: "{{parsed_event.message.num_logons}}"
+          thor.badpwcount: "{{parsed_event.message.badpwcount}}"
+          thor.pass_age: "{{parsed_event.message.pass_age}}"
+
+      - set:
+          user.full_name: "{{parsed_event.message.full_name}}"
+        filter: '{{parsed_event.message.get("module") == "Users"}}'
+
+      # Users (Linux/macOS): home directory, login shell, primary group id
+      - set:
+          thor.home: "{{parsed_event.message.home}}"
+          thor.shell: "{{parsed_event.message.shell}}"
+          thor.group_id: "{{parsed_event.message.groupid}}"
+        filter: '{{parsed_event.message.get("module") == "Users"}}'
+
+      # UserDir "Recently modified profile": profile directory timestamps
+      - set:
+          file.created: "{{parsed_event.message.created}}"
+          file.mtime: "{{parsed_event.message.modified}}"
+        filter: '{{parsed_event.message.get("module") == "UserDir"}}'
+
+  # --------------------------------------- scanner lifecycle / platform ---
+  set_platform_fields:
+    actions:
+      # Startup "Platform DeepEval"
+      - set:
+          host.os.full: "{{parsed_event.message.name}}"
+          host.os.version: "{{parsed_event.message.version}}"
+          host.os.kernel: "{{parsed_event.message.kernel_version}}"
+          host.architecture: "{{parsed_event.message.arch}}"
+          thor.build_number: "{{parsed_event.message.build_number}}"
+          thor.kernel_name: "{{parsed_event.message.kernel_name}}"
+          thor.type: "{{parsed_event.message.type}}"
+          thor.proc: "{{parsed_event.message.proc}}"
+          thor.installed_on: "{{parsed_event.message.installed_on}}"
+        filter: '{{parsed_event.message.get("module") == "Startup" and parsed_event.message.get("arch") != none}}'
+
+      - set:
+          event.start: "{{parsed_event.message.start_time}}"
+        filter: '{{parsed_event.message.get("start_time") != none}}'
+      - set:
+          event.end: "{{parsed_event.message.end_time}}"
+        filter: '{{parsed_event.message.get("end_time") != none}}'
+
+      # Init: license attributes (license holder is NOT a host user)
+      - set:
+          thor.license: "{{parsed_event.message.license}}"
+          thor.owner: "{{parsed_event.message.owner}}"
+          thor.type: "{{parsed_event.message.type}}"
+          thor.starts: "{{parsed_event.message.starts}}"
+          thor.expires: "{{parsed_event.message.expires}}"
+          thor.scanner: "{{parsed_event.message.scanner}}"
+        filter: '{{parsed_event.message.get("module") == "Init" and parsed_event.message.get("license") != none}}'
+
+      - set:
+          thor.type: "{{parsed_event.message.type}}"
+        filter: '{{parsed_event.message.get("module") in ["Init", "Yara"] and parsed_event.message.get("license") == none}}'
+
+      - set:
+          thor.path: "{{parsed_event.message.path}}"
+        filter: '{{parsed_event.message.get("module") == "ThorDB"}}'
+
+      - set:
+          rule.name: "{{parsed_event.message.rule}}"
+        filter: '{{parsed_event.message.get("module") == "Sigma"}}'
+
+      - set:
+          thor.alerts: "{{parsed_event.message.alerts}}"
+          thor.warnings: "{{parsed_event.message.warnings}}"
+          thor.notices: "{{parsed_event.message.notices}}"
+          thor.errors: "{{parsed_event.message.errors}}"
+        filter: '{{parsed_event.message.get("module") == "Report"}}'
+
+  # ----------------------------------------------------- cron (Linux/Unix) ---
+  # Cron emits three shapes: a `file` OBJECT (regularly executed file), a `file`
+  # STRING (crontab path) with a schedule/command, and a crontab environment
+  # variable. The `file` type differs per shape, so each is gated by message.
+  set_cron_fields:
+    actions:
+      # "File regularly executed by cron": file is an object -> file.*
+      - set:
+          file.path: "{{parsed_event.message.file.get('path', '')}}"
+          file.name: "{{parsed_event.message.file.get('path', '').split('/')[-1]}}"
+          file.size: "{{parsed_event.message.file.get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.file.get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.file.get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.file.get('sha256', '')}}"
+          file.mtime: "{{parsed_event.message.file.get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.file.get('accessed', '')}}"
+          file.ctime: "{{parsed_event.message.file.get('changed', '')}}"
+          file.owner: "{{parsed_event.message.file.get('owner', '')}}"
+          file.group: "{{parsed_event.message.file.get('group', '')}}"
+          thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
+          thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
+          thor.file.permissions: "{{parsed_event.message.file.get('permissions', '')}}"
+          related.hash: '["{{parsed_event.message.file.get(''md5'', '''')}}", "{{parsed_event.message.file.get(''sha1'', '''')}}", "{{parsed_event.message.file.get(''sha256'', '''')}}"]'
+        filter: '{{parsed_event.message.get("message") == "File regularly executed by cron"}}'
+
+      # "Crontab entry": file is a string (the crontab), plus a schedule/command
+      - set:
+          file.path: "{{parsed_event.message.file}}"
+          file.name: "{{parsed_event.message.file.split('/')[-1]}}"
+          thor.schedule: "{{parsed_event.message.schedule}}"
+          thor.command: "{{parsed_event.message.command}}"
+        filter: '{{parsed_event.message.get("message") == "Crontab entry"}}'
+
+      # "Crontab environment setting": crontab path + a VAR=value pair
+      - set:
+          file.path: "{{parsed_event.message.file}}"
+          file.name: "{{parsed_event.message.file.split('/')[-1]}}"
+          thor.var: "{{parsed_event.message.variable}}"
+          thor.value: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.get("message") == "Crontab environment setting"}}'
+
+  # ------------------------------------------------------ hosts file entries ---
+  # /etc/hosts (or Windows hosts): entry = hostname, ip = mapped address.
+  set_hosts_fields:
+    actions:
+      - set:
+          related.ip: '["{{parsed_event.message.ip}}"]'
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
+
+  # ----------------------- generic flat fields, coercions, duration, users ---
+  set_generic_fields:
+    actions:
+      - set:
+          thor.scanned_elements: "{{parsed_event.message.scanned_elements}}"
+          thor.entries: "{{parsed_event.message.entries}}"
+          thor.duration: "{{parsed_event.message.duration}}"
+          thor.run_as_user: "{{parsed_event.message.run_as_user}}"
+          thor.exe_owner: "{{parsed_event.message.exe_owner}}"
+          thor.unit_owner: "{{parsed_event.message.unit_owner}}"
+
+      - set:
+          related.user: '["{{parsed_event.message.run_as_user}}"]'
+        filter: '{{parsed_event.message.get("run_as_user") not in [none, ""]}}'
+      - set:
+          related.user: '["{{parsed_event.message.exe_owner}}"]'
+        filter: '{{parsed_event.message.get("exe_owner") not in [none, ""]}}'
+      - set:
+          related.user: '["{{parsed_event.message.unit_owner}}"]'
+        filter: '{{parsed_event.message.get("unit_owner") not in [none, ""]}}'
+      - set:
+          related.user: '["{{parsed_event.message.owner}}"]'
+        filter: '{{parsed_event.message.get("owner") not in [none, ""] and parsed_event.message.get("module") not in ["ProcessCheck", "ProcessIntegrity", "ProcessConnections"]}}'
+
+      # boolean coercions (flat fields; THOR emits true/false or yes/no)
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.enabled: thor.enabled
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.exec_flag: thor.exec_flag
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.deleted: thor.deleted
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.valid: thor.valid
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.is_admin: thor.is_admin
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.no_expire: thor.no_expire
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.active: thor.active
+      - translate:
+        dictionary:
+          "true": true
+          "false": false
+          "yes": true
+          "no": false
+        mapping:
+          parsed_event.message.locked: thor.locked
+
+      # thor.duration keeps the raw string ("0 hours 1 mins 0 secs").
+      # Template arithmetic for a seconds conversion is not a verified DSL
+      # construct — if desired later, test a grok + arithmetic action in the
+      # parser playground first (see review doc).
