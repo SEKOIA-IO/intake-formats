@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Do not populate `user.target.name` when `TargetUserOrGroupType` is `SharePointGroup`, since the value is a SharePoint group name rather than a person
+- Unwrap claims identities (`i:0#.f|membership|...`) and guest URNs (`urn:spo:guest#...`) before populating `user.id`, so the field carries the actual identity instead of the raw wrapper
 
 ## 2023-12-08 - 1.0.2
 
