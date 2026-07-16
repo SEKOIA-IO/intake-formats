@@ -1,0 +1,252 @@
+name: nutanix_prism
+pipeline:
+  - name: parse_api_header
+    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^%{WORD:level}\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{GREEDYDATA:kv_part}$"
+
+  - name: parse_api_kv
+    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_api_header.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: "\\|\\|"
+        raise_errors: false
+
+  - name: parse_api_date
+    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_api_header.message.timestamp}}"
+        output_field: datetime
+        format: "%Y-%m-%d %H:%M:%S,%f"
+
+  - name: parse_audit_json
+    filter: "{{original.log.syslog.appname == 'consolidated_audit'}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+
+  - name: parse_audit_created
+    filter: "{{original.log.syslog.appname == 'consolidated_audit' and parse_audit_json.message.creationTimestampUsecs is not none}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_json.message.creationTimestampUsecs | int / 1000000}}"
+        output_field: date
+        format: "timestamp"
+
+  - name: parse_audit_start
+    filter: "{{original.log.syslog.appname == 'consolidated_audit' and parse_audit_json.message.opStartTimestampUsecs is not none}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_json.message.opStartTimestampUsecs | int / 1000000}}"
+        output_field: date
+        format: "timestamp"
+
+  - name: parse_audit_end
+    filter: "{{original.log.syslog.appname == 'consolidated_audit' and parse_audit_json.message.opEndTimestampUsecs is not none}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_json.message.opEndTimestampUsecs | int / 1000000}}"
+        output_field: date
+        format: "timestamp"
+
+  - name: parse_flow_header
+    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^%{WORD:level}:%{YEAR:flow_year}/%{MONTHNUM:flow_month}/%{MONTHDAY:flow_day} %{TIME:flow_time}\\s+\\[%{DATA:flow_uuid}\\]\\s+%{DATA:flow_service}\\s+\\[%{DATA:hint_action}\\]\\s+%{GREEDYDATA:kv_part}$"
+
+  - name: parse_flow_date
+    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_flow_header.message.flow_year}}/{{parse_flow_header.message.flow_month}}/{{parse_flow_header.message.flow_day}} {{parse_flow_header.message.flow_time}}"
+        output_field: datetime
+        format: "%Y/%m/%d %H:%M:%S"
+
+  - name: parse_flow_kv
+    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_flow_header.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+        raise_errors: false
+
+  - name: parse_security_policy_header
+    filter: "{{original.log.syslog.appname is not none and 'security' in (original.log.syslog.appname | lower) and 'policy' in (original.log.syslog.appname | lower) and 'hit' in (original.log.syslog.appname | lower)}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^%{WORD:level}:%{YEAR:sec_year}/%{MONTHNUM:sec_month}/%{MONTHDAY:sec_day} %{TIME:sec_time}\\s+\\[%{DATA:policy_uuid}\\]\\s+%{DATA:policy_name}\\s+\\[%{DATA:session_state}\\]\\s+%{GREEDYDATA:kv_part}$"
+
+  - name: parse_security_policy_date
+    filter: "{{parse_security_policy_header is not none and parse_security_policy_header.message is not none and parse_security_policy_header.message.sec_year is not none}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_security_policy_header.message.sec_year}}/{{parse_security_policy_header.message.sec_month}}/{{parse_security_policy_header.message.sec_day}} {{parse_security_policy_header.message.sec_time}}"
+        output_field: datetime
+        format: "%Y/%m/%d %H:%M:%S"
+
+  - name: parse_security_policy_kv
+    filter: "{{parse_security_policy_header is not none and parse_security_policy_header.message is not none and parse_security_policy_header.message.kv_part is not none}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parse_security_policy_header.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+
+  - name: set_common
+  - name: set_api_audit_fields
+    filter: "{{original.log.syslog.appname == 'api_audit'}}"
+  - name: set_audit_fields
+    filter: "{{original.log.syslog.appname == 'consolidated_audit'}}"
+  - name: set_flow_fields
+    filter: "{{original.log.syslog.appname is not none and original.log.syslog.appname.startswith('flow-hitCount')}}"
+  - name: set_security_policy_hit_fields
+    filter: "{{original.log.syslog.appname is not none and 'security' in (original.log.syslog.appname | lower) and 'policy' in (original.log.syslog.appname | lower) and 'hit' in (original.log.syslog.appname | lower)}}"
+
+stages:
+  set_common:
+    actions:
+      - set:
+          observer.vendor: "Nutanix"
+          observer.product: "Prism"
+          observer.type: "infrastructure"
+
+  set_api_audit_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_api_date.datetime}}"
+          log.level: "{{parse_api_header.message.level | lower}}"
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.action: "{{parse_api_kv.message.httpMethod | lower}}"
+          event.dataset: "api_audit"
+          user.id: "{{parse_api_kv.message.userName}}"
+          http.request.method: "{{parse_api_kv.message.httpMethod}}"
+          url.path: "{{parse_api_kv.message.restEndpoint}}"
+          url.query: "{{parse_api_kv.message.queryParams}}"
+          http.request.body.content: "{{parse_api_kv.message.payload}}"
+          entity.id: "{{parse_api_kv.message.entityUuid}}"
+          nutanix.prism.api_version: "{{parse_api_kv.message.NutanixApiVersion}}"
+          nutanix.prism.client_type: "{{parse_api_kv.message.clientType}}"
+
+  set_audit_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_audit_created.date}}"
+          event.start: "{{parse_audit_start.date}}"
+          event.end: "{{parse_audit_end.date}}"
+          event.category: ["configuration"]
+          event.type: ["info"]
+          event.dataset: "consolidated_audit"
+          event.reason: "{{parse_audit_json.message.defaultMsg}}"
+          event.action: "{{parse_audit_json.message.operationType | lower}}"
+          user.name: "{{parse_audit_json.message.userName}}"
+          user.id: "{{parse_audit_json.message.userUuid}}"
+          organization.id: "{{parse_audit_json.message.tenantUuid}}"
+          nutanix.prism.alert_uid: "{{parse_audit_json.message.alertUid}}"
+          nutanix.prism.record_type: "{{parse_audit_json.message.recordType}}"
+
+  set_flow_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_flow_date.datetime}}"
+          log.level: "{{parse_flow_header.message.level | lower}}"
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "flow_service"
+          network.transport: "{{parse_flow_kv.message.PROTO | lower}}"
+          source.port: "{{parse_flow_kv.message.SPORT}}"
+          destination.port: "{{parse_flow_kv.message.DPORT}}"
+          event.action: "{{(parse_flow_kv.message.ACTION or '').split(' ')[0] | lower}}"
+          nutanix.prism.flow.service: "{{parse_flow_header.message.flow_service}}"
+
+      - set:
+          source.ip: "{{parse_flow_kv.message.SRC}}"
+        filter: "{{parse_flow_kv is not none and parse_flow_kv.message is not none and parse_flow_kv.message.SRC is not none and parse_flow_kv.message.SRC | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{parse_flow_kv.message.SRC}}"
+        filter: "{{parse_flow_kv is not none and parse_flow_kv.message is not none and parse_flow_kv.message.SRC is not none and not (parse_flow_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{parse_flow_kv.message.DST}}"
+        filter: "{{parse_flow_kv is not none and parse_flow_kv.message is not none and parse_flow_kv.message.DST is not none and parse_flow_kv.message.DST | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parse_flow_kv.message.DST}}"
+        filter: "{{parse_flow_kv is not none and parse_flow_kv.message is not none and parse_flow_kv.message.DST is not none and not (parse_flow_kv.message.DST | is_ipaddress)}}"
+
+  set_security_policy_hit_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "security_policy_hit"
+          event.reason: "{{(parse_security_policy_kv.message.ACTION or '').split(' ')[0]}}"
+
+      - set:
+          "@timestamp": "{{parse_security_policy_date.datetime}}"
+          log.level: "{{parse_security_policy_header.message.level | lower}}"
+          event.action: "{{(parse_security_policy_kv.message.ACTION or '').split(' ')[0] | lower}}"
+          network.transport: "{{parse_security_policy_kv.message.PROTO | lower}}"
+          source.port: "{{parse_security_policy_kv.message.SPORT}}"
+          destination.port: "{{parse_security_policy_kv.message.DPORT}}"
+          rule.id: "{{parse_security_policy_header.message.policy_uuid}}"
+          rule.name: "{{parse_security_policy_header.message.policy_name}}"
+          nutanix.prism.policy.session_state: "{{parse_security_policy_header.message.session_state}}"
+        filter: "{{parse_security_policy_header is not none and parse_security_policy_header.message is not none}}"
+
+      - set:
+          source.ip: "{{parse_security_policy_kv.message.SRC}}"
+        filter: "{{parse_security_policy_kv is not none and parse_security_policy_kv.message is not none and parse_security_policy_kv.message.SRC | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{parse_security_policy_kv.message.SRC}}"
+        filter: "{{parse_security_policy_kv is not none and parse_security_policy_kv.message is not none and parse_security_policy_kv.message.SRC is not none and not (parse_security_policy_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{parse_security_policy_kv.message.DST}}"
+        filter: "{{parse_security_policy_kv is not none and parse_security_policy_kv.message is not none and parse_security_policy_kv.message.DST | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parse_security_policy_kv.message.DST}}"
+        filter: "{{parse_security_policy_kv is not none and parse_security_policy_kv.message is not none and parse_security_policy_kv.message.DST is not none and not (parse_security_policy_kv.message.DST | is_ipaddress)}}"
+
+      - translate:
+        dictionary:
+          Create: ["start"]
+          Update: ["info"]
+          Destroy: ["end"]
+        default: ["info"]
+        mapping:
+          parse_security_policy_header.message.session_state: event.type
+        filter: "{{parse_security_policy_header is not none and parse_security_policy_header.message is not none and parse_security_policy_header.message.session_state is not none}}"

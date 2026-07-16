@@ -1,0 +1,97 @@
+name: cisco-secure-access-dns
+pipeline:
+  - name: parsed_dsv
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - timestamp
+          - most_granular_identity
+          - identities
+          - internal_ip
+          - external_ip
+          - action
+          - query_type
+          - response_code
+          - domain
+          - categories
+          - most_granular_identity_type
+          - identity_types
+          - blocked_categories
+          - rule_id
+          - destination_countries
+          - organization_id
+        delimiter: ","
+
+  - name: set_ecs_fields
+
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["connection", "protocol"]
+          observer.vendor: "Cisco"
+          observer.product: "Secure Access"
+          observer.type: "dns"
+          event.dataset: "dns"
+          dns.type: "query"
+
+      - set:
+          "@timestamp": "{{parsed_dsv.message.timestamp | to_rfc3339}}"
+          event.action: "{{parsed_dsv.message.action | lower}}"
+
+          dns.question.type: "{{parsed_dsv.message.query_type.split(' ')[-1].strip('()')}}"
+          dns.response_code: "{{parsed_dsv.message.response_code}}"
+          dns.question.name: "{{parsed_dsv.message.domain.strip('.')}}"
+
+          rule.id: "{{parsed_dsv.message.rule_id}}"
+
+          destination.geo.country_iso_code: "{{parsed_dsv.message.destination_countries}}"
+
+          organization.id: "{{parsed_dsv.message.organization_id}}"
+
+      - translate:
+        dictionary:
+          "blocked": ["failure"]
+          "allowed": ["success"]
+        mapping:
+          final.event.action: event.outcome
+
+      - set:
+          source.ip: "{{parsed_dsv.message.internal_ip}}"
+        filter: "{{parsed_dsv.message.internal_ip | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_dsv.message.external_ip}}"
+        filter: "{{parsed_dsv.message.external_ip | is_ipaddress}}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          cisco_secure_access.dns.most_granular_identity: "{{parsed_dsv.message.most_granular_identity}}"
+        filter: "{{parsed_dsv.message.most_granular_identity | length > 0}}"
+
+      - set:
+          cisco_secure_access.dns.most_granular_identity_type: "{{parsed_dsv.message.most_granular_identity_type}}"
+        filter: "{{parsed_dsv.message.most_granular_identity_type | length > 0}}"
+
+      - set:
+          cisco_secure_access.dns.identities: "{{parsed_dsv.message.identities.split(',')}}"
+        filter: "{{parsed_dsv.message.identities | length > 0}}"
+
+      - set:
+          cisco_secure_access.dns.identity_types: "{{parsed_dsv.message.identity_types.split(',')}}"
+        filter: "{{parsed_dsv.message.identity_types | length > 0}}"
+
+      - set:
+          cisco_secure_access.dns.categories: "{{parsed_dsv.message.categories.split(',')}}"
+        filter: "{{parsed_dsv.message.categories | length > 0}}"
+
+      - set:
+          cisco_secure_access.dns.blocked_categories: "{{parsed_dsv.message.blocked_categories.split(',')}}"
+        filter: "{{parsed_dsv.message.blocked_categories | length > 0}}"
