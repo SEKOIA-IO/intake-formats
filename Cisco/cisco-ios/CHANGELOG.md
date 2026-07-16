@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased] - 2026-06-16
+## 2026-07-16
+
+### Added
+
+- Parse custom fields:
+	- `cisco.ios.ssh.terminal`
+	- `cisco.ios.ssh.cipher`
+	- `cisco.ios.ssh.hmac`
+
+## 2026-06-16
 
 ### Added
 
