@@ -151,6 +151,7 @@ stages:
           file.hash.sha256: "{{json_event.message.properties.SHA256}}"
           file.name: "{{json_event.message.properties.FileName}}"
           file.size: "{{json_event.message.properties.FileSize}}"
+          file.mime_type: "{{json_event.message.properties.FileType}}"
           host.architecture: "{{json_event.message.properties.OSArchitecture}}"
           host.id: "{{json_event.message.properties.DeviceId}}"
           host.name: "{{json_event.message.properties.DeviceName}}"
@@ -215,6 +216,30 @@ stages:
           microsoft.defender.threat.names: "{{json_event.message.properties.ThreatNames}}"
           microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
           microsoft.defender.url_location: "{{json_event.message.properties.UrlLocation}}"
+
+      - set:
+          email.cc.address: >
+            [
+              {%- for elt in json_event.message.properties.Cc -%}
+                "{{elt.split(' ')[-1].strip('<>')}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("Cc") != None}}'
+
+      - set:
+          email.bcc.address: >
+            [
+              {%- for elt in json_event.message.properties.Bcc -%}
+                "{{elt.split(' ')[-1].strip('<>')}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("Bcc") != None}}'
+
+      - set:
+          file.type: >
+            {%- set d = json_event.message.properties.AdditionalFields if json_event.message.properties.AdditionalFields is mapping else json_event.message.properties.AdditionalFields|from_json -%}
+            {{ d.get('FileType') }}
+        filter: '{{json_event.message.properties.get("FileType") == None and json_event.message.properties.get("AdditionalFields") != None}}'
 
       - set:
           microsoft.defender.campaign.id: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignID')}}"
@@ -283,7 +308,20 @@ stages:
         filter: '{{json_event.message.properties.get("RemoteUrl", "").startswith("http") or json_event.message.properties.get("RemoteUrl", "").startswith("uri")}}'
       - set:
           email.to.address: '["{{json_event.message.properties.RecipientEmailAddress}}"]'
-        filter: '{{json_event.message.properties.get("RecipientEmailAddress") != None}}'
+        filter: '{{json_event.message.properties.get("RecipientEmailAddress") != None and json_event.message.properties.get("To") == None}}'
+
+      - set:
+          email.to.address: >
+            [
+              {%- if json_event.message.properties.get("RecipientEmailAddress") != None -%}
+                "{{json_event.message.properties.RecipientEmailAddress}}",
+              {%- endif -%}
+              {%- for elt in json_event.message.properties.To -%}
+                "{{elt.split(' ')[-1].strip('<>')}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("To") != None}}'
+
       - set:
           email.from.address: '["{{json_event.message.properties.SenderFromAddress}}"]'
         filter: '{{json_event.message.properties.get("SenderFromAddress") != None}}'
