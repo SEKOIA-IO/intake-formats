@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-07-20 - 1.0.6
+
+### Added
+
+- Parse custom fields:
+    - `microsoft.defender.threat.last_verdict`
+    - `microsoft.defender.threat.verdict`
+
 ## 2025-09-01 - 1.0.5
 
 ### Fixed
