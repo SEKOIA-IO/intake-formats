@@ -1,16 +1,23 @@
 name: nutanix_prism
 pipeline:
   - name: parse_api_header
-    filter: "{{original.message is not none and '||' in original.message and 'httpMethod=' in original.message and 'restEndpoint=' in original.message}}"
+    filter: >
+      {{original.message is not none and '||' in original.message and
+      'httpMethod=' in original.message and 'restEndpoint=' in
+      original.message}}
     external:
       name: grok.match
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "^(?:<\\d+>\\S+ \\S+ \\S+:\\s+)?%{WORD:level}\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{GREEDYDATA:kv_part}$"
+        pattern:
+          "^(?:<\\d+>\\S+ \\S+ \\S+:\\s+)?%{WORD:level}\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{GREEDYDATA:kv_part}$"
 
   - name: parse_api_kv
-    filter: "{{parse_api_header is not none and parse_api_header.message is not none and parse_api_header.message.kv_part is not none}}"
+    filter: >
+      {{parse_api_header is not none and
+      parse_api_header.message is not none and
+      parse_api_header.message.kv_part is not none}}
     external:
       name: kv.parse-kv
       properties:
@@ -21,7 +28,10 @@ pipeline:
         raise_errors: false
 
   - name: parse_api_date
-    filter: "{{parse_api_header is not none and parse_api_header.message is not none and parse_api_header.message.timestamp is not none}}"
+    filter: >
+      {{parse_api_header is not none and
+      parse_api_header.message is not none and
+      parse_api_header.message.timestamp is not none}}
     external:
       name: date.parse
       properties:
@@ -30,41 +40,62 @@ pipeline:
         format: "%Y-%m-%d %H:%M:%S,%f"
 
   - name: parse_audit_json
-    filter: "{{original.message is not none and original.message.strip().startswith('{') and 'creationTimestampUsecs' in original.message and 'operationType' in original.message and 'userUuid' in original.message}}"
+    filter: >
+      {{original.message is not none and
+      original.message.strip().startswith('{') and
+      'creationTimestampUsecs' in original.message and 'operationType'
+      in original.message and 'userUuid' in original.message}}
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
 
   - name: parse_audit_created
-    filter: "{{parse_audit_json is not none and parse_audit_json.message is not none and parse_audit_json.message.creationTimestampUsecs is not none}}"
+    filter: >
+      {{parse_audit_json is not none and parse_audit_json.message is
+      not none and
+      parse_audit_json.message.creationTimestampUsecs is not none}}
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_audit_json.message.creationTimestampUsecs | int / 1000000}}"
+        input_field:
+          "{{parse_audit_json.message.creationTimestampUsecs | int / 1000000}}"
         output_field: date
         format: "timestamp"
 
   - name: parse_audit_start
-    filter: "{{parse_audit_json is not none and parse_audit_json.message is not none and parse_audit_json.message.opStartTimestampUsecs is not none}}"
+    filter: >
+      {{parse_audit_json is not none and parse_audit_json.message is
+      not none and
+      parse_audit_json.message.opStartTimestampUsecs is not none}}
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_audit_json.message.opStartTimestampUsecs | int / 1000000}}"
+        input_field:
+          "{{parse_audit_json.message.opStartTimestampUsecs | int / 1000000}}"
         output_field: date
         format: "timestamp"
 
   - name: parse_audit_end
-    filter: "{{parse_audit_json is not none and parse_audit_json.message is not none and parse_audit_json.message.opEndTimestampUsecs is not none}}"
+    filter: >
+      {{parse_audit_json is not none and parse_audit_json.message is
+      not none and
+      parse_audit_json.message.opEndTimestampUsecs is not none}}
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_audit_json.message.opEndTimestampUsecs | int / 1000000}}"
+        input_field:
+          "{{parse_audit_json.message.opEndTimestampUsecs | int / 1000000}}"
         output_field: date
         format: "timestamp"
 
   - name: parse_network_header
-    filter: "{{original.message is not none and (' SRC=' in original.message) and (' DST=' in original.message) and (' PROTO=' in original.message) and (' SPORT=' in original.message) and (' DPORT=' in original.message) and (' ACTION=' in original.message) and (' ORIG:' in original.message) and (' REPLY:' in original.message)}}"
+    filter: >
+      {{original.message is not none and (' SRC=' in original.message)
+      and (' DST=' in original.message) and (' PROTO=' in
+      original.message) and (' SPORT=' in original.message) and (' DPORT='
+      in original.message) and (' ACTION=' in original.message) and (' ORIG:'
+      in original.message) and (' REPLY:' in original.message)}}
     external:
       name: grok.match
       properties:
@@ -73,16 +104,23 @@ pipeline:
         pattern: "^%{WORD:level}:%{YEAR:net_year}/%{MONTHNUM:net_month}/%{MONTHDAY:net_day} %{TIME:net_time}\\s+\\[%{DATA:rule_uuid}\\]\\s+%{DATA:rule_name}\\s+\\[%{DATA:session_state}\\]\\s+%{GREEDYDATA:kv_part}$"
 
   - name: parse_network_date
-    filter: "{{parse_network_header is not none and parse_network_header.message is not none and parse_network_header.message.net_year is not none}}"
+    filter: >
+      {{parse_network_header is not none and
+      parse_network_header.message is not none and
+      parse_network_header.message.net_year is not none}}
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_network_header.message.net_year}}/{{parse_network_header.message.net_month}}/{{parse_network_header.message.net_day}} {{parse_network_header.message.net_time}}"
+        input_field:
+          "{{parse_network_header.message.net_year}}/{{parse_network_header.message.net_month}}/{{parse_network_header.message.net_day}} {{parse_network_header.message.net_time}}"
         output_field: datetime
         format: "%Y/%m/%d %H:%M:%S"
 
   - name: parse_network_kv
-    filter: "{{parse_network_header is not none and parse_network_header.message is not none and parse_network_header.message.kv_part is not none}}"
+    filter: >
+      {{parse_network_header is not none and
+      parse_network_header.message is not none and
+      parse_network_header.message.kv_part is not none}}
     external:
       name: kv.parse-kv
       properties:
@@ -94,13 +132,39 @@ pipeline:
 
   - name: set_common
   - name: set_api_audit_fields
-    filter: "{{parse_api_header is not none and parse_api_header.message is not none and parse_api_kv is not none and parse_api_kv.message is not none and parse_api_date is not none and parse_api_date.datetime is not none}}"
+    filter: >
+      {{parse_api_header is not none and
+      parse_api_header.message is not none and parse_api_kv is not none
+      and parse_api_kv.message is not none and parse_api_date is not
+      none and parse_api_date.datetime is not none}}
   - name: set_audit_fields
-    filter: "{{parse_audit_json is not none and parse_audit_json.message is not none}}"
+    filter: >
+      {{parse_audit_json is not none and parse_audit_json.message is
+      not none}}
   - name: set_flow_fields
-    filter: "{{parse_network_header is not none and parse_network_header.message is not none and parse_network_header.message.rule_name is not none and parse_network_kv is not none and parse_network_kv.message is not none and parse_network_date is not none and parse_network_date.datetime is not none and not ((parse_network_header.message.rule_name | lower).endswith('-policy') or (parse_network_header.message.rule_name | lower).startswith('policy-') or (' policy ' in (' ' ~ (parse_network_header.message.rule_name | lower) ~ ' ')))}}"
+    filter: >
+      {{parse_network_header is not none and
+      parse_network_header.message is not none and
+      parse_network_header.message.rule_name is not none and
+      parse_network_kv is not none and parse_network_kv.message is not
+      none and parse_network_date is not none and
+      parse_network_date.datetime is not none and not
+      ((parse_network_header.message.rule_name | lower).endswith('-policy')
+      or (parse_network_header.message.rule_name |
+      lower).startswith('policy-') or (' policy ' in (' ' ~
+      (parse_network_header.message.rule_name | lower) ~ ' ')))}}
   - name: set_security_policy_hit_fields
-    filter: "{{parse_network_header is not none and parse_network_header.message is not none and parse_network_header.message.rule_name is not none and parse_network_kv is not none and parse_network_kv.message is not none and parse_network_date is not none and parse_network_date.datetime is not none and ((parse_network_header.message.rule_name | lower).endswith('-policy') or (parse_network_header.message.rule_name | lower).startswith('policy-') or (' policy ' in (' ' ~ (parse_network_header.message.rule_name | lower) ~ ' ')))}}"
+    filter: >
+      {{parse_network_header is not none and
+      parse_network_header.message is not none and
+      parse_network_header.message.rule_name is not none and
+      parse_network_kv is not none and parse_network_kv.message is not
+      none and parse_network_date is not none and
+      parse_network_date.datetime is not none and
+      ((parse_network_header.message.rule_name | lower).endswith('-policy')
+      or (parse_network_header.message.rule_name |
+      lower).startswith('policy-') or (' policy ' in (' ' ~
+      (parse_network_header.message.rule_name | lower) ~ ' ')))}}
 
 stages:
   set_common:
