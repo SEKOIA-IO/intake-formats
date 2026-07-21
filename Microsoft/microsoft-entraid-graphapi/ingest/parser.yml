@@ -109,10 +109,32 @@ stages:
         filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'user'}}"
 
       - set:
-          user.target.email: "{{json_event.message.targetResources[0].userPrincipalName}}"
-          user.target.id: "{{json_event.message.targetResources[0].id}}"
-          user.target.name: "{{json_event.message.targetResources[0].userPrincipalName or json_event.message.targetResources[0].displayName}}"
-        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'user' and (((json_event.message.targetResources[0].id != null and (json_event.message.userId or json_event.message.initiatedBy.user.id) != null) and json_event.message.targetResources[0].id != (json_event.message.userId or json_event.message.initiatedBy.user.id)) or (((json_event.message.targetResources[0].id == null) or ((json_event.message.userId or json_event.message.initiatedBy.user.id) == null)) and json_event.message.targetResources[0].userPrincipalName != null and (json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName) != null and (json_event.message.targetResources[0].userPrincipalName | lower) != ((json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName) | lower)))}}"
+          user.target.email: >-
+            {%- for item in json_event.message.targetResources if item.type != null and item.type | lower == 'user' -%}
+              {%- if loop.first -%}{{ item.userPrincipalName }}{%- endif -%}
+            {%- endfor -%}
+          user.target.id: >-
+            {%- for item in json_event.message.targetResources if item.type != null and item.type | lower == 'user' -%}
+              {%- if loop.first -%}{{ item.id }}{%- endif -%}
+            {%- endfor -%}
+          user.target.name: >-
+            {%- for item in json_event.message.targetResources if item.type != null and item.type | lower == 'user' -%}
+              {%- if loop.first -%}{{ item.userPrincipalName or item.displayName }}{%- endif -%}
+            {%- endfor -%}
+        filter: >-
+          {%- set actor_id = json_event.message.userId or json_event.message.initiatedBy.user.id -%}
+          {%- set actor_upn = json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName -%}
+          {%- for item in json_event.message.targetResources if item.type != null and item.type | lower == 'user' -%}
+            {%- if loop.first -%}
+              {%- set has_both_ids = item.id != null and actor_id != null -%}
+              {%- set different_ids = has_both_ids and item.id != actor_id -%}
+              {%- set has_both_upn = item.userPrincipalName != null and actor_upn != null -%}
+              {%- set different_upn = has_both_upn and (item.userPrincipalName | lower) != (actor_upn | lower) -%}
+              {%- if different_ids or ((not has_both_ids) and different_upn) -%}
+                true
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
 
       - set:
           host.id: "{{json_event.message.targetResources[0].id}}"
