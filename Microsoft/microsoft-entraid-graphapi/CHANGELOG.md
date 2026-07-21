@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-07-21
+
+### Added
+
+- Add ECS target user fields for `UserManagement` events when the impacted user differs from the actor:
+    - `user.target.id`
+    - `user.target.name`
+    - `user.target.email`
+
+### Changed
+
+- Update `user.name` mapping to prioritize `userPrincipalName` (login identifier) over `displayName`
+- Update PIM user override so `user.name` also prefers `targetResources[].userPrincipalName`
+- Update `user.email` behavior to keep the actor identity and avoid replacing it with the target user email
+
 ## [Unreleased] - 2026-05-27
 
 ### Added
