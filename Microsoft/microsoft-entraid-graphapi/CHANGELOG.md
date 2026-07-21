@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update PIM user override so `user.name` also prefers `targetResources[].userPrincipalName`
 - Update `user.email` behavior to keep the actor identity and avoid replacing it with the target user email
 
-## [Unreleased] - 2026-05-27
+## 2026-05-27
 
 ### Added
 
