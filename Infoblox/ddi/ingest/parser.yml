@@ -249,6 +249,7 @@ stages:
           event.reason: "{{parse_event.message.infoblox_nios_log_dhcp_request_message or parse_event.message.infoblox_nios_log_dhcp_lease_message or parse_event.message.infoblox_nios_log_dns_message or parse_event.message.infoblox_nios_log_dhcp_message}}"
           event.category: ["network"]
           event.type: ["info"]
+          event.kind: "event"
 
           source.port: "{{parse_event.message.client_port}}"
           source.mac: "{{parse_event.message.client_mac}}"
@@ -335,11 +336,50 @@ stages:
 
       - set:
           event.type: ["protocol", "start"]
+          event.outcome: >
+            {%- set event_reason = "" -%}
+            {%- if parse_event.message.get('infoblox_nios_log_dhcp_request_message') != None -%}
+              {%- set event_reason = parse_event.message.infoblox_nios_log_dhcp_request_message -%}
+            {%- elif parse_event.message.get('infoblox_nios_log_dhcp_lease_message') != None -%}
+              {%- set event_reason = parse_event.message.infoblox_nios_log_dhcp_lease_message -%}
+            {%- elif parse_event.message.get('infoblox_nios_log_dns_message') != None -%}
+              {%- set event_reason = parse_event.message.infoblox_nios_log_dns_message -%}
+            {%- elif parse_event.message.get('infoblox_nios_log_dhcp_message') != None -%}
+              {%- set event_reason = parse_event.message.infoblox_nios_log_dhcp_message -%}
+            {%- endif -%}
+            {%- set event_reason = event_reason | lower -%}
+            {%- if "renew" in event_reason -%}
+              success
+            {%- elif "unavailable" in event_reason or "ignored" in event_reason -%}
+              failure
+            {%- endif -%}
         filter: "{{'REQUEST DHCP' in original.message or 'DISCOVER DHCP' in original.message or 'DHCPREQUEST' in original.message or 'DHCPDISCOVER' in original.message or 'BOOTREQUEST' in original.message or 'DHCPACK' in original.message or 'DHCPOFFER' in original.message}}"
 
       - set:
           event.type: ["protocol"]
-        filter: "{{ 'DHCPINFORM' in original.message or parse_event.message.DNS_FORMERR != None or parse_event.message.DNS_REFUSED != None or parse_event.message.DNS_OTHER != None or parse_event.message.DNS_0 != None or parse_event.message.DNS_1 != None or parse_event.message.DNS_2 != None or parse_event.message.DNS_3 != None or parse_event.message.DNS_4 != None or parse_event.message.DNS_5 != None or parse_event.message.DNS_6 != None or parse_event.message.DNS_7 != None or parse_event.message.DNS_8 != None or parse_event.message.DNS_9 != None or parse_event.message.DNS_10 != None or parse_event.message.DNS_11 != None or parse_event.message.DNS_12 != None or parse_event.message.DNS_13 != None or parse_event.message.DNS_14 != None }}"
+        filter: "{{ '|DNS Query|' in original.message or '|DNS Response|' in original.message or 'DHCPINFORM' in original.message or parse_event.message.get('DNS_FORMERR') != None or parse_event.message.get('DNS_REFUSED') != None or parse_event.message.get('DNS_OTHER') != None or parse_event.message.get('DNS_0') != None or parse_event.message.get('DNS_1') != None or parse_event.message.get('DNS_2') != None or parse_event.message.get('DNS_3') != None or parse_event.message.get('DNS_4') != None or parse_event.message.get('DNS_5') != None or parse_event.message.get('DNS_6') != None or parse_event.message.get('DNS_7') != None or parse_event.message.get('DNS_8') != None or parse_event.message.get('DNS_9') != None or parse_event.message.get('DNS_10') != None or parse_event.message.get('DNS_11') != None or parse_event.message.get('DNS_12') != None or parse_event.message.get('DNS_13') != None or parse_event.message.get('DNS_14') != None }}"
+
+      - set:
+          event.outcome: >
+            {%- if parse_event.message.dns_response_code == 'NOERROR' -%}
+              success
+            {%- elif parse_event.message.dns_response_code in ['FORMERR', 'SERVFAIL', 'NXDOMAIN', 'REFUSED'] -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+        filter: "{{ parse_event.message.get('dns_response_code') != None and (parse_event.message.get('DNS_FORMERR') != None or parse_event.message.get('DNS_REFUSED') != None or parse_event.message.get('DNS_OTHER') != None or parse_event.message.get('DNS_0') != None or parse_event.message.get('DNS_1') != None or parse_event.message.get('DNS_2') != None or parse_event.message.get('DNS_3') != None or parse_event.message.get('DNS_4') != None or parse_event.message.get('DNS_5') != None or parse_event.message.get('DNS_6') != None or parse_event.message.get('DNS_7') != None or parse_event.message.get('DNS_8') != None or parse_event.message.get('DNS_9') != None or parse_event.message.get('DNS_10') != None or parse_event.message.get('DNS_11') != None or parse_event.message.get('DNS_12') != None or parse_event.message.get('DNS_13') != None or parse_event.message.get('DNS_14') != None) }}"
+
+      - set:
+          event.outcome: >
+            {%- if parsed_cef.message.get('InfobloxDNSRCode') == 'NOERROR' -%}
+              success
+            {%- elif parsed_cef.message.get('InfobloxDNSRCode') in ['FORMERR', 'SERVFAIL', 'NXDOMAIN', 'REFUSED'] -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+        filter: "{{ parsed_cef.message.get('InfobloxDNSRCode') != None }}"
 
       - set:
           event.type: ["protocol", "end"]
