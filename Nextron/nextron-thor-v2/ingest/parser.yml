@@ -257,13 +257,18 @@ stages:
         filter: '{{parsed_event.message.message == "Malware file found" and parsed_event.message.level == "Alert"}}'
 
   # ------------------------------------------------- detection rule fields ---
-  # Elastic parity: rule.name = reasons[0].name, rule.id = signature.rulename,
-  # rule.author = [signature.author]. Additions (correct ECS, vendor-side in
-  # Elastic): rule.uuid, rule.reference, rule.category, rule.ruleset.
+  # rule.name and rule.id both = signature.rulename (the bare rule identifier).
+  # rule.description = signature.description, recovered from the composite reason
+  # name ("<label> <rulename> / <description>", e.g. "YARA rule
+  # HKTL_Meterpreter_inMemory / Detects Meterpreter in-memory") for plain YARA/
+  # Sigma where signature.description is empty. For Sigma the rule.name is later
+  # overridden by the engine's rule title, while rule.id keeps the rulename.
+  # Additions (correct ECS): rule.uuid, rule.reference, rule.author,
+  # rule.category, rule.ruleset.
   set_rule_fields:
     actions:
       - set:
-          rule.name: '{{parsed_event.message.reasons[0].get("name", "")}}'
+          rule.name: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename", "")}}'
           rule.id: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename", "")}}'
           rule.uuid: '{{parsed_event.message.reasons[0].get("signature", {}).get("id", "")}}'
           rule.reference: '{{parsed_event.message.reasons[0].get("signature", {}).get("ref", "")}}'
@@ -274,6 +279,18 @@ stages:
           thor.reason_count: "{{parsed_event.message.reasons | length}}"
           thor.rule_date: '{{parsed_event.message.reasons[0].get("signature", {}).get("ruledate", "")}}'
           thor.signature_tags: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags", []) | join(", ")}}'
+
+      # Recover the description from the composite reason name (part after the
+      # first " / ") when the signature carries none — the plain YARA/Sigma case.
+      - set:
+          rule.description: '{{parsed_event.message.reasons[0].get("name", "").split(" / ")[1:] | join(" / ")}}'
+        filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("description") in [none, ""] and " / " in parsed_event.message.reasons[0].get("name", "")}}'
+
+      # Reasons without a signature rulename (heuristics/IOCs) keep the human
+      # readable composite name rather than an empty rule.name.
+      - set:
+          rule.name: '{{parsed_event.message.reasons[0].get("name", "")}}'
+        filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename") in [none, ""]}}'
 
       # matched[0].data = the actual bytes/string that triggered the top match
       - set:

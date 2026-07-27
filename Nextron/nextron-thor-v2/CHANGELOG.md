@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Detection rule fields: `rule.name` now holds the bare rule identifier
+  (`reasons[0].signature.rulename`) instead of the composite reason name; `rule.id`
+  keeps that same identifier (for Sigma, `rule.name` is still overridden by the
+  engine's rule title while `rule.id` retains the rulename). `rule.description` is
+  recovered from the composite reason name (the part after the first ` / `) for
+  plain YARA/Sigma matches where `signature.description` is empty.
+
 ### Added
 
 - Initial parser for Nextron THOR APT scanner JSON logs (log_version v2.x)
