@@ -6,7 +6,7 @@ pipeline:
       properties:
         input_field: "{{ original.message }}"
         output_field: result
-        pattern: "%{SYSTEM_MESSAGE}|%{MANAGEMENT_MESSAGE}|%{MANAGEMENT_AUDIT}|%{MANAGEMENT_ACCESS}|%{NETWORK_TUNNEL_AUDIT}|%{WEB_PROXY_AUDIT}|%{WORKPLACE}"
+        pattern: "%{SYSTEM_MESSAGE}|%{MANAGEMENT_MESSAGE}|%{MANAGEMENT_AUDIT}|%{MANAGEMENT_ACCESS}|%{NETWORK_TUNNEL_AUDIT}|%{WEB_PROXY_AUDIT}|%{WORKPLACE}|%{LOGIN}|%{CRON}"
         custom_patterns:
           SYSTEMDATE: "%{MONTHDAY}/%{MONTHNUM}/%{YEAR} %{TIME}( %{ISO8601_TIMEZONE})?"
           MGTDATE: "%{TIMESTAMP_ISO8601} %{ISO8601_TIMEZONE}"
@@ -20,7 +20,9 @@ pipeline:
           NETWORK_TUNNEL_AUDIT: "(\\[)?%{IP:source}(\\])?:%{NUMBER:source_port} - \"\\(%{USER:username}\\)@\\(%{DATA:realm}\\)\" \"%{HTTPDATE:http_datestamp}\" %{NUMBER:version} %{CONNECTION_TYPE:connection_type}(:%{WORD:transport})? %{IP:destination}(:%{NUMBER:destination_port})? %{NUMBER:error_code} %{NUMBER:bytes_in} %{NUMBER:bytes_out} %{NUMBER:duration} %{WORD:platform_prefix}\"%{GREEDYDATA:equipment_id}\""
           WEB_PROXY_AUDIT: '%{IPORHOST:source} - \(%{USER:username}\)@\(%{DATA:realm}\) \[%{SYSTEMDATE:datestamp}\] "%{WORD:method} %{GREEDYDATA:path} %{WORD:protocol}/%{NUMBER:http_version}" %{NUMBER:status} %{NUMBER:bytes}'
           WORKPLACE: "%{MGTDATE2:datestamp} (%{DATA:service}@%{DATA:hostname}|%{IP:source}/%{IP:proxy}) local7.%{WORD:level} (WP: %{MGTDATE:timestamp} )?%{WORD:system_level} (\\[%{GREEDYDATA}\\]|-) %{WORD:component}: (<%{GREEDYDATA:action}> )?(uri=%{GREEDYDATA:uri} status=%{WORD:status}|%{GREEDYDATA:message})"
- 
+          LOGIN: "%{TIMESTAMP_ISO8601:datestamp} %{ISO8601_TIMEZONE} %{WORD:level}    \\[%{USER:username}\\]: Login %{WORD:status} - Address=%{IP:source}"
+          CRON: "pam_unix(cron:%{WORD:cron}): session %{WORD:status} for user %{USER:username}"
+
   - name: parsed_date
     filter: "{{ parsed_event.result.http_datestamp != None and parsed_event.result.MANAGEMENT_ACCESS == None }}"
     external:
@@ -39,20 +41,24 @@ pipeline:
         output_field: date
         format: "%d/%b/%Y:%H:%M:%S %z"
 
+  - name: set_login_fields
+    filter: "{{ parsed_event.result.LOGIN != None }}"
+  - name: set_cron_fields
+    filter: "{{ parsed_event.result.CRON != None }}"
   - name: set_system_fields
-    filter: "{{ parsed_event.result.SYSTEM_MESSAGE != None }}"
+    filter: "{{ parsed_event.result.SYSTEM_MESSAGE != None and parsed_event.result.CRON == None  }}"
   - name: set_management_message_fields
-    filter: "{{ parsed_event.result.MANAGEMENT_MESSAGE != None }}"
+    filter: "{{ parsed_event.result.MANAGEMENT_MESSAGE != None and parsed_event.result.CRON == None  }}"
   - name: set_management_audit_fields
-    filter: "{{ parsed_event.result.MANAGEMENT_AUDIT != None }}"
+    filter: "{{ parsed_event.result.MANAGEMENT_AUDIT != None  and parsed_event.result.CRON == None }}"
   - name: set_management_access_fields
-    filter: "{{ parsed_event.result.MANAGEMENT_ACCESS != None }}"
+    filter: "{{ parsed_event.result.MANAGEMENT_ACCESS != None  and parsed_event.result.CRON == None }}"
   - name: set_network_tunnel_audit_fields
-    filter: "{{ parsed_event.result.NETWORK_TUNNEL_AUDIT != None }}"
+    filter: "{{ parsed_event.result.NETWORK_TUNNEL_AUDIT != None  and parsed_event.result.CRON == None }}"
   - name: set_web_proxy_audit_fields
-    filter: "{{ parsed_event.result.WEB_PROXY_AUDIT != None }}"
+    filter: "{{ parsed_event.result.WEB_PROXY_AUDIT != None  and parsed_event.result.CRON == None }}"
   - name: set_workplace_fields
-    filter: "{{ parsed_event.result.WORKPLACE != None }}"
+    filter: "{{ parsed_event.result.WORKPLACE != None and parsed_event.result.CRON == None }}"
 
 stages:
   set_common_fields:
@@ -87,7 +93,6 @@ stages:
           "@timestamp": "{{parsed_event.result.datestamp | to_rfc3339 or parsed_date.date }}" #datestamp does not always contains a timezone, not sure if we need to filter or always let it be parsed
           sonicwall.sma.1000.level: "{{ parsed_event.result.system_level }}"
 
-      
       - translate:
         dictionary:
           "Error": 3
@@ -137,7 +142,8 @@ stages:
           url.path: "{{ parsed_event.result.path }}"
           user.name: "{{ parsed_event.result.username }}"
           network.protocol: "{{ parsed_event.result.protocol }}"
-          event.outcome: > # event.outcome is defined but event.type is set to info, not sure the outcome is relevant
+          event.outcome:
+            > # event.outcome is defined but event.type is set to info, not sure the outcome is relevant
             {%- if parsed_event.result.status | length == 3 and parsed_event.result.status[0] in ["2", "3"] -%}
               success
             {%- elif parsed_event.result.status | length == 3 and parsed_event.result.status[0] in ["4", "5"] -%}
@@ -223,7 +229,8 @@ stages:
           service.name: "{{ parsed_event.result.service }}"
           source.ip: "{{ parsed_event.result.source }}"
           url.original: "{{parsed_event.result.uri}}"
-          event.outcome: > # event.outcome is defined but event.type is set to info, not sure the outcome is relevant
+          event.outcome:
+            > # event.outcome is defined but event.type is set to info, not sure the outcome is relevant
             {%- if "success" in parsed_event.result.status | lower -%}
               success
             {%- elif "fail" in parsed_event.result.status | lower -%}
@@ -235,3 +242,30 @@ stages:
       - set:
           event.provider: "WP"
         filter: "{{ parsed_event.result.timestamp != None }}"
+
+  set_login_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.dataset: "sonicwall.sma.1000.login"
+          "@timestamp": "{{ parsed_event.result.datestamp | to_rfc3339 }}"
+          log.level: "{{ parsed_event.result.level | lower}}"
+          user.name: "{{ parsed_event.result.username }}"
+          source.ip: "{{ parsed_event.result.source }}"
+          event.outcome: >
+            {%- if "succeeded" in parsed_event.result.status | lower -%}
+              success
+            {%- elif "fail" in parsed_event.result.status | lower -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+
+  set_cron_fields:
+    actions:
+      - set:
+          event.category: ["process"]
+          event.type: ["start"]
+          event.dataset: "sonicwall.sma.1000.cron"
+          user.name: "{{ parsed_event.result.username }}"
