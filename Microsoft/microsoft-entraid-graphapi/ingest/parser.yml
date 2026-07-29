@@ -50,7 +50,7 @@ stages:
           trace.id: "{{json_event.message.correlationId}}"
 
           user.id: "{{json_event.message.userId or json_event.message.initiatedBy.user.id}}"
-          user.name: "{{json_event.message.userDisplayName or json_event.message.initiatedBy.user.displayName}}"
+          user.name: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName or json_event.message.userDisplayName or json_event.message.initiatedBy.user.displayName}}"
           user.email: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName}}"
 
           source.ip: "{{json_event.message.ipAddress or json_event.message.initiatedBy.user.ipAddress}}"
@@ -94,7 +94,6 @@ stages:
           azuread.properties.status.errorCode: "{{json_event.message.status.errorCode}}"
 
       - set:
-          user.email: "{{json_event.message.targetResources[0].userPrincipalName}}"
           azure.entraid.properties.modifiedProperties: >
             [
             {% for item in json_event.message.targetResources %}
@@ -108,6 +107,27 @@ stages:
             {% endfor %}
             ]
         filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'user'}}"
+
+      - set:
+          user.target.name: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type != null and item.type | lower == 'user' -%}
+                {{ item.userPrincipalName or item.displayName }}
+              {%- endif -%}
+            {%- endfor -%}
+          user.target.id: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type != null and item.type | lower == 'user' -%}
+                {{ item.id }}
+              {%- endif -%}
+            {%- endfor -%}
+          user.target.email: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type != null and item.type | lower == 'user' -%}
+                {{ item.userPrincipalName }}
+              {%- endif -%}
+            {%- endfor -%}
+        filter: '{{json_event.message.get("targetResources") != None}}'
 
       - set:
           host.id: "{{json_event.message.targetResources[0].id}}"
@@ -180,7 +200,7 @@ stages:
       - set:
           user.name: >
             {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.displayName }}{%- endif -%}
+              {%- if item.type == 'User' -%}{{ item.userPrincipalName or item.displayName }}{%- endif -%}
             {%- endfor -%}
           user.email: >
             {%- for item in json_event.message.targetResources -%}
