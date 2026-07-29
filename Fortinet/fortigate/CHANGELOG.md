@@ -5,7 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] - 2026-07-29
+
+### Added
+
+- Parse new ECS fields:
+    - action.outcome_reason
+    - destination.ip
+    - destination.port
+    - event.action
+    - event.reason
+    - network.protocol
+    - observer.hostname
+    - observer.version
+    - source.ip
+    - source.mac
+    - source.port
+    - threat.technique.id
+- Parse new custom fields:
+    - fortinet.fortigate.decoy.group
+    - fortinet.fortigate.decoy.type
+    - fortinet.fortigate.incident.event_id
+    - fortinet.fortigate.incident.id
+    - fortinet.fortigate.loghost
+    - fortinet.fortigate.operation
+    - fortinet.fortigate.password
+    - fortinet.fortigate.tag.id
+    - fortinet.fortigate.tag.key
+    - fortinet.fortigate.tzone
+    - fortinet.fortigate.ui
+    - fortinet.fortigate.username
+
+### Changed
+
+- Update ECS fields:
+    - @timestamp
 
 ## 2023-10-23 - 1.0.1
 
