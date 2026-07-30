@@ -172,7 +172,6 @@ URL_FIELDS = [
     "url.full",
     "url.original",
     "url.path",
-    "url.query",
     "http.request.referrer",
     "event.url",
     "threat.enrichments.indicator.url.original",
