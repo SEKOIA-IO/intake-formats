@@ -8,6 +8,7 @@ from urllib.parse import urlparse, urlunparse
 
 from checks.validators.anonymization import (
     ACCEPTED_GENERIC_VALUES,
+    MAC_FIELDS,
     URL_FIELDS,
     USERNAME_FIELDS,
     AnonymizationValidator,
@@ -131,6 +132,21 @@ class Anonymizer:
                     if i > 0:
                         groups[i - 1] += 1
 
+    @staticmethod
+    def generate_fake_mac_addresses():
+        groups = [0, 0, 0, 0, 1]
+
+        while True:
+            yield "02" + "".join(f"{num:02x}" for num in groups)
+
+            groups[4] += 1
+
+            for i in range(4, -1, -1):
+                if groups[i] > 16:
+                    groups[i] = 1
+                    if i > 0:
+                        groups[i - 1] += 1
+
     def replace_uuids(self, t: str):
         re_uuid = "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
         all_uuids = set(re.findall(re_uuid, t))
@@ -183,12 +199,8 @@ class Anonymizer:
             128,
             "be688838ca8686e5c90689bf2ab585cef1137c999b48c70b92f67a5c34dc15697b5d11c982ed6d71be1e1e7f7b4e0733884aa97c3f7a339a8ed03577cf74be09",
         )  # sha-512
-        t = self.replace_hash(
-            t, 64, "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
-        )  # sha-256
-        t = self.replace_hash(
-            t, 40, "adc83b19e793491b1c6ea0fd8b46cd9f32e592fc"
-        )  # sha-1
+        t = self.replace_hash(t, 64, "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b")  # sha-256
+        t = self.replace_hash(t, 40, "adc83b19e793491b1c6ea0fd8b46cd9f32e592fc")  # sha-1
         t = self.replace_hash(t, 32, "68b329da9893e34099c7d8ad5cb9c940")  # md5
         return t
 
@@ -250,6 +262,17 @@ class Anonymizer:
 
         return self.anonymization_check.validate_domain(v)
 
+    def validate_mac(self, v: str) -> bool:
+        if str(v).lower() in ACCEPTED_GENERIC_VALUES:
+            return True
+
+        # we won't fix MAC address that doesn't event look like a MAC address
+        normalized_mac = "".join(filter(str.isalnum, v)).lower()
+        if len(normalized_mac) != 12:
+            return False
+
+        return self.anonymization_check.validate_mac(v)
+
     def replace_emails_and_usernames(self, raw: dict[str, Any], text: str) -> str:
         usernames_to_replace = set()
 
@@ -282,9 +305,7 @@ class Anonymizer:
 
         for i, username in enumerate(usernames_to_replace, start=1):
             logger.warning(f"Will replace {username} with user{i}")
-            username_mapping[f"user{i}"] = re.compile(
-                re.escape(username), re.IGNORECASE
-            )
+            username_mapping[f"user{i}"] = re.compile(re.escape(username), re.IGNORECASE)
 
         for email_from, email_to in email_mapping.items():
             logger.warning(f"Will replace {email_from} with {email_to}")
@@ -354,6 +375,118 @@ class Anonymizer:
 
         return t
 
+    @staticmethod
+    def normalize_mac(mac: str) -> str:
+        """
+        Strip all separators and lowercase -> canonical 12 hex-char form.
+        e.g. 'AA-bb:CC.DD.EE.FF' -> 'aabbccddeeff'
+        """
+        return re.sub(r"[^0-9A-Fa-f]", "", mac).lower()
+
+    @staticmethod
+    def detect_mac_format(mac: str) -> tuple[str, int, bool]:
+        """Return (separator, group_size, is_upper) describing MAC address style."""
+        if ":" in mac:
+            sep, group = ":", 2
+        elif "-" in mac:
+            sep, group = "-", 2
+        elif "." in mac:
+            sep, group = ".", 4
+        else:
+            sep, group = "", 2
+
+        letters = [c for c in mac if c.isalpha()]
+        is_upper = bool(letters) and all(c.isupper() for c in letters)
+        return sep, group, is_upper
+
+    def format_mac(self, mac: str, sep: str, group: int, is_upper: bool) -> str:
+        mac = self.normalize_mac(mac)
+        mac = sep.join(mac[i : i + group] for i in range(0, 12, group))
+        if is_upper:
+            mac = mac.upper()
+
+        return mac
+
+    def replace_mac_addresses(self, raw: dict[str, Any], t: str) -> str:
+        macs_to_replace = set()
+        macs_correct_normalized = set()
+
+        # We use it for the extracted fields, so AABBCCDDEEFF is definitely valid
+        MAC_PATTERN = re.compile(
+            r"""
+            (?<![0-9A-Fa-f:\-])                   # not preceded by more hex/sep chars
+            (?:
+                (?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}     |  # AA:BB:CC:DD:EE:FF / AA-BB-...
+                (?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}       |  # AABB.CCDD.EEFF
+                [0-9A-Fa-f]{12}                                # AABBCCDDEEFF
+            )
+            (?![0-9A-Fa-f:\-])                    # not followed by more hex/sep chars
+            (?!\.[0-9A-Fa-f]{4})                  # ...and not immediately followed by another .hex4 group
+            """,
+            re.VERBOSE,
+        )
+
+        # We use it to find non-extracted MAC addresses, so AABBCCDDEEFF could be false positive
+        STRICT_MAC_PATTERN = re.compile(
+            r"""
+            (?<![0-9A-Fa-f:\-])                   # not preceded by more hex/sep chars
+            (?:
+                (?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}     |  # AA:BB:CC:DD:EE:FF / AA-BB-...
+                (?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}          # AABB.CCDD.EEFF
+            )
+            (?![0-9A-Fa-f:\-])                    # not followed by more hex/sep chars
+            (?!\.[0-9A-Fa-f]{4})                  # ...and not immediately followed by another .hex4 group
+            """,
+            re.VERBOSE,
+        )
+
+        for field_name in MAC_FIELDS:
+            field_value = deep_get(raw["expected"], field_name)
+            if field_value:
+                vals = []
+
+                if isinstance(field_value, str):
+                    vals = [field_value]
+
+                # Fields like host.mac could contain multiple values
+                elif isinstance(field_value, list):
+                    vals = field_value
+
+                for v in vals:
+                    # We could only fix something that looks like MAC address.
+                    if re.match(MAC_PATTERN, v):
+                        if self.validate_mac(v):
+                            macs_correct_normalized.add(self.normalize_mac(v))
+
+                        else:
+                            macs_to_replace.add(v)
+
+                    else:
+                        logger.warning(f"`{v}` does not look like a MAC address")
+
+        for match in re.findall(STRICT_MAC_PATTERN, t):
+            macs_to_replace.add(match)
+
+        if not macs_to_replace:
+            return t
+
+        iter_fake_macs = self.generate_fake_mac_addresses()
+
+        mac_old_to_new = {}
+        for mac_old in macs_to_replace:
+            # We don't want to overwrite correct MAC address
+            mac_fake_new = next(iter_fake_macs)
+            while mac_fake_new in macs_correct_normalized:
+                mac_fake_new = next(iter_fake_macs)
+
+            mac_new = self.format_mac(mac_fake_new, *self.detect_mac_format(mac_old))
+            mac_old_to_new[mac_old] = mac_new
+
+        for mac_old, mac_new in mac_old_to_new.items():
+            t = t.replace(mac_old, mac_new)
+
+        return t
+
     def process_file(self, path: Path):
         with path.open("rt") as file:
             raw = json.load(file)
@@ -367,6 +500,7 @@ class Anonymizer:
         msg = self.replace_hashes(msg)
         msg = self.replace_ips(msg)
         msg = self.replace_session_ids(msg)
+        msg = self.replace_mac_addresses(raw, msg)
 
         raw["input"]["message"] = msg
         raw["expected"]["message"] = msg
