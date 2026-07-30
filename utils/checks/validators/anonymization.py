@@ -41,6 +41,7 @@ ACCEPTED_DOMAINS = [
     r"^([\w-]+\.)*(my)?corp\.(com|org|net)$",
     r"^([\w-]+\.)*internal\.test$",
     r"^(localhost|hostname|company|example)(\.local(domain)?)?$",
+    r"^(mac\s?os\s?x|windows|linux|ubuntu|debian|android).*$",  # OS names for `host.os.name`
 ]
 
 ACCEPTED_USERNAMES = [
