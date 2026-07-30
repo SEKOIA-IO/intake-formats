@@ -50,8 +50,8 @@ ACCEPTED_USERNAMES = [
     r"^UserName(\d+)?(\$)?$",
     r"^(Test|Admin)User$",
     r"^Admin(istrator)?$",
-    r"^(Alice|Bob|Charlie)$",
-    r"^(root|system|SYSTEM)$",
+    r"^(Alice|Bob|Charlie|toto|tata)$",
+    r"^(root|system|SYSTEM|[sS]ystème)$",
     r"^ANONYMOUS([\s_\-/]+LOGON)?$",
     r"^Service([\s_\-/]+Account([\s_\-/]+Id)?)?$",
 ]
