@@ -25,6 +25,7 @@ class TestAnonymizationValidator:
             ("192.168.1.1", True),
             ("127.0.0.1", True),
             ("1.2.3.4", True),
+            ("9.8.7.6", True),
             ("122.122.122.122", True),
             ("8.8.8.8", True),
             ("1.1.1.2", False),
@@ -66,8 +67,18 @@ class TestAnonymizationValidator:
         [
             ("example.com", True),  # Domain is accepted
             ("sub.example.org", True),  # Domain is accepted
+            ("example.cloud", True),  # Domain is accepted
             ("test.corp", True),  # Domain is accepted
             ("mycorp.com", True),  # Domain is accepted
+            ("lambda.amazonaws.com", True),  # Vendor infrastructure domain is accepted
+            ("aws.internal", True),  # Internal vendor domain is accepted
+            ("api.chat.org", True),  # Public service domain is accepted
+            ("http://lambda.amazonaws.com/", True),  # URL-like domain is normalized
+            ("http://www.test.fr/", True),  # URL-like domain is normalized
+            ("graph.microsoft.com", True),  # Public vendor domain is accepted
+            ("Acme Domain", True),  # Generic domain label is accepted
+            ("domain", True),  # Generic placeholder is accepted
+            ("server.acme.wtf", True),  # Custom anonymized domain is accepted
             ("localhost", True),  # Domain is accepted
             ("hostname.local", True),  # Domain is accepted
             ("acme.net", True),  # Domain is accepted
@@ -85,7 +96,9 @@ class TestAnonymizationValidator:
         [
             ("John.Doe", True),
             ("User123", True),
+            ("user", True),
             ("AdminUser", True),
+            ("Administrator (Microsoft.Office.Datacenter.Torus.PowerShellWorker)", True),
             ("root", True),
             ("SYSTEM", True),
             ("ANONYMOUS_LOGON", True),
@@ -107,6 +120,9 @@ class TestAnonymizationValidator:
             ("redacted@domain.com", True),  # Account is redacted
             ("user1@mycorp.com", True),  # Domain is accepted
             ("test@gmail.com", True),  # Account is redacted
+            ("user@acme.wtf", True),
+            ("user@acme.tld", True),
+            ("JDOE-AAD@example.onmicrosoft.com", True),
             ("marie.poppins@gmail.com", False),
             ("not-an-email", False),
         ],
@@ -119,6 +135,11 @@ class TestAnonymizationValidator:
         [
             ("http://example.com/path", True),
             ("https://sub.test.local/page?query=1", True),
+            ("https://example.of.address/12345", True),
+            ("http://rdp.acme.com/", True),
+            ("https://graph.microsoft.com/v1.0/users/john.doe@company.com/photo/$value", True),
+            ("mycorp.com", True),
+            ("atf.team.mycorp.com", True),
             ("/relative/path", True),
             ("?query=true", True),
             ("http://google.com", False),
@@ -230,11 +251,16 @@ class TestAnonymizationValidator:
             ("demo", "account.id", True),
             ("S-1-5-3", "account.id", True),
             ("123456789012", "accountId", True),
+            ("1111111111", "aws.cloudtrail.user_identity.accountId", True),
             ("john.doe@example.org", "account.id", True),
             ("11111111-1111-1111-1111-111111111111", "account.id", True),
             ("11111111111111", "account.id", True),
             ("ABCDEFGHIJKLMN1234567", "principalId", True),
+            ("1111111111", "aws.cloudtrail.user_identity.principalId", True),
+            ("mailto:A00000000000000000000:user@example.org", "aws.cloudtrail.user_identity.principalId", True),
+            ("A0000000000000000000:user@example.org", "aws.cloudtrail.user_identity.principalId", True),
             ("AKIA1111111111111111", "accessKeyId", True),
+            ("ASIA1111111111111", "aws.cloudtrail.user_identity.accessKeyId", True),
             ("my-project", "project.id", True),
             ("my-instance", "instance.id", True),
             ("i-00000000000000000", "cloud.instance.id", True),
@@ -242,6 +268,8 @@ class TestAnonymizationValidator:
             ("AAAAA", "aws.cloudtrail.user_identity.accessKeyId", True),
             ("arn:aws:iam::111111111111:user/john.doe", "aws.cloudtrail.user_identity.arn", True),
             ("arn:aws:iam::111111111111:user/root", "aws.cloudtrail.user_identity.arn", True),
+            ("arn:aws:iam::111111111111:root", "aws.cloudtrail.user_identity.arn", True),
+            ("arn:aws:iam::1111111111:role/service-role/username", "aws.cloudtrail.user_identity.arn", True),
             ("arn:aws:sns:us-east-1:111111111111:example-sns-topic-name", "aws.cloudtrail.user_identity.arn", True),
             (
                 "arn:aws:sts::1111111111:assumed-role/role/1111111111111111111111111",
@@ -253,6 +281,8 @@ class TestAnonymizationValidator:
                 "azuread.subscriptionId",
                 True,
             ),
+            ("/tenants/22222222-2222-2222-2222-222222222222/providers/Microsoft.aadiam", "azuread.resourceId", True),
+            ("77777777-7777-7777-7777-777777777777", "azuread.properties.resourceId", True),
             ("urn:uuid:11111111-1111-1111-1111-111111111111", "account.id", True),
             ("urn:ucode:2222222222222222", "account.id", True),
             ("urn:spo:anon", "account.id", True),
@@ -287,6 +317,50 @@ class TestAnonymizationValidator:
     def test_validate_account_id(self, validator, value, field_path, expected):
         assert validator.validate_account_id(value, field_path) == expected
 
+    def test_validate_content_does_not_treat_aws_identifiers_as_usernames(self, validator, monkeypatch):
+        monkeypatch.setattr("checks.validators.anonymization.INTAKES_PATH", Path("."))
+        test_content = {
+            "expected": {
+                "aws": {
+                    "cloudtrail": {
+                        "user_identity": {
+                            "accessKeyId": "ASIA1111111111111",
+                            "principalId": "1111111111",
+                            "accountId": "1111111111",
+                            "arn": "arn:aws:iam::111111111111:root",
+                        }
+                    }
+                }
+            }
+        }
+
+        errors = validator.validate_content(test_content, Path("AWS/aws-cloudtrail/tests/example.json"))
+        assert errors == []
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("/tenants/22222222-2222-2222-2222-222222222222/providers/Microsoft.aadiam", True),
+            ("77777777-7777-7777-7777-777777777777", True),
+            ("/tenants/not-a-uuid/providers/Microsoft.aadiam", False),
+            ("/tenants/22222222-2222-2222-2222-222222222222/providers/Microsoft.Other", False),
+        ],
+    )
+    def test_validate_azure_resource_id(self, validator, value, expected):
+        assert validator.validate_azure_resource_id(value) == expected
+
+    def test_validate_content_ignores_url_query_values(self, validator, monkeypatch):
+        monkeypatch.setattr("checks.validators.anonymization.INTAKES_PATH", Path("."))
+        test_content = {
+            "expected": {
+                "url": {
+                    "query": "_=1701453287208&sv=2022-11-02&ss=bqtf&srt=sco&sp=rwdlacuptfxiy&se=2023-12-02T01:54:36Z&sig=XXXXX"
+                }
+            }
+        }
+
+        errors = validator.validate_content(test_content, Path("Azure/azure-files/tests/storage_delete.json"))
+        assert errors == []
     @pytest.mark.parametrize(
         "value, expected",
         [
