@@ -13,17 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add parsing support for `Result description: Processing error` events by extending `set_not_processed_fields` filter (shared stage)
 - Newly populated ECS fields for `Processing error` events (existing field names, no schema addition):
-	- `event.action`
-	- `event.category`
-	- `event.module`
-	- `event.reason`
-	- `event.type`
-	- `file.directory`
-	- `file.name`
-	- `process.executable`
-	- `process.pid`
-	- `user.domain`
-	- `user.name`
+    - `event.action`
+    - `event.category`
+    - `event.module`
+    - `event.reason`
+    - `event.type`
+    - `file.directory`
+    - `file.name`
+    - `process.executable`
+    - `process.pid`
+    - `user.domain`
+    - `user.name`
 
 ### Changed
 
