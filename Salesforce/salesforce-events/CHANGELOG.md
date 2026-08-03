@@ -12,14 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Parse new custom fields:
-	- `salesforce.dml.type`
-	- `salesforce.document.id`
-	- `salesforce.entity.id`
-	- `salesforce.transaction.type`
+    - `salesforce.dml.type`
+    - `salesforce.document.id`
+    - `salesforce.entity.id`
+    - `salesforce.transaction.type`
 
 ### Changed
 
-- Update ECS field `event.action`:
+- Update ECS field `event.action` parsing:
     - use `DML_TYPE` as fallback source when `UI_EVENT_TYPE` and `ACTION` are not present
     - use `TRANSACTION_TYPE` as fallback source when `UI_EVENT_TYPE`, `ACTION` and `DML_TYPE` are not present
 
