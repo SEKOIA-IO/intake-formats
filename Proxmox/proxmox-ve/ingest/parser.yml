@@ -1,0 +1,212 @@
+name: proxmox-ve
+pipeline:
+  - name: parse_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "%{AUTH}|%{WEB}|%{TASK}|%{FIREWALL}|%{DEFAULT}"
+        custom_patterns:
+          HEADER: '%{SYSLOGTIMESTAMP:timestamp} %{IPORHOST:hostname} \(?%{DATA:process_name}\)?\[%{POSINT:process_id}\]:'
+
+          AUTH: "%{HEADER} %{AUTH_DESC}"
+          AUTH_DESC: "%{AUTH_1}|%{AUTH_2}|%{AUTH_3}|%{AUTH_4}|%{AUTH_5}|%{AUTH_6}"
+          AUTH_1: "pam_unix(%{DATA}): (?P<reason>authentication failure); %{DATA:kv}"
+          AUTH_2: 'pam_unix(%{DATA}): (?P<reason>session (opened|closed)) for user %{DATA:user_name}\(uid=%{INT:uid}\) by %{USERNAME}\(uid=%{INT}\)'
+          AUTH_3: "(?P<reason>Invalid user) %{DATA:user_name} from %{IP:source_ip} port %{POSINT:source_port}"
+          AUTH_4: "(?P<reason>Failed password for invalid user) %{DATA:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{DATA:service}"
+          AUTH_5: "(?P<reason>Accepted password) for %{DATA:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{DATA:service}"
+          AUTH_6: "<%{DATA}> (?P<reason>successful auth) for user '%{DATA:user_name}@%{DATA:realm}'"
+
+          WEB: '%{IP:source_ip} - %{DATA:user_name}@%{DATA:realm} \[%{WEB_TIMESTAMP:web_timestamp}\] \"%{WORD:http_method} %{DATA:url} HTTP/%{NUMBER:http_version}\" (?:-|%{INT:http_status}) (?:-|%{INT:http_response_body_bytes})'
+
+          TASK: "%{HEADER} <%{DATA:user_name}@%{DATA:realm}> (?P<task_action>(start|starting|end)) task %{DATA:task_id}(: %{DATA:task_result})?"
+          TASK_SERVICE: "%{HEADER} "
+
+          FIREWALL: "%{NUMBER:vm_id} %{DATA:log_id} %{DATA:chain}-(?P<direction>IN|OUT) %{FW_TIMESTAMP:fw_timestamp} %{DATA:action}: %{GREEDYDATA:kv}"
+
+          DEFAULT: "%{HEADER} %{DATA:reason}"
+
+          WEB_TIMESTAMP: "%{MONTHDAY}/%{MONTHNUM}/%{YEAR}:%{TIME} %{ISO8601_TIMEZONE}"
+          FW_TIMESTAMP: "%{MONTHDAY}/%{MONTH}/%{YEAR}:%{TIME} %{ISO8601_TIMEZONE}"
+
+  - name: parse_web_timestamp
+    filter: "{{parse_event.message.web_timestamp | length > 0}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.message.web_timestamp}}"
+        output_field: timestamp
+        format: "%d/%m/%Y:%H:%M:%S %z"
+
+  - name: parse_firewall_timestamp
+    filter: "{{parse_event.message.fw_timestamp | length > 0}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_event.message.fw_timestamp}}"
+        output_field: timestamp
+        format: "%d/%b/%Y:%H:%M:%S %z"
+
+  - name: parse_kv
+    filter: "{{parse_event.message.kv | length > 0}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_event.message.kv}}"
+        output_field: message
+        value_sep: "="
+        item_sep: '\s'
+
+  - name: set_ecs_fields
+
+  - name: set_event_fields
+
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Proxmox"
+          observer.product: "Proxmox VE"
+          event.dataset: "proxmox.ve"
+
+          event.category: ["host"]
+          event.type: ["info"]
+          #observer.name: "{{parse_event}}"
+
+      - set:
+          "@timestamp": "{{ parse_event.message.timestamp | to_rfc3339 }}"
+        filter: "{{ parse_event.message.timestamp | length > 0 }}"
+
+      - set:
+          "@timestamp": "{{ parse_web_timestamp.timestamp }}"
+        filter: "{{ parse_web_timestamp.timestamp | length > 0 }}"
+
+      - set:
+          "@timestamp": "{{ parse_firewall_timestamp.timestamp }}"
+        filter: "{{ parse_firewall_timestamp.timestamp | length > 0 }}"
+
+      - set:
+          event.reason: "{{parse_event.message.reason}}"
+
+          host.name: "{{parse_event.message.hostname}}"
+
+          process.name: "{{parse_event.message.process_name}}"
+          process.pid: "{{parse_event.message.process_id}}"
+
+          user.name: "{{parse_event.message.user_name}}"
+
+          source.ip: "{{parse_event.message.source_ip or parse_kv.message.SRC or parse_kv.message.rhost}}"
+          source.port: "{{parse_event.message.source_port or parse_kv.message.SPT}}"
+
+          destination.ip: "{{parse_kv.message.DST}}"
+          destination.port: "{{parse_kv.message.DPT}}"
+
+          http.request.method: "{{parse_event.message.http_method}}"
+          http.response.status_code: "{{parse_event.message.http_status}}"
+          http.response.body.bytes: "{{parse_event.message.http_response_body_bytes}}"
+
+          network.transport: "{{parse_kv.message.PROTO | lower}}"
+
+          url.original: "{{parse_event.message.url}}"
+
+      - set:
+          # MAC=MAC_1:MAC_2:08:00
+          source.mac: "{{parse_kv.message.MAC[18:35] | to_mac_address}}"
+          destination.mac: "{{parse_kv.message.MAC[:17] | to_mac_address}}"
+        filter: "{{parse_kv.message.MAC | length == 41}}"
+
+      - set:
+          source.ip: "{{ final.source.ip.removeprefix('::ffff:') }}"
+        filter: "{{ final.source.ip | length > 0 }}"
+
+  set_event_fields:
+    actions:
+      # API events
+      - set:
+          event.action: "{{ final.url.original }}"
+          event.category: ["web"]
+          event.type: ["access"]
+        filter: "{{ final.url.original | length > 0}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{ 200 <= final.http.response.status_code | int(-1) < 400 }}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{ final.http.response.status_code | int(-1) >= 400 }}"
+
+      # Auth
+      - set:
+          event.action: "accepted_password"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: "{{ 'Accepted password' in final.event.reason }}"
+
+      - set:
+          event.outcome: "failure"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "failed_password"
+        filter: "{{ 'Failed password' in final.event.reason }}"
+
+      - set:
+          event.outcome: "failure"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "authentication_failure"
+        filter: "{{ 'authentication failure' in final.event.reason }}"
+
+      - set:
+          event.outcome: "failure"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "invalid_user"
+        filter: "{{ 'Invalid user' in final.event.reason }}"
+
+      - set:
+          event.outcome: "success"
+          event.category: ["authentication"]
+          event.type: ["start"]
+        filter: "{{ 'successful auth' in original.message }}"
+
+      - set:
+          event.outcome: "success"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "session_opened"
+        filter: "{{ 'session opened' in original.message }}"
+
+      # Firewall
+      - set:
+          event.action: "{{ parse_event.message.action | lower }}"
+        filter: "{{ parse_event.message.action | length > 0 }}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "success"
+        filter: "{{ final.event.action in ('accept', 'forward') }}"
+
+      - set:
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.outcome: "failure"
+        filter: "{{ final.event.action in ('drop', 'reject') }}"
+
+      # Tasks
+      - set:
+          event.action: "{{ parse_event.message.task_action }}_task"
+        filter: "{{ parse_event.message.task_action | length > 0}}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          proxmox.proxmox_ve.auth.realm: "{{ parse_event.message.realm }}"
+          proxmox.proxmox_ve.task.id: "{{ parse_event.message.task_id }}"
+          proxmox.proxmox_ve.task.result: "{{ parse_event.message.task_result }}"
