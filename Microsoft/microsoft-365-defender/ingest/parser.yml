@@ -46,6 +46,13 @@ pipeline:
       properties:
         input_field: "{{json_event.message.properties.AuthenticationDetails}}"
         output_field: "data"
+  - name: parse_attack_techniques
+    filter: '{{json_event.message.get("properties", {}).get("AttackTechniques") not in [None, ""]}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{json_event.message.properties.AttackTechniques}}"
+        output_field: "techniques"
   - name: set_common_fields
   - name: set_process_events
     filter: '{{json_event.message.get("category") != "AdvancedHunting-DeviceProcessEvents"}}'
@@ -144,6 +151,7 @@ stages:
           file.hash.sha256: "{{json_event.message.properties.SHA256}}"
           file.name: "{{json_event.message.properties.FileName}}"
           file.size: "{{json_event.message.properties.FileSize}}"
+          file.mime_type: "{{json_event.message.properties.FileType}}"
           host.architecture: "{{json_event.message.properties.OSArchitecture}}"
           host.id: "{{json_event.message.properties.DeviceId}}"
           host.name: "{{json_event.message.properties.DeviceName}}"
@@ -195,6 +203,7 @@ stages:
           action.properties.IsInitiatingProcessRemoteSession: "{{json_event.message.properties.IsInitiatingProcessRemoteSession}}"
           action.properties.SourceComputerId: "{{json_event.message.properties.AdditionalFields.SourceComputerId}}"
           action.properties.SourceComputerObjectGuid: "{{json_event.message.properties.AdditionalFields.SourceComputerObjectGuid}}"
+          action.properties.WasRemediated: "{{parse_additional_fields.fields.WasRemediated}}"
           microsoft.defender.activity.objects: "{{json_event.message.properties.ActivityObjects}}"
           microsoft.defender.activity.type: "{{json_event.message.properties.ActivityType}}"
           microsoft.defender.alert.id: "{{json_event.message.properties.AlertId}}"
@@ -207,6 +216,30 @@ stages:
           microsoft.defender.threat.names: "{{json_event.message.properties.ThreatNames}}"
           microsoft.defender.threat.types: "{{json_event.message.properties.ThreatTypes}}"
           microsoft.defender.url_location: "{{json_event.message.properties.UrlLocation}}"
+
+      - set:
+          email.cc.address: >
+            [
+              {%- for elt in json_event.message.properties.Cc -%}
+                "{{elt.split(' ')[-1].strip('<>')}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("Cc") != None}}'
+
+      - set:
+          email.bcc.address: >
+            [
+              {%- for elt in json_event.message.properties.Bcc -%}
+                "{{elt.split(' ')[-1].strip('<>')}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("Bcc") != None}}'
+
+      - set:
+          file.type: >
+            {%- set d = json_event.message.properties.AdditionalFields if json_event.message.properties.AdditionalFields is mapping else json_event.message.properties.AdditionalFields|from_json -%}
+            {{ d.get('FileType') }}
+        filter: '{{json_event.message.properties.get("FileType") == None and json_event.message.properties.get("AdditionalFields") != None}}'
 
       - set:
           microsoft.defender.campaign.id: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignID')}}"
@@ -226,6 +259,7 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             {{ message_ids }}
+        filter: '{{parse_raw_event_data.data.get("Entities") not in [None, []]}}'
 
       - set:
           microsoft.defender.threat.remediation_action: >
@@ -274,7 +308,20 @@ stages:
         filter: '{{json_event.message.properties.get("RemoteUrl", "").startswith("http") or json_event.message.properties.get("RemoteUrl", "").startswith("uri")}}'
       - set:
           email.to.address: '["{{json_event.message.properties.RecipientEmailAddress}}"]'
-        filter: '{{json_event.message.properties.get("RecipientEmailAddress") != None}}'
+        filter: '{{json_event.message.properties.get("RecipientEmailAddress") != None and json_event.message.properties.get("To") == None}}'
+
+      - set:
+          email.to.address: >
+            [
+              {%- if json_event.message.properties.get("RecipientEmailAddress") != None -%}
+                "{{json_event.message.properties.RecipientEmailAddress}}",
+              {%- endif -%}
+              {%- for elt in json_event.message.properties.To -%}
+                "{{elt.split(' ')[-1].strip('<>')}}"{% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.properties.get("To") != None}}'
+
       - set:
           email.from.address: '["{{json_event.message.properties.SenderFromAddress}}"]'
         filter: '{{json_event.message.properties.get("SenderFromAddress") != None}}'
@@ -463,6 +510,7 @@ stages:
           microsoft.defender.threat.severity: "{{json_event.message.properties.Severity}}"
           microsoft.defender.threat.detection_status: "{{parse_additional_fields.fields.DetectionStatus}}"
           microsoft.defender.threat.suspicion_level: "{{parse_additional_fields.fields.SuspicionLevel}}"
+          microsoft.defender.threat.last_verdict: "{{parse_additional_fields.fields.LastVerdict}}"
 
           microsoft.defender.threat.host.remediation_providers: "{{parse_additional_fields.fields.Host.RemediationProviders}}"
           microsoft.defender.threat.host.last_remediation_state: "{{parse_additional_fields.fields.Host.LastRemediationState}}"
@@ -488,6 +536,27 @@ stages:
           process.name: "{{parse_additional_fields.fields.ImageFile.Name}}"
           process.parent.pid: "{{parse_additional_fields.fields.ParentProcess.ProcessId}}"
           process.parent.command_line: "{{parse_additional_fields.fields.ParentProcess.CommandLine}}"
+
+      - set:
+          event.action: "{{parse_additional_fields.fields.DeliveryAction}}"
+          action.properties.DeliveryLocation: "{{parse_additional_fields.fields.DeliveryLocation}}"
+        filter: '{{parse_additional_fields.fields.get("DeliveryAction") != None or parse_additional_fields.fields.get("DeliveryLocation") != None}}'
+
+      - set:
+          microsoft.defender.threat.names: "{{parse_additional_fields.fields.Threats}}"
+        filter: '{{parse_additional_fields.fields.get("Threats") != None}}'
+
+      - set:
+          microsoft.defender.threat.intelligence: "{{parse_additional_fields.fields.ThreatIntelligence}}"
+        filter: '{{parse_additional_fields.fields.get("ThreatIntelligence") != None}}'
+
+      - set:
+          microsoft.defender.threat.verdict: "{{parse_additional_fields.fields.ThreatAnalysisSummary[-1].Verdict}}"
+        filter: '{{parse_additional_fields.fields.get("ThreatAnalysisSummary") | length > 0}}'
+
+      - set:
+          threat.technique.name: "{{parse_attack_techniques.techniques}}"
+        filter: '{{parse_attack_techniques.get("techniques") != None}}'
 
   set_alert_info_fields:
     actions:
