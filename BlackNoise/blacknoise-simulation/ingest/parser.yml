@@ -1,0 +1,278 @@
+name: blacknoise-simulation
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: set_common_fields
+  - name: set_simulation_context
+  - name: set_mitre
+  - name: set_network
+  - name: set_system_target
+    filter: "{{parsed_event.message.system_target != null}}"
+  - name: set_cloud_target
+    filter: "{{parsed_event.message.cloud_target != null}}"
+  - name: set_attack_vector
+    filter: "{{parsed_event.message.attack_vector != null}}"
+  - name: set_detection
+  - name: set_recommendations
+    filter: "{{parsed_event.message.recommendations != null}}"
+  - name: set_outcome
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.kind: event
+          event.category: [intrusion_detection]
+          event.type: [info]
+          event.dataset: blacknoise.simulation
+          event.module: blacknoise
+          observer.vendor: "BlackNoise"
+          observer.product: "BlackNoise"
+          observer.type: "sensor"
+
+      # event.id is owned by Ingest and cannot be overwritten, so the record
+      # identifier goes to a field of our own.
+      - set:
+          blacknoise.simulation_event_id: "{{parsed_event.message.id}}"
+        filter: "{{parsed_event.message.id != null}}"
+
+      # The catalog entry that defines the simulated technique behaves like a
+      # rule: it has a stable identifier, a name and a description.
+      - set:
+          event.code: "{{parsed_event.message.event_bn_id}}"
+          rule.id: "{{parsed_event.message.event_bn_id}}"
+          blacknoise.event_bn_id: "{{parsed_event.message.event_bn_id}}"
+        filter: "{{parsed_event.message.event_bn_id != null}}"
+
+      - set:
+          event.action: "{{parsed_event.message.name}}"
+          rule.name: "{{parsed_event.message.name}}"
+        filter: "{{parsed_event.message.name != null}}"
+
+      - set:
+          rule.description: "{{parsed_event.message.description}}"
+        filter: "{{parsed_event.message.description != null}}"
+
+      - set:
+          event.reason: "{{parsed_event.message.execution_message}}"
+        filter: "{{parsed_event.message.execution_message != null}}"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.start_time | to_rfc3339}}"
+          event.start: "{{parsed_event.message.start_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.start_time != null}}"
+
+      - set:
+          event.end: "{{parsed_event.message.end_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.end_time != null}}"
+
+      - set:
+          blacknoise.stop_time: "{{parsed_event.message.stop_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.stop_time != null}}"
+
+      - set:
+          blacknoise.time_offset_in_seconds: "{{parsed_event.message.time_offset_in_seconds}}"
+        filter: "{{parsed_event.message.time_offset_in_seconds != null}}"
+
+  set_simulation_context:
+    actions:
+      # execution_id identifies one run of the technique and is the join key
+      # between this event and everything else the run produced.
+      - set:
+          trace.id: "{{parsed_event.message.execution_id}}"
+          blacknoise.execution_id: "{{parsed_event.message.execution_id}}"
+        filter: "{{parsed_event.message.execution_id != null}}"
+
+      - set:
+          blacknoise.campaign_id: "{{parsed_event.message.campaign_id}}"
+        filter: "{{parsed_event.message.campaign_id != null}}"
+
+      - set:
+          blacknoise.simulation_id: "{{parsed_event.message.simulation_id}}"
+        filter: "{{parsed_event.message.simulation_id != null}}"
+
+      - set:
+          blacknoise.target_id: "{{parsed_event.message.target_id}}"
+        filter: "{{parsed_event.message.target_id != null}}"
+
+      - set:
+          blacknoise.severity: "{{parsed_event.message.severity}}"
+        filter: "{{parsed_event.message.severity != null}}"
+
+      - set:
+          blacknoise.execution_status: "{{parsed_event.message.execution_status}}"
+        filter: "{{parsed_event.message.execution_status != null}}"
+
+      # exploit_status reports whether the target actually fell, which is
+      # independent from whether the simulation ran (execution_status).
+      - set:
+          blacknoise.exploit_status: "{{parsed_event.message.exploit_status}}"
+        filter: "{{parsed_event.message.exploit_status != null}}"
+
+  set_mitre:
+    actions:
+      - set:
+          threat.technique.id: "{{parsed_event.message.techniques}}"
+        filter: "{{parsed_event.message.techniques != null and parsed_event.message.techniques | length > 0}}"
+
+      - set:
+          threat.tactic.name: >
+            {%- set tactics = {
+              "reconnaissance": "Reconnaissance",
+              "resource_development": "Resource Development",
+              "initial_access": "Initial Access",
+              "execution": "Execution",
+              "persistence": "Persistence",
+              "privilege_escalation": "Privilege Escalation",
+              "defense_evasion": "Defense Evasion",
+              "credential_access": "Credential Access",
+              "discovery": "Discovery",
+              "lateral_movement": "Lateral Movement",
+              "collection": "Collection",
+              "command_and_control": "Command and Control",
+              "exfiltration": "Exfiltration",
+              "impact": "Impact"
+            } -%}
+            {{- tactics.get(parsed_event.message.tactic, '') -}}
+        filter: "{{parsed_event.message.tactic != null}}"
+
+  set_network:
+    actions:
+      # `source` carries the address the simulation was launched from.
+      - set:
+          source.ip: "{{parsed_event.message.source}}"
+          observer.ip: "{{parsed_event.message.source}}"
+        filter: "{{parsed_event.message.source | is_ipaddress}}"
+
+      - set:
+          blacknoise.ip_targets: "{{parsed_event.message.ip_targets}}"
+        filter: "{{parsed_event.message.ip_targets != null and parsed_event.message.ip_targets | length > 0}}"
+
+  set_system_target:
+    actions:
+      - set:
+          host.name: "{{parsed_event.message.system_target.name}}"
+        filter: "{{parsed_event.message.system_target.name != null}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.system_target.ip_address}}"
+          host.ip: "{{parsed_event.message.system_target.ip_address}}"
+        filter: "{{parsed_event.message.system_target.ip_address | is_ipaddress}}"
+
+      # OSType values (windows, macos, linux) already match the ECS vocabulary.
+      - set:
+          host.os.type: "{{parsed_event.message.system_target.environment}}"
+        filter: "{{parsed_event.message.system_target.environment != null}}"
+
+      - set:
+          blacknoise.target_name: "{{parsed_event.message.system_target.name}}"
+        filter: "{{parsed_event.message.system_target.name != null}}"
+
+  set_cloud_target:
+    actions:
+      # CloudEnvironmentType values (aws, azure) match the ECS vocabulary.
+      - set:
+          cloud.provider: "{{parsed_event.message.cloud_target.environment}}"
+        filter: "{{parsed_event.message.cloud_target.environment != null}}"
+
+      - set:
+          cloud.region: "{{parsed_event.message.cloud_target.region}}"
+        filter: "{{parsed_event.message.cloud_target.region != null}}"
+
+      - set:
+          cloud.account.name: "{{parsed_event.message.cloud_target.name}}"
+        filter: "{{parsed_event.message.cloud_target.name != null}}"
+
+      - set:
+          blacknoise.cloud_domain_name: "{{parsed_event.message.cloud_target.domain_name}}"
+        filter: "{{parsed_event.message.cloud_target.domain_name != null}}"
+
+      - set:
+          blacknoise.target_name: "{{parsed_event.message.cloud_target.name}}"
+        filter: "{{parsed_event.message.cloud_target.name != null}}"
+
+  set_attack_vector:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.attack_vector.ip}}"
+        filter: "{{parsed_event.message.attack_vector.ip | is_ipaddress}}"
+
+      - set:
+          blacknoise.attack_vector.name: "{{parsed_event.message.attack_vector.name}}"
+        filter: "{{parsed_event.message.attack_vector.name != null}}"
+
+      - set:
+          blacknoise.attack_vector.type: "{{parsed_event.message.attack_vector.type}}"
+        filter: "{{parsed_event.message.attack_vector.type != null}}"
+
+  set_detection:
+    actions:
+      # detection_status is the point of the exercise: did the SOC see it.
+      - set:
+          blacknoise.detection_status: "{{parsed_event.message.detection_status}}"
+        filter: "{{parsed_event.message.detection_status != null}}"
+
+      - set:
+          blacknoise.detection_time: "{{parsed_event.message.detection_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.detection_time != null}}"
+
+      - set:
+          blacknoise.reaction_time: "{{parsed_event.message.reaction_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.reaction_time != null}}"
+
+      - set:
+          blacknoise.detection_sources: "{{parsed_event.message.detection_sources}}"
+        filter: "{{parsed_event.message.detection_sources != null and parsed_event.message.detection_sources | length > 0}}"
+
+      - set:
+          blacknoise.reaction_sources: "{{parsed_event.message.reaction_sources}}"
+        filter: "{{parsed_event.message.reaction_sources != null and parsed_event.message.reaction_sources | length > 0}}"
+
+      # The detection and reaction timestamps land in keyword fields, which cannot
+      # be aggregated. These two durations can, and they are the metrics a SOC
+      # reports on. MttCalculatorService computes them in whole minutes, and only
+      # for events the defensive stack alerted on.
+      - set:
+          blacknoise.time_to_detect_minutes: "{{parsed_event.message.mtt.d.value}}"
+        filter: "{{parsed_event.message.mtt.d.value != null}}"
+
+      - set:
+          blacknoise.time_to_respond_minutes: "{{parsed_event.message.mtt.r.value}}"
+        filter: "{{parsed_event.message.mtt.r.value != null}}"
+
+  set_recommendations:
+    actions:
+      # Detection content BlackNoise suggests for what the simulation did.
+      - set:
+          blacknoise.recommendations.sigma_rule: "{{parsed_event.message.recommendations.sigma_rule}}"
+        filter: "{{parsed_event.message.recommendations.sigma_rule != null}}"
+
+      - set:
+          blacknoise.recommendations.suricata_rule: "{{parsed_event.message.recommendations.suricata_rule}}"
+        filter: "{{parsed_event.message.recommendations.suricata_rule != null}}"
+
+  set_outcome:
+    actions:
+      # event.outcome reflects whether the simulation ran, not whether the
+      # attack succeeded. The latter lives in blacknoise.exploit_status.
+      - translate:
+        dictionary:
+          executed: success
+          executed_warning: success
+          executed_without_secrets: success
+          error: failure
+          canceled: unknown
+          unexecuted: unknown
+          out_of_scope: unknown
+          waiting: unknown
+          in_progress: unknown
+        mapping:
+          blacknoise.execution_status: event.outcome
+
+      - set:
+          event.kind: alert
+        filter: '{{parsed_event.message.exploit_status == "exploited"}}'
