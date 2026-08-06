@@ -7,26 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 2024-12-11 - 1.3.0
+## [1.3.1] - 2026-08-04
+
+### Fixed
+
+- Parse new ECS fields from `agents[0].agent_hostname` on threat events:
+  - `host.hostname`
+  - `host.name`
+
+## [1.3.0] - 2024-12-11
 
 ### Changed
 
 - Split username into `user.name` and `user.domain`
 
-### 2024-10-01 - 1.2.0
+## [1.2.0] - 2024-10-01
 
 ### Added
 
 - Add some extra fields
 
-### 2024-01-18 - 1.1.1
+## [1.1.1] - 2024-01-18
 
 ### Fixed
 
 - retrieve file name
 - retrieve registry value
 
-### 2023-12-04 - 1.1.0
+## [1.1.0] - 2023-12-04
 
 ### Changed
 
