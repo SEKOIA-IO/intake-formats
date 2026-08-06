@@ -7,5 +7,5 @@ real MTTD and MTTR.
 
 ## Formats
 
-- [BlackNoise Simulation](blacknoise-simulation) — adversarial action records, and the
-  indicators of compromise they produce
+- [BlackNoise AEV](blacknoise-aev) — adversarial action records, and the indicators of
+  compromise they produce
