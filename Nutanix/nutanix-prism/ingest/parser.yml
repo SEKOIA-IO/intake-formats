@@ -1,0 +1,261 @@
+name: nutanix_prism
+pipeline:
+  - name: parse_api_header
+    filter: >
+      {{'||' in (original.message) and
+      'httpMethod=' in (original.message) and
+      'restEndpoint=' in (original.message)}}
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^(?:<\\d+>\\S+\\s+\\S+\\s+%{NOTSPACE:syslog_appname}:\\s+)?%{WORD:level}\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{GREEDYDATA:kv_part}$"
+
+  - name: parse_api_kv
+    filter: >
+      {{(parse_api_header.message.kv_part) != ''}}
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_api_header.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: "\\|\\|"
+        raise_errors: false
+
+  - name: parse_api_date
+    filter: >
+      {{(parse_api_header.message.timestamp) != ''}}
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_api_header.message.timestamp}}"
+        output_field: datetime
+        format: "%Y-%m-%d %H:%M:%S,%f"
+
+  - name: parse_audit_json
+    filter: >
+      {{(original.message).strip().startswith('{') and
+      'creationTimestampUsecs' in (original.message) and
+      'operationType' in (original.message) and
+      'userUuid' in (original.message)}}
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+
+  - name: parse_audit_created
+    filter: >
+      {{(parse_audit_json.message.creationTimestampUsecs) != ''}}
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_json.message.creationTimestampUsecs | int / 1000000}}"
+        output_field: date
+        format: "timestamp"
+
+  - name: parse_audit_start
+    filter: >
+      {{(parse_audit_json.message.opStartTimestampUsecs) != ''}}
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_json.message.opStartTimestampUsecs | int / 1000000}}"
+        output_field: date
+        format: "timestamp"
+
+  - name: parse_audit_end
+    filter: >
+      {{(parse_audit_json.message.opEndTimestampUsecs) != ''}}
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_audit_json.message.opEndTimestampUsecs | int / 1000000}}"
+        output_field: date
+        format: "timestamp"
+
+  - name: parse_network_header
+    filter: >
+      {{(' SRC=' in (original.message))
+      and (' DST=' in (original.message)) and
+      (' PROTO=' in (original.message)) and
+      (' SPORT=' in (original.message)) and
+      (' DPORT=' in (original.message)) and
+      (' ACTION=' in (original.message)) and
+      (' ORIG:' in (original.message)) and
+      (' REPLY:' in (original.message))}}
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^%{WORD:level}:%{YEAR:net_year}/%{MONTHNUM:net_month}/%{MONTHDAY:net_day} %{TIME:net_time}\\s+\\[%{DATA:rule_uuid}\\]\\s+%{DATA:rule_name}\\s+\\[%{DATA:session_state}\\]\\s+%{GREEDYDATA:kv_part}$"
+
+  - name: parse_network_date
+    filter: >
+      {{(parse_network_header.message.net_year) != ''}}
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_network_header.message.net_year}}/{{parse_network_header.message.net_month}}/{{parse_network_header.message.net_day}} {{parse_network_header.message.net_time}}"
+        output_field: datetime
+        format: "%Y/%m/%d %H:%M:%S"
+
+  - name: parse_network_kv
+    filter: >
+      {{(parse_network_header.message.kv_part) != ''}}
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_network_header.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+        raise_errors: false
+
+  - name: set_common
+  - name: set_api_audit_fields
+    filter: >
+      {{(parse_api_date.datetime) != ''}}
+  - name: set_audit_fields
+    filter: >
+      {{(parse_audit_json.message | length) > 0}}
+  - name: set_flow_fields
+    filter: >
+      {{(parse_network_header.message.rule_name) != '' and
+      (parse_network_kv.message) != {} and
+      (parse_network_date.datetime) != '' and not
+      ((parse_network_header.message.rule_name | lower).endswith('-policy')
+      or (parse_network_header.message.rule_name |
+      lower).startswith('policy-') or (' policy ' in (' ' ~
+      (parse_network_header.message.rule_name | lower) ~ ' ')))}}
+  - name: set_security_policy_hit_fields
+    filter: >
+      {{(parse_network_header.message.rule_name) != '' and
+      (parse_network_kv.message) != {} and
+      (parse_network_date.datetime) != '' and
+      ((parse_network_header.message.rule_name | lower).endswith('-policy')
+      or (parse_network_header.message.rule_name |
+      lower).startswith('policy-') or (' policy ' in (' ' ~
+      (parse_network_header.message.rule_name | lower) ~ ' ')))}}
+
+stages:
+  set_common:
+    actions:
+      - set:
+          observer.vendor: "Nutanix"
+          observer.product: "Prism"
+          observer.type: "infrastructure"
+
+  set_api_audit_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_api_date.datetime}}"
+          log.level: "{{parse_api_header.message.level | lower}}"
+          log.syslog.appname: "{{parse_api_header.message.syslog_appname}}"
+          event.category: ["network"]
+          event.type: ["connection"]
+          event.action: "{{parse_api_kv.message.httpMethod | lower}}"
+          event.dataset: "api_audit"
+          user.id: "{{parse_api_kv.message.userName}}"
+          http.request.method: "{{parse_api_kv.message.httpMethod}}"
+          url.path: "{{parse_api_kv.message.restEndpoint}}"
+          url.query: "{{parse_api_kv.message.queryParams}}"
+          http.request.body.content: "{{parse_api_kv.message.payload}}"
+          entity.id: "{{parse_api_kv.message.entityUuid}}"
+          nutanix.prism.api_version: "{{parse_api_kv.message.NutanixApiVersion}}"
+          nutanix.prism.client_type: "{{parse_api_kv.message.clientType}}"
+
+  set_audit_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_audit_created.date}}"
+          event.start: "{{parse_audit_start.date}}"
+          event.end: "{{parse_audit_end.date}}"
+          event.category: ["configuration"]
+          event.type: ["info"]
+          event.dataset: "consolidated_audit"
+          event.reason: "{{parse_audit_json.message.defaultMsg}}"
+          event.action: "{{parse_audit_json.message.operationType | lower}}"
+          user.name: "{{parse_audit_json.message.userName}}"
+          user.id: "{{parse_audit_json.message.userUuid}}"
+          organization.id: "{{parse_audit_json.message.tenantUuid}}"
+          nutanix.prism.alert_uid: "{{parse_audit_json.message.alertUid}}"
+          nutanix.prism.record_type: "{{parse_audit_json.message.recordType}}"
+
+  set_flow_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_network_date.datetime}}"
+          log.level: "{{parse_network_header.message.level | lower}}"
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "flow_service"
+          network.transport: "{{parse_network_kv.message.PROTO | lower}}"
+          source.port: "{{parse_network_kv.message.SPORT}}"
+          destination.port: "{{parse_network_kv.message.DPORT}}"
+          event.action: "{{(parse_network_kv.message.ACTION or '').split(' ')[0] | lower}}"
+          nutanix.prism.flow.service: "{{parse_network_header.message.rule_name}}"
+
+      - set:
+          source.ip: "{{parse_network_kv.message.SRC}}"
+        filter: "{{(parse_network_kv.message.SRC) != '' and (parse_network_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          source.domain: "{{parse_network_kv.message.SRC}}"
+        filter: "{{(parse_network_kv.message.SRC) != '' and not (parse_network_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{parse_network_kv.message.DST}}"
+        filter: "{{(parse_network_kv.message.DST) != '' and (parse_network_kv.message.DST | is_ipaddress)}}"
+
+      - set:
+          destination.domain: "{{parse_network_kv.message.DST}}"
+        filter: "{{(parse_network_kv.message.DST) != '' and not (parse_network_kv.message.DST | is_ipaddress)}}"
+
+  set_security_policy_hit_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.dataset: "security_policy_hit"
+          event.reason: "{{(parse_network_kv.message.ACTION or '').split(' ')[0]}}"
+
+      - set:
+          "@timestamp": "{{parse_network_date.datetime}}"
+          log.level: "{{parse_network_header.message.level | lower}}"
+          event.action: "{{(parse_network_kv.message.ACTION or '').split(' ')[0] | lower}}"
+          network.transport: "{{parse_network_kv.message.PROTO | lower}}"
+          source.port: "{{parse_network_kv.message.SPORT}}"
+          destination.port: "{{parse_network_kv.message.DPORT}}"
+          rule.id: "{{parse_network_header.message.rule_uuid}}"
+          rule.name: "{{parse_network_header.message.rule_name}}"
+          nutanix.prism.policy.session_state: "{{parse_network_header.message.session_state}}"
+        filter: "{{(parse_network_header.message | length) > 0}}"
+
+      - set:
+          source.ip: "{{parse_network_kv.message.SRC}}"
+        filter: "{{(parse_network_kv.message.SRC) != '' and (parse_network_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          source.domain: "{{parse_network_kv.message.SRC}}"
+        filter: "{{(parse_network_kv.message.SRC) != '' and not (parse_network_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{parse_network_kv.message.DST}}"
+        filter: "{{(parse_network_kv.message.DST) != '' and (parse_network_kv.message.DST | is_ipaddress)}}"
+
+      - set:
+          destination.domain: "{{parse_network_kv.message.DST}}"
+        filter: "{{(parse_network_kv.message.DST) != '' and not (parse_network_kv.message.DST | is_ipaddress)}}"
+
+      - translate:
+        dictionary:
+          Create: ["start"]
+          Update: ["info"]
+          Destroy: ["end"]
+        default: ["info"]
+        mapping:
+          parse_network_header.message.session_state: event.type
+        filter: "{{(parse_network_header.message.session_state) != ''}}"
