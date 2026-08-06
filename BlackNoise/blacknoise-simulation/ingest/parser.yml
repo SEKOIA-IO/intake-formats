@@ -6,10 +6,21 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-  - name: set_common_fields
+  # BlackNoise emits two kinds of record on the same intake. An indicator carries a
+  # `value`, a simulation never does, so that field discriminates between the two.
+  - name: set_envelope
+  - name: set_indicator
+    filter: "{{parsed_event.message.value != null}}"
+  - name: set_indicator_type
+    filter: "{{parsed_event.message.value != null}}"
+  - name: set_simulation
+    filter: "{{parsed_event.message.value == null}}"
   - name: set_simulation_context
+    filter: "{{parsed_event.message.value == null}}"
   - name: set_mitre
+    filter: "{{parsed_event.message.value == null}}"
   - name: set_network
+    filter: "{{parsed_event.message.value == null}}"
   - name: set_system_target
     filter: "{{parsed_event.message.system_target != null}}"
   - name: set_cloud_target
@@ -17,28 +28,23 @@ pipeline:
   - name: set_attack_vector
     filter: "{{parsed_event.message.attack_vector != null}}"
   - name: set_detection
+    filter: "{{parsed_event.message.value == null}}"
   - name: set_recommendations
     filter: "{{parsed_event.message.recommendations != null}}"
   - name: set_outcome
+    filter: "{{parsed_event.message.value == null}}"
 
 stages:
-  set_common_fields:
+  # Fields both record types share, including the keys that tie an indicator back to
+  # the simulation that produced it.
+  set_envelope:
     actions:
       - set:
-          event.kind: event
-          event.category: [intrusion_detection]
-          event.type: [info]
           event.dataset: blacknoise.simulation
           event.module: blacknoise
           observer.vendor: "BlackNoise"
           observer.product: "BlackNoise"
           observer.type: "sensor"
-
-      # event.id is owned by Ingest and cannot be overwritten, so the record
-      # identifier goes to a field of our own.
-      - set:
-          blacknoise.simulation_event_id: "{{parsed_event.message.id}}"
-        filter: "{{parsed_event.message.id != null}}"
 
       # The catalog entry that defines the simulated technique behaves like a
       # rule: it has a stable identifier, a name and a description.
@@ -47,6 +53,143 @@ stages:
           rule.id: "{{parsed_event.message.event_bn_id}}"
           blacknoise.event_bn_id: "{{parsed_event.message.event_bn_id}}"
         filter: "{{parsed_event.message.event_bn_id != null}}"
+
+      # execution_id identifies one run of the technique and is the join key
+      # between this record and everything else the run produced.
+      - set:
+          trace.id: "{{parsed_event.message.execution_id}}"
+          blacknoise.execution_id: "{{parsed_event.message.execution_id}}"
+        filter: "{{parsed_event.message.execution_id != null}}"
+
+      - set:
+          blacknoise.campaign_id: "{{parsed_event.message.campaign_id}}"
+        filter: "{{parsed_event.message.campaign_id != null}}"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.start_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.start_time != null}}"
+
+  # An indicator of compromise produced by a simulation. One record per indicator, so
+  # threat.indicator.* describes exactly one observable, the way ECS intends.
+  set_indicator:
+    actions:
+      - set:
+          event.kind: enrichment
+          event.category: [threat]
+          event.type: [indicator]
+          event.action: indicator-produced
+
+      - set:
+          threat.indicator.name: "{{parsed_event.message.value}}"
+          threat.indicator.provider: "BlackNoise"
+
+      - set:
+          blacknoise.ioc.id: "{{parsed_event.message.id}}"
+        filter: "{{parsed_event.message.id != null}}"
+
+      # The MISP type and category are kept verbatim: they are the vocabulary the
+      # product speaks, and only a subset of them has an ECS equivalent.
+      - set:
+          blacknoise.ioc.type: "{{parsed_event.message.type}}"
+        filter: "{{parsed_event.message.type != null}}"
+
+      - set:
+          blacknoise.ioc.category: "{{parsed_event.message.category}}"
+        filter: "{{parsed_event.message.category != null}}"
+
+      - set:
+          threat.indicator.first_seen: "{{parsed_event.message.start_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.start_time != null}}"
+
+  set_indicator_type:
+    actions:
+      # MISP type to the STIX cyber-observable vocabulary ECS expects in
+      # threat.indicator.type. Types with no ECS representation are left out here and
+      # land in a blacknoise.ioc.* field below instead.
+      - translate:
+        dictionary:
+          ip-src: ipv4-addr
+          ip-dst: ipv4-addr
+          url: url
+          domain: domain-name
+          hostname: domain-name
+          filename|sha256: file
+          filename: file
+          md5: file
+          sha1: file
+          sha256: file
+          mac-address: mac-addr
+          command: process
+          download: file
+          delete: file
+        mapping:
+          blacknoise.ioc.type: threat.indicator.type
+
+      - set:
+          threat.indicator.ip: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"] and parsed_event.message.value | is_ipaddress}}'
+
+      - set:
+          threat.indicator.url.full: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "url"}}'
+
+      - set:
+          threat.indicator.url.domain: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type in ["domain", "hostname"]}}'
+
+      - set:
+          threat.indicator.file.name: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "filename"}}'
+
+      # A `filename|sha256` value carries both halves separated by a pipe, as built by
+      # the appliance: f'{path}|{sha256_checksum(path)}'.
+      - set:
+          threat.indicator.file.name: "{{parsed_event.message.value.split('|')[0]}}"
+          threat.indicator.file.hash.sha256: "{{parsed_event.message.value.split('|')[1]}}"
+        filter: '{{parsed_event.message.type == "filename|sha256" and "|" in parsed_event.message.value}}'
+
+      - set:
+          threat.indicator.file.hash.md5: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "md5"}}'
+
+      - set:
+          threat.indicator.file.hash.sha1: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "sha1"}}'
+
+      - set:
+          threat.indicator.file.hash.sha256: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "sha256"}}'
+
+      # Types ECS has no field for. The value also stays in threat.indicator.name, so a
+      # generic indicator search still finds them.
+      - set:
+          blacknoise.ioc.command: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "command"}}'
+
+      - set:
+          blacknoise.ioc.downloaded_file: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "download"}}'
+
+      - set:
+          blacknoise.ioc.deleted_file: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "delete"}}'
+
+      - set:
+          blacknoise.ioc.mac_address: "{{parsed_event.message.value | to_mac_address}}"
+        filter: '{{parsed_event.message.type == "mac-address"}}'
+
+  set_simulation:
+    actions:
+      - set:
+          event.kind: event
+          event.category: [intrusion_detection]
+          event.type: [info]
+
+      # event.id is owned by Ingest and cannot be overwritten, so the record
+      # identifier goes to a field of our own.
+      - set:
+          blacknoise.simulation_event_id: "{{parsed_event.message.id}}"
+        filter: "{{parsed_event.message.id != null}}"
 
       - set:
           rule.name: "{{parsed_event.message.name}}"
@@ -61,7 +204,6 @@ stages:
         filter: "{{parsed_event.message.execution_message != null}}"
 
       - set:
-          "@timestamp": "{{parsed_event.message.start_time | to_rfc3339}}"
           event.start: "{{parsed_event.message.start_time | to_rfc3339}}"
         filter: "{{parsed_event.message.start_time != null}}"
 
@@ -79,17 +221,6 @@ stages:
 
   set_simulation_context:
     actions:
-      # execution_id identifies one run of the technique and is the join key
-      # between this event and everything else the run produced.
-      - set:
-          trace.id: "{{parsed_event.message.execution_id}}"
-          blacknoise.execution_id: "{{parsed_event.message.execution_id}}"
-        filter: "{{parsed_event.message.execution_id != null}}"
-
-      - set:
-          blacknoise.campaign_id: "{{parsed_event.message.campaign_id}}"
-        filter: "{{parsed_event.message.campaign_id != null}}"
-
       - set:
           blacknoise.simulation_id: "{{parsed_event.message.simulation_id}}"
         filter: "{{parsed_event.message.simulation_id != null}}"
