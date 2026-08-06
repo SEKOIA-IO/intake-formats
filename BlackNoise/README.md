@@ -1,9 +1,11 @@
-# BlackNoise
+# BlackNoise AEV
 
-BlackNoise is a breach and attack simulation platform. It executes offensive techniques
-mapped to MITRE ATT&CK inside a customer network and reports whether the defensive stack
-caught them.
+BlackNoise is an agentless Adversarial Exposure Validation (AEV) platform. It safely executes
+real attack techniques across the information system and correlates each adversarial action with
+the detections it triggered, so that security teams can measure and continuously improve their
+real MTTD and MTTR.
 
 ## Formats
 
-- [BlackNoise Simulation](blacknoise-simulation) — simulated technique records
+- [BlackNoise Simulation](blacknoise-simulation) — adversarial action records, and the
+  indicators of compromise they produce
