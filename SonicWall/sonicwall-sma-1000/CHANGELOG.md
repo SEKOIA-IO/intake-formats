@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Integrate SonicWall SMA 1000 Seies logs:
+- Integrate SonicWall SMA 1000 Series logs:
 	- Management Access Log
 	- Management Audit Log
 	- Management Message Log
