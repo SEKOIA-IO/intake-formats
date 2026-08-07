@@ -12,8 +12,8 @@ pipeline:
           SYSTEM_MESSAGE: "^\\[(?P<system_datestamp>[^\\]]+)\\] (?P<system_hostname>\\S+) (?:(?P<system_node>\\S+) )?(?P<system_pid>\\d+) (?P<system_app_id>\\S+) (?P<system_source_id>\\S+) (?P<system_level>\\S+) (?P<system_type>\\S+) (?P<system_message>.*)$"
           MANAGEMENT_AUDIT: "^(?P<audit_level>Error|Warning|Info|Verbose) (?P<audit_date>\\d{1,2}/\\d{1,2}/\\d{4}) (?P<audit_time>\\d{2}:\\d{2}:\\d{2}) (?P<audit_username>\\S+) (?P<audit_message>.*)$"
           MANAGEMENT_ACCESS: "^(?P<mgmt_source_ip>\\S+) \\- (?P<mgmt_username>[^\\s(][^\\s]*) \\[(?P<mgmt_datestamp>[^\\]]+)\\] \"(?P<mgmt_http_method>[A-Z]+) (?P<mgmt_url_path>\\S+) HTTP/(?P<mgmt_http_version>[^\"]+)\" (?P<mgmt_status>\\d{3}) (?P<mgmt_bytesout>\\d+)$"
-          NETWORK_TUNNEL: "^\\[(?P<tunnel_source_ip>[^\\]]+)\\]:(?P<tunnel_source_port>\\d+) \\- \"(?P<tunnel_user_realm>[^\"]+)\" \"(?P<tunnel_datestamp>[^\"]+)\" (?P<tunnel_version>\\S+) tunnel (?P<tunnel_client_ip>\\S+) (?P<tunnel_error_code>-?\\d+) (?P<tunnel_client_bytes>\\d+) (?P<tunnel_server_bytes>\\d+) (?P<tunnel_duration>\\d+) (?P<tunnel_platform_prefix>\\S+)\\\"(?P<tunnel_equipment_id>.*)$"
-          NETWORK_FLOW: "^(?P<flow_source_ip>\\S+):(?P<flow_source_port>\\d+) \\- \"(?P<flow_user_realm>[^\"]+)\" \"(?P<flow_datestamp>[^\"]+)\" (?P<flow_version>\\S+) flow:(?P<flow_protocol>[^\\s]+) (?P<flow_destination>\\S+) (?P<flow_error_code>-?\\d+) (?P<flow_client_bytes>\\d+) (?P<flow_server_bytes>\\d+) (?P<flow_duration>\\d+) (?P<flow_platform_prefix>\\S+)\\\"(?P<flow_equipment_id>.*)$"
+          NETWORK_TUNNEL: "^\\[(?P<tunnel_source_ip>[^\\]]+)\\]:(?P<tunnel_source_port>\\d+) \\- \"(?P<tunnel_user_realm>[^\"]+)\" \"(?P<tunnel_datestamp>[^\"]+)\" (?P<tunnel_version>\\S+) tunnel (?P<tunnel_client_ip>\\S+) (?P<tunnel_error_code>-?\\d+) (?P<tunnel_client_bytes>\\d+) (?P<tunnel_server_bytes>\\d+) (?P<tunnel_duration>\\d+) (?P<tunnel_platform_prefix>\\S+)\\\"(?P<tunnel_equipment_id>[^\"]*)\"$"
+          NETWORK_FLOW: "^(?P<flow_source_ip>\\S+):(?P<flow_source_port>\\d+) \\- \"(?P<flow_user_realm>[^\"]+)\" \"(?P<flow_datestamp>[^\"]+)\" (?P<flow_version>\\S+) flow:(?P<flow_protocol>[^\\s]+) (?P<flow_destination>\\S+) (?P<flow_error_code>-?\\d+) (?P<flow_client_bytes>\\d+) (?P<flow_server_bytes>\\d+) (?P<flow_duration>\\d+) (?P<flow_platform_prefix>\\S+)\\\"(?P<flow_equipment_id>[^\"]*)\"$"
           WEB_PROXY: "^(?P<web_source_ip>\\S+) \\- \\((?P<web_username>[^)]*)\\)@\\((?P<web_realm>[^)]*)\\) \\[(?P<web_datestamp>[^\\]]+)\\] \"(?P<web_http_method>[A-Z]+) (?P<web_url_path>\\S+) HTTP/(?P<web_http_version>[^\"]+)\" (?P<web_status>\\d{3}) (?P<web_bytes_sent>\\d+)$"
           WORKPLACE_SERVICE: "^(?P<workplace_datestamp>\\S+) (?P<workplace_service>[^@\\s]+)@(?P<workplace_hostname>\\S+) (?P<workplace_facility>[^.\\s]+)\\.(?P<workplace_syslog_level>\\S+) (?P<workplace_provider>WP:) (?P<workplace_message>.*)$"
           WORKPLACE_CLIENT: "^(?P<workplace_datestamp>\\S+) (?P<workplace_client_pair>\\S+/\\S+) (?P<workplace_facility>[^.\\s]+)\\.(?P<workplace_syslog_level>\\S+) (?P<workplace_level>\\S+) (?P<workplace_message>.*)$"
@@ -160,7 +160,7 @@ stages:
           message: "{{ parsed_event.result.system_message }}"
           observer.hostname: "{{ parsed_event.result.system_hostname }}"
           process.name: "{{ parsed_event.result.system_app_id }}"
-          process.pid: "{{ parsed_event.result.system_pid }}"
+          process.pid: "{{ parsed_event.result.system_pid | int }}"
           source.address: "{{ parsed_event.result.system_source_id }}"
 
       - set:
@@ -207,7 +207,7 @@ stages:
         filter: "{{ parsed_event.result.system_message != None and 'results:' in parsed_event.result.system_message }}"
 
       - set:
-          sonicwall.sma.1000.certificate.error_code: "{{ parsed_event.result.system_message.split('err = ')[1].split(',')[0].strip() }}"
+          sonicwall.sma.1000.certificate.error_code: "{{ parsed_event.result.system_message.split('err = ')[1].split(',')[0].strip() | int }}"
           sonicwall.sma.1000.certificate.error_reason: '{{ parsed_event.result.system_message.split("reason = ''")[1].split("''")[0] }}'
         filter: '{{ parsed_event.result.system_message != None and ''err ='' in parsed_event.result.system_message and "reason = ''" in parsed_event.result.system_message }}'
 
@@ -295,7 +295,7 @@ stages:
 
       - set:
           source.ip: "{{ parsed_event.result.plain_service_message.split('(')[-1].split(':')[0] }}"
-          source.port: "{{ parsed_event.result.plain_service_message.split(':')[-1].replace(')', '') }}"
+          source.port: "{{ parsed_event.result.plain_service_message.split(':')[-1].replace(')', '') | int }}"
         filter: "{{ parsed_event.result.plain_service_message != None and '(' in parsed_event.result.plain_service_message and ':' in parsed_event.result.plain_service_message and parsed_event.result.plain_service_message.endswith(')') }}"
 
       - set:
@@ -358,8 +358,8 @@ stages:
           event.dataset: sonicwall.sma.1000.management_access
           event.type: ["info"]
           http.request.method: "{{ parsed_event.result.mgmt_http_method }}"
-          http.response.bytes: "{{ parsed_event.result.mgmt_bytesout }}"
-          http.response.status_code: "{{ parsed_event.result.mgmt_status }}"
+          http.response.bytes: "{{ parsed_event.result.mgmt_bytesout | int }}"
+          http.response.status_code: "{{ parsed_event.result.mgmt_status | int }}"
           http.version: "{{ parsed_event.result.mgmt_http_version }}"
           message: "{{ original.message }}"
           source.ip: "{{ parsed_event.result.mgmt_source_ip }}"
@@ -415,15 +415,15 @@ stages:
 
       - set:
           "@timestamp": "{{ parse_network_tunnel_datetime.date }}"
-          client.bytes: "{{ parsed_event.result.tunnel_client_bytes }}"
+          client.bytes: "{{ parsed_event.result.tunnel_client_bytes | int }}"
           client.ip: "{{ parsed_event.result.tunnel_client_ip }}"
           client.user.domain: "{{ parsed_event.result.tunnel_user_realm.split('@')[-1].strip('()') }}"
           client.user.name: "{{ parsed_event.result.tunnel_user_realm.split('@')[0].strip('()') }}"
           event.duration: "{{ parsed_event.result.tunnel_duration | int * 1000000000 }}"
           process.name: "{{ parsed_event.result.tunnel_platform_prefix }}"
-          server.bytes: "{{ parsed_event.result.tunnel_server_bytes }}"
+          server.bytes: "{{ parsed_event.result.tunnel_server_bytes | int }}"
           source.ip: "{{ parsed_event.result.tunnel_source_ip.replace('::ffff:', '') }}"
-          source.port: "{{ parsed_event.result.tunnel_source_port }}"
+          source.port: "{{ parsed_event.result.tunnel_source_port | int }}"
         filter: "{{ parsed_event.result.tunnel_datestamp != None }}"
 
       - set:
@@ -436,17 +436,17 @@ stages:
 
       - set:
           "@timestamp": "{{ parse_network_flow_datetime.date }}"
-          client.bytes: "{{ parsed_event.result.flow_client_bytes }}"
+          client.bytes: "{{ parsed_event.result.flow_client_bytes | int }}"
           client.user.domain: "{{ parsed_event.result.flow_user_realm.split('@')[-1].strip('()') }}"
           client.user.name: "{{ parsed_event.result.flow_user_realm.split('@')[0].strip('()') }}"
           destination.ip: "{{ parsed_event.result.flow_destination.split(':')[0] }}"
-          destination.port: "{{ parsed_event.result.flow_destination.split(':')[-1] }}"
+          destination.port: "{{ parsed_event.result.flow_destination.split(':')[-1] | int }}"
           event.duration: "{{ parsed_event.result.flow_duration | int * 1000000000 }}"
           network.protocol: "{{ parsed_event.result.flow_protocol }}"
           process.name: "{{ parsed_event.result.flow_platform_prefix }}"
-          server.bytes: "{{ parsed_event.result.flow_server_bytes }}"
+          server.bytes: "{{ parsed_event.result.flow_server_bytes | int }}"
           source.ip: "{{ parsed_event.result.flow_source_ip.replace('::ffff:', '') }}"
-          source.port: "{{ parsed_event.result.flow_source_port }}"
+          source.port: "{{ parsed_event.result.flow_source_port | int }}"
         filter: "{{ parsed_event.result.flow_datestamp != None and parsed_event.result.flow_protocol != None }}"
 
       - set:
@@ -479,8 +479,8 @@ stages:
           event.dataset: sonicwall.sma.1000.web_proxy
           event.type: ["info"]
           http.request.method: "{{ parsed_event.result.web_http_method }}"
-          http.response.bytes: "{{ parsed_event.result.web_bytes_sent }}"
-          http.response.status_code: "{{ parsed_event.result.web_status }}"
+          http.response.bytes: "{{ parsed_event.result.web_bytes_sent | int }}"
+          http.response.status_code: "{{ parsed_event.result.web_status | int }}"
           http.version: "{{ parsed_event.result.web_http_version }}"
           message: "{{ original.message }}"
           source.ip: "{{ parsed_event.result.web_source_ip }}"
@@ -538,8 +538,8 @@ stages:
 
       - set:
           sonicwall.sma.1000.export_state: "{{ parse_unregistered_query.query.exported }}"
-          sonicwall.sma.1000.registered_device_count: "{{ parse_unregistered_query.query.deviceCount }}"
-          sonicwall.sma.1000.unregistered_device.limit: "{{ parse_unregistered_query.query.limit }}"
+          sonicwall.sma.1000.registered_device_count: "{{ parse_unregistered_query.query.deviceCount | int }}"
+          sonicwall.sma.1000.unregistered_device.limit: "{{ parse_unregistered_query.query.limit | int }}"
         filter: "{{ parse_unregistered_query.query != None }}"
 
   set_workplace_fields:
