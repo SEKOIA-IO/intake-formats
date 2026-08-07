@@ -1,21 +1,21 @@
 # Specs - SonicWall SMA 1000 Series 12.5
 
-## Table of Contents
+# Table of contents
 
-- [Overview](#overview)
-- [Specifications](#specifications)
-  - [All log types](#all-log-types)
-  - [1. System Message Log](#1-system-message-log)
-  - [2. Management Message Log](#2-management-message-log)
-  - [3. Management Audit Log](#3-management-audit-log)
-  - [4. Management Access Log](#4-management-access-log)
-  - [5. Network Tunnel Audit Log](#5-network-tunnel-audit-log)
-  - [6. Web Proxy Audit Log](#6-web-proxy-audit-log)
-  - [7. Unregistered Device Log Messages](#7-unregistered-device-log-messages)
-  - [8. WorkPlace Logs](#8-workplace-logs)
-- [Notes](#notes)
+- [Overview](about:blank#overview)
+- [Specifications](about:blank#specifications)
+    - [All log types](about:blank#all-log-types)
+    - [1. System Message Log](about:blank#1-system-message-log)
+    - [2. Management Message Log](about:blank#2-management-message-log)
+    - [3. Management Audit Log](about:blank#3-management-audit-log)
+    - [4. Management Access Log](about:blank#4-management-access-log)
+    - [5. Network Tunnel Audit Log](about:blank#5-network-tunnel-audit-log)
+    - [6. Web Proxy Audit Log](about:blank#6-web-proxy-audit-log)
+    - [7. Unregistered Device Log Messages](about:blank#7-unregistered-device-log-messages)
+    - [8. WorkPlace Logs](about:blank#8-workplace-logs)
+- [Notes](about:blank#notes)
 
-## Overview
+# Overview
 
 SonicWall Secure Mobile Access (SMA) 1000 Series 12.5 log types, in the same order as [official documentation](https://www.sonicwall.com/support/technical-documentation/docs/sma_1000-12-5-admin_guide/Content/Appendix/log-file-output-formats.htm):
 
@@ -34,14 +34,14 @@ SonicWall Secure Mobile Access (SMA) 1000 Series 12.5 log types, in the same ord
 
 #### Fields
 
-##### Static fields
+#### Static fields
 
 | Field to extract | Value | Log Types |
 | --- | --- | --- |
-| event.kind | "event" | All |
-| observer.vendor | "SonicWall" | All |
-| observer.product | "Secure Mobile Access" | All |
-| observer.type | "firewall" | All |
+| event.kind | “event” | All |
+| observer.vendor | “SonicWall” | All |
+| observer.product | “Secure Mobile Access” | All |
+| observer.type | “firewall” | All |
 
 ---
 
@@ -49,11 +49,11 @@ SonicWall Secure Mobile Access (SMA) 1000 Series 12.5 log types, in the same ord
 
 #### File
 
-`/var/log/aventail/access_servers.log`  
+`/var/log/aventail/access_servers.log`
 
 #### Format
 
-Syslog  
+Syslog
 
 #### Log Format
 
@@ -65,7 +65,7 @@ Syslog
 [29/Jul/2025:14:02:38.051761 +0000] wmperry-12-5-0-01740-default-standalone 000000 kp 0000020a Internl Misc <KERNEL> created channel (pid=6268):0000000021ce9936
 ```
 
-##### Additional Information from System Message Sub-Docs
+#### Additional Information from System Message Sub-Docs
 
 - **Access Policy Decision Example**
 
@@ -87,15 +87,15 @@ Syslog
 
 #### Fields
 
-##### Static Fields
+#### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["host"] |
-| event.type | ["info"] |
-| event.dataset | "sonicwall.sma.1000.system" |
+| event.category | [“host”] |
+| event.type | [“info”] |
+| event.dataset | “sonicwall.sma.1000.system” |
 
-##### Dynamic Fields (ECS)
+#### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ Syslog
 | process.pid | PID | Process ID |
 | source.address | SOURCE ID | Source identifier as logged |
 
-##### Custom Fields
+#### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -121,35 +121,35 @@ Syslog
 
 ### 2. Management Message Log
 
-#### File
+### File
 
-`/var/log/aventail/management.log`  
+`/var/log/aventail/management.log`
 
-#### Format
+### Format
 
-Management service operational log  
+Management service operational log
 
-#### Log Format
+### Log Format
 
 `[DATESTAMP] [SERVICE@HOSTNAME] [local4.LEVEL] [AMC:] [DATE] [TIME] [TIMEZONE] [LEVEL] [MESSAGE]`
 
-#### Example Log Entry
+### Example Log Entry
 
 ```
 2025-07-25T12:31:06+00:00 AMC@wmperry-12-5-0-dev-gf048f7ae-default-standalone.sma local4.info AMC: 2025-07-25 12:31:06 +0000 INFO com.aventail.mgmt.rest.console.centralmanagement.managed.sharedstate.TrafficOptimizerConfigurationResource12_2 - Clearing traffic optimizer configuration
 ```
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["host"] |
-| event.type | ["info"] |
-| event.dataset | "sonicwall.sma.1000.management_message" |
+| event.category | [“host”] |
+| event.type | [“info”] |
+| event.dataset | “sonicwall.sma.1000.management_message” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -164,7 +164,7 @@ Management service operational log
 | observer.hostname | SERVICE@HOSTNAME | Hostname part after `@` |
 | service.name | SERVICE@HOSTNAME | Service part before `@` |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -175,35 +175,35 @@ Management service operational log
 
 ### 3. Management Audit Log
 
-#### File
+### File
 
-`/var/log/aventail/consoleaudit.log`  
+`/var/log/aventail/consoleaudit.log`
 
-#### Format
+### Format
 
-Custom text log  
+Custom text log
 
-#### Log Format
+### Log Format
 
 `[level] [date] [time] [username] [message]`
 
-#### Example Log Entry
+### Example Log Entry
 
 ```
 Info 6/3/2025 00:31:02 admin Applied configuration changes
 ```
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["configuration"] |
-| event.type | ["change"] |
-| event.dataset | "sonicwall.sma.1000.management_audit" |
+| event.category | [“configuration”] |
+| event.type | [“change”] |
+| event.dataset | “sonicwall.sma.1000.management_audit” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -213,7 +213,7 @@ Info 6/3/2025 00:31:02 admin Applied configuration changes
 | message | message | Change description |
 | user.name | username | Admin username |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -223,35 +223,35 @@ Info 6/3/2025 00:31:02 admin Applied configuration changes
 
 ### 4. Management Access Log
 
-#### File
+### File
 
-`/var/log/aventail/management_access.log`  
+`/var/log/aventail/management_access.log`
 
-#### Format
+### Format
 
-Common Log Format (CLF) for HTTP  
+Common Log Format (CLF) for HTTP
 
-#### Log Format
+### Log Format
 
 `[SOURCE] [USERNAME] [DATETIME TIMEZONE] [HTTP REQUEST LINE] [STATUS] [BYTESOUT]`
 
-#### Example Log Entry
+### Example Log Entry
 
 ```
 127.0.0.1 - admin [25/Jul/2025:05:30:52 -0700] "GET /Console/PendingChanges HTTP/1.1" 200 308
 ```
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["network"] |
-| event.type | ["info"] |
-| event.dataset | "sonicwall.sma.1000.management_access" |
+| event.category | [“network”] |
+| event.type | [“info”] |
+| event.dataset | “sonicwall.sma.1000.management_access” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -264,7 +264,7 @@ Common Log Format (CLF) for HTTP
 | url.path | HTTP REQUEST LINE | URI extraction |
 | user.name | USERNAME | Admin user |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -275,37 +275,38 @@ Common Log Format (CLF) for HTTP
 
 ### 5. Network Tunnel Audit Log
 
-#### File
+### File
 
-`/var/log/aventail/extranet_access.log`  
+`/var/log/aventail/extranet_access.log`
 
-#### Format
+### Format
 
-Custom tunnel/flow records  
+Custom tunnel/flow records
 
-#### Log Format
+### Log Format
 
-`[source ip] [username @ realm] [date/time] [tunnel protocol version] ["tunnel"] [client vip4, client vip6] [error code] [bytes received] [bytes sent] [duration] [platform prefix] [equipment id]`  
+`[source ip] [username @ realm] [date/time] [tunnel protocol version] ["tunnel"] [client vip4, client vip6] [error code] [bytes received] [bytes sent] [duration] [platform prefix] [equipment id]`
+
 `[source ip] [username @ realm] [date/time] [tunnel protocol version] ["flow:"protocol] [destination ip] [error code] [bytes received] [bytes sent] [duration] [platform prefix] [equipment id]`
 
-#### Example Log Entries
+### Example Log Entries
 
 ```
 [::ffff:10.5.105.197]:59234 - "(demo2)@(CT)" "31/Jul/2025:14:41:23.073 +0530" 1.2 tunnel 172.24.35.34 -1 112639 137450 165 W"42 1a 69 3a 6c 75 ac eb-be 8a 0b 90 9b 13 c6 24"
 172.24.35.34:59260 - "(demo2)@(CT)" "31/Jul/2025:14:40:47.815 +0530" 1.2 flow:tcp 10.5.252.168:443 0 5436 129963 125 W"42 1a 69 3a 6c 75 ac eb-be 8a 0b 90 9b 13 c6 24"
 ```
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["network"] |
-| event.type | ["connection"] |
-| event.dataset | "sonicwall.sma.1000.network_tunnel" |
+| event.category | [“network”] |
+| event.type | [“connection”] |
+| event.dataset | “sonicwall.sma.1000.network_tunnel” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -324,12 +325,12 @@ Custom tunnel/flow records
 | source.ip | source ip | Source IP |
 | source.port | source ip | Source port extraction |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
 | sonicwall.sma.1000.connection_type | “tunnel” | tunnel |
-| sonicwall.sma.1000.connection_type | “flow:”protocol | flow:tcp/udp/icmp... |
+| sonicwall.sma.1000.connection_type | “flow:”protocol | flow:tcp/udp/icmp… |
 | sonicwall.sma.1000.equipment_id | equipment id | Device/session ID |
 | sonicwall.sma.1000.tunnel_version | tunnel protocol version | Custom version |
 
@@ -337,35 +338,35 @@ Custom tunnel/flow records
 
 ### 6. Web Proxy Audit Log
 
-#### File
+### File
 
-`/var/log/aventail/extraweb_access.log`  
+`/var/log/aventail/extraweb_access.log`
 
-#### Format
+### Format
 
-W3C Common Log Format (CLF)  
+W3C Common Log Format (CLF)
 
-#### Log Format
+### Log Format
 
 `[Status] [date/time] [source ip] [bytes-sent] [username@realm] [identity] [request] [HTTP-return-code]`
 
-#### Example Log Entry
+### Example Log Entry
 
 ```
 192.168.2.69 - (jsmith)@(AD) [6/3/2025 00:32:36.115 +0000] "GET /workplace/access/home HTTP/1.1" 200 15424
 ```
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["network"] |
-| event.type | ["info"] |
-| event.dataset | "sonicwall.sma.1000.web_proxy" |
+| event.category | [“network”] |
+| event.type | [“info”] |
+| event.dataset | “sonicwall.sma.1000.web_proxy” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -379,7 +380,7 @@ W3C Common Log Format (CLF)
 | source.ip | source ip | Source client IP |
 | url.path | request | URI path extraction |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -390,39 +391,40 @@ W3C Common Log Format (CLF)
 
 ### 7. Unregistered Device Log Messages
 
-#### File
+### File
 
-XML export (not line-based syslog)  
+XML export (not line-based syslog)
 
-#### Format
+### Format
 
-HTTP endpoint exporting XML content  
+HTTP endpoint exporting XML content
 
-#### Log Format
+### Log Format
 
-`https://<internal address>:8443/UnregisteredDevices.xml`  
+`https://<internal address>:8443/UnregisteredDevices.xml`
+
 `https://<internal address>:8443/UnregisteredDevices.xml?parameter=value&parameter=value`
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["iam"] |
-| event.type | ["info"] |
-| event.dataset | "sonicwall.sma.1000.unregistered_device" |
+| event.category | [“iam”] |
+| event.type | [“info”] |
+| event.dataset | “sonicwall.sma.1000.unregistered_device” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
-| @timestamp | lastLoginTime (URL parameter) | Relative period selector (`hour`, `day`, `week`, ...) |
+| @timestamp | lastLoginTime (URL parameter) | Relative period selector (`hour`, `day`, `week`, …) |
 | host.os.type | platform (URL parameter) | Enumerated platform filter |
 | user.domain | realm (URL parameter) | Case-insensitive realm filter |
 | user.name | username (URL parameter) | Case-insensitive username filter |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -434,7 +436,7 @@ HTTP endpoint exporting XML content
 
 ### 8. WorkPlace Logs
 
-#### File
+### File
 
 `/var/log/aventail/workplace.log`
 
@@ -442,16 +444,17 @@ Related files:
 - `/var/log/aventail/wp_init.log`
 - `/var/log/aventail/extraweb_access.log`
 
-#### Format
+### Format
 
-WorkPlace troubleshooting logs (syslog-style prefixes)  
+WorkPlace troubleshooting logs (syslog-style prefixes)
 
-#### Log Format
+### Log Format
 
-`[DATESTAMP] [SERVICE@HOSTNAME] [local7.LEVEL] [WP:] [MESSAGE]`  
+`[DATESTAMP] [SERVICE@HOSTNAME] [local7.LEVEL] [WP:] [MESSAGE]`
+
 `[DATESTAMP] [CLIENT_IP/PROXY_IP] [local7.LEVEL] [LEVEL] [MESSAGE]`
 
-#### Example Log Entries
+### Example Log Entries
 
 ```
 2025-06-30T14:17:23+05:30 WP@ma34.sma local7.debug WP: 2025-06-30 14:17:24 +0530 DEBUG - GOT: CredentialsManager[teamSessionId=/bV+kF/p7QuQWL3BGdokQA==,teamcredentials={username=udbhav} ,credentials={}]
@@ -460,17 +463,17 @@ WorkPlace troubleshooting logs (syslog-style prefixes)
 2025-06-30T14:17:23+05:30 127.0.0.1/127.0.0.1 local7.debug DEBUG [22:12:15,043] pcsession: <authorize:exit> uri=http://wemmet.internal.net status=FAILURE
 ```
 
-#### Fields
+### Fields
 
-##### Static Fields
+### Static Fields
 
 | Field | Value |
 | --- | --- |
-| event.category | ["network", "authentication"] |
-| event.type | ["info"] |
-| event.dataset | "sonicwall.sma.1000.workplace" |
+| event.category | [“network”, “authentication”] |
+| event.type | [“info”] |
+| event.dataset | “sonicwall.sma.1000.workplace” |
 
-##### Dynamic Fields (ECS)
+### Dynamic Fields (ECS)
 
 | ECS Field | Log Element | Comment |
 | --- | --- | --- |
@@ -486,7 +489,7 @@ WorkPlace troubleshooting logs (syslog-style prefixes)
 | url.original | MESSAGE | `uri=...` extraction |
 | user.name | MESSAGE | `username=...` extraction |
 
-##### Custom Fields
+### Custom Fields
 
 | Custom Field | Log Element | Comment |
 | --- | --- | --- |
@@ -525,8 +528,8 @@ WorkPlace troubleshooting logs (syslog-style prefixes)
 
 - All timestamps should be converted to RFC 3339 format for `@timestamp`
 - Duration fields (in seconds) should be converted to nanoseconds for `event.duration`
-  - Formula: `seconds * 1_000_000_000`
-  - Example: 165 seconds = 165000000000 nanoseconds
+    - Formula: `seconds * 1_000_000_000`
+    - Example: 165 seconds = 165000000000 nanoseconds
 
 # Authors
 
