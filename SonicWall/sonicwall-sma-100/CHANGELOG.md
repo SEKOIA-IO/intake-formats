@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2023-10-11 - 1.0.0
+## 2026-08-07
+
+### Changed
+
+- Rename _SonicWall/sonicwall-sma_ integration to _SonicWall/sonicwall-sma-100_
+
+## [1.0.0] - 2023-10-11
 
 ### Added
 
-- initial version of the format
+- Initial version of the format
