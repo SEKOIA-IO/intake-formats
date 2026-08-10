@@ -7,13 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased] - 2026-05-29
+## 2026-08-10
 
 ### Fixed
 
 - Fix smart description rendering to handle nested and non-string list values without crashing
 
-## [Unreleased] - 2026-05-21
+## 2026-05-21
 
 ### Fixed
 
