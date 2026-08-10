@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased] - 2026-06-10
+## 2026-08-10
 
 ### Added
 
-- Added parsing of `isDeleted` field from msgParts to `proofpoint.pod.msgpart.is_deleted` custom field
+- Parse new custom fields from `msgParts` message:
+    - `proofpoint.pod.msgpart.is_deleted`
