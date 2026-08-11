@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-08-11 - 1.0.5
+
+### Added
+
+- Parse custom field `crowdstrike.detect_name`:
+    - from `DetectionSummaryEvent` events
+    - from `EppDetectionSummaryEvent` events
+
 ## 2024-06-10 - 1.0.4
 
 ### Added
