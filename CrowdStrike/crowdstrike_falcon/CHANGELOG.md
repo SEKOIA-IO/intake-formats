@@ -11,9 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Parse custom field `crowdstrike.detect_name`:
-    - from `DetectionSummaryEvent` events
-    - from `EppDetectionSummaryEvent` events
+- Harmonize parsing of related custom detection fields across event types
+- Parse custom fields:
+    - `crowdstrike.detect_description`:
+        - from `DetectionSummaryEvent` events
+        - from `EppDetectionSummaryEvent` events
+    - `crowdstrike.detect_name`:
+        - from `DetectionSummaryEvent` events
+        - from `EppDetectionSummaryEvent` events
+    - `crowdstrike.event_objective`:
+        - from `DetectionSummaryEvent` events
+        - from `EppDetectionSummaryEvent` events
+        - from `IdpDetectionSummaryEvent` events
 
 ## 2024-06-10 - 1.0.4
 
