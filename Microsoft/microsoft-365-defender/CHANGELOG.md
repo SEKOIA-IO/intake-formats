@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-08-11 - 1.0.7
+
+### Fixed
+
+- Fix email.from.address to avoid error messages
+
 ## 2026-07-20 - 1.0.6
 
 ### Added
