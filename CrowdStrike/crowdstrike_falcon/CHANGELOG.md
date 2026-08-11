@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-08-11 - 1.0.5
+## [1.0.5] - 2026-08-11
 
 ### Added
 
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         - from `EppDetectionSummaryEvent` events
         - from `IdpDetectionSummaryEvent` events
 
-## 2024-06-10 - 1.0.4
+## [1.0.4] - 2024-06-10
 
 ### Added
 
@@ -35,25 +35,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Convert host.ip and host.mac into array
 
-## 2024-01-18 - 1.0.3
+## [1.0.3] - 2024-01-18
 
 ### Added
 
 - Support of MobileDetectionSummaryEvent
 
-## 2023-09-26 - 1.0.2
+## [1.0.2] - 2023-09-26
 
 ### Changed
 
 - Fix the way to define timestamp for IDP events
 
-## 2023-08-15 - 1.0.1
+## [1.0.1] - 2023-08-15
 
 ### Added
 
 - Support of IDP events
 
-## 2022-07-15 - 1.0.0
+## [1.0.0] - 2022-07-15
 
 ### Added
 
