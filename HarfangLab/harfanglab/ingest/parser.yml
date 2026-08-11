@@ -94,7 +94,7 @@ pipeline:
     filter: "{{json_event.message.log_type == 'threat'}}"
 
   - name: alert_process_info
-    filter: "{{json_event.message.alert_subtype == 'process' or json_event.message.threat_type == 'commandline'}}"
+    filter: "{{json_event.message.alert_subtype == 'process' or json_event.message.alert_subtype == 'correlation' or json_event.message.threat_type == 'commandline'}}"
 
   - name: investigation_info
     filter: "{{json_event.message.log_type == 'investigation'}}"
@@ -149,6 +149,11 @@ stages:
 
           event.start: "{{parse_first_seen.datetime}}"
           event.end: "{{parse_last_seen.datetime}}"
+
+      - set:
+          host.hostname: "{{json_event.message.agents[0].agent_hostname}}"
+          host.name: "{{json_event.message.agents[0].agent_hostname}}"
+        filter: "{{ (json_event.message.agents | length > 0) and (json_event.message.agents[0].agent_hostname not in [None, '']) }}"
 
       - set:
           harfanglab.rule_level: "{{json_event.message.rules[0].rule_level}}"
@@ -499,6 +504,16 @@ stages:
           file.hash.sha256: "{{json_event.message.process.hashes.sha256}}"
           file.hash.sha1: "{{json_event.message.process.hashes.sha1}}"
         filter: "{{json_event.message.process.hashes != None}}"
+
+      - set:
+          harfanglab.grandparent.process.ancestors: "{{json_event.message.process.ancestors.split('|')}}"
+        filter: "{{json_event.message.process.ancestors != None and json_event.message.process.ancestors != ''}}"
+
+      - set:
+          user.target.name: "{{json_event.message.process_session.target_username}}"
+          user.target.domain: "{{json_event.message.process_session.target_domain}}"
+          user.target.id: "{{json_event.message.process_session.target_sid}}"
+        filter: "{{json_event.message.process_session != None}}"
 
   investigation_info:
     actions:
