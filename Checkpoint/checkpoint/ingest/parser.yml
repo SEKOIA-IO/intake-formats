@@ -45,10 +45,49 @@ pipeline:
         delimiter: " "
 
   - name: main_stage
+  # First pass: parse malware-oriented CEF slots in a label-agnostic way.
+  - name: set_malware_signal_fields_stable
+  # Second pass: apply label-based overrides when customer labels are available.
+  - name: set_malware_signal_fields_label_dependent
   - name: set_ip
   - name: finalizer
 
 stages:
+  set_malware_signal_fields_stable:
+    actions:
+      # Prefer fixed CEF slots (cs3/cs4/cs6/flex*) because label values are customer-defined.
+      - set:
+          action.properties.malware_action_or_attack_information: "{{checkpoint.message.flexString2}}"
+          action.properties.malware_family: "{{checkpoint.message.cs6 or checkpoint.message.get('Malware Family')}}"
+          action.properties.protection_type: "{{checkpoint.message.cs3 or checkpoint.message.get('Protection Type')}}"
+          event.reason: "{{checkpoint.message.flexString2}}"
+          event.risk_score: "{{checkpoint.message.flexNumber1}}"
+          threat.software.name: "{{checkpoint.message.cs6 or checkpoint.message.get('Malware Family')}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus'}}"
+
+      - set:
+          action.properties.protection_name: "{{checkpoint.message.Name}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus' and final.action.properties.protection_name == null and (checkpoint.message.cs4 == null or checkpoint.message.cs4.startswith('{')) and checkpoint.message.Name != null and checkpoint.message.Name != 'Log'}}"
+
+      - set:
+          action.properties.protection_name: "{{checkpoint.message.cs4}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus' and final.action.properties.protection_name == null and checkpoint.message.cs4 != null and checkpoint.message.cs4.startswith('{') == False}}"
+
+      - set:
+          action.properties.threat_prevention_rule_id: "{{checkpoint.message.cs4}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus' and final.action.properties.threat_prevention_rule_id == null and checkpoint.message.cs4 != null and checkpoint.message.cs4.startswith('{')}}"
+
+  set_malware_signal_fields_label_dependent:
+    actions:
+      # Keep an explicit label-dependent stage so customer-specific CEF labels can override slot heuristics when available.
+      - set:
+          action.properties.malware_family: "{{checkpoint.message.get('Malware Family')}}"
+          action.properties.protection_name: "{{checkpoint.message.get('Protection Name')}}"
+          action.properties.protection_type: "{{checkpoint.message.get('Protection Type')}}"
+          action.properties.threat_prevention_rule_id: "{{checkpoint.message.get('Threat Prevention Rule ID')}}"
+          threat.software.name: "{{checkpoint.message.get('Malware Family')}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus'}}"
+
   set_ip:
     # dedicated stage to filter IPs value before setting fields
     actions:
