@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Add failsafe for email.attachements
+- Add failsafe for fileds using Entities
 
 ## 2026-08-11 - 1.0.7
 
