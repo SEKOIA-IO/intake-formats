@@ -82,6 +82,8 @@ pipeline:
     filter: "{{json_event.message.RecordType == 66}}"
   - name: parse_browser
     filter: "{{json_event.message.RecordType == 36}}"
+  - name: parse_copilot_interaction
+    filter: "{{json_event.message.RecordType == 261}}"
   - name: parse_power_bi
     filter: "{{json_event.message.RecordType == 20}}"
   - name: parse_threat_intelligence_url
@@ -1164,6 +1166,44 @@ stages:
       - set:
           url.original: "{{json_event.message.ObjectId}}"
         filter: "{{json_event.message.EntityType == 'MaliciousUrl'}}"
+
+  parse_copilot_interaction:
+    actions:
+      - set:
+          observer.vendor: "Microsoft"
+          observer.product: "Microsoft 365 Copilot"
+          event.dataset: "office365.copilot_interaction"
+          event.category: ["session"]
+          event.type: ["info"]
+          service.type: "{{json_event.message.CopilotEventData.AppHost}}"
+          source.geo.country_iso_code: "{{json_event.message.ClientRegion}}"
+          process.thread.name: "{{json_event.message.CopilotEventData.ThreadId}}"
+
+          office365.copilot.log_version: "{{json_event.message.CopilotLogVersion or json_event.message.Version}}"
+          office365.copilot.thread_id: "{{json_event.message.CopilotEventData.ThreadId}}"
+          office365.copilot.message_ids: "{{json_event.message.CopilotEventData.MessageIds}}"
+          office365.copilot.messages: "{{json_event.message.CopilotEventData.Messages}}"
+          office365.copilot.contexts: "{{json_event.message.CopilotEventData.Contexts}}"
+          office365.copilot.accessed_resources: "{{json_event.message.CopilotEventData.AccessedResources}}"
+          office365.copilot.ai_system_plugin: "{{json_event.message.CopilotEventData.AISystemPlugin}}"
+          office365.copilot.model_transparency_details: "{{json_event.message.CopilotEventData.ModelTransparencyDetails}}"
+
+      - set:
+          source.ip: "{{json_event.message.ClientIP.removeprefix('ffff:').removeprefix('::ffff:')}}"
+        filter: "{{json_event.message.ClientIP != None and (json_event.message.ClientIP.removeprefix('ffff:').removeprefix('::ffff:') | is_ipaddress)}}"
+
+      - set:
+          url.full: "{{json_event.message.CopilotEventData.Contexts[0].Id.strip('<>')}}"
+        filter: "{{json_event.message.CopilotEventData.Contexts != None and json_event.message.CopilotEventData.Contexts | length > 0 and json_event.message.CopilotEventData.Contexts[0].Id != None and json_event.message.CopilotEventData.Contexts[0].Id.strip('<>').startswith('http')}}"
+
+      - set:
+          url.full: "{{json_event.message.CopilotEventData.AccessedResources[0].SiteUrl.strip('<>')}}"
+        filter: "{{(final.url == None or final.url.full == None) and json_event.message.CopilotEventData.AccessedResources != None and json_event.message.CopilotEventData.AccessedResources | length > 0 and json_event.message.CopilotEventData.AccessedResources[0].SiteUrl != None and json_event.message.CopilotEventData.AccessedResources[0].SiteUrl.strip('<>').startswith('http')}}"
+
+      - set:
+          file.name: "{{json_event.message.CopilotEventData.AccessedResources[0].Name}}"
+          file.extension: "{{json_event.message.CopilotEventData.AccessedResources[0].Type.lstrip('.').lower()}}"
+        filter: "{{json_event.message.CopilotEventData.AccessedResources != None and json_event.message.CopilotEventData.AccessedResources | length > 0}}"
 
   parse_power_bi:
     actions:
