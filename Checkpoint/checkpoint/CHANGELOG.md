@@ -21,9 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 	- `action.properties.protection_name`
 	- `action.properties.protection_type`
 	- `action.properties.threat_prevention_rule_id`
-- Organize malware parsing into 2 dedicated stages:
-	- `set_malware_signal_fields_stable`: a stable slot-based stage using CEF slots (cs3/cs4/cs6/flex*)
-	- `set_malware_signal_fields_label_dependent`: a label-dependent override stage for customer-specific label names
+- Parse malware fields from fixed label names (e.g., `Protection Type`, `Protection Name`, `Threat Prevention Rule ID`, `Malware Family`, `Confidence`, `Malware Action`) while tolerating slot reordering across indexes (e.g., `cs1/cs2.../csX`, `cs1Label/cs2Label.../csXLabel`, `flexNumber1/flexNumber2.../flexNumberX`)
 - Harden malware extraction filters to target `DeviceProduct=New Anti Virus` and avoid false positives on other events
 
 ## [1.0.0] - 2024-02-21
