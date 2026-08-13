@@ -7,20 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-08-12
+## [1.0.1] - 2026-08-13
 
 ### Added
 
 - Parse new ECS fields from `New Anti Virus` events:
-	- `event.reason`
-	- `event.risk_score`
-	- `threat.software.name`
+  - `event.reason`
+  - `event.risk_score`
+  - `threat.software.name`
 - Parse new custom fields from `New Anti Virus` events:
-	- `action.properties.malware_action_or_attack_information`
-	- `action.properties.malware_family`
-	- `action.properties.protection_name`
-	- `action.properties.protection_type`
-	- `action.properties.threat_prevention_rule_id`
+  - `checkpoint.malware_action_or_attack_information`
+  - `checkpoint.malware_family`
+  - `checkpoint.protection_name`
+  - `checkpoint.protection_type`
+  - `checkpoint.threat_prevention_rule_id`
 - Parse malware fields from fixed label names (e.g., `Protection Type`, `Protection Name`, `Threat Prevention Rule ID`, `Malware Family`, `Confidence`, `Malware Action`) while tolerating slot reordering across indexes (e.g., `cs1/cs2.../csX`, `cs1Label/cs2Label.../csXLabel`, `flexNumber1/flexNumber2.../flexNumberX`)
 - Harden malware extraction filters to target `DeviceProduct=New Anti Virus` and avoid false positives on other events
 
