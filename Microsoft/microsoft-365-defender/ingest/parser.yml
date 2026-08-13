@@ -247,7 +247,7 @@ stages:
           microsoft.defender.campaign.family: "{{parse_raw_event_data.data.get('Entities')[0].get('CampaignFamily')}}"
           microsoft.defender.campaign.first_seen: "{{parse_raw_event_data.data.get('Entities')[0].get('FirstSeen')|to_rfc3339()}}"
           microsoft.defender.campaign.last_seen: "{{parse_raw_event_data.data.get('Entities')[0].get('LastSeen')|to_rfc3339()}}"
-        filter: '{{parse_raw_event_data.data.get("Entities") != None and parse_raw_event_data.data.get("Entities")[0].get("CampaignID") != None}}'
+        filter: '{{parse_raw_event_data.data.get("Entities") not in [None, []] and parse_raw_event_data.data.get("Entities")[0].get("CampaignID") != None}}'
 
       - set:
           microsoft.defender.network.message.id: >
@@ -366,7 +366,7 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             {{ senders }}
-        filter: '{{json_event.message.properties.get("NetworkMessageId") == None}}'
+        filter: '{{json_event.message.properties.get("NetworkMessageId") == None and parse_raw_event_data.data.get("Entities") not in [None, []]}}'
 
   set_process_events:
     actions:
@@ -602,6 +602,9 @@ stages:
 
           microsoft.defender.threat.severity: "{{parse_raw_event_data.data.Severity}}"
 
+          email.to.address: "{{parse_raw_event_data.data.get('Entities', []) | selectattr('Recipient', 'defined') | map(attribute='Recipient') |list}}"
+
+      - set:
           email.attachments: >
             [
             {%- for entity in parse_raw_event_data.data.Entities -%}
@@ -614,16 +617,15 @@ stages:
               {%- endfor -%}
             {%- endfor -%}
             ]
-
-          email.to.address: "{{parse_raw_event_data.data.Entities | selectattr('Recipient', 'defined') | map(attribute='Recipient') |list}}"
+        filter: "{{parse_raw_event_data.data.get('Entities') not in [None, []] and parse_raw_event_data.data.Entities | selectattr('Files', 'defined') | list | length > 0}}"
 
       - set:
           url.original: "{{parse_raw_event_data.data.Entities | selectattr('SourceEntityId', 'defined') | map(attribute='SourceEntityId') | first}}"
-        filter: "{{parse_raw_event_data.data.Entities | selectattr('SourceEntityType', '==', 'MaliciousUrl') | first | length > 0}}"
+        filter: "{{parse_raw_event_data.data.get('Entities', []) | selectattr('SourceEntityType', '==', 'MaliciousUrl') | first | length > 0}}"
 
       - set:
           source.ip: "{{parse_raw_event_data.data.Entities | selectattr('SenderIP', 'defined') | map(attribute='SenderIP') | first}}"
-        filter: "{{ parse_raw_event_data.data.Entities | selectattr('SenderIP', 'defined') | map(attribute='SenderIP') | first | is_ipaddress }}"
+        filter: "{{ parse_raw_event_data.data.get('Entities', []) | selectattr('SenderIP', 'defined') | map(attribute='SenderIP') | first | is_ipaddress }}"
 
   set_device_events_fields:
     actions:
