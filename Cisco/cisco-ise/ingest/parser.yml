@@ -157,6 +157,18 @@ stages:
         filter: '{{"Configuration" not in parsed_event.message.reason }}'
 
       - set:
+          # Fallback only: when no dedicated hostname field is available,
+          # derive host.name from machine-oriented identity fields.
+          # This keeps user.name mapping intact while avoiding broad user-like values.
+          host.name: >
+            {%- if parsed_kv_sentence.result.get('User-Name', '').startswith('host/') -%}
+              {{ parsed_kv_sentence.result.get('User-Name').split('host/', 1)[1] }}
+            {%- else -%}
+              {{ parsed_kv_sentence.result.get('UserName') }}
+            {%- endif -%}
+        filter: '{{"Configuration" not in parsed_event.message.reason and not parsed_kv_sentence.result.get("host-name") and not parsed_kv_sentence.result.get("Subject Alternative Name - Other Name") and not parsed_kv_sentence.result.get("cisco-av-pair-dhcp-option-host-name") and not parsed_kv_sentence.result.get("Subject Alternative Name") and (parsed_kv_sentence.result.get("User-Name", "").startswith("host/") or (parsed_kv_sentence.result.get("UseCase") == "Host Lookup" and (((parsed_kv_sentence.result.get("UserName", "") | re_match("^[0-9A-Fa-f]{12}$")) or ((parsed_kv_sentence.result.get("UserName", "") | re_match("^[A-Za-z0-9][A-Za-z0-9._-]{5,}$")) and ((parsed_kv_sentence.result.get("UserName", "") | re_match(".*[._-].*")) or (parsed_kv_sentence.result.get("UserName", "") | re_match(".*[0-9].*[0-9].*[0-9].*"))))) and not (parsed_kv_sentence.result.get("UserName", "") | re_match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")) and "@" not in parsed_kv_sentence.result.get("UserName", ""))))}}'
+
+      - set:
           user.name: '{{parsed_kv_sentence.result.get("UserName")}}'
         filter: '{{"Configuration" not in parsed_event.message.reason and not parsed_kv_sentence.result.get("AdminName") and not parsed_kv_sentence.result.get("Device login username") and not (parsed_kv_sentence.result.get("UserName", "") | re_match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"))}}'
 
