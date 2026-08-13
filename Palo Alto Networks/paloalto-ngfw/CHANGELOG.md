@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## 2026-08-13
+
+### Added
+
+- Support PAN-OS audit subtype CSV logs carrying Linux auditd payloads in `EventDescription`
+- Parse new ECS fields:
+  - `action.outcome`
+  - `action.type`
+  - `event.action`
+  - `event.category` for audit events
+  - `event.code`
+  - `event.outcome`
+  - `event.type` for audit events
+  - `process.executable`
+  - `process.name`
+  - `process.pid`
+  - `user.id`
+  - `user.name`
+
+### Changed
+
+- Update ECS fields:
+  - `action.name` mapping for PAN-OS audit subtype events (mapped from audit object value `log-critical-activity`)
+
 ## 2025-16-01
 
 - Add parsing of session.id and session.endreason
