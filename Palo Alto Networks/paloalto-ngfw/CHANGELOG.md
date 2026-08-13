@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Support PAN-OS audit subtype CSV logs carrying Linux auditd payloads in `EventDescription`
+- Support PAN-OS audit subtype CSV events (audit logger), including `GRP_MGMT` events carrying embedded Linux `auditd` payloads in `EventDescription`
 - Parse new ECS fields:
   - `action.outcome`
   - `action.type`
@@ -23,13 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `process.executable`
   - `process.name`
   - `process.pid`
+  - `related.user`
   - `user.id`
   - `user.name`
 
 ### Changed
 
-- Update ECS fields:
-  - `action.name` mapping for PAN-OS audit subtype events (mapped from audit object value `log-critical-activity`)
+- Update `action.name` mapping for PAN-OS audit subtype events (map from audit object value `log-critical-activity`)
+- Normalize quote handling for audit `exe` and `acct` values to support both escaped and unescaped forms
 
 ## 2025-16-01
 
