@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-08-12 - 1.0.7
+
+### Fixed
+
+- Fix `TypeError` on `email.from.address` ECS field parsing, caused by attempting to read sender values from `Entities` when `Entities` is absent/empty
+- Harden `Entities`-based field extraction with null/empty checks
 ## 2026-07-20 - 1.0.6
 
 ### Added
