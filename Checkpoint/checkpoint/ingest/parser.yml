@@ -45,10 +45,26 @@ pipeline:
         delimiter: " "
 
   - name: main_stage
+  # Parse malware fields from fixed label names (e.g., Protection Type, Malware Family) while tolerating slot reordering (e.g., cs1Label, cs3Label, cs5Label)
+  - name: set_malware_signal_fields_by_label_name
   - name: set_ip
   - name: finalizer
 
 stages:
+  set_malware_signal_fields_by_label_name:
+    actions:
+      # Use fixed label names only (e.g., Threat Prevention Rule ID, Confidence), since slot indexes may vary across events (e.g., cs2/cs4/cs6, flexNumber1/flexNumber2)
+      - set:
+          checkpoint.malware_action_or_attack_information: "{{checkpoint.message.get('Malware Action') or checkpoint.message.get('Attack Information')}}"
+          checkpoint.malware_family: "{{checkpoint.message.get('Malware Family')}}"
+          checkpoint.protection_name: "{{checkpoint.message.get('Protection Name')}}"
+          checkpoint.protection_type: "{{checkpoint.message.get('Protection Type')}}"
+          checkpoint.threat_prevention_rule_id: "{{checkpoint.message.get('Threat Prevention Rule ID')}}"
+          event.reason: "{{checkpoint.message.get('Malware Action') or checkpoint.message.get('Attack Information')}}"
+          event.risk_score: "{{checkpoint.message.get('Confidence')}}"
+          threat.software.name: "{{checkpoint.message.get('Malware Family')}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus'}}"
+
   set_ip:
     # dedicated stage to filter IPs value before setting fields
     actions:
