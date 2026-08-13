@@ -4,7 +4,7 @@ pipeline:
     external:
       name: grok.match
       properties:
-        pattern: "(?:%{CUSTOM_HOSTNAME:hostname}: )?%{CISCO_HEADER}: %{DATA:description}"
+        pattern: "(?:(?:%{CUSTOM_HOSTNAME:hostname}: )?%{CISCO_HEADER}: %{DATA:description}|%{DATA:raw_description})"
         custom_patterns:
           CUSTOM_HOSTNAME: '[0-9a-zA-Z_\-\.]+'
           CISCO_HEADER: "%{CISCO_DATESTAMP}: %{MSG_CODE}"
@@ -17,8 +17,8 @@ pipeline:
       name: grok.match
       properties:
         raise_errors: false
-        input_field: parsed_event.message.description
-        pattern: "%{ACCTLOCAL}|%{AUTHMGR_START}|%{BLOCK_BPDUGUARD}|%{CFGLOG_LOGGEDCMD}|%{CONFIG_I}|%{CONFIG_P}|%{CONFIG_RESOLVE_FAILURE}|%{DHCP_SNOOPING}|%{DHCP_SNOOPING_MATCH_MAC_FAIL}|%{DMI_AUTH_FAILED}|%{DMI_AUTH_PASSED}|%{DUPADDR}|%{ERR_DISABLE}|%{IPACCESSLOGP}|%{IPACCESSLOGS}|%{LINEPROTO}|%{LINK}|%{LOOPGUARD_BLOCK}|%{MAB}|%{MODEL_RPC_I}|%{PORT_SECURITY}|%{PRIV_AUTH_FAIL}|%{PRIV_AUTH_PASS}|%{QUIET_MODE_ON}|%{ROOTCHANGE}|%{SEC_LOGIN}|%{SEC_VIOLATION}|%{SSH2_CLOSE}|%{SSH2_SESSION}|%{SSH2_USERAUTH}|%{STCKYARPOVR}|%{SW_MATM_MACFLAP}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}|%{USERNAME_CONFIGURATION}|%{USER_RESET}|%{WEAK_PASSWORD_TYPE}"
+        input_field: "{{parsed_event.message.description or parsed_event.message.raw_description}}"
+        pattern: "%{ACCTLOCAL}|%{AUTHMGR_START}|%{BLOCK_BPDUGUARD}|%{CFGLOG_LOGGEDCMD}|%{CONFIG_I}|%{CONFIG_P}|%{CONFIG_RESOLVE_FAILURE}|%{DHCP_SNOOPING}|%{DHCP_SNOOPING_MATCH_MAC_FAIL}|%{DMI_AUTH_FAILED}|%{DMI_AUTH_PASSED}|%{DUPADDR}|%{ERR_DISABLE}|%{HTTPS_CONNECTION}|%{IPACCESSLOGP}|%{IPACCESSLOGS}|%{LINEPROTO}|%{LINK}|%{LOOPGUARD_BLOCK}|%{MAB}|%{MODEL_RPC_I}|%{PORT_SECURITY}|%{PRIV_AUTH_FAIL}|%{PRIV_AUTH_PASS}|%{QUIET_MODE_ON}|%{ROOTCHANGE}|%{SEC_LOGIN}|%{SEC_VIOLATION}|%{SSH2_CLOSE}|%{SSH2_SESSION}|%{SSH2_USERAUTH}|%{STCKYARPOVR}|%{SW_MATM_MACFLAP}|%{SYS_LOGIN_FAILURE}|%{SYS_LOGOUT}|%{SYS_TTY_EXPIRE_TIMER}|%{USERNAME_CONFIGURATION}|%{USER_RESET}|%{WEAK_PASSWORD_TYPE}"
         custom_patterns:
           ACCTLOCAL: "Username: %{USERNAME:username} Privilege level: %{NUMBER:priv_level} Command: %{GREEDYDATA:command_line}"
           AUTHMGR_START: "Starting '%{DATA}' for client \\(%{DATA:source_mac_addr}\\) on Interface %{NOTSPACE:ifname} AuditSessionID %{DATA:session_id}"
@@ -33,6 +33,7 @@ pipeline:
           DMI_AUTH_PASSED: "%{DATA:switch}: %{DATA:process_name}: User '%{DATA:username}' authenticated successfully from %{IP:source_ip}:%{NUMBER:source_port}\\s+(and was authorized\\s+)?for %{DATA:proto}. External groups: %{DATA:ext_groups}"
           DUPADDR: "Duplicate address %{IP:source_ip} on %{IFNAME_AND_VLAN:ifname}, sourced by %{DATA:source_mac_addr}"
           ERR_DISABLE: "%{DATA:error_type} error detected on %{NOTSPACE:ifname}, putting %{DATA} in %{DATA:ifstate} state"
+          HTTPS_CONNECTION: "(New )?https connection for user %{DATA:username}, source %{IP:source_ip} destination %{IP:destination_ip} %{WORD:https_connection_state}"
           IPACCESSLOGP: 'list %{DATA} permitted tcp %{IP:source_ip}\(%{NUMBER:source_port}\) -> %{IP:destination_ip}\(%{NUMBER:destination_port}\), %{NUMBER:packets} packet(s?)'
           IPACCESSLOGS: "list %{DATA} denied %{IP:source_ip} %{NUMBER:packets} packet(s?)"
           LINEPROTO: "Line protocol on Interface %{NOTSPACE:ifname}, changed state to %{WORD:ifstate}"
@@ -83,7 +84,7 @@ stages:
           observer.product: "ios"
           event.severity: "{{parsed_event.message.severity}}"
           event.code: "{{parsed_event.message.mnemonic}}"
-          event.reason: "{{parsed_event.message.description}}"
+          event.reason: "{{parsed_event.message.description or parsed_event.message.raw_description}}"
           event.action: "{{parsed_description.message.ifstate}}"
           host.name: "{{parsed_event.message.hostname}}"
       - set:
@@ -161,12 +162,28 @@ stages:
           event.category: ["authentication"]
           event.type: ["start"]
           event.outcome: "failure"
-        filter: "{{'Authentication failed' in parsed_event.message.description}}"
+        filter: "{{'Authentication failed' in (parsed_event.message.description or parsed_event.message.raw_description or '')}}"
 
       - set:
           event.outcome: "success"
           event.type: ["start"]
-        filter: "{{parsed_event.message.mnemonic == 'SSH2_USERAUTH' and 'Succeeded' in parsed_event.message.description}}"
+        filter: "{{parsed_event.message.mnemonic == 'SSH2_USERAUTH' and 'Succeeded' in (parsed_event.message.description or parsed_event.message.raw_description or '')}}"
+
+      - set:
+          event.code: "HTTPS_CONNECTION"
+          event.action: "{{parsed_description.message.https_connection_state | lower}}"
+          event.category: ["network"]
+          network.protocol: "https"
+        filter: '{{parsed_description.message.get("https_connection_state") != None}}'
+
+      - set:
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{parsed_description.message.https_connection_state == "ACCEPTED"}}'
+
+      - set:
+          event.type: ["end"]
+        filter: '{{parsed_description.message.https_connection_state == "TERMINATED"}}'
 
   set_cisco_fields:
     actions:
