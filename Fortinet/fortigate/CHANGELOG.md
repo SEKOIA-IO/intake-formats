@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-08-10
+## [1.0.2] - 2026-08-14
 
 ### Added
 
@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `source.ip`
     - `source.mac`
     - `source.port`
+    - `source.user.email`
     - `threat.technique.id`
+    - `user.email`
 - Parse new custom fields:
     - `fortinet.fortigate.decoy.group`
     - `fortinet.fortigate.decoy.type`
@@ -35,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `fortinet.fortigate.tzone`
     - `fortinet.fortigate.ui`
     - `fortinet.fortigate.username`
+    - `fortinet.fortigate.xauth.group`
+    - `fortinet.fortigate.xauth.user`
 
 ### Changed
 
