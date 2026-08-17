@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-08-14
+
+### Added
+
+- Parse new custom fields:
+  - `harfanglab.connection_successful`
+  - `harfanglab.event_data.new_value`
+  - `harfanglab.event_data.old_value`
+
+### Changed
+
+- Update ECS fields:
+  - `event.outcome`:
+    - update mapping from `connection_successful` in `connectionlog` events
+    - harden mapping for event IDs `4624` and `4625` by supporting mixed raw value types
+- Update custom fields:
+  - `action.properties.SourceName`: populate from top-level `source_name` for Windows Defender event logs
+
 ## [1.3.3] - 2026-08-11
 
 ### Added
