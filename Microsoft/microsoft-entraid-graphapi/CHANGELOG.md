@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-07-21
+## [Unreleased] - 2026-07-29
+
+### Fixed
+
+- Create a dedicated parser stage `set_actor_target_user_fields` to separate actor identity (`user.*`) from impacted target user identity (`user.target.*`) in `UserManagement` events
+- Fix target user extraction to populate `user.target.id`, `user.target.name`, and `user.target.email` only when the target user is different from the actor
+- Fix `action.properties` enrichment so `targetedUser` entries are added only for impacted users and not duplicated for the actor
+- Fix app-initiated scenarios by preserving impacted target user values when no actor user identity is available in top-level fields
+
+## 2026-07-21
 
 ### Added
 
