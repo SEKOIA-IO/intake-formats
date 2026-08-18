@@ -147,7 +147,7 @@ stages:
           event.category: ["network"]
           host.name: "{{parsed_kv_sentence.result.get('host-name') or parsed_kv_sentence.result.get('Subject Alternative Name - Other Name') or parsed_kv_sentence.result.get('cisco-av-pair-dhcp-option-host-name') or parsed_kv_sentence.result.get('Subject Alternative Name')}}"
           host.os.full: "{{parsed_kv_sentence.result.get('AD-Operating-System') or parsed_kv_sentence.result.get('OperatingSystem')}}"
-          user.name: '{{parsed_kv_sentence.result.get("AdminName") or parsed_kv_sentence.result.get("Device login username") or parsed_kv_sentence.result.get("UserName")}}'
+          user.name: '{{parsed_kv_sentence.result.get("AdminName") or parsed_kv_sentence.result.get("Device login username")}}'
           source.domain: '{{parsed_kv_sentence.result.get("Server") or parsed_kv_sentence.result.get("Device Name")}}'
           source.ip: '{{parsed_kv_sentence.result.get("AdminIPAddress") or parsed_kv_sentence.result.get("NAS IP Address") or parsed_kv_sentence.result.get("NAS-IP-Address") or parsed_kv_sentence.result.get("NAD Address") or parsed_kv_sentence.result.get("Device Ip") or parsed_kv_sentence.result.get("Network device IP") or parsed_kv_sentence.result.get("Device IP Address") or parsed_kv_sentence.result.get("EndpointIPAddress")}}'
           destination.ip: '{{parsed_kv_sentence.result.get("DestinationIPAddress")}}'
@@ -155,6 +155,48 @@ stages:
           dns.question.registered_domain: '{{parsed_kv_sentence.result.get("AD-Host-DNS-Domain")}}'
           network.protocol: '{{parsed_kv_sentence.result.get("Protocol")}}'
         filter: '{{"Configuration" not in parsed_event.message.reason }}'
+
+      - set:
+          # Fallback only: when no dedicated hostname field is available,
+          # derive host.name from machine-oriented identity fields.
+          # This keeps user.name mapping intact while avoiding broad user-like values.
+          host.name: >
+            {%- if parsed_kv_sentence.result.get('User-Name', '').startswith('host/') -%}
+              {{ parsed_kv_sentence.result.get('User-Name').split('host/', 1)[1] }}
+            {%- else -%}
+              {{ parsed_kv_sentence.result.get('UserName') }}
+            {%- endif -%}
+        filter: >
+          {%- set username = parsed_kv_sentence.result.get("UserName", "") -%}
+          {{
+            "Configuration" not in parsed_event.message.reason
+            and not parsed_kv_sentence.result.get("host-name")
+            and not parsed_kv_sentence.result.get("Subject Alternative Name - Other Name")
+            and not parsed_kv_sentence.result.get("cisco-av-pair-dhcp-option-host-name")
+            and not parsed_kv_sentence.result.get("Subject Alternative Name")
+            and (
+              parsed_kv_sentence.result.get("User-Name", "").startswith("host/")
+              or (
+                parsed_kv_sentence.result.get("UseCase") == "Host Lookup"
+                and (
+                  (username | re_match("^[0-9A-Fa-f]{12}$"))
+                  or (
+                    (username | re_match("^[A-Za-z0-9][A-Za-z0-9._-]{5,}$"))
+                    and (
+                      (username | re_match(".*[._-].*"))
+                      or (username | re_match(".*[0-9].*[0-9].*[0-9].*"))
+                    )
+                  )
+                )
+                and not (username | re_match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"))
+                and "@" not in username
+              )
+            )
+          }}
+
+      - set:
+          user.name: '{{parsed_kv_sentence.result.get("UserName")}}'
+        filter: '{{"Configuration" not in parsed_event.message.reason and not parsed_kv_sentence.result.get("AdminName") and not parsed_kv_sentence.result.get("Device login username") and not (parsed_kv_sentence.result.get("UserName", "") | re_match("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"))}}'
 
       - set:
           tls.client.x509.issuer.common_name: "{{parsed_kv_sentence.result.get('Issuer').split('CN=')[1].split('\\\\')[0]}}"
@@ -212,6 +254,10 @@ stages:
       - set:
           source.mac: "{{parsed_kv_response.result.get('User-Name') | to_mac_address}}"
         filter: "{{ parsed_kv_response.result.get('User-Name', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$') }}"
+
+      - set:
+          source.mac: "{{parsed_kv_sentence.result.get('UserName') | to_mac_address}}"
+        filter: "{{ parsed_kv_sentence.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$') }}"
 
       - set:
           source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
@@ -305,8 +351,16 @@ stages:
               failure
             {%- endif -%}
           source.mac: "{{parsed_kv_sentence.result.get('EndPointMACAddress') | to_mac_address}}"
-          user.name: "{{parsed_kv_sentence.result.get('UserName') or parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
+          user.name: "{{parsed_kv_sentence.result.get('EndPointMatchedProfile')}}"
         filter: '{{"Authentication" in parsed_kv_sentence.result.get("AuthenticationStatus")}}'
+
+      - set:
+          user.name: "{{parsed_kv_sentence.result.get('UserName')}}"
+        filter: "{{ 'Authentication' in parsed_kv_sentence.result.get('AuthenticationStatus') and parsed_kv_sentence.result.get('UserName') and not (parsed_kv_sentence.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')) }}"
+
+      - set:
+          source.mac: "{{parsed_kv_sentence.result.get('UserName') | to_mac_address}}"
+        filter: "{{ 'Authentication' in parsed_kv_sentence.result.get('AuthenticationStatus') and not parsed_kv_sentence.result.get('EndPointMACAddress') and (parsed_kv_sentence.result.get('UserName', '') | re_match('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')) }}"
 
       - set:
           event.category: ["authentication"]
