@@ -32,12 +32,31 @@ pipeline:
         item_sep: "&"
         value_sep: "="
 
-  - name: parse_system_datetime
-    filter: "{{ parsed_event.result != None and 'system_datestamp' in parsed_event.result and parsed_event.result.system_datestamp != None }}"
+  - name: parse_system_datetime_textual
+    filter: "{{ parsed_event.result != None and 'system_datestamp' in parsed_event.result and parsed_event.result.system_datestamp != None and parsed_event.result.system_datestamp.lower() != parsed_event.result.system_datestamp.upper() }}"
     external:
       name: date.parse
       properties:
-        input_field: "{{ parsed_event.result.system_datestamp.replace(':', ' ', 1) if parsed_event.result.system_datestamp.lower() != parsed_event.result.system_datestamp.upper() else parsed_event.result.system_datestamp }}"
+        input_field: "{{ parsed_event.result.system_datestamp.replace(':', ' ', 1) }}"
+        format: "%d/%b/%Y %H:%M:%S.%f %z"
+        output_field: date
+
+  - name: parse_system_datetime_numeric_tz
+    filter: "{{ parsed_event.result != None and 'system_datestamp' in parsed_event.result and parsed_event.result.system_datestamp != None and parsed_event.result.system_datestamp.lower() == parsed_event.result.system_datestamp.upper() and (' +' in parsed_event.result.system_datestamp or ' -' in parsed_event.result.system_datestamp) }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.system_datestamp }}"
+        format: "%m/%d/%Y %H:%M:%S.%f %z"
+        output_field: date
+
+  - name: parse_system_datetime_numeric
+    filter: "{{ parsed_event.result != None and 'system_datestamp' in parsed_event.result and parsed_event.result.system_datestamp != None and parsed_event.result.system_datestamp.lower() == parsed_event.result.system_datestamp.upper() and ' +' not in parsed_event.result.system_datestamp and ' -' not in parsed_event.result.system_datestamp }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.system_datestamp }}"
+        format: "%m/%d/%Y %H:%M:%S.%f"
         output_field: date
 
   - name: parse_management_datetime
@@ -46,6 +65,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.management_datestamp }}"
+        format: "%Y-%m-%dT%H:%M:%S%z"
         output_field: date
 
   - name: parse_management_start_datetime
@@ -54,6 +74,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.management_internal_date }} {{ parsed_event.result.management_internal_time }} {{ parsed_event.result.management_timezone }}"
+        format: "%Y-%m-%d %H:%M:%S %z"
         output_field: date
 
   - name: parse_management_audit_datetime
@@ -62,6 +83,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.audit_date }} {{ parsed_event.result.audit_time }}"
+        format: "%m/%d/%Y %H:%M:%S"
         output_field: date
 
   - name: parse_management_access_datetime
@@ -70,6 +92,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.mgmt_datestamp.replace(':', ' ', 1) }}"
+        format: "%d/%b/%Y %H:%M:%S %z"
         output_field: date
 
   - name: parse_network_tunnel_datetime
@@ -78,6 +101,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.tunnel_datestamp.replace(':', ' ', 1) }}"
+        format: "%d/%b/%Y %H:%M:%S.%f %z"
         output_field: date
 
   - name: parse_network_flow_datetime
@@ -86,6 +110,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.flow_datestamp.replace(':', ' ', 1) }}"
+        format: "%d/%b/%Y %H:%M:%S.%f %z"
         output_field: date
 
   - name: parse_web_proxy_datetime
@@ -94,6 +119,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.web_datestamp }}"
+        format: "%m/%d/%Y %H:%M:%S.%f %z"
         output_field: date
 
   - name: parse_workplace_datetime
@@ -102,6 +128,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.workplace_datestamp }}"
+        format: "%Y-%m-%dT%H:%M:%S%z"
         output_field: date
 
   - name: parse_plain_datetime
@@ -110,6 +137,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.plain_date }} {{ parsed_event.result.plain_time }} {{ parsed_event.result.plain_timezone }}"
+        format: "%Y-%m-%d %H:%M:%S %z"
         output_field: date
 
   - name: parse_plain_service_datetime
@@ -118,6 +146,7 @@ pipeline:
       name: date.parse
       properties:
         input_field: "{{ parsed_event.result.plain_service_date }} {{ parsed_event.result.plain_service_time }} {{ parsed_event.result.plain_service_timezone }}"
+        format: "%Y-%m-%d %H:%M:%S %z"
         output_field: date
 
   - name: set_common_fields
@@ -152,16 +181,33 @@ stages:
   set_system_message_fields:
     actions:
       - set:
-          "@timestamp": "{{ parse_system_datetime.date }}"
           event.category: ["host"]
           event.dataset: sonicwall.sma.1000.system
           event.severity: 6
           event.type: ["info"]
-          message: "{{ parsed_event.result.system_message }}"
+          message: "{{ original.message }}"
           observer.hostname: "{{ parsed_event.result.system_hostname }}"
           process.name: "{{ parsed_event.result.system_app_id }}"
+
+      - set:
+          "@timestamp": "{{ parse_system_datetime_textual.date }}"
+        filter: "{{ parse_system_datetime_textual != None and parse_system_datetime_textual.date != None }}"
+
+      - set:
+          "@timestamp": "{{ parse_system_datetime_numeric_tz.date }}"
+        filter: "{{ parse_system_datetime_numeric_tz != None and parse_system_datetime_numeric_tz.date != None }}"
+
+      - set:
+          "@timestamp": "{{ parse_system_datetime_numeric.date }}"
+        filter: "{{ parse_system_datetime_numeric != None and parse_system_datetime_numeric.date != None }}"
+
+      - set:
           process.pid: "{{ parsed_event.result.system_pid | int }}"
-          source.address: "{{ parsed_event.result.system_source_id }}"
+        filter: "{{ parsed_event.result.system_pid != None and parsed_event.result.system_pid | int > 0 }}"
+
+      - set:
+          process.pid: "{{ parsed_event.result.system_message.split('(pid=')[1].split(')')[0] | int }}"
+        filter: "{{ parsed_event.result.system_message != None and '(pid=' in parsed_event.result.system_message and ')' in parsed_event.result.system_message.split('(pid=')[1] }}"
 
       - set:
           observer.hostname: "{{ parsed_event.result.system_hostname ~ ' ' ~ parsed_event.result.system_node }}"
@@ -185,6 +231,9 @@ stages:
 
       - set:
           sonicwall.sma.1000.app_id: "{{ parsed_event.result.system_app_id }}"
+
+      - set:
+          sonicwall.sma.1000.source_id: "{{ parsed_event.result.system_source_id }}"
 
       - set:
           sonicwall.sma.1000.policy.log_type: EWACL
@@ -233,7 +282,7 @@ stages:
           event.severity: 6
           event.type: ["info"]
           log.level: "{{ parsed_event.result.management_syslog_level }}"
-          message: "{{ parsed_event.result.management_message }}"
+          message: "{{ original.message }}"
           observer.hostname: "{{ parsed_event.result.management_hostname }}"
           service.name: "{{ parsed_event.result.management_service }}"
         filter: "{{ parsed_event.result.management_datestamp != None }}"
@@ -264,7 +313,7 @@ stages:
           event.dataset: sonicwall.sma.1000.management_message
           event.severity: 6
           event.type: ["info"]
-          message: "{{ parsed_event.result.plain_message }}"
+          message: "{{ original.message }}"
           user.name: "{{ parsed_event.result.plain_username }}"
         filter: "{{ parsed_event.result.plain_date != None }}"
 
@@ -290,7 +339,7 @@ stages:
           event.dataset: sonicwall.sma.1000.management_message
           event.severity: 6
           event.type: ["info"]
-          message: "{{ parsed_event.result.plain_service_message }}"
+          message: "{{ original.message }}"
         filter: "{{ parsed_event.result.plain_service_date != None }}"
 
       - set:
@@ -327,7 +376,7 @@ stages:
           event.dataset: sonicwall.sma.1000.management_audit
           event.severity: 6
           event.type: ["change"]
-          message: "{{ parsed_event.result.audit_message }}"
+          message: "{{ original.message }}"
           user.name: "{{ parsed_event.result.audit_username }}"
 
       - set:
@@ -415,15 +464,15 @@ stages:
 
       - set:
           "@timestamp": "{{ parse_network_tunnel_datetime.date }}"
-          client.bytes: "{{ parsed_event.result.tunnel_client_bytes | int }}"
-          client.ip: "{{ parsed_event.result.tunnel_client_ip }}"
-          client.user.domain: "{{ parsed_event.result.tunnel_user_realm.split('@')[-1].strip('()') }}"
-          client.user.name: "{{ parsed_event.result.tunnel_user_realm.split('@')[0].strip('()') }}"
+          destination.bytes: "{{ parsed_event.result.tunnel_server_bytes | int }}"
+          destination.ip: "{{ parsed_event.result.tunnel_client_ip }}"
           event.duration: "{{ parsed_event.result.tunnel_duration | int * 1000000000 }}"
           process.name: "{{ parsed_event.result.tunnel_platform_prefix }}"
-          server.bytes: "{{ parsed_event.result.tunnel_server_bytes | int }}"
+          source.bytes: "{{ parsed_event.result.tunnel_client_bytes | int }}"
           source.ip: "{{ parsed_event.result.tunnel_source_ip.replace('::ffff:', '') }}"
           source.port: "{{ parsed_event.result.tunnel_source_port | int }}"
+          source.user.domain: "{{ parsed_event.result.tunnel_user_realm.split('@')[-1].strip('()') }}"
+          source.user.name: "{{ parsed_event.result.tunnel_user_realm.split('@')[0].strip('()') }}"
         filter: "{{ parsed_event.result.tunnel_datestamp != None }}"
 
       - set:
@@ -436,17 +485,17 @@ stages:
 
       - set:
           "@timestamp": "{{ parse_network_flow_datetime.date }}"
-          client.bytes: "{{ parsed_event.result.flow_client_bytes | int }}"
-          client.user.domain: "{{ parsed_event.result.flow_user_realm.split('@')[-1].strip('()') }}"
-          client.user.name: "{{ parsed_event.result.flow_user_realm.split('@')[0].strip('()') }}"
+          destination.bytes: "{{ parsed_event.result.flow_server_bytes | int }}"
           destination.ip: "{{ parsed_event.result.flow_destination.split(':')[0] }}"
           destination.port: "{{ parsed_event.result.flow_destination.split(':')[-1] | int }}"
           event.duration: "{{ parsed_event.result.flow_duration | int * 1000000000 }}"
           network.protocol: "{{ parsed_event.result.flow_protocol }}"
           process.name: "{{ parsed_event.result.flow_platform_prefix }}"
-          server.bytes: "{{ parsed_event.result.flow_server_bytes | int }}"
+          source.bytes: "{{ parsed_event.result.flow_client_bytes | int }}"
           source.ip: "{{ parsed_event.result.flow_source_ip.replace('::ffff:', '') }}"
           source.port: "{{ parsed_event.result.flow_source_port | int }}"
+          source.user.domain: "{{ parsed_event.result.flow_user_realm.split('@')[-1].strip('()') }}"
+          source.user.name: "{{ parsed_event.result.flow_user_realm.split('@')[0].strip('()') }}"
         filter: "{{ parsed_event.result.flow_datestamp != None and parsed_event.result.flow_protocol != None }}"
 
       - set:
@@ -473,8 +522,6 @@ stages:
     actions:
       - set:
           "@timestamp": "{{ parse_web_proxy_datetime.date }}"
-          client.user.domain: "{{ parsed_event.result.web_realm }}"
-          client.user.name: "{{ parsed_event.result.web_username }}"
           event.category: ["network"]
           event.dataset: sonicwall.sma.1000.web_proxy
           event.type: ["info"]
@@ -484,6 +531,8 @@ stages:
           http.version: "{{ parsed_event.result.web_http_version }}"
           message: "{{ original.message }}"
           source.ip: "{{ parsed_event.result.web_source_ip }}"
+          source.user.domain: "{{ parsed_event.result.web_realm }}"
+          source.user.name: "{{ parsed_event.result.web_username }}"
           url.path: "{{ parsed_event.result.web_url_path }}"
 
       - set:
@@ -550,7 +599,7 @@ stages:
           event.dataset: sonicwall.sma.1000.workplace
           event.type: ["info"]
           log.level: "{{ parsed_event.result.workplace_syslog_level }}"
-          message: "{{ parsed_event.result.workplace_message }}"
+          message: "{{ original.message }}"
         filter: "{{ parsed_event.result.workplace_datestamp != None }}"
 
       - set:
