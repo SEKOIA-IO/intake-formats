@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-20
+
+### Changed
+
+- Align _SonicWall/sonicwall-sma-100_ manifest wording and naming conventions with _SonicWall/sonicwall-sma-1000_
+- Replace legacy `data_sources` entry with normalized taxonomy keys:
+	- `Authentication logs`
+	- `Network device logs`
+- Update ECS fields parsing:
+	- `@timestamp`: add an explicit date format for `vp_time` parsing to improve timestamp parsing robustness
+	- `event.dataset`: set value to `sonicwall.sma.100.sslvpn` for consistent event categorization
+- Scope smart-descriptions to `event.dataset = sonicwall.sma.100.sslvpn` to avoid over-broad matching
+
 ## [1.1.0] - 2026-08-19
 
 ### Changed
