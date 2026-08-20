@@ -81,13 +81,87 @@ pipeline:
         output_field: result
         pattern: "%{DATA}%{IP:source_ip}%{GREEDYDATA}"
 
+  - name: parsed_incident_fields
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{ parsed_event.message.msg }}"
+        output_field: result
+        pattern: "\\\"?EventID=%{NOTSPACE:EventID} IncidentID=%{NOTSPACE:IncidentID} Tagkey=%{DATA:Tagkey} DecoyGroup=%{NOTSPACE:DecoyGroup} DecoyType=%{NOTSPACE:DecoyType} MITRE_ATT&CK_ID=%{NOTSPACE:MITRE_ATTCK_ID} AttackerIP=%{IP:AttackerIP} AttackerPort=%{INT:AttackerPort} VictimIP=%{IP:VictimIP} VictimPort=%{INT:VictimPort} Operation=%{NOTSPACE:Operation} Severity=%{NOTSPACE:Severity} TagID=%{NOTSPACE:TagID} AttackerMac=%{MAC:AttackerMac} Service=%{NOTSPACE:Service} Username=%{NOTSPACE:Username} Password=%{NOTSPACE:Password} Description=\\\\\\\"%{DATA:Description}\\\\\\\"\\\"?"
+    filter: >
+      {{
+        parsed_event.message.get("type") == "event"
+        and parsed_event.message.get("subtype") == "attack"
+        and parsed_event.message.get("action") == "Incident_Detection"
+        and parsed_event.message.get("msg") != None
+      }}
+
   - name: field_extraction
+  - name: set_incident_detection_fields
   - name: set_event_dataset
   #  commented for backward compatibility
   #  - name: ecs_categorization_fields
   - name: backward_compatibility
 
 stages:
+  set_incident_detection_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event.message.date}}T{{parsed_event.message.time}}Z"
+        filter: >
+          {{
+            parsed_event.message.get("type") == "event"
+            and parsed_event.message.get("subtype") == "attack"
+            and parsed_event.message.get("action") == "Incident_Detection"
+            and parsed_event.message.get("date") != None
+            and parsed_event.message.get("time") != None
+            and parsed_event.message.get("tz") in [None, "UTC", "+0000"]
+          }}
+
+      - set:
+          action.outcome_reason: "{{parsed_incident_fields.result.Description}}"
+          destination.ip: "{{parsed_incident_fields.result.VictimIP}}"
+          destination.port: "{{parsed_incident_fields.result.VictimPort}}"
+          event.action: "{{parsed_incident_fields.result.Operation}}"
+          event.reason: "{{parsed_incident_fields.result.Description}}"
+          fortinet.fortigate.decoy.group: "{{parsed_incident_fields.result.DecoyGroup}}"
+          fortinet.fortigate.decoy.type: "{{parsed_incident_fields.result.DecoyType}}"
+          fortinet.fortigate.event.severity: "{{parsed_incident_fields.result.Severity}}"
+          fortinet.fortigate.incident.event_id: "{{parsed_incident_fields.result.EventID}}"
+          fortinet.fortigate.incident.id: "{{parsed_incident_fields.result.IncidentID}}"
+          fortinet.fortigate.loghost: "{{parsed_event.message.loghost}}"
+          fortinet.fortigate.operation: "{{parsed_incident_fields.result.Operation}}"
+          fortinet.fortigate.password: "{{parsed_incident_fields.result.Password}}"
+          fortinet.fortigate.tag.id: "{{parsed_incident_fields.result.TagID}}"
+          fortinet.fortigate.tag.key: "{{parsed_incident_fields.result.Tagkey}}"
+          fortinet.fortigate.tzone: "{{parsed_event.message.tzone}}"
+          fortinet.fortigate.ui: "{{parsed_event.message.ui}}"
+          fortinet.fortigate.username: "{{parsed_incident_fields.result.Username}}"
+          network.protocol: "{{parsed_incident_fields.result.Service | lower}}"
+          observer.hostname: "{{parsed_event.message.devhost}}"
+          observer.version: "{{parsed_event.message.version}}"
+          source.ip: "{{parsed_incident_fields.result.AttackerIP}}"
+          source.mac: "{{parsed_incident_fields.result.AttackerMac}}"
+          source.port: "{{parsed_incident_fields.result.AttackerPort}}"
+        filter: >
+          {{
+            parsed_event.message.get("type") == "event"
+            and parsed_event.message.get("subtype") == "attack"
+            and parsed_event.message.get("action") == "Incident_Detection"
+            and parsed_incident_fields.get("result") != None
+          }}
+
+      - set:
+          threat.technique.id: "{{parsed_incident_fields.result.MITRE_ATTCK_ID}}"
+        filter: >
+          {{
+            parsed_event.message.get("type") == "event"
+            and parsed_event.message.get("subtype") == "attack"
+            and parsed_event.message.get("action") == "Incident_Detection"
+            and parsed_incident_fields.get("result") != None
+            and parsed_incident_fields.result.get("MITRE_ATTCK_ID") not in [None, "None", "N/A", "NA"]
+          }}
+
   backward_compatibility:
     actions:
       - set:
@@ -129,10 +203,11 @@ stages:
 
       - set:
           action.outcome_reason: "{{parsed_event.message.outcome_reason or parsed_event.message.reason}}"
+        filter: '{{parsed_event.message.get("msg") != None and parsed_event.message.get("action") != "Incident_Detection" }}'
 
       - set:
           action.outcome_reason: "{{parsed_event.message.msg.strip('\n').strip('\"')}}"
-        filter: '{{parsed_event.message.get("msg") != None }}'
+        filter: '{{parsed_event.message.get("msg") != None and parsed_event.message.get("action") != "Incident_Detection" }}'
 
       - set:
           action.target: "network-traffic"
@@ -387,6 +462,48 @@ stages:
       - set:
           source.user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
           user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
+
+      - set:
+          fortinet.fortigate.xauth.user: "{{parsed_event.message.xauthuser}}"
+        filter: >
+          {{
+            parsed_event.message.get("subtype") == "vpn"
+            and parsed_event.message.get("xauthuser") not in [None, "", "N/A", "NA", "None", "undefined", "Reserved"]
+          }}
+
+      - set:
+          source.user.name: "{{parsed_event.message.xauthuser}}"
+          user.name: "{{parsed_event.message.xauthuser}}"
+        filter: >
+          {{
+            parsed_event.message.get("subtype") == "vpn"
+            and parsed_event.message.get("xauthuser") not in [None, "", "N/A", "NA", "None", "undefined", "Reserved"]
+            and (
+              parsed_event.message.get("user") in [None, "", "N/A", "NA", "None", "undefined", "Reserved"]
+              or parsed_event.message.get("user") | is_ipaddress
+            )
+          }}
+
+      - set:
+          source.user.email: "{{parsed_event.message.xauthuser}}"
+          user.email: "{{parsed_event.message.xauthuser}}"
+        filter: >
+          {{
+            parsed_event.message.get("subtype") == "vpn"
+            and parsed_event.message.get("xauthuser") not in [None, "", "N/A", "NA", "None", "undefined", "Reserved"]
+            and "@" in parsed_event.message.get("xauthuser")
+          }}
+
+      - set:
+          fortinet.fortigate.xauth.group: "{{parsed_event.message.xauthgroup}}"
+          group.name: "{{parsed_event.message.xauthgroup}}"
+        filter: >
+          {{
+            parsed_event.message.get("subtype") == "vpn"
+            and parsed_event.message.get("xauthgroup") not in [None, "", "N/A", "NA", "None", "undefined", "Reserved"]
+            and parsed_event.message.get("group") in [None, "", "N/A", "NA", "None", "undefined", "Reserved"]
+          }}
+
       - set:
           network.bytes: "{{parsed_event.message.get('in', 0) | int + parsed_event.message.get('out', 0) | int}}"
         filter: "{{parsed_event.message.get('in') != None or parsed_event.message.get('out') != None }}"

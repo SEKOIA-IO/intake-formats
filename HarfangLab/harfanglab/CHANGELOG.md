@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-08-17
+
+### Fixed
+
+- Generalize `connection_successful` handling with a dedicated stage so it is parsed whenever present in raw logs, regardless of event dataset (`network`, `connectionlog`, etc.)
+- Update `event.outcome` from `connection_successful` in the same dedicated stage for consistent behavior across datasets
+
 ## [1.3.4] - 2026-08-14
 
 ### Added
