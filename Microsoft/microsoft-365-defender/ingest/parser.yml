@@ -172,7 +172,7 @@ stages:
           user.full_name: "{{json_event.message.properties.AccountDisplayName}}"
           user.name: "{{json_event.message.properties.AccountName or json_event.message.properties.RequestAccountName}}"
           user_agent.original: "{{json_event.message.properties.UserAgent}}"
-          action.outcome: "{{json_event.message.properties.FailureReason}}"
+          event.reason: "{{json_event.message.properties.FailureReason}}"
           action.type: "{{json_event.message.properties.ActionType}}"
           action.properties.Application: "{{json_event.message.properties.Application}}"
           action.properties.ApplicationId: "{{json_event.message.properties.ApplicationId}}"
@@ -723,6 +723,7 @@ stages:
       - set:
           event.dataset: "device_logon_events"
           event.category: ["authentication"]
+          event.type: ["start"]
           event.outcome: >
             {%- if json_event.message.properties.ActionType == "LogonSuccess" -%}
               success
@@ -736,6 +737,13 @@ stages:
       - set:
           action.properties.RemoteDeviceName: "{{json_event.message.properties.RemoteDeviceName}}"
         filter: '{{json_event.message.properties.get("RemoteDeviceName") != null}}'
+
+      # In order to extract attributes properly, we need to have
+      # user we are authenticating as in `user.target.name` and
+      # host we are authenticating to in `destination.host.name`
+      - set:
+          user.target.name: "{{final.user.name}}"
+          destination.host.name: "{{final.host.name}}"
 
   set_device_network_events_fields:
     actions:
@@ -862,6 +870,7 @@ stages:
       - set:
           event.dataset: "identity_logon_events"
           event.category: ["authentication"]
+          event.type: ["start"]
           event.outcome: >
             {%- if json_event.message.properties.ActionType == "LogonSuccess" -%}
               success
@@ -882,6 +891,10 @@ stages:
           event.dataset: "url_click_events"
           event.category: ["web"]
           event.type: ["info"]
+
+      - set:
+          microsoft.defender.url_chain: "{{json_event.message.properties.UrlChain | from_json}}"
+        filter: '{{json_event.message.properties.get("UrlChain") not in [None, ""]}}'
   set_identity_info_fields:
     actions:
       - set:
