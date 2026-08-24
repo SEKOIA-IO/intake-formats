@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-07-20
+
+### Added
+
+- Parse ECS field `registry.data.strings`
+
 ## 2024-02-15
 
-### Change
+### Changed
 
 - Change the format name
 
 ## 2024-01-29
 
-### Add
+### Added
 
 - Add for the first time Cortex format
