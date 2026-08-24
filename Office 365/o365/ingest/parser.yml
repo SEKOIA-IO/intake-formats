@@ -452,8 +452,41 @@ stages:
 
       - set:
           email.subject: "{{json_event.message.Item.Subject}}"
-          email.message_id: "{{json_event.message.Item.InternetMessageId[1:-1]}}"
-        filter: '{{json_event.message.get("Item") != None}}'
+        filter: '{{json_event.message.get("Item", {}).get("Subject") != None}}'
+
+      - set:
+          email.message_id: >
+            {{
+              json_event.message.Item.InternetMessageId[1:-1]
+              if json_event.message.Item.InternetMessageId.startswith("<")
+              and json_event.message.Item.InternetMessageId.endswith(">")
+              else json_event.message.Item.InternetMessageId
+            }}
+        filter: '{{json_event.message.get("Item", {}).get("InternetMessageId") != None}}'
+
+      - set:
+          email.to.address: >
+            [
+              {%- for recipient in json_event.message.Item.Recipients -%}
+                "{{ recipient.Address }}",
+              {%- endfor -%}
+            ]
+        filter: '{{json_event.message.get("Item", {}).get("Recipients", []) != []}}'
+
+      - set:
+          email.attachments: >
+            {%- set attachments = [] -%}
+            {%- for raw_attachment in json_event.message.Item.Attachments.split("; ") -%}
+              {%- if " (" in raw_attachment and raw_attachment.endswith("b)") -%}
+                {%- set file_name = raw_attachment.rsplit(" (", 1)[0] | basename -%}
+                {%- set file_size = raw_attachment.rsplit(" (", 1)[1].strip("b)") | int -%}
+                {%- set _ = attachments.append({"file": {"name": file_name, "size": file_size}}) -%}
+              {%- else -%}
+                {%- set _ = attachments.append({"file": {"name": (raw_attachment | basename)}}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ attachments }}
+        filter: '{{json_event.message.get("Item", {}).get("Attachments") not in [None, ""]}}'
 
   parse_exchange_item_group:
     actions:
@@ -569,6 +602,19 @@ stages:
           office365.context.client.id: "{{json_event.message.ClientAppId}}"
           office365.exchange.mailbox_owner.sid: "{{json_event.message.MailboxOwnerSid}}"
           office365.exchange.mailbox_owner.upn: "{{json_event.message.MailboxOwnerUPN}}"
+          office365.exchange.client_info_string: "{{json_event.message.ClientInfoString}}"
+          office365.exchange.operation_count: "{{json_event.message.OperationCount}}"
+          office365.exchange.email.subjects: >
+            {%- set subjects = [] -%}
+            {%- for folder in json_event.message.Folders -%}
+              {%- for item in folder["FolderItems"] -%}
+                {%- set subj = item.get("Subject") -%}
+                {%- if subj -%}
+                  {%- set subjects = subjects.append(subj) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {%- if subjects | length > 0 -%}{{ subjects }}{%- endif -%}
 
       - translate:
         dictionary:
