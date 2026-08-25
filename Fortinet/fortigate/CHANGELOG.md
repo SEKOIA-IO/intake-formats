@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.3] - 2026-08-25
 
+### Fixed
+
+- Anonymize all JSON test fixtures by replacing non-example email domains and non-reserved IP values with RFC 5737 test ranges, while preserving parsing-relevant value shapes
+
 ### Removed
 
 - Remove parsing of credential-like password values from incident payloads to prevent high-risk exposure of raw secrets in normalized events
