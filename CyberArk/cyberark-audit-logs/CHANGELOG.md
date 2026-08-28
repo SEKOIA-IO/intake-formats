@@ -15,4 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.outcome`
   - `event.severity`
   - `event.url`
+- Parse new custom fields for ITDR events (`event.dataset: ITDR`, `event.action: New alert created`):
+  - `cyberark.audit.status`
+- Normalize ITDR `event.outcome` to ECS value `unknown` and preserve raw status in `cyberark.audit.status`
 - Add anonymized ITDR test fixtures from raw CSV logs
