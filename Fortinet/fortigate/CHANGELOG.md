@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-08-25
+
+### Fixed
+
+- Anonymize all JSON test fixtures by replacing non-example email domains and non-reserved IP values with RFC 5737 test ranges, while preserving parsing-relevant value shapes
+
+### Removed
+
+- Remove parsing of credential-like password values from incident payloads to prevent high-risk exposure of raw secrets in normalized events
+- Remove custom fields:
+  - `fortinet.fortigate.password`
+
 ## [1.0.2] - 2026-08-14
 
 ### Added
