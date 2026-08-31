@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Parse existing custom fields more consistently:
   - `openbsd.pf.transport.options` for TCP events
+- Change `openbsd.pf.carp.advbase` and `openbsd.pf.carp.advskew` field types from `keyword` to `integer` to match their numeric semantics
 
 ### Fixed
 
