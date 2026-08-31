@@ -10,8 +10,9 @@ pipeline:
 
         custom_patterns:
           PACKET_FILTER: "%{NUMBER:rulenr},%{DATA:subrulenr},%{DATA:anchorname},%{DATA:label},%{DATA:interface},%{WORD:reason},%{WORD:action},%{WORD:dir}"
-          PF_IPV4: "4,%{WORD:tos},%{DATA:ecn},%{NUMBER:hoplimit},%{NUMBER:id},%{NUMBER:offset},%{WORD:flags},%{NUMBER:protonum},%{WORD:protoname},%{NUMBER:length},%{IPV4:src},%{IPV4:dst}"
-          PF_IPV6: "6,%{DATA:class},%{DATA:flow},%{DATA:hoplimit},%{WORD:protoname},%{NUMBER:protonum},%{NUMBER:length},%{IPV6:src},%{IPV6:dst}"
+          PROTONAME: "[^,]+"
+          PF_IPV4: "%{NUMBER:ip_version},%{WORD:tos},%{DATA:ecn},%{NUMBER:hoplimit},%{NUMBER:id},%{NUMBER:offset},%{WORD:flags},%{NUMBER:protonum},%{WORD:protoname},%{NUMBER:length},%{IPV4:src},%{IPV4:dst}"
+          PF_IPV6: "%{NUMBER:ip_version},%{DATA:class},%{DATA:flow},%{DATA:hoplimit},%{PROTONAME:protoname},%{NUMBER:protonum},%{NUMBER:length},%{IPV6:src},%{IPV6:dst}"
           PF_UDP: "%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen}"
           PF_TCP: "%{NUMBER:srcport},%{NUMBER:dstport},%{NUMBER:datalen},%{WORD:tcp_flags},%{DATA:seq}?,%{DATA:ack},%{NUMBER:window},%{DATA:urg},%{GREEDYDATA:options}"
           PF_CARP: "%{DATA:type},%{NUMBER:hoplimit},%{DATA:vhid},%{NUMBER:version},%{NUMBER:advskew},%{NUMBER:advbase}"
@@ -20,6 +21,7 @@ pipeline:
           OTHER_2: "%{DATA:transport_type},%{GREEDYDATA:error_msg}"
 
   - name: set_ecs_fields
+  - name: set_custom_fields
 stages:
   set_ecs_fields:
     actions:
@@ -30,39 +32,17 @@ stages:
           destination.ip: "{{parsed_event.message.dst}}"
         filter: "{{parsed_event.message.dst | is_ipaddress}}"
       - set:
-          rule.id: "{{parsed_event.message.rulenr}}"
-          openbsd.pf.rule.subrulenr: "{{parsed_event.message.subrulenr}}"
-          rule.ruleset: "{{parsed_event.message.anchorname}}"
-          openbsd.pf.event.tracker.id: "{{parsed_event.message.label}}"
+          destination.port: "{{parsed_event.message.dstport}}"
           error.message: "{{parsed_event.message.error_msg}}"
-          event.reason: "{{parsed_event.message.reason}}"
           event.action: "{{parsed_event.message.action}}"
+          event.reason: "{{parsed_event.message.reason}}"
+          network.bytes: "{{parsed_event.message.length}}"
           network.direction: "{{parsed_event.message.dir}}"
-          openbsd.pf.routing.class: "{{parsed_event.message.tos}}"
-          openbsd.pf.routing.hoplimit: "{{parsed_event.message.hoplimit}}"
-          openbsd.pf.routing.offset: "{{parsed_event.message.offset}}"
-          openbsd.pf.routing.flags: "{{parsed_event.message.flags}}"
           network.iana_number: "{{parsed_event.message.protonum}}"
           network.transport: "{{parsed_event.message.protoname | lower}}"
-          network.bytes: "{{parsed_event.message.length}}"
+          rule.id: "{{parsed_event.message.rulenr}}"
+          rule.ruleset: "{{parsed_event.message.anchorname}}"
           source.port: "{{parsed_event.message.srcport}}"
-          destination.port: "{{parsed_event.message.dstport}}"
-          openbsd.pf.transport.bytes: "{{parsed_event.message.datalen}}"
-          openbsd.pf.transport.tcp_flags: "{{parsed_event.message.tcp_flags}}"
-          openbsd.pf.transport.seq_number: "{{parsed_event.message.seq}}"
-          openbsd.pf.transport.ack: "{{parsed_event.message.ack}}"
-          openbsd.pf.transport.window_size: "{{parsed_event.message.window}}"
-          openbsd.pf.transport.urgency: "{{parsed_event.message.urg}}"
-          openbsd.pf.transport.options: "{{parsed_event.message.option}}"
-          openbsd.pf.transport.classification: "{{parsed_event.message.class}}"
-          openbsd.pf.transport.type: "{{parsed_event.message.transport_type}}"
-          openbsd.pf.carp.vhid: "{{parsed_event.message.vhid}}"
-          openbsd.pf.carp.version: "{{parsed_event.message.version}}"
-          openbsd.pf.carp.advskew: "{{parsed_event.message.advskew}}"
-          openbsd.pf.carp.advbase: "{{parsed_event.message.advbase}}"
-          openbsd.pf.icmp.datalength: "{{parsed_event.message.datalength}}"
-          openbsd.pf.routing.flow: "{{parsed_event.message.flow}}"
-          openbsd.pf.carp.type: "{{parsed_event.message.type}}"
 
       - set:
           error.type: "{{parsed_event.message.transport_type}}"
@@ -94,3 +74,36 @@ stages:
           "out": "outbound"
         mapping:
           parsed_event.message.dir: network.direction
+
+      - translate:
+        dictionary:
+          "4": "ipv4"
+          "6": "ipv6"
+        mapping:
+          parsed_event.message.ip_version: network.type
+
+  set_custom_fields:
+    actions:
+      - set:
+          openbsd.pf.carp.advbase: "{{parsed_event.message.advbase}}"
+          openbsd.pf.carp.advskew: "{{parsed_event.message.advskew}}"
+          openbsd.pf.carp.type: "{{parsed_event.message.type}}"
+          openbsd.pf.carp.version: "{{parsed_event.message.version}}"
+          openbsd.pf.carp.vhid: "{{parsed_event.message.vhid}}"
+          openbsd.pf.event.tracker.id: "{{parsed_event.message.label}}"
+          openbsd.pf.icmp.datalength: "{{parsed_event.message.datalength}}"
+          openbsd.pf.routing.class: "{{parsed_event.message.tos}}"
+          openbsd.pf.routing.flags: "{{parsed_event.message.flags}}"
+          openbsd.pf.routing.flow: "{{parsed_event.message.flow}}"
+          openbsd.pf.routing.hoplimit: "{{parsed_event.message.hoplimit}}"
+          openbsd.pf.routing.offset: "{{parsed_event.message.offset}}"
+          openbsd.pf.rule.subrulenr: "{{parsed_event.message.subrulenr}}"
+          openbsd.pf.transport.ack: "{{parsed_event.message.ack}}"
+          openbsd.pf.transport.bytes: "{{parsed_event.message.datalen}}"
+          openbsd.pf.transport.classification: "{{parsed_event.message.class}}"
+          openbsd.pf.transport.options: "{{parsed_event.message.options}}"
+          openbsd.pf.transport.seq_number: "{{parsed_event.message.seq}}"
+          openbsd.pf.transport.tcp_flags: "{{parsed_event.message.tcp_flags}}"
+          openbsd.pf.transport.type: "{{parsed_event.message.transport_type}}"
+          openbsd.pf.transport.urgency: "{{parsed_event.message.urg}}"
+          openbsd.pf.transport.window_size: "{{parsed_event.message.window}}"
