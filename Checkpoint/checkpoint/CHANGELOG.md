@@ -26,12 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extend existing ECS fields:
   - `destination.user.name` (fallback extraction from `dst_user_dn` CN when direct username is missing)
-  - `rule.name` (fallback to CEF `Rule Name` when `rule_name` is missing)
   - `source.user.name` (fallback extraction from `src_user_dn` CN when direct username is missing)
+  - `log.hostname` (fallback extraction from `originsicname` CN when direct hostname is missing)
+  - `rule.name` (fallback to CEF `Rule Name` when `rule_name` is missing)
 - Extend existing custom fields:
   - `action.properties.observer_type` (fallback to `product` when `DeviceProduct` is missing)
   - `action.properties.product` (fallback to `DeviceProduct` when `product` is missing)
   - `action.properties.rule_name` (fallback to `rule_name` when CEF `Rule Name` is missing)
+- Improve DN CN fallback extraction for `source.user.name`, `destination.user.name`, and `log.hostname`:
+  - Preserve escaped commas in CN values (for example `CN=LAST\,FIRST,...` -> `LAST,FIRST`)
+  - Keep backward-compatible handling of escaped separators in DN strings
 - Fully anonymize all JSON test fixtures under `tests/` and harmonize fixture filenames to consistent `CEF_` and `Syslog_` snake_case families
 
 ## [1.0.1] - 2026-08-13
