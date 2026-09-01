@@ -25,6 +25,24 @@ pipeline:
         output_field: date
     filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$")}}'
 
+  - name: parse_error_event
+    external:
+      name: grok.match
+      properties:
+        input_field: "parse_header.message.payload"
+        output_field: "error"
+        pattern: '^\[%{DATA:date}\] \[%{DATA:process_and_level}\](?: \[%{DATA:context}\])? %{GREEDYDATA:message}'
+    filter: "{{ parse_header.message.payload is not none and parse_header.message.payload | re_match('^\\[.*\\]') }}"
+
+  - name: parse_error_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_error_event.error.date}}"
+        output_field: date
+        format: "%a %b %d %H:%M:%S.%f %Y"
+    filter: '{{parse_error_event != null and parse_error_event.error != null}}'
+
   # Access Logs
   - name: parse_event
     external:
@@ -35,7 +53,7 @@ pipeline:
         # <host> <ident> <authuser> [<date>] <request> <status> <bytes> <referer> <user-agent>
         pattern: "%{IPORHOST:host} %{USERNAME:ident} %{USERNAME:authuser} \\[%{DATA:date}\\] \"%{WORD:http_method} %{URIPATHPARAM:http_request} %{DATA:http_version}\" %{INT:http_status} %{DATA:http_bytes} %{QS:http_referrer} %{QS:http_user_agent}.*"
 
-    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$") == False}}'
+    filter: "{{ not (parse_header.message.payload | re_match('^\\s*\\{.*\\}\\s*$')) and not (parse_header.message.payload | re_match('^\\[.*\\]')) }}"
 
   - name: parse_timestamp
     external:
@@ -44,7 +62,7 @@ pipeline:
         input_field: "{{parse_event.plain.date}}"
         output_field: date
         format: "%d/%b/%Y:%H:%M:%S %z"
-    filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$") == False }}'
+    filter: "{{ not (parse_header.message.payload | re_match('^\\s*\\{.*\\}\\s*$')) and not (parse_header.message.payload | re_match('^\\[.*\\]')) }}"
 
   - name: set_base_fields
 
@@ -81,6 +99,16 @@ stages:
         filter: "{{ parse_event.plain.http_bytes | int(-1) > 0 }}"
 
       # security event
+      - set:
+          "@timestamp": "{{ parse_error_timestamp.date }}"
+          event.kind: "event"
+          event.category: ["host"]
+          event.type: ["error"]
+          log.level: "{{ parse_error_event.error.process_and_level.split(':')[1] | lower }}"
+          process.name: "{{ parse_error_event.error.process_and_level.split(':')[0] }}"
+          error.message: "{{ parse_error_event.error.message }}"
+        filter: "{{ parse_error_event != null and parse_error_event.error != null }}"
+
       - set:
           event.kind: "alert"
           event.category: ["threat"]
