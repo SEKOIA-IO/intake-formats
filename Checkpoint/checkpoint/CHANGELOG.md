@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-01
+
+### Added
+
+- Parse new ECS fields:
+  - `network.application` (for `Application Control` events, only when CEF header `Name` strictly matches an allowlist of known application-level protocols)
+  - `network.bytes` (for CEF events when both `in` and `out` are present and numeric)
+  - `network.iana_number` (when `proto` is numeric)
+  - `observer.ip` (when `origin` is a valid IP address)
+  - `observer.product`
+- Parse new custom fields:
+  - `checkpoint.application_name`
+- Enrich smart descriptions to cover newly added and extended ECS/custom fields across additional event families
+- Complete and harmonize descriptions for all defined custom fields in metadata
+
+### Changed
+
+- Extend existing ECS fields:
+  - `destination.user.name` (fallback extraction from `dst_user_dn` CN when direct username is missing)
+  - `rule.name` (fallback to CEF `Rule Name` when `rule_name` is missing)
+  - `source.user.name` (fallback extraction from `src_user_dn` CN when direct username is missing)
+- Extend existing custom fields:
+  - `action.properties.observer_type` (fallback to `product` when `DeviceProduct` is missing)
+  - `action.properties.product` (fallback to `DeviceProduct` when `product` is missing)
+  - `action.properties.rule_name` (fallback to `rule_name` when CEF `Rule Name` is missing)
+- Fully anonymize all JSON test fixtures under `tests/` and harmonize fixture filenames to consistent `CEF_` and `Syslog_` snake_case families
+
 ## [1.0.1] - 2026-08-13
 
 ### Added
