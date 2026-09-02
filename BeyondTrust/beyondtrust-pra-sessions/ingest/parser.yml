@@ -1,5 +1,5 @@
 name: beyondtrust-pra-sessions
-ignored_values: [""]
+ignored_values: ["", "Unknown"]
 pipeline:
   - name: parsed_event
     external:
@@ -14,6 +14,33 @@ pipeline:
       name: grok.match
       properties:
         input_field: "{{parsed_event.message.data.public_ip}}"
+        output_field: message
+        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+
+  - name: parse_performed_by_public_ip
+    filter: "{{parsed_event.message.get('performed_by', {}).get('public_ip') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.performed_by.public_ip}}"
+        output_field: message
+        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+
+  - name: parse_primary_customer_public_ip
+    filter: "{{parsed_event.message.get('primary_customer', {}).get('public_ip') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.primary_customer.public_ip}}"
+        output_field: message
+        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+
+  - name: parse_primary_rep_public_ip
+    filter: "{{parsed_event.message.get('primary_rep', {}).get('public_ip') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.primary_rep.public_ip}}"
         output_field: message
         pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
 
@@ -72,6 +99,44 @@ stages:
           source.nat.port: "{{parse_public_ip.message.public_port}}"
         filter: "{{parse_public_ip.message.public_ip | is_ipaddress}}"
 
+      # addresses of the performer, resolved from the participants of the session through its gsnumber
+      - set:
+          source.ip: "{{parsed_event.message.performed_by.private_ip}}"
+        filter: "{{parsed_event.message.get('performed_by', {}).get('private_ip') | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parse_performed_by_public_ip.message.public_ip}}"
+          source.nat.port: "{{parse_performed_by_public_ip.message.public_port}}"
+        filter: "{{parse_performed_by_public_ip.message.public_ip | is_ipaddress}}"
+
+      # Session Start and Session End have no performer: fall back to the representative running the session
+      - set:
+          user.name: "{{parsed_event.message.primary_rep.name}}"
+        filter: "{{parsed_event.message.get('performed_by') == None}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.primary_rep.private_ip}}"
+        filter: "{{parsed_event.message.get('performed_by') == None and parsed_event.message.get('primary_rep', {}).get('private_ip') | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parse_primary_rep_public_ip.message.public_ip}}"
+          source.nat.port: "{{parse_primary_rep_public_ip.message.public_port}}"
+        filter: "{{parsed_event.message.get('performed_by') == None and parse_primary_rep_public_ip.message.public_ip | is_ipaddress}}"
+
+      # the endpoint of the customer is the machine reached through the session
+      - set:
+          host.name: "{{parsed_event.message.primary_customer.hostname}}"
+          host.os.full: "{{parsed_event.message.primary_customer.os}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.primary_customer.private_ip}}"
+        filter: "{{parsed_event.message.get('primary_customer', {}).get('private_ip') | is_ipaddress}}"
+
+      - set:
+          destination.nat.ip: "{{parse_primary_customer_public_ip.message.public_ip}}"
+          destination.nat.port: "{{parse_primary_customer_public_ip.message.public_port}}"
+        filter: "{{parse_primary_customer_public_ip.message.public_ip | is_ipaddress}}"
+
       - set:
           event.reason: "{{parsed_event.message.body or parsed_event.message.data.failure_reason}}"
           host.name: "{{parsed_event.message.data.hostname}}"
@@ -101,11 +166,23 @@ stages:
       - set:
           beyondtrust.pra.session_id: "{{parsed_event.message.session_id}}"
           beyondtrust.pra.performed_by.type: "{{parsed_event.message.performed_by.type}}"
+          beyondtrust.pra.performed_by.gsnumber: "{{parsed_event.message.performed_by.gsnumber}}"
           beyondtrust.pra.jump_group.type: "{{parsed_event.message.jump_group.type}}"
           beyondtrust.pra.state: "{{parsed_event.message.data.state}}"
           beyondtrust.pra.owner: "{{parsed_event.message.data.owner}}"
           beyondtrust.pra.destination_type: "{{parsed_event.message.destination.type}}"
           beyondtrust.pra.destination_name: "{{parsed_event.message.destination.name}}"
+          beyondtrust.pra.destination_gsnumber: "{{parsed_event.message.destination.gsnumber}}"
+
+      - set:
+          beyondtrust.pra.primary_customer.name: "{{parsed_event.message.primary_customer.name}}"
+          beyondtrust.pra.primary_customer.gsnumber: "{{parsed_event.message.primary_customer.gsnumber}}"
+          beyondtrust.pra.primary_rep.name: "{{parsed_event.message.primary_rep.name}}"
+          beyondtrust.pra.primary_rep.gsnumber: "{{parsed_event.message.primary_rep.gsnumber}}"
+
+          beyondtrust.pra.file_transfer_count: "{{parsed_event.message.file_transfer_count}}"
+          beyondtrust.pra.file_move_count: "{{parsed_event.message.file_move_count}}"
+          beyondtrust.pra.file_delete_count: "{{parsed_event.message.file_delete_count}}"
 
       - set:
           beyondtrust.pra.request.id: "{{parsed_event.message.data.request_id}}"
