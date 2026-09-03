@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.action` for DNS "received notify" events
   - `event.outcome` for DNS zone transfer allowed/denied events
   - `source.address` when RPZ source is logged as a hostname
+- Anonymize and harmonize JSON test fixtures naming
 
 ### Fixed
 
