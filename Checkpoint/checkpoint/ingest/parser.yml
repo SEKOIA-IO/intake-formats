@@ -45,10 +45,63 @@ pipeline:
         delimiter: " "
 
   - name: main_stage
+  - name: set_application_control_fields
+  # Parse malware fields from fixed label names (e.g., Protection Type, Malware Family) while tolerating slot reordering (e.g., cs1Label, cs3Label, cs5Label)
+  - name: set_malware_signal_fields_by_label_name
   - name: set_ip
   - name: finalizer
 
 stages:
+  set_application_control_fields:
+    actions:
+      - set:
+          checkpoint.application_name: "{{checkpoint.message.Name}}"
+        filter: "{{(checkpoint.message.product == 'Application Control' or checkpoint.message.DeviceProduct == 'Application Control') and checkpoint.message.Name not in [null, '']}}"
+      - set:
+          network.application: "{{checkpoint.message.Name | lower}}"
+        filter:
+          "{{(checkpoint.message.product == 'Application Control' or checkpoint.message.DeviceProduct == 'Application Control')
+          and checkpoint.message.Name not in [null, '']
+          and (checkpoint.message.Name | lower) in [
+          'amqp',
+          'dhcp',
+          'dns',
+          'ftp',
+          'ftps',
+          'http',
+          'https',
+          'imap',
+          'kerberos',
+          'ldap',
+          'mqtt',
+          'mysql',
+          'nfs',
+          'ntp',
+          'pop3',
+          'postgresql',
+          'rdp',
+          'redis',
+          'smb',
+          'smtp',
+          'snmp',
+          'ssh',
+          'telnet'
+          ]}}"
+
+  set_malware_signal_fields_by_label_name:
+    actions:
+      # Use fixed label names only (e.g., Threat Prevention Rule ID, Confidence), since slot indexes may vary across events (e.g., cs2/cs4/cs6, flexNumber1/flexNumber2)
+      - set:
+          checkpoint.malware_action_or_attack_information: "{{checkpoint.message.get('Malware Action') or checkpoint.message.get('Attack Information')}}"
+          checkpoint.malware_family: "{{checkpoint.message.get('Malware Family')}}"
+          checkpoint.protection_name: "{{checkpoint.message.get('Protection Name')}}"
+          checkpoint.protection_type: "{{checkpoint.message.get('Protection Type')}}"
+          checkpoint.threat_prevention_rule_id: "{{checkpoint.message.get('Threat Prevention Rule ID')}}"
+          event.reason: "{{checkpoint.message.get('Malware Action') or checkpoint.message.get('Attack Information')}}"
+          event.risk_score: "{{checkpoint.message.get('Confidence')}}"
+          threat.software.name: "{{checkpoint.message.get('Malware Family')}}"
+        filter: "{{checkpoint.message.DeviceProduct == 'New Anti Virus'}}"
+
   set_ip:
     # dedicated stage to filter IPs value before setting fields
     actions:
@@ -127,13 +180,13 @@ stages:
           action.properties.loguid: "{{checkpoint.message.loguid}}"
           action.properties.nat_addtnl_rulenum: "{{checkpoint.message.nat_addtnl_rulenum}}"
           action.properties.nat_rulenum: "{{checkpoint.message.nat_rulenum}}"
-          action.properties.observer_type: "{{checkpoint.message.DeviceProduct}}"
+          action.properties.observer_type: "{{checkpoint.message.DeviceProduct or checkpoint.message.product}}"
           action.properties.origin: "{{checkpoint.message.origin}}"
           action.properties.origin_sic_name: "{{checkpoint.message.origin_sic_name}}"
           action.properties.originsicname: "{{checkpoint.message.originsicname.replace('\\\\', '')}}"
-          action.properties.product: "{{checkpoint.message.product}}"
+          action.properties.product: "{{checkpoint.message.product or checkpoint.message.DeviceProduct}}"
           action.properties.reject_category: "{{checkpoint.message.reject_category}}"
-          action.properties.rule_name: "{{checkpoint.message.get('Rule Name')}}"
+          action.properties.rule_name: "{{checkpoint.message.get('Rule Name') or checkpoint.message.rule_name}}"
           action.properties.signature: "{{checkpoint.message.Signature.replace(', ', ',').split(',')}}"
           action.properties.source_key_id: "{{checkpoint.message.srckeyid}}"
           action.properties.subproduct: "{{checkpoint.message.fw_subproduct}}"
@@ -152,11 +205,12 @@ stages:
           network.direction: "{{checkpoint.message.conn_direction | lower or checkpoint.message.ifdir | lower }}"
           network.protocol: "{{checkpoint.message.app | lower}}"
           network.transport: "{{checkpoint.message.proto | lower}}"
+          observer.product: "{{checkpoint.message.DeviceProduct or checkpoint.message.product}}"
           observer.egress.zone: "{{checkpoint.message.outzone}}"
           observer.ingress.interface.name: "{{checkpoint.message.ifname}}"
           observer.ingress.zone: "{{checkpoint.message.inzone}}"
           rule.id: "{{checkpoint.message.rule}}"
-          rule.name: "{{checkpoint.message.rule_name}}"
+          rule.name: "{{checkpoint.message.rule_name or checkpoint.message.get('Rule Name')}}"
           rule.uuid: "{{checkpoint.message.rule_uid}}"
           rule.version: "{{checkpoint.message.version}}"
           service.id: "{{checkpoint.message.service_id}}"
@@ -171,7 +225,35 @@ stages:
           checkpoint.firewall.tcp_flags: "{{checkpoint.message.get('TCP Flags')}}"
 
       - set:
-          log.hostname: "{{checkpoint.message.originsicname.replace('\\\\', '').split('CN=')[1].split(',')[0]}}"
+          network.bytes: "{{checkpoint.message.get('in', 0) | int + checkpoint.message.get('out', 0) | int}}"
+        filter: "{{checkpoint.message.get('in') != null
+          and checkpoint.message.get('out') != null
+          and (checkpoint.message.get('in') is number or checkpoint.message.get('in').isdigit())
+          and (checkpoint.message.get('out') is number or checkpoint.message.get('out').isdigit())}}"
+
+      - set:
+          source.user.name: "{{checkpoint.message.src_user_dn.replace('\\\\,', '__ESCAPED_COMMA__').replace('\\\\', '').split('CN=')[1].split(',')[0].replace('__ESCAPED_COMMA__', ',').replace('\n', ' ') | trim}}"
+        filter: "{{final.source.user.name == null
+          and checkpoint.message.src_user_dn != null
+          and 'CN=' in checkpoint.message.src_user_dn.replace('\\\\', '')}}"
+
+      - set:
+          destination.user.name: "{{checkpoint.message.dst_user_dn.replace('\\\\,', '__ESCAPED_COMMA__').replace('\\\\', '').split('CN=')[1].split(',')[0].replace('__ESCAPED_COMMA__', ',').replace('\n', ' ') | trim}}"
+        filter: "{{final.destination.user.name == null
+          and checkpoint.message.dst_user_dn != null
+          and 'CN=' in checkpoint.message.dst_user_dn.replace('\\\\', '')}}"
+
+      - set:
+          observer.ip: "{{checkpoint.message.origin}}"
+        filter: "{{checkpoint.message.origin | is_ipaddress}}"
+
+      - set:
+          network.iana_number: "{{checkpoint.message.proto | int}}"
+        filter: "{{checkpoint.message.proto != null
+          and (checkpoint.message.proto is number or checkpoint.message.proto.isdigit())}}"
+
+      - set:
+          log.hostname: "{{checkpoint.message.originsicname.replace('\\\\,', '__ESCAPED_COMMA__').replace('\\\\', '').split('CN=')[1].split(',')[0].replace('__ESCAPED_COMMA__', ',')}}"
         filter: "{{checkpoint.message.originsicname != null and 'CN=' in checkpoint.message.originsicname.replace('\\\\', '')}}"
 
       - translate:
