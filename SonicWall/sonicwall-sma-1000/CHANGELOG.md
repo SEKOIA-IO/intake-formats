@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Support parsing of additional SonicWall SMA 1000 raw log families observed in customer exports:
+- Support parsing of additional SonicWall SMA 1000 log types:
   - Management Message Log cron-command variant (`(user) CMD (...)`)
   - Network Tunnel Audit Log bracketed variant (`[...] ... Audit Src=... Command=... Dest=...`)
   - Resource Access Log (`EventMessage: Resource Access`)
