@@ -191,58 +191,61 @@ import re
 
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-IPV6_RE = re.compile(r"\b(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f]{0,4}\b")
-
-_email_map = {}
-_ip_map = {}
+IPV6_RE = re.compile(r"\b(?:[0-9A-Fa-f]{1,4}:){2,}[0-9A-Fa-f]{1,4}\b")
 
 
-def _stable_token(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()[:8]
+class Anonymizer:
+    def __init__(self):
+        self.email_map = {}
+        self.ip_map = {}
 
-def anonymize_email(text):
-    def repl(match):
-        email = match.group(0)
-        if email not in _email_map:
-            _email_map[email] = f"user-{_stable_token(email)}@example.com"
-        return _email_map[email]
+    @staticmethod
+    def _stable_token(value: str) -> str:
+        return hashlib.sha256(value.encode()).hexdigest()[:8]
 
-    return EMAIL_RE.sub(repl, text)
+    def anonymize_email(self, text):
+        def repl(match):
+            email = match.group(0)
+            if email not in self.email_map:
+                self.email_map[email] = f"user-{self._stable_token(email)}@example.com"
+            return self.email_map[email]
 
-def anonymize_ip(text):
-    def map_ipv4(ip_str):
-        if ip_str in _ip_map:
-            return _ip_map[ip_str]
-        octet = int(_stable_token(ip_str)[:2], 16)
-        _ip_map[ip_str] = f"192.0.2.{1 + (octet % 254)}"
-        return _ip_map[ip_str]
+        return EMAIL_RE.sub(repl, text)
 
-    def map_ipv6(ip_str):
-        if ip_str in _ip_map:
-            return _ip_map[ip_str]
-        token = _stable_token(ip_str)
-        _ip_map[ip_str] = f"2001:db8::{token[:4]}:{token[4:8]}"
-        return _ip_map[ip_str]
+    def anonymize_ip(self, text):
+        def map_ipv4(ip_str):
+            if ip_str not in self.ip_map:
+                octet = int(self._stable_token(ip_str)[:2], 16)
+                self.ip_map[ip_str] = f"192.0.2.{1 + (octet % 254)}"
+            return self.ip_map[ip_str]
 
-    def replace_ipv4(match):
-        value = match.group(0)
-        try:
-            ipaddress.IPv4Address(value)
-            return map_ipv4(value)
-        except ipaddress.AddressValueError:
-            return value
+        def map_ipv6(ip_str):
+            if ip_str not in self.ip_map:
+                token = self._stable_token(ip_str)
+                self.ip_map[ip_str] = f"2001:db8::{token[:4]}:{token[4:8]}"
+            return self.ip_map[ip_str]
 
-    def replace_ipv6(match):
-        value = match.group(0)
-        try:
-            ipaddress.IPv6Address(value)
-            return map_ipv6(value)
-        except ipaddress.AddressValueError:
-            return value
+        def replace_ipv4(match):
+            value = match.group(0)
+            try:
+                ipaddress.IPv4Address(value)
+                return map_ipv4(value)
+            except ipaddress.AddressValueError:
+                return value
 
-    text = IPV4_RE.sub(replace_ipv4, text)
-    return IPV6_RE.sub(replace_ipv6, text)
+        def replace_ipv6(match):
+            value = match.group(0)
+            try:
+                ipaddress.IPv6Address(value)
+                return map_ipv6(value)
+            except ipaddress.AddressValueError:
+                return value
+
+        text = IPV4_RE.sub(replace_ipv4, text)
+        return IPV6_RE.sub(replace_ipv6, text)
 ```
+
+This keeps the replacement mapping local to a specific anonymization pass, which is easier to reason about and makes it easier to reset or isolate state between files.
 
 ### Method 3: Ask Copilot
 
@@ -332,9 +335,11 @@ Our CI/CD workflow automatically scans for:
 If non-anonymized data is discovered after commit:
 
 1. Replace sensitive values with anonymized equivalents in the source test files.
-2. Rewrite git history to remove previously committed sensitive values.
-3. Re-run anonymization checks to confirm the data is fully sanitized.
-4. Add or improve detection rules so the same pattern is caught next time.
+2. If any credentials or secrets were exposed, revoke or rotate them immediately.
+3. Rewrite Git history to remove previously committed sensitive values.
+4. If the data was already pushed to a shared or default branch, follow the GitHub guidance for removing sensitive data from a repository.
+5. Re-run anonymization checks to confirm the data is fully sanitized.
+6. Add or improve detection rules so the same pattern is caught next time.
 
 ## Need Help?
 
