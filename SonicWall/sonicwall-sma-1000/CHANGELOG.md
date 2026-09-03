@@ -26,11 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Manifest `data_sources` descriptions align with the same naming, without changing existing keys
 - Extend ECS fields extraction for the new Resource Access Log and Network Tunnel Audit Log variants:
   - `destination.domain`
-  - `process.command_line`
   - `source.user.domain`
   - `source.user.email`
   - `source.user.name`
   - `user.email`
+- Extend ECS fields extraction for the new Management Message Log cron-command variant:
+  - `process.command_line`
 
 ## [1.0.0] - 2026-08-19
 
