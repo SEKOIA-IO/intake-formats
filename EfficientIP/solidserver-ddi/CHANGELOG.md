@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.2] - 2026-09-03
 
+### Changed
+
+- Parse new ECS fields:
+  - `event.action` for DNS "received notify" events
+  - `event.outcome` for DNS zone transfer allowed/denied events
+  - `source.address` when RPZ source is logged as a hostname
+
 ### Fixed
 
 - Support signed DNS update logs with TSIG key suffix in the DNS header
