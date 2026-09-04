@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-09-04 - 1.0.3
+
+### Fixed
+
+- Parse filterlog events that carry no protocol-specific section, such as non-initial IPv4 fragments
+  (`offset` greater than zero) whose transport header is absent. These events were dropped by the grok
+  pattern, which required the transport section to be present
+
 ## 2026-08-31 - 1.0.2
 
 ### Added
