@@ -1,5 +1,5 @@
 name: beyondtrust-pra-sessions
-ignored_values: ["", "Unknown"]
+ignored_values: [""]
 pipeline:
   - name: parsed_event
     external:
@@ -15,7 +15,7 @@ pipeline:
       properties:
         input_field: "{{parsed_event.message.data.public_ip}}"
         output_field: message
-        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+        pattern: '^\[?%{IP:public_ip}\]?:%{INT:public_port}$'
 
   - name: parse_performed_by_public_ip
     filter: "{{parsed_event.message.get('performed_by', {}).get('public_ip') != None}}"
@@ -24,25 +24,43 @@ pipeline:
       properties:
         input_field: "{{parsed_event.message.performed_by.public_ip}}"
         output_field: message
-        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+        pattern: '^\[?%{IP:public_ip}\]?:%{INT:public_port}$'
+
+  # the session may carry its participants in session-level lists and reference the primary
+  # ones by gsnumber only: resolve them to get their addresses, hostname and operating system
+  - name: resolved_primary_customer
+    filter: "{{parsed_event.message.get('customer_list') != None and parsed_event.message.get('primary_customer', {}).get('gsnumber') != None}}"
+    external:
+      name: json.parse-json
+      properties:
+        output_field: message
+        input_field: "{{ '' ~ (parsed_event.message.customer_list | selectattr('gsnumber', 'equalto', parsed_event.message.primary_customer.gsnumber) | first | default({}, true) | tojson) }}"
+
+  - name: resolved_primary_rep
+    filter: "{{parsed_event.message.get('rep_list') != None and parsed_event.message.get('primary_rep', {}).get('gsnumber') != None}}"
+    external:
+      name: json.parse-json
+      properties:
+        output_field: message
+        input_field: "{{ '' ~ (parsed_event.message.rep_list | selectattr('gsnumber', 'equalto', parsed_event.message.primary_rep.gsnumber) | first | default({}, true) | tojson) }}"
 
   - name: parse_primary_customer_public_ip
-    filter: "{{parsed_event.message.get('primary_customer', {}).get('public_ip') != None}}"
+    filter: "{{(parsed_event.message.get('primary_customer', {}).get('public_ip') or resolved_primary_customer.message.public_ip) != None}}"
     external:
       name: grok.match
       properties:
-        input_field: "{{parsed_event.message.primary_customer.public_ip}}"
+        input_field: "{{parsed_event.message.primary_customer.public_ip or resolved_primary_customer.message.public_ip}}"
         output_field: message
-        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+        pattern: '^\[?%{IP:public_ip}\]?:%{INT:public_port}$'
 
   - name: parse_primary_rep_public_ip
-    filter: "{{parsed_event.message.get('primary_rep', {}).get('public_ip') != None}}"
+    filter: "{{(parsed_event.message.get('primary_rep', {}).get('public_ip') or resolved_primary_rep.message.public_ip) != None}}"
     external:
       name: grok.match
       properties:
-        input_field: "{{parsed_event.message.primary_rep.public_ip}}"
+        input_field: "{{parsed_event.message.primary_rep.public_ip or resolved_primary_rep.message.public_ip}}"
         output_field: message
-        pattern: '\[?%{IP:public_ip}\]?:%{INT:public_port}'
+        pattern: '^\[?%{IP:public_ip}\]?:%{INT:public_port}$'
 
   - name: parse_requesting_user
     filter: "{{parsed_event.message.get('data', {}).get('requesting_user') != None}}"
@@ -99,7 +117,7 @@ stages:
           source.nat.port: "{{parse_public_ip.message.public_port}}"
         filter: "{{parse_public_ip.message.public_ip | is_ipaddress}}"
 
-      # addresses of the performer, resolved from the participants of the session through its gsnumber
+      # addresses of the performer of the event
       - set:
           source.ip: "{{parsed_event.message.performed_by.private_ip}}"
         filter: "{{parsed_event.message.get('performed_by', {}).get('private_ip') | is_ipaddress}}"
@@ -111,12 +129,12 @@ stages:
 
       # Session Start and Session End have no performer: fall back to the representative running the session
       - set:
-          user.name: "{{parsed_event.message.primary_rep.name}}"
+          user.name: "{{parsed_event.message.primary_rep.name or resolved_primary_rep.message.name}}"
         filter: "{{parsed_event.message.get('performed_by') == None}}"
 
       - set:
-          source.ip: "{{parsed_event.message.primary_rep.private_ip}}"
-        filter: "{{parsed_event.message.get('performed_by') == None and parsed_event.message.get('primary_rep', {}).get('private_ip') | is_ipaddress}}"
+          source.ip: "{{parsed_event.message.primary_rep.private_ip or resolved_primary_rep.message.private_ip}}"
+        filter: "{{parsed_event.message.get('performed_by') == None and (parsed_event.message.primary_rep.private_ip or resolved_primary_rep.message.private_ip) | is_ipaddress}}"
 
       - set:
           source.nat.ip: "{{parse_primary_rep_public_ip.message.public_ip}}"
@@ -125,22 +143,30 @@ stages:
 
       # the endpoint of the customer is the machine reached through the session
       - set:
-          host.name: "{{parsed_event.message.primary_customer.hostname}}"
-          host.os.full: "{{parsed_event.message.primary_customer.os}}"
+          host.name: "{{parsed_event.message.primary_customer.hostname or resolved_primary_customer.message.hostname}}"
+
+      # BeyondTrust reports an unresolved operating system as the literal 'Unknown'
+      - set:
+          host.os.full: "{{parsed_event.message.primary_customer.os or resolved_primary_customer.message.os}}"
+        filter: "{{(parsed_event.message.primary_customer.os or resolved_primary_customer.message.os) != 'Unknown'}}"
 
       - set:
-          destination.ip: "{{parsed_event.message.primary_customer.private_ip}}"
-        filter: "{{parsed_event.message.get('primary_customer', {}).get('private_ip') | is_ipaddress}}"
+          destination.ip: "{{parsed_event.message.primary_customer.private_ip or resolved_primary_customer.message.private_ip}}"
+        filter: "{{(parsed_event.message.primary_customer.private_ip or resolved_primary_customer.message.private_ip) | is_ipaddress}}"
 
       - set:
           destination.nat.ip: "{{parse_primary_customer_public_ip.message.public_ip}}"
           destination.nat.port: "{{parse_primary_customer_public_ip.message.public_port}}"
         filter: "{{parse_primary_customer_public_ip.message.public_ip | is_ipaddress}}"
 
+      # the customer is the logical target of the event, distinct from the endpoint addresses above
+      - set:
+          destination.user.id: "{{parsed_event.message.primary_customer.gsnumber}}"
+          destination.user.full_name: "{{parsed_event.message.primary_customer.name or resolved_primary_customer.message.name}}"
+
       - set:
           event.reason: "{{parsed_event.message.body or parsed_event.message.data.failure_reason}}"
           host.name: "{{parsed_event.message.data.hostname}}"
-          host.os.full: "{{parsed_event.message.data.os}}"
           user.target.id: "{{parsed_event.message.data.user_id}}"
           user.target.name: "{{parsed_event.message.data.username}}"
           process.executable: "{{parsed_event.message.data.exeName}}"
@@ -155,6 +181,10 @@ stages:
           registry.value: "{{parsed_event.message.data.value_name}}"
 
       - set:
+          host.os.full: "{{parsed_event.message.data.os}}"
+        filter: "{{parsed_event.message.get('data', {}).get('os') not in (None, 'Unknown')}}"
+
+      - set:
           process.command_line: "{{parsed_event.message.data.text}}"
         filter: "{{parsed_event.message.event_type == 'Remote Shell Event'}}"
 
@@ -166,7 +196,7 @@ stages:
       - set:
           beyondtrust.pra.session_id: "{{parsed_event.message.session_id}}"
           beyondtrust.pra.performed_by.type: "{{parsed_event.message.performed_by.type}}"
-          beyondtrust.pra.performed_by.gsnumber: "{{parsed_event.message.performed_by.gsnumber}}"
+          user.id: "{{parsed_event.message.performed_by.gsnumber}}"
           beyondtrust.pra.jump_group.type: "{{parsed_event.message.jump_group.type}}"
           beyondtrust.pra.state: "{{parsed_event.message.data.state}}"
           beyondtrust.pra.owner: "{{parsed_event.message.data.owner}}"
@@ -175,9 +205,7 @@ stages:
           beyondtrust.pra.destination_gsnumber: "{{parsed_event.message.destination.gsnumber}}"
 
       - set:
-          beyondtrust.pra.primary_customer.name: "{{parsed_event.message.primary_customer.name}}"
-          beyondtrust.pra.primary_customer.gsnumber: "{{parsed_event.message.primary_customer.gsnumber}}"
-          beyondtrust.pra.primary_rep.name: "{{parsed_event.message.primary_rep.name}}"
+          beyondtrust.pra.primary_rep.name: "{{parsed_event.message.primary_rep.name or resolved_primary_rep.message.name}}"
           beyondtrust.pra.primary_rep.gsnumber: "{{parsed_event.message.primary_rep.gsnumber}}"
 
           beyondtrust.pra.file_transfer_count: "{{parsed_event.message.file_transfer_count}}"
