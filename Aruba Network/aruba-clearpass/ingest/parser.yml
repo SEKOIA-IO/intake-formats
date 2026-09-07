@@ -1,0 +1,87 @@
+name: aruba-clearpass
+pipeline:
+  - name: parsed_event
+    external:
+      name: cef.parse-cef
+
+  - name: set_common_fields
+
+  - name: set_session_fields
+    filter: "{{parsed_event.message.cat == 'Session Logs'}}"
+
+  - name: set_insight_fields
+    filter: "{{parsed_event.message.cat == 'Insight Logs'}}"
+
+  - name: set_audit_records_fields
+    filter: "{{parsed_event.message.cat == 'Audit Records'}}"
+
+  - name: set_system_fields
+    filter: "{{parsed_event.message.cat == 'ClearPassSystemEvents'}}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          observer.vendor: "Aruba Networks"
+          observer.product: "ClearPass"
+          event.dataset: "aruba-clearpass"
+
+          "@timestamp": "{{parsed_event.message.rt | to_rfc3339}}"
+          event.action: "{{parsed_event.message.act}}"
+          event.code: "{{parsed_event.message.DeviceEventClassID}}"
+          event.severity: "{{parsed_event.message.Severity}}"
+          destination.ip: "{{parsed_event.message.dst}}"
+          destination.mac: "{{parsed_event.message.dmac | to_mac_address}}"
+          observer.ip: "{{parsed_event.message.dvc}}"
+          source.ip: "{{parsed_event.message.src}}"
+          observer.version: "{{parsed_event.message.DeviceVersion}}"
+          user.name: "{{parsed_event.message.duser}}"
+
+          aruba.clearpass.name: "{{parsed_event.message.Name}}"
+          aruba.clearpass.category: "{{parsed_event.message.cat}}"
+
+      - set:
+          user.roles: ["{{parsed_event.message.dpriv.strip('[]')}}"]
+        filter: "{{parsed_event.message.dpriv | length > 0}}"
+
+  set_session_fields:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+
+      - set:
+          aruba.clearpass.system_posture_token: "{{parsed_event.message.get('System Posture Token')}}"
+          aruba.clearpass.enforcement_profile: "{{parsed_event.message.outcome}}"
+
+  set_insight_fields:
+    actions:
+      - set:
+          host.type: "{{parsed_event.message.get('Endpoint.Device-Category')}}"
+          host.os.family: "{{parsed_event.message.get('Endpoint.Device-Family')}}"
+          host.os.full: "{{parsed_event.message.get('Endpoint.Device-Name')}}"
+
+      - set:
+          aruba.clearpass.endpoint.mac_vendor: "{{parsed_event.message.get('Endpoint.MAC-Vendor')}}"
+          aruba.clearpass.endpoint.device_name: "{{parsed_event.message.get('Endpoint.Device-Name')}}"
+          aruba.clearpass.endpoint.device_category: "{{parsed_event.message.get('Endpoint.Device-Category')}}"
+          aruba.clearpass.endpoint.status: "{{parsed_event.message.ArubaClearpassEndpointStatus}}"
+          aruba.clearpass.endpoint.added_at: "{{parsed_event.message.get('Endpoint.Added-At') | to_rfc3339}}"
+
+      - translate:
+        dictionary:
+          "t": "true"
+          "f": "false"
+        mapping:
+          parsed_event.message.ArubaClearpassEndpointConflict: aruba.clearpass.endpoint.conflict
+
+  set_audit_records_fields:
+    actions:
+      - set:
+          file.name: "{{parsed_event.message.fname}}"
+
+  set_system_fields:
+    actions:
+      - set:
+          event.outcome: "{{parsed_event.message.outcome | lower}}"
+          process.name: "{{parsed_event.message.deviceProcessName}}"
