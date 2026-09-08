@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `source.port` from `port` raw field for `xvpn` logs when `srcport` is absent
 - Add SSL test coverage to validate IoC-oriented domain normalization and prevent IP values from populating `dns.question.name`
 
+### Fixed
+
+- Anonymize all test fixtures with RFC 5737 TEST-NET IP ranges and example domains
+
 ## 2025-10-29
 
 ### Added
