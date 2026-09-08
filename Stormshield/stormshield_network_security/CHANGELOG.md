@@ -13,11 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Parse new ECS fields:
   - `destination.geo.country_iso_code` from `dstcountry` raw field
-  - `dns.question.name` from `dstname` raw field when value is domain-like
+  - `dns.question.name` from `dstname` raw field when value is domain-like and not an IP address
   - `dns.question.registered_domain` from `domain` raw field when value is non-empty
   - `source.geo.country_iso_code` from `srccountry` raw field
   - `source.port` from `port` raw field for `xvpn` logs when `srcport` is absent
-- Add SSL test coverage to validate IoC-oriented domain normalization for Stormshield SNS events
+- Add SSL test coverage to validate IoC-oriented domain normalization and prevent IP values from populating `dns.question.name`
 
 ## 2025-10-29
 
