@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-08-14 - 1.0.1
+
+### Added
+
+- Parse new ECS fields:
+  - `service.name`
+
 ## 2023-10-02 - 1.0.0
 
 ### Changed

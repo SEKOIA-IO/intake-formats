@@ -1,0 +1,82 @@
+name: Upwind Security
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.first_seen_time}}"
+        output_field: datetime
+  - name: map_common_fields
+  - name: map_custom_fields
+stages:
+  map_common_fields:
+    actions:
+      - set:
+          observer.vendor: Upwind Security
+          observer.product: Upwind
+          observer.type: cloud
+      - set:
+          log.syslog.severity.name: "{{parsed_event.message.severity}}"
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.kind: alert
+          event.category:
+            - intrusion_detection
+          event.type:
+            - info
+          event.dataset: "{{parsed_event.message.category | lower}}"
+          event.reason: "{{parsed_event.message.description}}"
+          event.url: "{{parsed_event.message.upwind_console_link}}"
+          event.start: "{{parsed_event.message.first_seen_time}}"
+          event.end: "{{parsed_event.message.last_seen_time}}"
+      - translate:
+        dictionary:
+          "CRITICAL": "4"
+          "HIGH": "3"
+          "MEDIUM": "2"
+          "LOW": "1"
+        mapping:
+          final.log.syslog.severity.name: event.severity
+        fallback: "0"
+      - set:
+          rule.id: "{{parsed_event.message.triggers|selectattr('policy_id', 'defined')|map(attribute='policy_id')|list|default(None, true)}}"
+          rule.name: "{{parsed_event.message.triggers|selectattr('policy_name', 'defined')|map(attribute='policy_name')|list|default(None, true)}}"
+        filter: "{{parsed_event.message.triggers is defined and parsed_event.message.triggers | length > 0}}"
+      - set:
+          cloud.provider: "{{parsed_event.message.resource.cloud_provider | lower}}"
+          cloud.account.id: "{{parsed_event.message.resource.cloud_account_id}}"
+          cloud.instance.id: "{{parsed_event.message.resource.id}}"
+          cloud.instance.name: "{{parsed_event.message.resource.name}}"
+      - set:
+          host.name: "{{final.cloud.instance.name}}"
+          host.id: "{{final.cloud.instance.id}}"
+      - set:
+          threat.framework: MITRE ATT&CK
+          threat.tactic.id: "{{parsed_event.message.mitre_attacks[0].tactic_id}}"
+          threat.tactic.name: "{{parsed_event.message.mitre_attacks[0].tactic_name}}"
+          threat.technique.id: "{{parsed_event.message.mitre_attacks[0].technique_id}}"
+          threat.technique.name: "{{parsed_event.message.mitre_attacks[0].technique_name}}"
+        filter: "{{parsed_event.message.mitre_attacks is defined and parsed_event.message.mitre_attacks | length > 0}}"
+  map_custom_fields:
+    actions:
+      - set:
+          upwind.detection.title: "{{parsed_event.message.title}}"
+          upwind.detection.type: "{{parsed_event.message.type}}"
+          upwind.detection.category: "{{parsed_event.message.category}}"
+          upwind.detection.occurrences: "{{parsed_event.message.occurrence_count}}"
+          upwind.detection.status: "{{parsed_event.message.status}}"
+          upwind.detection.resource.type: "{{parsed_event.message.resource.type}}"
+      - set:
+          upwind.detection.initiator.name: "{{parsed_event.message.triggers|map(attribute='events')|sum(start=[]) |map(attribute='initiator.name')|unique|list|default(None, true)}}"
+          upwind.detection.initiator.id: "{{parsed_event.message.triggers|map(attribute='events')|sum(start=[]) |map(attribute='initiator.principalId')|unique|list|default(None, true)}}"
+          upwind.console_link: "{{final.event.url}}"
+        filter: "{{parsed_event.message.triggers is defined and parsed_event.message.triggers|length >0}}"
+      - set:
+          user.name: "{{final.upwind.detection.initiator.name}}"
+          user.id: "{{final.upwind.detection.initiator.id}}"

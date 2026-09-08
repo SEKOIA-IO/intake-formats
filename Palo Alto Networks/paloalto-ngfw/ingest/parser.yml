@@ -263,6 +263,25 @@ pipeline:
           - HighResolutionTimestamp
         delimiter: ","
 
+  # AUDIT CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.DeviceSN in ['audit', 'AUDIT']}}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - DeviceSN
+          - ReceiveTime
+          - Type
+          - EventID
+          - Object
+          - FUTURE_USE
+          - EventDescription
+          - Status
+        delimiter: ","
+
   # THREAT CSV
   - name: parsed_event
     filter: "{{parsed_dsv.message.Type == 'THREAT'}}"
@@ -760,6 +779,24 @@ pipeline:
 
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
+  - name: parsed_system_audit_header
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.EventDescription}}"
+        pattern: "type=%{WORD:audit_type} msg=audit\\(%{NUMBER:audit_epoch}\\.%{NUMBER:audit_msec}:%{NUMBER:audit_seq}\\): pid=%{NUMBER:pid} uid=%{NUMBER:uid} auid=%{NUMBER:auid} ses=%{NUMBER:ses} subj=%{DATA:subj} msg='%{DATA:audit_kv}'"
+    filter: '{{parsed_event.message.get("EventDescription") != None and parsed_event.message.Type in ["audit", "AUDIT"]}}'
+
+  - name: parsed_system_audit_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parsed_system_audit_header.message.audit_kv}}"
+        value_sep: "="
+        item_sep: "\\s"
+    filter: '{{parsed_system_audit_header.message.get("audit_kv") != None}}'
+
   - name: parsed_threat
     external:
       name: grok.match
@@ -785,6 +822,8 @@ pipeline:
         pattern: "%{IP:range_1}-%{IP:range_2}|%{GREEDYDATA:geoname}"
 
   - name: set_extracted_fields
+  - name: set_panos_audit_fields
+    filter: '{{parsed_event.message.Type in ["audit", "AUDIT"]}}'
   - name: set_finalize_user_name
   - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
@@ -1237,6 +1276,36 @@ stages:
           paloalto.destination.region: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
         filter: "{{parsed_ip_range_destination.message.get('range_1') != None and parsed_ip_range_destination.message.get('range_2') != None}}"
 
+  set_panos_audit_fields:
+    actions:
+      - set:
+          action.type: "audit"
+          action.name: "{{parsed_event.message.Object}}"
+          event.action: "{{parsed_system_audit_kv.message.op}}"
+          event.code: "{{parsed_system_audit_header.message.audit_type}}"
+          event.sequence: "{{parsed_system_audit_header.message.audit_seq | int}}"
+          event.outcome: "{{parsed_system_audit_kv.message.res or parsed_event.message.Status}}"
+          action.outcome: "{{parsed_system_audit_kv.message.res or parsed_event.message.Status}}"
+          process.executable: '{{parsed_system_audit_kv.message.exe | replace("\"", "")}}'
+          process.command_line: '{{parsed_system_audit_kv.message.exe | replace("\"", "")}}'
+          process.name: '{{(parsed_system_audit_kv.message.exe | replace("\"", "")).split("/") | last}}'
+          process.pid: "{{parsed_system_audit_header.message.pid}}"
+          group.name: '{{parsed_system_audit_kv.message.grp | replace("\"", "")}}'
+          related.user:
+            - '{{parsed_system_audit_kv.message.acct | replace("\"", "")}}'
+          user.id: "{{parsed_system_audit_header.message.uid}}"
+          user.target.name: '{{parsed_system_audit_kv.message.acct | replace("\"", "")}}'
+          user.name: '{{parsed_system_audit_kv.message.acct | replace("\"", "")}}'
+        filter: '{{parsed_system_audit_kv.get("message") != None}}'
+
+      - set:
+          source.ip: "{{parsed_system_audit_kv.message.addr}}"
+        filter: '{{parsed_system_audit_kv.message.get("addr") not in [None, "?"] and parsed_system_audit_kv.message.addr | is_ipaddress}}'
+
+      - set:
+          host.name: "{{parsed_system_audit_kv.message.hostname}}"
+        filter: '{{parsed_system_audit_kv.message.get("hostname") not in [None, "?"]}}'
+
   set_finalize_user_name:
     actions:
       - set:
@@ -1261,6 +1330,10 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["info"]
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
+        filter: '{{final.action.type == "audit" and final.event.action != None}}'
       - set:
           event.category: ["authentication"]
           event.type: ["info"]
