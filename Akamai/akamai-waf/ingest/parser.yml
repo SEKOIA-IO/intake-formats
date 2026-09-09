@@ -34,7 +34,18 @@ stages:
             {%- endif -%}
 
       - set:
-          event.reason: "{{parse_event.message.attackData.rules[0].ruleMessage}}"
+          event.reason: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('ruleMessage')
+            }}
         filter: "{{parse_event.message.attackData.get('rules', []) | length > 0}}"
 
       - translate:
@@ -81,9 +92,42 @@ stages:
         filter: "{{parse_event.message.httpMessage.get('tls', '').startswith('tls')}}"
 
       - set:
-          rule.id: "{{parse_event.message.attackData.rules[0].rule}}"
-          rule.name: "{{parse_event.message.attackData.rules[0].ruleMessage}}"
-          rule.ruleset: "{{parse_event.message.attackData.rules[0].ruleTag}}"
+          rule.id: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('rule')
+            }}
+          rule.name: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('ruleMessage')
+            }}
+          rule.ruleset: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('ruleTag')
+            }}
         filter: "{{parse_event.message.attackData.get('rules', []) | length > 0}}"
 
       - set:
@@ -94,8 +138,10 @@ stages:
               {%- if rule.get("ruleVersion") -%}{%- set _ = data.update({'version': rule.get("ruleVersion")}) -%}{%- endif -%}
               {%- if rule.get("rule") -%}{%- set _ = data.update({'id': rule.get("rule")}) -%}{%- endif -%}
               {%- if rule.get("ruleDescription") -%}{%- set _ = data.update({'description': rule.get("ruleDescription")}) -%}{%- endif -%}
-              {%- if rule.get("ruleTags") -%}{%- set _ = data.update({'tags': rule.get("ruleTags")}) -%}{%- endif -%}
-              {%- if rule.get("ruleTag") -%}{%- set _ = data.update({'tags': [rule.get("ruleTag")]}) -%}{%- endif -%}
+              {%- set tags = [] -%}
+              {%- if rule.get("ruleTags") -%}{%- set tags = rule.get("ruleTags") -%}{%- endif -%}
+              {%- if rule.get("ruleTag") and rule.get("ruleTag") not in tags -%}{%- set _ = tags.append(rule.get("ruleTag")) -%}{%- endif -%}
+              {%- if tags | length > 0 -%}{%- set _ = data.update({'tags': tags}) -%}{%- endif -%}
               {%- if rule.get("ruleSelector") -%}{%- set _ = data.update({'selector': rule.get("ruleSelector")}) -%}{%- endif -%}
               {%- if rule.get("ruleData") -%}{%- set _ = data.update({'data': rule.get("ruleData")}) -%}{%- endif -%}
               {%- if rule.get("ruleMessage") -%}{%- set _ = data.update({'message': rule.get("ruleMessage")}) -%}{%- endif -%}
