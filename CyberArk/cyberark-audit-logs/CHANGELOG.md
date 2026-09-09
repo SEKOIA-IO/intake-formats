@@ -21,4 +21,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Normalize ITDR `event.outcome` to ECS value `unknown` and preserve raw status in `cyberark.audit.status`
+- Normalize ITDR `event.outcome` from `customData.Status` (only when it is present) with ECS semantics: `success`/`failure` when resolvable, `unknown` otherwise
