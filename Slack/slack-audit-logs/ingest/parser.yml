@@ -1,0 +1,372 @@
+name: slack-audit-logs
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.date_create | string}}"
+        output_field: datetime
+        format: timestamp
+  - name: set_common_fields
+  - name: set_entity_fields
+  - name: set_event_categorization
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.action: "{{json_event.message.action}}"
+          event.dataset: "slack.audit"
+          event.kind: "event"
+          file.hash.md5: "{{json_event.message.details.md5_hash}}"
+          observer.product: "Slack Audit Logs"
+          observer.vendor: "Slack"
+          organization.id: "{{json_event.message.context.location.id}}"
+          organization.name: "{{json_event.message.context.location.name}}"
+          slack.audit_logs.actor.account_type: "{{json_event.message.actor.user.account_type}}"
+          slack.audit_logs.actor.type: "{{json_event.message.actor.type}}"
+          slack.audit_logs.app.id: "{{json_event.message.context.app.id}}"
+          slack.audit_logs.app.name: "{{json_event.message.context.app.name}}"
+          slack.audit_logs.app.scopes: "{{json_event.message.context.app.scopes}}"
+          slack.audit_logs.app.scopes_bot: "{{json_event.message.context.app.scopes_bot}}"
+          slack.audit_logs.details: "{{json_event.message.details}}"
+          slack.audit_logs.id: "{{json_event.message.id}}"
+          slack.audit_logs.location.type: "{{json_event.message.context.location.type}}"
+          slack.audit_logs.session_id: "{{json_event.message.context.session_id}}"
+          url.original: "{{json_event.message.details.url_private}}"
+          user.email: "{{json_event.message.actor.user.email}}"
+          user.full_name: "{{json_event.message.actor.user.name}}"
+          user.id: "{{json_event.message.actor.user.id}}"
+          user.name: "{{json_event.message.actor.user.name}}"
+          user.target.id: "{{json_event.message.details.target_user}}"
+          user_agent.original: "{{json_event.message.context.ua}}"
+
+      - set:
+          source.ip: "{{json_event.message.context.ip_address}}"
+        filter: "{{json_event.message.context.ip_address | is_ipaddress}}"
+
+  set_entity_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["info"]
+          slack.audit_logs.entity.type: "{{json_event.message.entity.type}}"
+
+      - set:
+          slack.audit_logs.entity.id: "{{json_event.message.entity[json_event.message.entity.type].id}}"
+          slack.audit_logs.entity.name: "{{json_event.message.entity[json_event.message.entity.type].name}}"
+          slack.audit_logs.entity.scopes: "{{json_event.message.entity[json_event.message.entity.type].scopes}}"
+        filter: '{{json_event.message.entity.type != "file"}}'
+
+      # Slack echoes the actor back as the entity on self-directed events.
+      - set:
+          user.target.email: "{{json_event.message.entity.user.email}}"
+          user.target.full_name: "{{json_event.message.entity.user.name}}"
+          user.target.id: "{{json_event.message.entity.user.id}}"
+          user.target.name: "{{json_event.message.entity.user.name}}"
+        filter: >-
+          {{json_event.message.entity.type == "user"
+          and json_event.message.entity.user.id != json_event.message.actor.user.id}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["user", "info"]
+        filter: '{{json_event.message.entity.type == "user"}}'
+
+      - set:
+          slack.audit_logs.entity.privacy: "{{json_event.message.entity.channel.privacy}}"
+        filter: '{{json_event.message.entity.type == "channel"}}'
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+          file.name: "{{json_event.message.entity.file.name}}"
+          slack.audit_logs.entity.id: "{{json_event.message.entity.file.id}}"
+        filter: '{{json_event.message.entity.type == "file"}}'
+
+      - set:
+          file.extension: '{{json_event.message.entity.file.name.split(".") | last | lower}}'
+        filter: >-
+          {{json_event.message.entity.type == "file"
+          and "." in json_event.message.entity.file.get("name", "")}}
+
+      - set:
+          file.mime_type: "{{json_event.message.entity.file.filetype}}"
+        filter: >-
+          {{json_event.message.entity.type == "file"
+          and "/" in json_event.message.entity.file.get("filetype", "")}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["group", "info"]
+        filter: '{{json_event.message.entity.type == "usergroup"}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["admin", "info"]
+        filter: '{{json_event.message.entity.type == "role"}}'
+
+      - set:
+          event.category: ["database"]
+          event.type: ["info"]
+          slack.audit_logs.entity.channel: "{{json_event.message.entity.message.channel}}"
+          slack.audit_logs.entity.timestamp: "{{json_event.message.entity.message.timestamp}}"
+        filter: '{{json_event.message.entity.type == "message"}}'
+
+      - set:
+          slack.audit_logs.entity.provider: "{{json_event.message.entity.external_auth_oauth2_token.provider.key}}"
+          slack.audit_logs.entity.scopes: "{{json_event.message.entity.external_auth_oauth2_token.scope}}"
+        filter: '{{json_event.message.entity.type == "external_auth_oauth2_token"}}'
+
+      - set:
+          event.category: ["session"]
+          event.start: "{{json_event.message.entity.huddle.date_start | to_rfc3339}}"
+          event.type: ["info"]
+        filter: '{{json_event.message.entity.type == "huddle"}}'
+
+      # Slack sends `date_end: 0` while the huddle is still running.
+      - set:
+          event.end: "{{json_event.message.entity.huddle.date_end | to_rfc3339}}"
+        filter: >-
+          {{json_event.message.entity.type == "huddle"
+          and json_event.message.entity.huddle.date_end != 0}}
+
+  # Later actions overwrite earlier ones, and 81 of the 83 known actions match more than one
+  # branch here: reordering this list silently changes what they resolve to. `pref.` stays last.
+  set_event_categorization:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["user", "change"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("user_", "guest_",
+          "owner_"))}}
+
+      - set:
+          event.type: ["user", "creation"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("user_", "guest_",
+          "owner_"))
+          and json_event.message.get("action", "").endswith(("_created",
+          "_added"))}}
+
+      - set:
+          event.type: ["user", "deletion"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("user_", "guest_",
+          "owner_"))
+          and json_event.message.get("action", "").endswith(("_deactivated",
+          "_deleted", "_disabled"))}}
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("user_login"))
+          or json_event.message.get("action", "") == "user_logout"}}
+
+      - set:
+          event.type: ["start"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("user_login"))}}
+
+      - set:
+          event.type: ["end"]
+        filter: '{{json_event.message.get("action", "") == "user_logout"}}'
+
+      - set:
+          event.outcome: "success"
+        filter: >-
+          {{json_event.message.get("action", "") in ("user_login")}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["admin", "change"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("auth_", "idp_",
+          "role_",
+          "external_auth_"))}}
+
+      - set:
+          event.type: ["admin", "creation"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("auth_", "idp_",
+          "role_"))
+          and json_event.message.get("action", "").endswith(("_created",
+          "_added", "_assigned", "_granted", "_enabled"))}}
+
+      - set:
+          event.type: ["admin", "deletion"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("auth_", "idp_",
+          "role_"))
+          and json_event.message.get("action", "").endswith(("_removed",
+          "_deleted", "_revoked", "_disabled"))}}
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("channel_",
+          "public_channel_", "private_channel_", "connect_", "workspace_", "organization_",
+          "workflow_", "emoji_", "billing_", "barrier_",
+          "app_", "org_app_"))}}
+
+      - set:
+          event.type: ["creation"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("channel_",
+          "public_channel_", "private_channel_", "connect_", "workspace_", "organization_",
+          "workflow_", "emoji_", "billing_", "barrier_",
+          "app_", "org_app_"))
+          and json_event.message.get("action", "").endswith(("_created",
+          "_added"))}}
+
+      - set:
+          event.type: ["deletion"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("channel_",
+          "public_channel_", "private_channel_", "connect_", "workspace_", "organization_",
+          "workflow_", "emoji_", "billing_", "barrier_",
+          "app_", "org_app_"))
+          and json_event.message.get("action", "").endswith(("_deleted",
+          "_removed", "_archive", "_archived", "_uninstalled"))}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["group", "change"]
+        filter: >-
+          {{"usergroup" in json_event.message.get("action", "")
+          or "channel_join" in json_event.message.get("action", "")
+          or "channel_leave" in json_event.message.get("action", "")
+          or "channel_member" in json_event.message.get("action", "")
+          or "channel_invite" in json_event.message.get("action", "")}}
+
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("file_", "canvas_",
+          "list_"))}}
+
+      - set:
+          event.type: ["creation"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("file_", "canvas_",
+          "list_"))
+          and json_event.message.get("action", "").endswith(("_uploaded",
+          "_created"))}}
+
+      - set:
+          event.type: ["change"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("file_", "canvas_",
+          "list_"))
+          and json_event.message.get("action", "").endswith(("_edited",
+          "_changed", "_updated", "_renamed"))}}
+
+      - set:
+          event.type: ["deletion"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("file_", "canvas_",
+          "list_"))
+          and json_event.message.get("action", "").endswith(("_deleted",
+          "_revoked"))}}
+
+      - set:
+          event.category: ["database"]
+          event.type: ["change"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith("message_")
+          or "_message_" in json_event.message.get("action", "")
+          or json_event.message.get("action", "").endswith("_message")}}
+
+      - set:
+          event.type: ["access", "change"]
+        filter: >-
+          {{(json_event.message.get("action", "").startswith("message_")
+          or "_message_" in json_event.message.get("action", "")
+          or json_event.message.get("action", "").endswith("_message"))
+          and "forward" in json_event.message.get("action", "")}}
+
+      - set:
+          event.category: ["database"]
+          event.type: ["access"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("mcp_",
+          "slack_ai_"))
+          or "_tool_called" in json_event.message.get("action", "")
+          or "_preview" in json_event.message.get("action", "")
+          or ("export" in json_event.message.get("action", "")
+          and json_event.message.get("action", "").endswith(("_exported", "_started", "_completed", "_downloaded")))}}
+
+      - set:
+          event.type: ["change"]
+        filter: >-
+          {{(json_event.message.get("action", "").startswith(("mcp_",
+          "slack_ai_"))
+          or "_tool_called" in json_event.message.get("action", ""))
+          and ("_send_" in json_event.message.get("action", "")
+          or "_create_" in json_event.message.get("action", "")
+          or "_update_" in json_event.message.get("action", "")
+          or "_delete_" in json_event.message.get("action", ""))}}
+
+      - set:
+          event.category: ["session"]
+          event.type: ["info"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("huddle_"))}}
+
+      - set:
+          event.type: ["start"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("huddle_"))
+          and json_event.message.get("action", "").endswith(("_started",
+          "_joined"))}}
+
+      - set:
+          event.type: ["end"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith(("huddle_"))
+          and json_event.message.get("action", "").endswith(("_ended", "_left"))}}
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: '{{json_event.message.get("action", "").startswith("pref.")}}'
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.kind: "alert"
+          event.type: ["info"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith("anomaly")
+          or "suspicious" in json_event.message.get("action", "")}}
+
+      - set:
+          event.reason: '{{json_event.message.details.reason | join(", ")}}'
+        filter: "{{json_event.message.details.reason is iterable}}"
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.kind: "alert"
+          event.type: ["denied"]
+        filter: '{{json_event.message.get("action", "") == "native_dlp_rule_action_applied"}}'
+
+      - set:
+          event.category: ["file", "malware"]
+          event.kind: "alert"
+          event.type: ["info"]
+        filter: >-
+          {{json_event.message.get("action", "").startswith("file_malicious")
+          or json_event.message.get("action", "").endswith("_malicious_content_detected")}}
+
+      - set:
+          event.outcome: "failure"
+        filter: >-
+          {{"_failed" in json_event.message.get("action", "")
+          or json_event.message.get("action", "").endswith("_failure")}}
