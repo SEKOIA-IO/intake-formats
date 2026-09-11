@@ -1,0 +1,102 @@
+name: akamai_datastream2_delivery
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.reqTimeSec}}"
+        output_field: date
+
+  - name: set_ecs_fields
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["web"]
+          event.type: ["access"]
+          event.kind: "event"
+          event.dataset: "akamai.datastream2_delivery"
+          observer.vendor: "Akamai"
+          observer.product: "DataStream 2"
+          observer.type: "cdn"
+
+      - set:
+          "@timestamp": "{{parsed_date.date}}"
+          error.code: "{{parsed_event.message.errorCode}}"
+          http.request.id: "{{parsed_event.message.reqId}}"
+          http.request.method: "{{parsed_event.message.reqMethod}}"
+          http.request.referrer: "{{parsed_event.message.referer}}" ### need url decode
+          http.response.body.bytes: "{{parsed_event.message.rspContentLen}}"
+          http.response.mime_type: "{{parsed_event.message.rspContentType}}"
+          http.response.status_code: "{{parsed_event.message.statusCode}}"
+          network.bytes: "{{parsed_event.message.totalBytes}}"
+          network.forwarded_ip: "{{parsed_event.message.xForwardedFor}}"
+          network.protocol: "{{parsed_event.message.proto | lower}}"
+          observer.geo.country_iso_code: "{{parsed_event.message.serverCountry}}"
+          observer.ip: "{{parsed_event.message.edgeIP}}"
+          source.geo.city_name: "{{parsed_event.message.city}}"
+          source.geo.country_iso_code: "{{parsed_event.message.country}}"
+          source.geo.region_name: "{{parsed_event.message.state}}" ### need url decode
+          source.ip: "{{parsed_event.message.cliIp}}"
+          tls.version: "{{parsed_event.message.tlsVersion | trim('TLSv')}}"
+          url.domain: "{{parsed_event.message.reqHost}}"
+          url.path: "{{parsed_event.message.reqPath}}"
+          url.port: "{{parsed_event.message.reqPort}}"
+          url.query: "{{parsed_event.message.queryStr}}"
+          user_agent.original: "{{parsed_event.message.UA}}" ### need url decode
+
+      - set:
+          event.outcome: >
+            {%- set status_code = parsed_event.message.get('statusCode') | int -%}
+            {%- if status_code is not none -%}
+              {%- if status_code >= 200 and status_code < 400 -%}
+                success
+              {%- elif status_code >= 400 and status_code < 600 -%}
+                failure
+              {%- else -%}
+                unknown
+              {%- endif -%}
+            {%- else -%}
+              unknown
+            {%- endif -%}
+
+  set_custom_fields:
+    actions:
+      - set:
+          akamai.datastream2.version: "{{parsed_event.message.version}}"
+          akamai.datastream2.stream_id: "{{parsed_event.message.streamId}}"
+          akamai.datastream2.cp_code: "{{parsed_event.message.cp}}"
+          akamai.datastream2.object_size: "{{parsed_event.message.objSize}}"
+          akamai.datastream2.uncompressed_size: "{{parsed_event.message.uncompressedSize}}"
+          akamai.datastream2.overhead_bytes: "{{parsed_event.message.overheadBytes}}"
+          akamai.datastream2.tls_overhead_time_ms: "{{parsed_event.message.tlsOverheadTimeMSec}}"
+          akamai.datastream2.breadcrumbs: "{{parsed_event.message.breadcrumbs}}"
+          akamai.datastream2.accept_language: "{{parsed_event.message.accLang | urldecode}}" ### need url decode
+          akamai.datastream2.cookie: "{{parsed_event.message.cookie}}" ### need url decode
+          akamai.datastream2.range: "{{parsed_event.message.range}}"
+          akamai.datastream2.max_age_sec: "{{parsed_event.message.maxAgeSec}}"
+          akamai.datastream2.request_end_time_ms: "{{parsed_event.message.reqEndTimeMSec}}"
+          akamai.datastream2.turn_around_time_ms: "{{parsed_event.message.turnAroundTimeMSec}}"
+          akamai.datastream2.transfer_time_ms: "{{parsed_event.message.transferTimeMSec}}"
+          akamai.datastream2.dns_lookup_time_ms: "{{parsed_event.message.dnsLookupTimeMSec}}"
+          akamai.datastream2.last_byte: "{{parsed_event.message.lastByte}}"
+          akamai.datastream2.billing_region: "{{parsed_event.message.billingRegion}}"
+          akamai.datastream2.edgeworkers_execution: "{{parsed_event.message.ewExecutionInfo}}"
+          akamai.datastream2.edgeworkers_usage: "{{parsed_event.message.ewUsageInfo}}"
+
+      - set:
+          akamai.datastream2.cache_status: "{{parsed_event.message.cacheStatus}}"
+        filter: "{{parsed_event.message.get('cacheStatus') | int in [0, 1]}}"
+
+      - set:
+          akamai.datastream2.security_rules: "{{parsed_event.message.securityRules}}"
+        filter: "{{parsed_event.message.get('securityRules') in ['policyId','nonDeny','deny']}}"
