@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-09-14
+
+### Changed
+
+- Parse the client IP of `user@IP` session events (login, logout, bad username, SSH session) as `source.ip` instead of `host.ip`
+
 ## 2026-08-14 - 1.0.1
 
 ### Added
