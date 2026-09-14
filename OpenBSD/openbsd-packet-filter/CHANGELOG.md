@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-09-14 - 1.0.4
+
+### Fixed
+
+- Parse filterlog events whose reason is hyphenated, such as `ip-option`, `bad-offset` or `state-mismatch`.
+  These events were dropped by the grok pattern, which accepted only single-word reasons
+
 ## 2026-09-04 - 1.0.3
 
 ### Fixed
