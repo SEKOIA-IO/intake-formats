@@ -7,21 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2024-02-21 - 1.0.0
+## [1.0.2] - 2026-09-01
 
 ### Added
 
-- code migration
-- changed:
+- Parse new ECS fields:
+  - `network.application` (for `Application Control` events, only when CEF header `Name` strictly matches an allowlist of known application-level protocols)
+  - `network.bytes` (for CEF events when both `in` and `out` are present and numeric)
+  - `network.iana_number` (when `proto` is numeric)
+  - `observer.ip` (when `origin` is a valid IP address)
+  - `observer.product`
+- Parse new custom fields:
+  - `checkpoint.application_name`
+- Enrich smart descriptions to cover newly added and extended ECS/custom fields across additional event families
+- Complete and harmonize descriptions for all defined custom fields in metadata
 
-| Before update                                                                                                           | After Update                                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source.port` is a float                                                                                                | `source.port` is an int                                                                                                                                                                                                                                                          |
-| `source.nat.port` is a float                                                                                            | `source.nat.port` is an int                                                                                                                                                                                                                                                      |
-| `destination.port` is a float                                                                                           | `destination.port` is an int                                                                                                                                                                                                                                                     |
-| `destination.port` is a float                                                                                           | `destination.port` is an int                                                                                                                                                                                                                                                     |
-| `action.properties.originsicname: 'CN\\=ertfw01,O=foomgmt.foobar.local.zazgch'`                                         | `'originsicname': 'CN=ertfw01,O=foomgmt.foobar.local.zazgch'`                                                                                                                                                                                                                    |
-| `action.properties` is of type list[dict]                                                                               | `action.properties` is of type dict (no impact expected)                                                                                                                                                                                                                         |
-| `network.transport` was not always translated to the equivalent string value (ex. 1=>imcp)                              | `network.transport` is always translated to string                                                                                                                                                                                                                               |
-| truncated content for `action.properties.encryption_methods`, `action.properties.ike_ids`, `action.properties.ike_mode` | the content of the field is complete (e.g. `ESP` become `ESP: AES-256 + SHA1 + PFS (group 5)`                                                                                                                                                                                    |
-| fix user_agent parsing of logs type `geo_protection` (e.g. previously `user_agent.original: Google Chrome`)             | `user_agent.device.name: Other user_agent.name: Chrome user_agent.original: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.190 Safari/537.36 user_agent.os.name: Windows user_agent.os.version: 10 user_agent.version: 88.0.4324 ` |
+### Changed
+
+- Extend existing ECS fields:
+  - `destination.user.name` (fallback extraction from `dst_user_dn` CN when direct username is missing)
+  - `source.user.name` (fallback extraction from `src_user_dn` CN when direct username is missing)
+  - `log.hostname` (fallback extraction from `originsicname` CN when direct hostname is missing)
+  - `rule.name` (fallback to CEF `Rule Name` when `rule_name` is missing)
+- Extend existing custom fields:
+  - `action.properties.observer_type` (fallback to `product` when `DeviceProduct` is missing)
+  - `action.properties.product` (fallback to `DeviceProduct` when `product` is missing)
+  - `action.properties.rule_name` (fallback to `rule_name` when CEF `Rule Name` is missing)
+- Improve DN CN fallback extraction for `source.user.name`, `destination.user.name`, and `log.hostname`:
+  - Preserve escaped commas in CN values (for example `CN=LAST\,FIRST,...` -> `LAST,FIRST`)
+  - Keep backward-compatible handling of escaped separators in DN strings
+- Fully anonymize all JSON test fixtures under `tests/` and harmonize fixture filenames to consistent `CEF_` and `Syslog_` snake_case families
+
+## [1.0.1] - 2026-08-13
+
+### Added
+
+- Parse new ECS fields from `New Anti Virus` events:
+  - `event.reason`
+  - `event.risk_score`
+  - `threat.software.name`
+- Parse new custom fields from `New Anti Virus` events:
+  - `checkpoint.malware_action_or_attack_information`
+  - `checkpoint.malware_family`
+  - `checkpoint.protection_name`
+  - `checkpoint.protection_type`
+  - `checkpoint.threat_prevention_rule_id`
+- Parse malware fields from fixed label names (e.g., `Protection Type`, `Protection Name`, `Threat Prevention Rule ID`, `Malware Family`, `Confidence`, `Malware Action`) while tolerating slot reordering across indexes (e.g., `cs1/cs2.../csX`, `cs1Label/cs2Label.../csXLabel`, `flexNumber1/flexNumber2.../flexNumberX`)
+- Harden malware extraction filters to target `DeviceProduct=New Anti Virus` and avoid false positives on other events
+
+## [1.0.0] - 2024-02-21
+
+### Changed
+
+- Code migration:
+
+| Before update | After update |
+|---|---|
+| source.port is a float | source.port is an int |
+| source.nat.port is a float | source.nat.port is an int |
+| destination.port is a float | destination.port is an int |
+| destination.nat.port is a float | destination.nat.port is an int |
+| action.properties.originsicname contains escaped separators (ex: CN\\=ertfw01,O=foomgmt.foobar.local.zazgch) | action.properties.originsicname is normalized (ex: CN=ertfw01,O=foomgmt.foobar.local.zazgch) |
+| action.properties is a list of objects | action.properties is a dictionary (no impact expected) |
+| network.transport may remain a numeric protocol value (ex: 1 => icmp) | network.transport is always translated to protocol string |
+| action.properties.encryption_methods, action.properties.ike_ids and action.properties.ike_mode can be truncated | these field values are parsed in full (ex: ESP becomes ESP: AES-256 + SHA1 + PFS (group 5)) |
+| user_agent parsing for geo_protection logs is partial | user_agent fields are fully parsed (device/name/original/os/version) |

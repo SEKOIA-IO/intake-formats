@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-08-12
+
+### Added
+
+- Extend alert tests to validate MITRE tactic and technique mapping
+- Parse new ECS fields:
+  - `threat.tactic`
+  - `threat.technique`
+
 ## 2026-07-20
 
 ### Added

@@ -52,6 +52,7 @@ stages:
           network.transport: "{{ kv.result.ipproto }}"
           destination.port: "{{ kv.result.dstport }}"
           destination.geo.continent_name: "{{ kv.result.dstcontinent }}"
+          destination.geo.country_iso_code: "{{ kv.result.dstcountry }}"
           event.duration: "{{ kv.result.duration | float * 1000000000 }}" # Duration of the connection in seconds converted in nanoseconds.
           observer.hostname: "{{ kv.result.fw }}"
           observer.vendor: "Stormshield"
@@ -79,6 +80,7 @@ stages:
           source.port: "{{ kv.result.srcport }}"
           source.mac: "{{ kv.result.srcmac }}"
           source.geo.continent_name: "{{ kv.result.srccontinent }}"
+          source.geo.country_iso_code: "{{ kv.result.srccountry }}"
           destination.ip: "{{ kv.result.dst }}"
 
       - set:
@@ -108,6 +110,10 @@ stages:
           stormshield.ike.peer.cookie: "{{ kv.result.cookie_r }}"
           stormshield.ike.initiator.cookie: "{{ kv.result.cookie_i }}"
         filter: '{{ kv.result.logtype in ("vpn", "xvpn") }}'
+
+      - set:
+          source.port: "{{ kv.result.port }}"
+        filter: '{{ kv.result.logtype == "xvpn" and kv.result.get("port") not in (None, "") and kv.result.get("srcport") in (None, "") }}'
 
       - set:
           event.type: ["info"]
@@ -602,6 +608,14 @@ stages:
           url.domain: "{{ kv.result.dstname }}"
           url.path: "{{ kv.result.arg }}"
         filter: '{{ kv.result.logtype == "plugin" and kv.result.proto == "http" }}'
+
+      - set:
+          dns.question.name: "{{ kv.result.dstname }}"
+        filter: '{{ kv.result.logtype == "ssl" and kv.result.get("dstname") and "." in kv.result.dstname and "_" not in kv.result.dstname and not (kv.result.dstname | is_ipaddress) }}'
+
+      - set:
+          dns.question.registered_domain: "{{ kv.result.domain }}"
+        filter: '{{ kv.result.logtype == "ssl" and kv.result.get("domain") not in (None, "") }}'
 
   set_startime:
     actions:
