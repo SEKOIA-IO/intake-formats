@@ -335,11 +335,10 @@ Our CI/CD workflow automatically scans for:
 If non-anonymized data is discovered after commit:
 
 1. Replace sensitive values with anonymized equivalents in the source test files.
-2. If any credentials or secrets were exposed, revoke or rotate them immediately.
-3. Rewrite Git history to remove previously committed sensitive values.
-4. If the data was already pushed to a shared or default branch, follow the GitHub guidance for removing sensitive data from a repository.
-5. Re-run anonymization checks to confirm the data is fully sanitized.
-6. Add or improve detection rules so the same pattern is caught next time.
+2. Rewrite Git history only on the branch associated with the pull request; never rewrite history on `develop` or `production`.
+3. If the data was already pushed to a shared or default branch, ask a human operator to follow the GitHub guidance for removing sensitive data from a repository.
+4. Re-run anonymization checks to confirm the data is fully sanitized.
+5. Add or improve detection rules so the same pattern is caught next time.
 
 ## Need Help?
 
