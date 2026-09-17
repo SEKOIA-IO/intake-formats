@@ -1,0 +1,72 @@
+name: hodor-activity
+pipeline:
+  # The HTTPS intake unwraps the transport's `json` field before parsing.
+  # `original.message` is the Hodor envelope, never the intake-key wrapper.
+  - name: parsed_event
+    external:
+      name: json.parse-json
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.message.occurred_at }}"
+        output_field: datetime
+  - name: set_common_fields
+  - name: set_hodor_fields
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{ parsed_date.datetime }}"
+          event.kind: event
+          event.category: ["web"]
+          event.type: ["access"]
+          event.module: hodor
+          event.dataset: hodor.activity
+          event.action: "{{ parsed_event.message.action }}"
+          event.outcome: unknown
+          observer.vendor: Hodor
+          observer.product: Hodor
+          organization.id: "{{ parsed_event.message.workspace.id }}"
+          organization.name: "{{ parsed_event.message.workspace.name }}"
+          user.id: "{{ parsed_event.message.actor.profile_id }}"
+          user.email: "{{ parsed_event.message.actor.email }}"
+          user.name: "{{ parsed_event.message.actor.name or parsed_event.message.actor.email }}"
+          user.full_name: "{{ parsed_event.message.actor.name }}"
+          service.name: "{{ parsed_event.message.provider }}"
+          error.message: "{{ parsed_event.message.result.error_message }}"
+      - set:
+          event.duration: "{{ parsed_event.message.result.duration_ms * 1000000 }}"
+        filter: "{{ parsed_event.message.result.duration_ms is defined and parsed_event.message.result.duration_ms is not none }}"
+      # HTTP 200 can carry a tool error. A failure does not prove a policy denial.
+      - set:
+          event.outcome: failure
+        filter: "{{ parsed_event.message.result.is_error == true }}"
+      - set:
+          event.outcome: success
+        filter: "{{ parsed_event.message.result.is_error == false }}"
+
+  set_hodor_fields:
+    actions:
+      - set:
+          # Sekoia owns event.id; retain Hodor's delivery ID separately.
+          hodor.event_id: "{{ parsed_event.message.id }}"
+          hodor.schema_version: "{{ parsed_event.message.schema_version }}"
+          hodor.kind: "{{ parsed_event.message.kind }}"
+          # ECS agent.* identifies a log shipper, not Hodor's AI identity.
+          hodor.agent.id: "{{ parsed_event.message.agent.id }}"
+          hodor.agent.name: "{{ parsed_event.message.agent.name }}"
+          hodor.agent.description: "{{ parsed_event.message.agent.description }}"
+          hodor.contract.id: "{{ parsed_event.message.contract.id }}"
+          hodor.contract.label: "{{ parsed_event.message.contract.label }}"
+          hodor.contract.description: "{{ parsed_event.message.contract.description }}"
+          # Hodor's fault-attributing status is not the raw upstream HTTP status.
+          hodor.status_code: "{{ parsed_event.message.result.status_code }}"
+          hodor.payload_visibility: "{{ parsed_event.message.metadata.payload_visibility }}"
+          hodor.payload_mode: "{{ parsed_event.message.metadata.payload_mode }}"
+          hodor.source_activity_id: "{{ parsed_event.message.metadata.source_activity_id }}"
+          hodor.connector.id: "{{ parsed_event.message.metadata.extras.workspace_provider_catalog_id }}"
+          hodor.catalog_provider.id: "{{ parsed_event.message.metadata.extras.tool_catalog_provider_id }}"
+          hodor.request: "{{ parsed_event.message.payload.request }}"
+          hodor.response: "{{ parsed_event.message.payload.response }}"
