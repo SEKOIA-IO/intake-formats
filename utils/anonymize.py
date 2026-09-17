@@ -29,7 +29,8 @@ def parse_path(path) -> list[str]:
     (e.g., 'a.b[0].c'), into a list of individual keys/indices.
     Example: 'a.b[0].c' -> ['a', 'b', '0', 'c']
     """
-    return re.findall(r"[^.[\\]+", path)
+    # Split on dots and square brackets while preserving numeric list indices.
+    return re.findall(r"[^.\[\]]+", path)
 
 
 def deep_get(data: Any, path: str) -> Any:
@@ -69,7 +70,7 @@ def gather_files(paths: list) -> list[Path]:
 
                 result.append(path)
 
-    return result
+    return sorted(set(result))
 
 
 class Anonymizer:
@@ -142,8 +143,8 @@ class Anonymizer:
             groups[4] += 1
 
             for i in range(4, -1, -1):
-                if groups[i] > 16:
-                    groups[i] = 1
+                if groups[i] > 255:
+                    groups[i] = 0
                     if i > 0:
                         groups[i - 1] += 1
 
@@ -164,7 +165,7 @@ class Anonymizer:
 
         # We don't want to overwrite correct UUIDs
         fake_uuids = self.generate_fake_uuids()
-        for uuid_old in uuids_to_fix:
+        for uuid_old in sorted(uuids_to_fix):
             uuid_new = next(fake_uuids)
             while uuid_new in uuids_correct:
                 uuid_new = next(fake_uuids)
@@ -182,9 +183,9 @@ class Anonymizer:
         all_hashes = set(re.findall(re_hash, t))
 
         hash_to_new = {}
-        for hash in all_hashes:
-            if hash != c:
-                hash_to_new[hash] = c
+        for hash_value in sorted(all_hashes):
+            if hash_value != c:
+                hash_to_new[hash_value] = c
 
         for hash_old, hash_new in hash_to_new.items():
             logger.warning(f"Will replace {hash_old} with {hash_new}")
@@ -225,7 +226,7 @@ class Anonymizer:
         ip_to_new = {}
 
         n = 1
-        for ip in ips_to_fix:
+        for ip in sorted(ips_to_fix):
             tmp = [str(n)] * 4
             new_ip = ".".join(tmp)
 
@@ -273,6 +274,15 @@ class Anonymizer:
 
         return self.anonymization_check.validate_mac(v)
 
+    @staticmethod
+    def iter_string_values(field_value: Any):
+        if isinstance(field_value, str):
+            yield field_value
+        elif isinstance(field_value, list):
+            for value in field_value:
+                if isinstance(value, str):
+                    yield value
+
     def replace_emails_and_usernames(self, raw: dict[str, Any], text: str) -> str:
         usernames_to_replace = set()
 
@@ -282,9 +292,12 @@ class Anonymizer:
         # Try to use extracted fields first
         for field_name in USERNAME_FIELDS:
             field_value = deep_get(raw["expected"], field_name)
-            if field_value:
-                if not self.validate_username(field_value):
-                    usernames_to_replace.add(field_value)
+            if not field_value:
+                continue
+
+            for value in self.iter_string_values(field_value):
+                if not self.validate_username(value):
+                    usernames_to_replace.add(value)
 
         # Search trough raw message
         # (?<!\\) in order to avoid grabbing escaped characters (e.g. \\t) along with an email
@@ -303,7 +316,8 @@ class Anonymizer:
                 # as we identified username, we can now replace it through the whole event
                 usernames_to_replace.add(username)
 
-        for i, username in enumerate(usernames_to_replace, start=1):
+        sorted_usernames = sorted(usernames_to_replace, key=lambda value: (-len(value), value.lower()))
+        for i, username in enumerate(sorted_usernames, start=1):
             logger.warning(f"Will replace {username} with user{i}")
             username_mapping[f"user{i}"] = re.compile(re.escape(username), re.IGNORECASE)
 
@@ -324,17 +338,34 @@ class Anonymizer:
         # Try to use extracted fields as well
         for field_name in URL_FIELDS:
             field_value = deep_get(raw["expected"], field_name)
-            if field_value:
-                if not self.validate_url(field_value):
-                    all_urls.add(field_value)
+            if not field_value:
+                continue
+
+            for value in self.iter_string_values(field_value):
+                if not self.validate_url(value):
+                    all_urls.add(value)
 
         if all_urls:
-            for url in all_urls:
+            for url in sorted(all_urls):
                 parsed_url = urlparse(url)
-                domain = parsed_url.netloc
-                if not self.validate_domain(domain):
-                    new_domain = "example.com"
-                    updated_url = parsed_url._replace(netloc=new_domain)
+                hostname = parsed_url.hostname or ""
+                has_credentials = parsed_url.username is not None or parsed_url.password is not None
+                should_replace_host = not self.validate_domain(hostname)
+
+                if should_replace_host or has_credentials:
+                    new_host = "example.com" if should_replace_host else hostname
+                    try:
+                        port = parsed_url.port
+                    except ValueError:
+                        port = None
+
+                    netloc = new_host
+                    if ":" in new_host and not new_host.startswith("["):
+                        netloc = f"[{new_host}]"
+                    if port is not None:
+                        netloc = f"{netloc}:{port}"
+
+                    updated_url = parsed_url._replace(netloc=netloc)
                     url_mapping[url] = urlunparse(updated_url)
 
         for url_from, url_to in url_mapping.items():
@@ -361,7 +392,7 @@ class Anonymizer:
         fake_sids = self.generate_fake_sids()
         sid_to_replace = {}
 
-        for sid_old in sids_to_fix:
+        for sid_old in sorted(sids_to_fix):
             sid_new = next(fake_sids)
             # We don't want to overwrite correct SIDs
             while sid_new in sids_correct:
@@ -454,7 +485,7 @@ class Anonymizer:
 
                 for v in vals:
                     # We could only fix something that looks like MAC address.
-                    if re.match(MAC_PATTERN, v):
+                    if re.fullmatch(MAC_PATTERN, v):
                         if self.validate_mac(v):
                             macs_correct_normalized.add(self.normalize_mac(v))
 
@@ -473,7 +504,7 @@ class Anonymizer:
         iter_fake_macs = self.generate_fake_mac_addresses()
 
         mac_old_to_new = {}
-        for mac_old in macs_to_replace:
+        for mac_old in sorted(macs_to_replace):
             # We don't want to overwrite correct MAC address
             mac_fake_new = next(iter_fake_macs)
             while mac_fake_new in macs_correct_normalized:
