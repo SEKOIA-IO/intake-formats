@@ -485,6 +485,12 @@ class AnonymizationValidator:
         Returns:
             bool: True if the domain is properly anonymized, False otherwise.
         """
+        # Reverse-DNS PTR names (e.g. "107.100.168.192.in-addr.arpa") embed an IPv4 address in
+        # their leading labels. Validate the embedded address instead of treating it as a hostname,
+        # since it is effectively an IP address, not organizational/personal data.
+        if domain.lower().endswith(".in-addr.arpa") and self._validate_in_addr_arpa(domain):
+            return True
+
         # Check against accepted patterns
         for pattern in ACCEPTED_DOMAINS:
             if re.match(pattern, domain, re.IGNORECASE):
@@ -493,6 +499,29 @@ class AnonymizationValidator:
         # Check against custom patterns from config
         custom_patterns = self.config.get("custom_patterns", {}).get("domains", [])
         return any(re.match(pattern, domain, re.IGNORECASE) for pattern in custom_patterns)
+
+    def _validate_in_addr_arpa(self, domain: str) -> bool:
+        """
+        Validate the IPv4 address embedded in a reverse-DNS "in-addr.arpa" domain name.
+
+        The leading 4 labels of such names hold the address octets, conventionally in
+        reverse order (e.g. "1.100.168.192.in-addr.arpa" for "192.168.100.1"). Some test
+        fixtures however write the octets in forward order. Both orderings are checked
+        against the accepted IPv4 ranges so genuinely anonymized addresses aren't flagged.
+
+        Args:
+            domain (str): The "in-addr.arpa" domain to validate.
+        Returns:
+            bool: True if the embedded IPv4 address is properly anonymized, False otherwise.
+        """
+        labels = domain.split(".")
+        if len(labels) < 6 or not all(label.isdigit() for label in labels[:4]):
+            return False
+
+        octets = labels[:4]
+        reversed_ip = ".".join(reversed(octets))
+        forward_ip = ".".join(octets)
+        return self.validate_ipv4(reversed_ip) or self.validate_ipv4(forward_ip)
 
     def validate_username(self, username: str) -> bool:
         """
