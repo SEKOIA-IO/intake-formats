@@ -47,6 +47,20 @@ pipeline:
     filter: '{{json_event.message.get("_path") == "ldap_search"}}'
   - name: set_dce_rpc_fields
     filter: '{{json_event.message.get("_path") == "dce_rpc"}}'
+  - name: set_smtp_fields
+    filter: '{{json_event.message.get("_path") == "smtp"}}'
+  - name: set_smtp_links_fields
+    filter: '{{json_event.message.get("_path") == "smtp_links"}}'
+  - name: set_smb_files_fields
+    filter: '{{json_event.message.get("_path") == "smb_files"}}'
+  - name: set_smb_mapping_fields
+    filter: '{{json_event.message.get("_path") == "smb_mapping"}}'
+  - name: set_ftp_fields
+    filter: '{{json_event.message.get("_path") == "ftp"}}'
+  - name: set_x509_fields
+    filter: '{{json_event.message.get("_path") == "x509"}}'
+  - name: set_pe_fields
+    filter: '{{json_event.message.get("_path") == "pe"}}'
 
 stages:
   # ----------------------------------------------------------------
@@ -380,3 +394,189 @@ stages:
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # smtp.log
+  # ----------------------------------------------------------------
+  set_smtp_fields:
+    actions:
+      - set:
+          network.protocol: "smtp"
+          # ECS models the email fieldset on the RFC 5322 headers: email.from
+          # and email.to carry the From: and To: headers, while email.sender
+          # carries the envelope MAIL FROM. The envelope recipients have no ECS
+          # field of their own and stay namespaced.
+          email.from.address: '{{json_event.message.get("from")}}'
+          email.to.address: '{{json_event.message.get("to")}}'
+          email.sender.address: '{{json_event.message.get("mailfrom")}}'
+          email.subject: '{{json_event.message.get("subject")}}'
+          corelight.smtp.rcptto: '{{json_event.message.get("rcptto")}}'
+          tls.established: '{{json_event.message.get("tls")}}'
+          # Zeek emits the Date header verbatim (RFC 5322), not an ISO timestamp,
+          # so it is kept as text rather than mapped onto a date field.
+          corelight.smtp.date: '{{json_event.message.get("date")}}'
+          corelight.smtp.helo: '{{json_event.message.get("helo")}}'
+          corelight.smtp.last_reply: '{{json_event.message.get("last_reply")}}'
+          corelight.smtp.trans_depth: '{{json_event.message.get("trans_depth")}}'
+          corelight.smtp.is_webmail: '{{json_event.message.get("is_webmail")}}'
+          corelight.smtp.path: '{{json_event.message.get("path")}}'
+          corelight.smtp.fuids: '{{json_event.message.get("fuids")}}'
+          corelight.smtp.urls: '{{json_event.message.get("urls")}}'
+          corelight.smtp.domains: '{{json_event.message.get("domains")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # smtp_links.log (one event per URL found in a message body)
+  # ----------------------------------------------------------------
+  set_smtp_links_fields:
+    actions:
+      - set:
+          network.protocol: "smtp"
+          url.original: '{{json_event.message.get("link")}}'
+          url.domain: '{{json_event.message.get("domain")}}'
+          corelight.fuid: '{{json_event.message.get("fuid")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # smb_files.log
+  # ----------------------------------------------------------------
+  set_smb_files_fields:
+    actions:
+      - set:
+          network.protocol: "smb"
+          # `object_path` is the share, `name` the path of the file inside it.
+          file.directory: '{{json_event.message.get("object_path")}}'
+          file.name: '{{json_event.message.get("name")}}'
+          file.size: '{{json_event.message.get("size")}}'
+          file.mtime: '{{json_event.message.get("times.modified")}}'
+          file.accessed: '{{json_event.message.get("times.accessed")}}'
+          file.created: '{{json_event.message.get("times.created")}}'
+          file.ctime: '{{json_event.message.get("times.changed")}}'
+          corelight.smb_files.data_offset_req: '{{json_event.message.get("data_offset_req")}}'
+          corelight.smb_files.data_len_req: '{{json_event.message.get("data_len_req")}}'
+          corelight.fuid: '{{json_event.message.get("fuid")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.category: ["file", "network"]
+          event.type: ["info"]
+      # Zeek qualifies the action as "SMB::FILE_WRITE"; ECS event.action is
+      # lowercase and unprefixed.
+      - set:
+          event.action: '{{json_event.message.get("action").split("::")[-1] | lower}}'
+        filter: '{{json_event.message.get("action") != None}}'
+      - set:
+          event.type: ["change"]
+        filter: '{{json_event.message.get("action") in ["SMB::FILE_WRITE", "SMB::FILE_RENAME", "SMB::FILE_SET_ATTRIBUTE"]}}'
+      - set:
+          event.type: ["access"]
+        filter: '{{json_event.message.get("action") in ["SMB::FILE_OPEN", "SMB::FILE_READ"]}}'
+      - set:
+          event.type: ["deletion"]
+        filter: '{{json_event.message.get("action") == "SMB::FILE_DELETE"}}'
+
+  # ----------------------------------------------------------------
+  # smb_mapping.log (share tree connects)
+  # ----------------------------------------------------------------
+  set_smb_mapping_fields:
+    actions:
+      - set:
+          network.protocol: "smb"
+          corelight.smb_mapping.object_path: '{{json_event.message.get("object_path")}}'
+          corelight.smb_mapping.service: '{{json_event.message.get("service")}}'
+          corelight.smb_mapping.native_file_system: '{{json_event.message.get("native_file_system")}}'
+          corelight.smb_mapping.share_type: '{{json_event.message.get("share_type")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # ftp.log
+  # Note: Zeek also logs the plaintext password. It is deliberately not
+  # mapped, to keep credentials out of the parsed event.
+  # ----------------------------------------------------------------
+  set_ftp_fields:
+    actions:
+      - set:
+          network.protocol: "ftp"
+          source.user.name: '{{json_event.message.get("user")}}'
+          corelight.ftp.arg: '{{json_event.message.get("arg")}}'
+          corelight.ftp.reply_code: '{{json_event.message.get("reply_code")}}'
+          corelight.ftp.reply_msg: '{{json_event.message.get("reply_msg")}}'
+          corelight.ftp.data_channel.passive: '{{json_event.message.get("data_channel.passive")}}'
+          corelight.ftp.data_channel.orig_h: '{{json_event.message.get("data_channel.orig_h")}}'
+          corelight.ftp.data_channel.resp_h: '{{json_event.message.get("data_channel.resp_h")}}'
+          corelight.ftp.data_channel.resp_p: '{{json_event.message.get("data_channel.resp_p")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.action: '{{json_event.message.get("command") | lower}}'
+        filter: '{{json_event.message.get("command") != None}}'
+      # FTP reply codes follow the SMTP convention: 4xx and 5xx are failures.
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("reply_code") != None and json_event.message.get("reply_code") | int < 400}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("reply_code") != None and json_event.message.get("reply_code") | int >= 400}}'
+
+  # ----------------------------------------------------------------
+  # x509.log
+  # Note: this log carries no connection tuple; it is joined to ssl.log
+  # through the certificate fingerprint.
+  # ----------------------------------------------------------------
+  set_x509_fields:
+    actions:
+      - set:
+          x509.version_number: '{{json_event.message.get("certificate.version")}}'
+          x509.serial_number: '{{json_event.message.get("certificate.serial")}}'
+          x509.subject.distinguished_name: '{{json_event.message.get("certificate.subject")}}'
+          x509.issuer.distinguished_name: '{{json_event.message.get("certificate.issuer")}}'
+          x509.not_before: '{{json_event.message.get("certificate.not_valid_before")}}'
+          x509.not_after: '{{json_event.message.get("certificate.not_valid_after")}}'
+          x509.public_key_algorithm: '{{json_event.message.get("certificate.key_alg")}}'
+          x509.public_key_size: '{{json_event.message.get("certificate.key_length")}}'
+          x509.public_key_exponent: '{{json_event.message.get("certificate.exponent")}}'
+          x509.signature_algorithm: '{{json_event.message.get("certificate.sig_alg")}}'
+          x509.alternative_names: '{{json_event.message.get("san.dns")}}'
+          file.hash.sha256: '{{json_event.message.get("fingerprint")}}'
+          corelight.x509.key_type: '{{json_event.message.get("certificate.key_type")}}'
+          corelight.x509.basic_constraints_ca: '{{json_event.message.get("basic_constraints.ca")}}'
+          corelight.x509.client_cert: '{{json_event.message.get("client_cert")}}'
+          corelight.x509.host_cert: '{{json_event.message.get("host_cert")}}'
+      - set:
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # pe.log (portable executable metadata)
+  # Note: Zeek exposes none of the fields ECS defines under file.pe
+  # (imphash, company, product), so everything stays namespaced.
+  # ----------------------------------------------------------------
+  set_pe_fields:
+    actions:
+      - set:
+          corelight.pe.machine: '{{json_event.message.get("machine")}}'
+          corelight.pe.compile_ts: '{{json_event.message.get("compile_ts")}}'
+          corelight.pe.os: '{{json_event.message.get("os")}}'
+          corelight.pe.subsystem: '{{json_event.message.get("subsystem")}}'
+          corelight.pe.is_exe: '{{json_event.message.get("is_exe")}}'
+          corelight.pe.is_64bit: '{{json_event.message.get("is_64bit")}}'
+          corelight.pe.uses_aslr: '{{json_event.message.get("uses_aslr")}}'
+          corelight.pe.uses_dep: '{{json_event.message.get("uses_dep")}}'
+          corelight.pe.uses_code_integrity: '{{json_event.message.get("uses_code_integrity")}}'
+          corelight.pe.uses_seh: '{{json_event.message.get("uses_seh")}}'
+          corelight.pe.has_import_table: '{{json_event.message.get("has_import_table")}}'
+          corelight.pe.has_export_table: '{{json_event.message.get("has_export_table")}}'
+          corelight.pe.has_cert_table: '{{json_event.message.get("has_cert_table")}}'
+          corelight.pe.has_debug_data: '{{json_event.message.get("has_debug_data")}}'
+          corelight.pe.section_names: '{{json_event.message.get("section_names")}}'
+          corelight.fuid: '{{json_event.message.get("id")}}'
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
