@@ -46,6 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `known_certs.log`: map the certificate fingerprint to `file.hash.sha1` and the issuer and serial onto `x509.*`.
 - Smart descriptions for `x509`, `rdp`, `dhcp`, `encrypted_dns`, `known_users`, `weird`, `modbus`, `dnp3`, `s7comm`, `known_hosts`, `known_services` and `known_certs`.
 
+- `ssh.log`: map the HASSH inputs (`hasshAlgorithms`, `hasshServerAlgorithms`, `hasshVersion`), the host key algorithms each side offers, the behavioural inferences, and the geolocation of the remote endpoint onto `source.geo.*` or `destination.geo.*` depending on the direction of the session.
+- `dce_rpc.log`: map the round-trip time of the call.
+- `smtp.log`: map the `Cc:`, `Reply-To:` and `Message-ID:` headers and the mail user agent, plus the `In-Reply-To:`, `X-Originating-IP:` and the first two `Received:` headers.
+- `ftp.log`: map the size and the MIME type of the transferred file, and the directory the session is in.
+- `quic.log`: map the user agent the client advertised.
+- `kerberos.log`: map the numeric KDC error code, the start of the requested validity window, the hashes of the presented and issued tickets, and the PKINIT certificate subjects.
+- `ldap_search.log`: map the requested attributes and the diagnostic message the directory returned.
+- `smb_files.log`: map the previous name of a renamed file.
+- `dhcp.log`: map the relay agent options (circuit ID, remote ID, subscriber ID), the address the message was relayed from, and the software both ends identify themselves with.
+- `rdp.log`: map the Corelight RDP fingerprint (RDFP), the requested colour depth, the client product identifier and the TLS state.
+- `x509.log`: map the email, address and URI subject alternative names, and the path length constraint.
+
 ### Changed
 
 - `known_users.log`: the counters and annotations move from `corelight.known_users.*` to `corelight.known.*`, the namespace now shared by the whole `known_*` family.
