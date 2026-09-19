@@ -35,6 +35,18 @@ pipeline:
     filter: '{{json_event.message.get("_path") == "intel"}}'
   - name: set_notice_fields
     filter: '{{json_event.message.get("_path") == "notice"}}'
+  - name: set_ssh_fields
+    filter: '{{json_event.message.get("_path") == "ssh"}}'
+  - name: set_kerberos_fields
+    filter: '{{json_event.message.get("_path") == "kerberos"}}'
+  - name: set_ntlm_fields
+    filter: '{{json_event.message.get("_path") == "ntlm"}}'
+  - name: set_ldap_fields
+    filter: '{{json_event.message.get("_path") == "ldap"}}'
+  - name: set_ldap_search_fields
+    filter: '{{json_event.message.get("_path") == "ldap_search"}}'
+  - name: set_dce_rpc_fields
+    filter: '{{json_event.message.get("_path") == "dce_rpc"}}'
 
 stages:
   # ----------------------------------------------------------------
@@ -207,3 +219,164 @@ stages:
       - set:
           event.kind: "alert"
           event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # ssh.log
+  # ----------------------------------------------------------------
+  set_ssh_fields:
+    actions:
+      - set:
+          network.protocol: "ssh"
+          corelight.ssh.client: '{{json_event.message.get("client")}}'
+          corelight.ssh.server: '{{json_event.message.get("server")}}'
+          corelight.ssh.version: '{{json_event.message.get("version")}}'
+          corelight.ssh.cipher_alg: '{{json_event.message.get("cipher_alg")}}'
+          corelight.ssh.kex_alg: '{{json_event.message.get("kex_alg")}}'
+          corelight.ssh.mac_alg: '{{json_event.message.get("mac_alg")}}'
+          corelight.ssh.compression_alg: '{{json_event.message.get("compression_alg")}}'
+          corelight.ssh.host_key: '{{json_event.message.get("host_key")}}'
+          corelight.ssh.host_key_alg: '{{json_event.message.get("host_key_alg")}}'
+          corelight.ssh.hassh: '{{json_event.message.get("hassh")}}'
+          corelight.ssh.hassh_server: '{{json_event.message.get("hasshServer")}}'
+          corelight.ssh.auth_attempts: '{{json_event.message.get("auth_attempts")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      # Zeek reports the direction as INBOUND/OUTBOUND; ECS expects it lowercase.
+      - set:
+          network.direction: '{{json_event.message.get("direction") | lower}}'
+        filter: '{{json_event.message.get("direction") != None}}'
+      # auth_success is only present once the SSH authentication has been observed;
+      # the log is also written for sessions where Zeek could not determine it.
+      - set:
+          event.category: ["network", "authentication"]
+          event.outcome: "success"
+        filter: '{{json_event.message.get("auth_success") == True}}'
+      - set:
+          event.category: ["network", "authentication"]
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("auth_success") == False}}'
+
+  # ----------------------------------------------------------------
+  # kerberos.log
+  # ----------------------------------------------------------------
+  set_kerberos_fields:
+    actions:
+      - set:
+          network.protocol: "kerberos"
+          event.action: '{{json_event.message.get("request_type")}}'
+          corelight.kerberos.request_type: '{{json_event.message.get("request_type")}}'
+          corelight.kerberos.service: '{{json_event.message.get("service")}}'
+          corelight.kerberos.cipher: '{{json_event.message.get("cipher")}}'
+          corelight.kerberos.forwardable: '{{json_event.message.get("forwardable")}}'
+          corelight.kerberos.renewable: '{{json_event.message.get("renewable")}}'
+          corelight.kerberos.till: '{{json_event.message.get("till")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.category: ["network", "authentication"]
+          event.type: ["connection", "protocol"]
+      # Zeek reports the principal as "name/realm"; ECS keeps the two apart.
+      - set:
+          source.user.name: '{{json_event.message.get("client").split("/")[0]}}'
+          source.user.domain: '{{json_event.message.get("client").split("/")[1]}}'
+        filter: '{{json_event.message.get("client") != None and "/" in json_event.message.get("client")}}'
+      - set:
+          source.user.name: '{{json_event.message.get("client")}}'
+        filter: '{{json_event.message.get("client") != None and "/" not in json_event.message.get("client")}}'
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("success") == True}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("success") == False}}'
+      - set:
+          corelight.kerberos.error_message: '{{json_event.message.get("error_msg")}}'
+        filter: '{{json_event.message.get("error_msg") != None}}'
+
+  # ----------------------------------------------------------------
+  # ntlm.log
+  # ----------------------------------------------------------------
+  set_ntlm_fields:
+    actions:
+      - set:
+          network.protocol: "ntlm"
+          source.user.name: '{{json_event.message.get("username")}}'
+          source.user.domain: '{{json_event.message.get("domainname")}}'
+          source.domain: '{{json_event.message.get("hostname")}}'
+          destination.domain: '{{json_event.message.get("server_nb_computer_name")}}'
+          corelight.ntlm.server_dns_computer_name: '{{json_event.message.get("server_dns_computer_name")}}'
+          corelight.ntlm.server_tree_name: '{{json_event.message.get("server_tree_name")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.category: ["network", "authentication"]
+          event.type: ["connection", "protocol"]
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("success") == True}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("success") == False}}'
+
+  # ----------------------------------------------------------------
+  # ldap.log
+  # ----------------------------------------------------------------
+  set_ldap_fields:
+    actions:
+      - set:
+          network.protocol: "ldap"
+          event.action: '{{json_event.message.get("opcode")}}'
+          corelight.ldap.opcode: '{{json_event.message.get("opcode")}}'
+          corelight.ldap.result: '{{json_event.message.get("result")}}'
+          corelight.ldap.object: '{{json_event.message.get("object")}}'
+          corelight.ldap.argument: '{{json_event.message.get("argument")}}'
+          corelight.ldap.message_id: '{{json_event.message.get("message_id")}}'
+          corelight.ldap.version: '{{json_event.message.get("version")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      # Only a bind is an authentication attempt; searches, modifies and the rest
+      # are directory operations.
+      - set:
+          event.category: ["network", "authentication"]
+        filter: '{{json_event.message.get("opcode") != None and "bind" in json_event.message.get("opcode")}}'
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("result") == "success"}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("result") not in [None, "success"]}}'
+
+  # ----------------------------------------------------------------
+  # ldap_search.log
+  # ----------------------------------------------------------------
+  set_ldap_search_fields:
+    actions:
+      - set:
+          network.protocol: "ldap"
+          event.action: '{{json_event.message.get("opcode")}}'
+          corelight.ldap.opcode: '{{json_event.message.get("opcode")}}'
+          corelight.ldap.result: '{{json_event.message.get("result")}}'
+          corelight.ldap.message_id: '{{json_event.message.get("message_id")}}'
+          corelight.ldap_search.base_object: '{{json_event.message.get("base_object")}}'
+          corelight.ldap_search.scope: '{{json_event.message.get("scope")}}'
+          corelight.ldap_search.deref_aliases: '{{json_event.message.get("deref_aliases")}}'
+          corelight.ldap_search.filter: '{{json_event.message.get("filter")}}'
+          corelight.ldap_search.result_count: '{{json_event.message.get("result_count")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # dce_rpc.log
+  # ----------------------------------------------------------------
+  set_dce_rpc_fields:
+    actions:
+      - set:
+          network.protocol: "dce_rpc"
+          event.action: '{{json_event.message.get("operation")}}'
+          corelight.dce_rpc.endpoint: '{{json_event.message.get("endpoint")}}'
+          corelight.dce_rpc.operation: '{{json_event.message.get("operation")}}'
+          corelight.dce_rpc.named_pipe: '{{json_event.message.get("named_pipe")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
