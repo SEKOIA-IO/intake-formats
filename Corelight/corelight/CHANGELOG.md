@@ -37,9 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `software.log`: map the detected software to `package.name` and keep the version components as Zeek reports them, rather than recomposing a version string.
 - `known_users.log`: map the observed account to `user.name`, the host it was seen on to `host.ip` and the protocol it was seen over to `network.protocol`.
 - `weird.log`: map the protocol anomaly to `event.action`, with the Zeek worker that reported it and the additional context.
-- Smart descriptions for `x509`, `rdp`, `dhcp`, `encrypted_dns`, `known_users` and `weird`.
+- Support for the industrial control logs `modbus.log`, `dnp3.log` and `s7comm.log`, and for the entity inventory logs `known_hosts.log`, `known_services.log` and `known_certs.log`.
+- `modbus.log`: map the function to `event.action`, the exception returned by the device, and the register Corelight tracks together with its value before and after a write. The function is read from either `func` or `function`, since sensors differ on the name.
+- `dnp3.log`: map the request and reply function codes and the internal indications the outstation returned.
+- `s7comm.log`: map the message class, the function and subfunction, the PDU reference that pairs a request with its reply, and the error the PLC returned.
+- `known_hosts.log`: map the observed host to `host.ip`, the role Corelight inferred for it, the connection counters, and the criticality, description, source and status the entity inventory holds for it.
+- `known_services.log`: map the service to `network.protocol` and the pair it answers on to `destination.ip` / `destination.port`, with the application and the software banner observed.
+- `known_certs.log`: map the certificate fingerprint to `file.hash.sha1` and the issuer and serial onto `x509.*`.
+- Smart descriptions for `x509`, `rdp`, `dhcp`, `encrypted_dns`, `known_users`, `weird`, `modbus`, `dnp3`, `s7comm`, `known_hosts`, `known_services` and `known_certs`.
 
 ### Changed
+
+- `known_users.log`: the counters and annotations move from `corelight.known_users.*` to `corelight.known.*`, the namespace now shared by the whole `known_*` family.
 
 - `notice.log`: keep the raw event in the top-level `message` field; the notice text is now exposed as `corelight.notice.message`.
 - `suricata_corelight`: also map `alert.action` to `event.action` (in addition to `action.name`).

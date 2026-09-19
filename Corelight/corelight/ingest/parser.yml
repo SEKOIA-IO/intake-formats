@@ -87,6 +87,18 @@ pipeline:
     filter: '{{json_event.message.get("_path") == "known_users"}}'
   - name: set_weird_fields
     filter: '{{json_event.message.get("_path") == "weird"}}'
+  - name: set_dnp3_fields
+    filter: '{{json_event.message.get("_path") == "dnp3"}}'
+  - name: set_modbus_fields
+    filter: '{{json_event.message.get("_path") == "modbus"}}'
+  - name: set_s7comm_fields
+    filter: '{{json_event.message.get("_path") == "s7comm"}}'
+  - name: set_known_hosts_fields
+    filter: '{{json_event.message.get("_path") == "known_hosts"}}'
+  - name: set_known_services_fields
+    filter: '{{json_event.message.get("_path") == "known_services"}}'
+  - name: set_known_certs_fields
+    filter: '{{json_event.message.get("_path") == "known_certs"}}'
 
 stages:
   # ----------------------------------------------------------------
@@ -883,8 +895,11 @@ stages:
           user.name: '{{json_event.message.get("user")}}'
           host.ip: '{{json_event.message.get("host_ip")}}'
           destination.ip: '{{json_event.message.get("server_ip")}}'
-          corelight.known_users.num_instances: '{{json_event.message.get("num_instances")}}'
-          corelight.known_users.annotations: '{{json_event.message.get("annotations")}}'
+          corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
+          corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
+          corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
+          corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
           corelight.kuid: '{{json_event.message.get("kuid")}}'
       - set:
           event.type: ["info"]
@@ -911,3 +926,135 @@ stages:
       - set:
           event.action: '{{json_event.message.get("name")}}'
         filter: '{{json_event.message.get("name") != None}}'
+
+  # ----------------------------------------------------------------
+  # dnp3.log (industrial control)
+  # ----------------------------------------------------------------
+  set_dnp3_fields:
+    actions:
+      - set:
+          network.protocol: "dnp3"
+          network.transport: '{{json_event.message.get("proto")}}'
+          corelight.dnp3.fc_request: '{{json_event.message.get("fc_request")}}'
+          corelight.dnp3.fc_reply: '{{json_event.message.get("fc_reply")}}'
+          corelight.dnp3.iin: '{{json_event.message.get("iin")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # modbus.log (industrial control)
+  # Note: Corelight renamed Zeek's "func" to "function" along the way, so
+  # both spellings are read.
+  # ----------------------------------------------------------------
+  set_modbus_fields:
+    actions:
+      - set:
+          network.protocol: "modbus"
+          network.transport: '{{json_event.message.get("proto")}}'
+          corelight.modbus.exception: '{{json_event.message.get("exception")}}'
+          corelight.modbus.register: '{{json_event.message.get("register")}}'
+          corelight.modbus.track_address: '{{json_event.message.get("track_address")}}'
+          corelight.modbus.old_value: '{{json_event.message.get("old_val")}}'
+          corelight.modbus.new_value: '{{json_event.message.get("new_val")}}'
+          corelight.modbus.delta: '{{json_event.message.get("delta")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      # Depending on the sensor version the function is reported either as
+      # "func" or as "function".
+      - set:
+          corelight.modbus.function: '{{json_event.message.get("func")}}'
+          event.action: '{{json_event.message.get("func")}}'
+        filter: '{{json_event.message.get("func") != None}}'
+      - set:
+          corelight.modbus.function: '{{json_event.message.get("function")}}'
+          event.action: '{{json_event.message.get("function")}}'
+        filter: '{{json_event.message.get("function") != None}}'
+
+  # ----------------------------------------------------------------
+  # s7comm.log (industrial control)
+  # ----------------------------------------------------------------
+  set_s7comm_fields:
+    actions:
+      - set:
+          network.protocol: "s7comm"
+          corelight.s7comm.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.s7comm.rosctr_code: '{{json_event.message.get("rosctr_code")}}'
+          corelight.s7comm.rosctr_name: '{{json_event.message.get("rosctr_name")}}'
+          corelight.s7comm.pdu_reference: '{{json_event.message.get("pdu_reference")}}'
+          corelight.s7comm.function_code: '{{json_event.message.get("function_code")}}'
+          corelight.s7comm.function_name: '{{json_event.message.get("function_name")}}'
+          corelight.s7comm.subfunction_code: '{{json_event.message.get("subfunction_code")}}'
+          corelight.s7comm.subfunction_name: '{{json_event.message.get("subfunction_name")}}'
+          corelight.s7comm.error_class: '{{json_event.message.get("error_class")}}'
+          corelight.s7comm.error_code: '{{json_event.message.get("error_code")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # known_hosts.log
+  # Note: the known_* logs are periodic inventories, not connection
+  # events; they carry a "kuid" instead of a connection tuple.
+  # ----------------------------------------------------------------
+  set_known_hosts_fields:
+    actions:
+      - set:
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          corelight.known.host_type: '{{json_event.message.get("host_type")}}'
+          corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
+          corelight.known.conns_opened: '{{json_event.message.get("conns_opened")}}'
+          corelight.known.conns_closed: '{{json_event.message.get("conns_closed")}}'
+          corelight.known.conns_pending: '{{json_event.message.get("conns_pending")}}'
+          corelight.known.long_conns: '{{json_event.message.get("long_conns")}}'
+          corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
+          corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
+          corelight.known.criticality: '{{json_event.message.get("ep.criticality")}}'
+          corelight.known.description: '{{json_event.message.get("ep.desc")}}'
+          corelight.known.source: '{{json_event.message.get("ep.source")}}'
+          corelight.known.status: '{{json_event.message.get("ep.status")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.category: ["network", "host"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # known_services.log
+  # ----------------------------------------------------------------
+  set_known_services_fields:
+    actions:
+      - set:
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          # The service is reachable at host_ip:port_num, so the pair is also
+          # exposed as the destination of a would-be connection.
+          destination.ip: '{{json_event.message.get("host_ip")}}'
+          destination.port: '{{json_event.message.get("port_num")}}'
+          network.transport: '{{json_event.message.get("port_proto")}}'
+          network.protocol: '{{json_event.message.get("service")}}'
+          corelight.known.application: '{{json_event.message.get("app")}}'
+          corelight.known.software: '{{json_event.message.get("software")}}'
+          corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
+          corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
+          corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # known_certs.log
+  # ----------------------------------------------------------------
+  set_known_certs_fields:
+    actions:
+      - set:
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          file.hash.sha1: '{{json_event.message.get("hash")}}'
+          x509.issuer.distinguished_name: '{{json_event.message.get("issuer_subject")}}'
+          x509.serial_number: '{{json_event.message.get("serial")}}'
+          corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
+          corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
+          corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.category: ["network", "file"]
+          event.type: ["info"]
