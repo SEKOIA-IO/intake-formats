@@ -61,6 +61,32 @@ pipeline:
     filter: '{{json_event.message.get("_path") == "x509"}}'
   - name: set_pe_fields
     filter: '{{json_event.message.get("_path") == "pe"}}'
+  - name: set_dhcp_fields
+    filter: '{{json_event.message.get("_path") == "dhcp"}}'
+  - name: set_rdp_fields
+    filter: '{{json_event.message.get("_path") == "rdp"}}'
+  - name: set_quic_fields
+    filter: '{{json_event.message.get("_path") == "quic"}}'
+  - name: set_ntp_fields
+    filter: '{{json_event.message.get("_path") == "ntp"}}'
+  - name: set_snmp_fields
+    filter: '{{json_event.message.get("_path") == "snmp"}}'
+  - name: set_mysql_fields
+    filter: '{{json_event.message.get("_path") == "mysql"}}'
+  - name: set_tunnel_fields
+    filter: '{{json_event.message.get("_path") == "tunnel"}}'
+  - name: set_ipsec_fields
+    filter: '{{json_event.message.get("_path") == "ipsec"}}'
+  - name: set_ocsp_fields
+    filter: '{{json_event.message.get("_path") == "ocsp"}}'
+  - name: set_encrypted_dns_fields
+    filter: '{{json_event.message.get("_path") == "encrypted_dns"}}'
+  - name: set_software_fields
+    filter: '{{json_event.message.get("_path") == "software"}}'
+  - name: set_known_users_fields
+    filter: '{{json_event.message.get("_path") == "known_users"}}'
+  - name: set_weird_fields
+    filter: '{{json_event.message.get("_path") == "weird"}}'
 
 stages:
   # ----------------------------------------------------------------
@@ -580,3 +606,308 @@ stages:
       - set:
           event.category: ["file"]
           event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # dhcp.log
+  # Note: this log carries no connection tuple of its own; the addresses
+  # come from the DHCP exchange itself, and "uids" lists the connections
+  # the lease was observed on.
+  # ----------------------------------------------------------------
+  set_dhcp_fields:
+    actions:
+      - set:
+          network.protocol: "dhcp"
+          network.transport: "udp"
+          source.ip: '{{json_event.message.get("client_addr")}}'
+          source.mac: '{{json_event.message.get("mac")}}'
+          destination.ip: '{{json_event.message.get("server_addr")}}'
+          host.hostname: '{{json_event.message.get("host_name")}}'
+          # "domain" is the domain name option offered in the lease, not the
+          # client's own domain, so it is not mapped onto source.domain.
+          corelight.dhcp.domain: '{{json_event.message.get("domain")}}'
+          corelight.dhcp.assigned_addr: '{{json_event.message.get("assigned_addr")}}'
+          corelight.dhcp.requested_addr: '{{json_event.message.get("requested_addr")}}'
+          corelight.dhcp.lease_time: '{{json_event.message.get("lease_time")}}'
+          corelight.dhcp.msg_types: '{{json_event.message.get("msg_types")}}'
+          corelight.dhcp.client_fqdn: '{{json_event.message.get("client_fqdn")}}'
+          corelight.dhcp.client_message: '{{json_event.message.get("client_message")}}'
+          corelight.dhcp.server_message: '{{json_event.message.get("server_message")}}'
+          corelight.uids: '{{json_event.message.get("uids")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # rdp.log
+  # ----------------------------------------------------------------
+  set_rdp_fields:
+    actions:
+      - set:
+          network.protocol: "rdp"
+          corelight.rdp.cookie: '{{json_event.message.get("cookie")}}'
+          corelight.rdp.result: '{{json_event.message.get("result")}}'
+          corelight.rdp.security_protocol: '{{json_event.message.get("security_protocol")}}'
+          corelight.rdp.cert_count: '{{json_event.message.get("cert_count")}}'
+          corelight.rdp.cert_type: '{{json_event.message.get("cert_type")}}'
+          corelight.rdp.channels_joined: '{{json_event.message.get("channels_joined")}}'
+          corelight.rdp.keyboard_layout: '{{json_event.message.get("keyboard_layout")}}'
+          corelight.rdp.client_name: '{{json_event.message.get("client_name")}}'
+          corelight.rdp.client_build: '{{json_event.message.get("client_build")}}'
+          corelight.rdp.desktop_width: '{{json_event.message.get("desktop_width")}}'
+          corelight.rdp.desktop_height: '{{json_event.message.get("desktop_height")}}'
+          corelight.rdp.encryption_level: '{{json_event.message.get("encryption_level")}}'
+          corelight.rdp.encryption_method: '{{json_event.message.get("encryption_method")}}'
+          corelight.rdp.inferences: '{{json_event.message.get("inferences")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("auth_success") == True}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("auth_success") == False}}'
+
+  # ----------------------------------------------------------------
+  # quic.log
+  # ----------------------------------------------------------------
+  set_quic_fields:
+    actions:
+      - set:
+          network.protocol: "quic"
+          network.transport: "udp"
+          tls.client.server_name: '{{json_event.message.get("server_name")}}'
+          corelight.quic.version: '{{json_event.message.get("version")}}'
+          corelight.quic.client_protocol: '{{json_event.message.get("client_protocol")}}'
+          corelight.quic.client_initial_dcid: '{{json_event.message.get("client_initial_dcid")}}'
+          corelight.quic.client_scid: '{{json_event.message.get("client_scid")}}'
+          corelight.quic.server_scid: '{{json_event.message.get("server_scid")}}'
+          corelight.quic.history: '{{json_event.message.get("history")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # ntp.log
+  # ----------------------------------------------------------------
+  set_ntp_fields:
+    actions:
+      - set:
+          network.protocol: "ntp"
+          network.transport: "udp"
+          corelight.ntp.version: '{{json_event.message.get("version")}}'
+          corelight.ntp.mode: '{{json_event.message.get("mode")}}'
+          corelight.ntp.stratum: '{{json_event.message.get("stratum")}}'
+          corelight.ntp.poll: '{{json_event.message.get("poll")}}'
+          corelight.ntp.precision: '{{json_event.message.get("precision")}}'
+          corelight.ntp.root_delay: '{{json_event.message.get("root_delay")}}'
+          corelight.ntp.root_disp: '{{json_event.message.get("root_disp")}}'
+          corelight.ntp.ref_id: '{{json_event.message.get("ref_id")}}'
+          corelight.ntp.ref_time: '{{json_event.message.get("ref_time")}}'
+          corelight.ntp.org_time: '{{json_event.message.get("org_time")}}'
+          corelight.ntp.rec_time: '{{json_event.message.get("rec_time")}}'
+          corelight.ntp.xmt_time: '{{json_event.message.get("xmt_time")}}'
+          corelight.ntp.num_exts: '{{json_event.message.get("num_exts")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # snmp.log
+  # ----------------------------------------------------------------
+  set_snmp_fields:
+    actions:
+      - set:
+          network.protocol: "snmp"
+          network.transport: "udp"
+          corelight.snmp.version: '{{json_event.message.get("version")}}'
+          corelight.snmp.community: '{{json_event.message.get("community")}}'
+          corelight.snmp.display_string: '{{json_event.message.get("display_string")}}'
+          corelight.snmp.get_requests: '{{json_event.message.get("get_requests")}}'
+          corelight.snmp.get_bulk_requests: '{{json_event.message.get("get_bulk_requests")}}'
+          corelight.snmp.get_responses: '{{json_event.message.get("get_responses")}}'
+          corelight.snmp.set_requests: '{{json_event.message.get("set_requests")}}'
+          corelight.snmp.up_since: '{{json_event.message.get("up_since")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # mysql.log
+  # ----------------------------------------------------------------
+  set_mysql_fields:
+    actions:
+      - set:
+          network.protocol: "mysql"
+          corelight.mysql.arg: '{{json_event.message.get("arg")}}'
+          corelight.mysql.rows: '{{json_event.message.get("rows")}}'
+          corelight.mysql.response: '{{json_event.message.get("response")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.action: '{{json_event.message.get("cmd")}}'
+        filter: '{{json_event.message.get("cmd") != None}}'
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("success") == True}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("success") == False}}'
+
+  # ----------------------------------------------------------------
+  # tunnel.log
+  # ----------------------------------------------------------------
+  set_tunnel_fields:
+    actions:
+      - set:
+          corelight.tunnel.action: '{{json_event.message.get("action")}}'
+          corelight.tunnel.tunnel_type: '{{json_event.message.get("tunnel_type")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # ipsec.log (IKE negotiation)
+  # ----------------------------------------------------------------
+  set_ipsec_fields:
+    actions:
+      - set:
+          network.protocol: "ipsec"
+          network.transport: "udp"
+          corelight.ipsec.exchange_type: '{{json_event.message.get("exchange_type")}}'
+          corelight.ipsec.initiator_spi: '{{json_event.message.get("initiator_spi")}}'
+          corelight.ipsec.responder_spi: '{{json_event.message.get("responder_spi")}}'
+          corelight.ipsec.message_id: '{{json_event.message.get("message_id")}}'
+          corelight.ipsec.maj_ver: '{{json_event.message.get("maj_ver")}}'
+          corelight.ipsec.min_ver: '{{json_event.message.get("min_ver")}}'
+          corelight.ipsec.length: '{{json_event.message.get("length")}}'
+          corelight.ipsec.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.ipsec.hash: '{{json_event.message.get("hash")}}'
+          corelight.ipsec.certificates: '{{json_event.message.get("certificates")}}'
+          corelight.ipsec.ke_dh_groups: '{{json_event.message.get("ke_dh_groups")}}'
+          corelight.ipsec.notify_messages: '{{json_event.message.get("notify_messages")}}'
+          corelight.ipsec.proposals: '{{json_event.message.get("proposals")}}'
+          corelight.ipsec.transforms: '{{json_event.message.get("transforms")}}'
+          corelight.ipsec.transform_attributes: '{{json_event.message.get("transform_attributes")}}'
+          corelight.ipsec.vendor_ids: '{{json_event.message.get("vendor_ids")}}'
+          corelight.ipsec.doi: '{{json_event.message.get("doi")}}'
+          corelight.ipsec.situation: '{{json_event.message.get("situation")}}'
+          corelight.ipsec.protocol_id: '{{json_event.message.get("protocol_id")}}'
+          corelight.ipsec.flag_a: '{{json_event.message.get("flag_a")}}'
+          corelight.ipsec.flag_c: '{{json_event.message.get("flag_c")}}'
+          corelight.ipsec.flag_e: '{{json_event.message.get("flag_e")}}'
+          corelight.ipsec.flag_i: '{{json_event.message.get("flag_i")}}'
+          corelight.ipsec.flag_r: '{{json_event.message.get("flag_r")}}'
+          corelight.ipsec.flag_v: '{{json_event.message.get("flag_v")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # ocsp.log (certificate revocation responses)
+  # Note: like x509.log, this log carries no connection tuple; "id" is the
+  # Zeek file identifier of the OCSP response.
+  # ----------------------------------------------------------------
+  set_ocsp_fields:
+    actions:
+      - set:
+          corelight.ocsp.cert_status: '{{json_event.message.get("certStatus")}}'
+          corelight.ocsp.hash_algorithm: '{{json_event.message.get("hashAlgorithm")}}'
+          corelight.ocsp.issuer_key_hash: '{{json_event.message.get("issuerKeyHash")}}'
+          corelight.ocsp.issuer_name_hash: '{{json_event.message.get("issuerNameHash")}}'
+          corelight.ocsp.serial_number: '{{json_event.message.get("serialNumber")}}'
+          corelight.ocsp.this_update: '{{json_event.message.get("thisUpdate")}}'
+          corelight.ocsp.next_update: '{{json_event.message.get("nextUpdate")}}'
+          corelight.ocsp.revoke_reason: '{{json_event.message.get("revokereason")}}'
+          corelight.ocsp.revoke_time: '{{json_event.message.get("revoketime")}}'
+          corelight.fuid: '{{json_event.message.get("id")}}'
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # encrypted_dns.log
+  # This log flags DNS resolution hidden inside TLS (DoH, DoT), which is
+  # why it is reported as a detection and not as a plain protocol event.
+  # ----------------------------------------------------------------
+  set_encrypted_dns_fields:
+    actions:
+      - set:
+          network.protocol: "dns"
+          destination.ip: '{{json_event.message.get("resp_h")}}'
+          tls.client.server_name: '{{json_event.message.get("sni")}}'
+          corelight.encrypted_dns.match: '{{json_event.message.get("match")}}'
+          corelight.encrypted_dns.cert_cn: '{{json_event.message.get("cert.cn")}}'
+          corelight.encrypted_dns.cert_sans: '{{json_event.message.get("cert.sans")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.category: ["network", "intrusion_detection"]
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # software.log
+  # Note: Zeek reports the version as separate components. They are kept
+  # as such rather than recomposed into a single version string.
+  # ----------------------------------------------------------------
+  set_software_fields:
+    actions:
+      - set:
+          package.name: '{{json_event.message.get("name")}}'
+          corelight.software.type: '{{json_event.message.get("software_type")}}'
+          corelight.software.unparsed_version: '{{json_event.message.get("unparsed_version")}}'
+          corelight.software.host: '{{json_event.message.get("host_header")}}'
+          corelight.software.port: '{{json_event.message.get("host_p")}}'
+          corelight.software.version.major: '{{json_event.message.get("version.major")}}'
+          corelight.software.version.minor: '{{json_event.message.get("version.minor")}}'
+          corelight.software.version.minor2: '{{json_event.message.get("version.minor2")}}'
+          corelight.software.version.minor3: '{{json_event.message.get("version.minor3")}}'
+          corelight.software.version.addl: '{{json_event.message.get("version.addl")}}'
+      - set:
+          event.type: ["info"]
+      - set:
+          url.original: '{{json_event.message.get("url")}}'
+        filter: '{{json_event.message.get("url") != None}}'
+
+  # ----------------------------------------------------------------
+  # known_users.log
+  # ----------------------------------------------------------------
+  set_known_users_fields:
+    actions:
+      - set:
+          user.name: '{{json_event.message.get("user")}}'
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          destination.ip: '{{json_event.message.get("server_ip")}}'
+          corelight.known_users.num_instances: '{{json_event.message.get("num_instances")}}'
+          corelight.known_users.annotations: '{{json_event.message.get("annotations")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.type: ["info"]
+      - set:
+          network.protocol: '{{json_event.message.get("protocol") | lower}}'
+        filter: '{{json_event.message.get("protocol") != None}}'
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # weird.log (protocol anomalies)
+  # ----------------------------------------------------------------
+  set_weird_fields:
+    actions:
+      - set:
+          corelight.weird.name: '{{json_event.message.get("name")}}'
+          corelight.weird.addl: '{{json_event.message.get("addl")}}'
+          corelight.weird.notice: '{{json_event.message.get("notice")}}'
+          corelight.weird.peer: '{{json_event.message.get("peer")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["info"]
+      - set:
+          event.action: '{{json_event.message.get("name")}}'
+        filter: '{{json_event.message.get("name") != None}}'

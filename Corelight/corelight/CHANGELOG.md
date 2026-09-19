@@ -23,6 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ftp.log`: map the command to `event.action`, the account to `source.user.name`, the data channel, and `event.outcome` from the reply code. The password Zeek also logs is deliberately left unmapped.
 - `x509.log`: map the certificate onto the ECS `x509.*` fields and the fingerprint to `file.hash.sha256`. This log carries no connection tuple; it joins `ssl.log` through the fingerprint.
 - `pe.log`: map the target architecture, the compilation timestamp, the section names and the hardening flags (ASLR, DEP, SEH, code integrity). Zeek exposes none of the fields ECS defines under `file.pe`, so they stay namespaced.
+- Support for the remaining protocol and observation logs the sensor sends: `dhcp.log`, `rdp.log`, `quic.log`, `ntp.log`, `snmp.log`, `mysql.log`, `tunnel.log`, `ipsec.log`, `ocsp.log`, `encrypted_dns.log`, `software.log`, `known_users.log` and `weird.log`.
+- `dhcp.log`: map the lease exchange to `source.ip` / `destination.ip`, the client hardware address to `source.mac` and its name to `host.hostname`, plus the assigned and requested addresses and the lease duration. The domain name option offered in the lease is not mapped onto `source.domain`: it describes the lease, not the client.
+- `rdp.log`: map the negotiated security protocol, the connection result and the cookie (which usually carries the account being used), and derive `event.outcome` from `auth_success`.
+- `quic.log`: map the SNI to `tls.client.server_name`, the negotiated application protocol and the connection identifiers.
+- `ntp.log`: map the association mode, the stratum, the reference clock and the four protocol timestamps.
+- `snmp.log`: map the community string, the `sysDescr` returned by the agent and the per-operation counters, which is how SNMP writes (`set_requests`) become visible.
+- `mysql.log`: map the command to `event.action`, the statement, the row count and `event.outcome`.
+- `tunnel.log`: map the encapsulation and what Zeek observed about the tunnel.
+- `ipsec.log`: map the IKE exchange, the security parameter indexes, the proposed transforms and the vendor identification payloads.
+- `ocsp.log`: map the revocation status returned for a certificate and the issuer hashes. Like `x509.log`, this log carries no connection tuple.
+- `encrypted_dns.log`: report DNS resolution hidden inside TLS (DoH, DoT) under the `intrusion_detection` event category, and map the resolver to `tls.client.server_name`.
+- `software.log`: map the detected software to `package.name` and keep the version components as Zeek reports them, rather than recomposing a version string.
+- `known_users.log`: map the observed account to `user.name`, the host it was seen on to `host.ip` and the protocol it was seen over to `network.protocol`.
+- `weird.log`: map the protocol anomaly to `event.action`, with the Zeek worker that reported it and the additional context.
+- Smart descriptions for `x509`, `rdp`, `dhcp`, `encrypted_dns`, `known_users` and `weird`.
 
 ### Changed
 
