@@ -72,6 +72,25 @@ stages:
           corelight.conn.state: '{{json_event.message.get("conn_state")}}'
           corelight.conn.history: '{{json_event.message.get("history")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      # orig_bytes/resp_bytes count payload only, and Zeek omits them entirely when a
+      # connection carries no payload (SYN with no reply, rejects, ICMP). orig_ip_bytes
+      # and resp_ip_bytes count every byte seen on the wire and are always present, so
+      # they are kept as their own fields and used as the fallback for ECS *.bytes.
+      - set:
+          corelight.conn.orig_ip_bytes: '{{json_event.message.get("orig_ip_bytes")}}'
+          corelight.conn.resp_ip_bytes: '{{json_event.message.get("resp_ip_bytes")}}'
+      - set:
+          source.bytes: '{{json_event.message.get("orig_ip_bytes")}}'
+        filter: '{{json_event.message.get("orig_bytes") == None and json_event.message.get("orig_ip_bytes") != None}}'
+      - set:
+          destination.bytes: '{{json_event.message.get("resp_ip_bytes")}}'
+        filter: '{{json_event.message.get("resp_bytes") == None and json_event.message.get("resp_ip_bytes") != None}}'
+      - set:
+          source.packets: '{{json_event.message.get("orig_pkts")}}'
+        filter: '{{json_event.message.get("orig_pkts") != None}}'
+      - set:
+          destination.packets: '{{json_event.message.get("resp_pkts")}}'
+        filter: '{{json_event.message.get("resp_pkts") != None}}'
       # Zeek duration is in seconds; ECS event.duration is in nanoseconds.
       # Guard: only set when present and numeric (Zeek may emit "-" or omit it).
       - set:
@@ -204,6 +223,16 @@ stages:
           corelight.notice.message: '{{json_event.message.get("msg")}}'
           corelight.notice.sub: '{{json_event.message.get("sub")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      # Notice severity arrives as flat keys ("severity.level", not nested), like the
+      # alert.* keys on suricata_corelight. The numeric level follows the syslog scale
+      # (lower is more severe), so it is passed through as-is per the ECS definition of
+      # event.severity: the severity as reported by the event source.
+      - set:
+          event.severity: '{{json_event.message.get("severity.level")}}'
+        filter: '{{json_event.message.get("severity.level") != None}}'
+      - set:
+          corelight.notice.severity_name: '{{json_event.message.get("severity.name")}}'
+        filter: '{{json_event.message.get("severity.name") != None}}'
       - set:
           event.kind: "alert"
           event.type: ["info"]
