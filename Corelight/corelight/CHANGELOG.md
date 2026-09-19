@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `notice.log`: map the notice severity, sent by Corelight as the flat keys `severity.level` and `severity.name`, to `event.severity` and `corelight.notice.severity_name`.
+- `conn.log`: map the wire-level counters to `corelight.conn.orig_ip_bytes`, `corelight.conn.resp_ip_bytes`, `source.packets` and `destination.packets`.
+- `conn.log`: fall back to `orig_ip_bytes`/`resp_ip_bytes` for `source.bytes`/`destination.bytes`. Zeek omits the payload-only `orig_bytes`/`resp_bytes` for connections that carry no payload (`S0`, `REJ`, ICMP), which left those flows with no volume at all.
+
 ### Changed
 
 - `notice.log`: keep the raw event in the top-level `message` field; the notice text is now exposed as `corelight.notice.message`.
