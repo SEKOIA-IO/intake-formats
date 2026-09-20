@@ -19,8 +19,10 @@ pipeline:
 
   # ---- routing per Corelight log type (Zeek "_path") ----
   - name: set_common_fields
+  # conn_long.log has the same schema as conn.log: it is the periodic report
+  # the sensor writes for a connection that is still open.
   - name: set_conn_fields
-    filter: '{{json_event.message.get("_path") == "conn"}}'
+    filter: '{{json_event.message.get("_path") in ["conn", "conn_long"]}}'
   - name: set_dns_fields
     filter: '{{json_event.message.get("_path") == "dns"}}'
   - name: set_http_fields
@@ -99,6 +101,34 @@ pipeline:
     filter: '{{json_event.message.get("_path") == "known_services"}}'
   - name: set_known_certs_fields
     filter: '{{json_event.message.get("_path") == "known_certs"}}'
+  - name: set_known_domains_fields
+    filter: '{{json_event.message.get("_path") == "known_domains"}}'
+  - name: set_known_names_fields
+    filter: '{{json_event.message.get("_path") == "known_names"}}'
+  - name: set_known_devices_fields
+    filter: '{{json_event.message.get("_path") == "known_devices"}}'
+  - name: set_modbus_detailed_fields
+    filter: '{{json_event.message.get("_path") == "modbus_detailed"}}'
+  - name: set_modbus_rdi_fields
+    filter: '{{json_event.message.get("_path") == "modbus_read_device_identification"}}'
+  - name: set_cotp_fields
+    filter: '{{json_event.message.get("_path") == "cotp"}}'
+  - name: set_s7comm_read_szl_fields
+    filter: '{{json_event.message.get("_path") == "s7comm_read_szl"}}'
+  - name: set_dnp3_objects_fields
+    filter: '{{json_event.message.get("_path") == "dnp3_objects"}}'
+  - name: set_dnp3_control_fields
+    filter: '{{json_event.message.get("_path") == "dnp3_control"}}'
+  - name: set_enip_fields
+    filter: '{{json_event.message.get("_path") == "enip"}}'
+  - name: set_etc_viz_fields
+    filter: '{{json_event.message.get("_path") == "etc_viz"}}'
+  - name: set_analyzer_fields
+    filter: '{{json_event.message.get("_path") == "analyzer"}}'
+  - name: set_unknown_protocols_fields
+    filter: '{{json_event.message.get("_path") == "unknown_protocols"}}'
+  - name: set_generic_dns_tunnels_fields
+    filter: '{{json_event.message.get("_path") == "generic_dns_tunnels"}}'
 
 stages:
   # ----------------------------------------------------------------
@@ -131,16 +161,62 @@ stages:
       - set:
           network.transport: '{{json_event.message.get("proto")}}'
           network.protocol: '{{json_event.message.get("service")}}'
+          network.iana_number: '{{json_event.message.get("ip_proto")}}'
           source.bytes: '{{json_event.message.get("orig_bytes")}}'
           destination.bytes: '{{json_event.message.get("resp_bytes")}}'
+          source.packets: '{{json_event.message.get("orig_pkts")}}'
+          destination.packets: '{{json_event.message.get("resp_pkts")}}'
+          source.mac: '{{json_event.message.get("orig_l2_addr")}}'
+          destination.mac: '{{json_event.message.get("resp_l2_addr")}}'
           corelight.conn.state: '{{json_event.message.get("conn_state")}}'
           corelight.conn.history: '{{json_event.message.get("history")}}'
+          corelight.conn.local_orig: '{{json_event.message.get("local_orig")}}'
+          corelight.conn.local_resp: '{{json_event.message.get("local_resp")}}'
+          corelight.conn.missed_bytes: '{{json_event.message.get("missed_bytes")}}'
+          corelight.conn.orig_ip_bytes: '{{json_event.message.get("orig_ip_bytes")}}'
+          corelight.conn.resp_ip_bytes: '{{json_event.message.get("resp_ip_bytes")}}'
+          corelight.conn.tunnel_parents: '{{json_event.message.get("tunnel_parents")}}'
+          # Suricata alerts raised on this connection; the join key back to
+          # suricata_corelight.log.
+          corelight.conn.suri_ids: '{{json_event.message.get("suri_ids")}}'
+          # Smart PCAP: where the packets for this connection were saved.
+          corelight.conn.spcap_url: '{{json_event.message.get("spcap.url")}}'
+          corelight.conn.spcap_rule: '{{json_event.message.get("spcap.rule")}}'
+          corelight.conn.spcap_trigger: '{{json_event.message.get("spcap.trigger")}}'
+          # Reverse names the sensor resolved for each endpoint, with where it
+          # learned them from.
+          corelight.conn.orig_names: '{{json_event.message.get("id.orig_h_name.vals")}}'
+          corelight.conn.orig_names_source: '{{json_event.message.get("id.orig_h_name.src")}}'
+          corelight.conn.resp_names: '{{json_event.message.get("id.resp_h_name.vals")}}'
+          corelight.conn.resp_names_source: '{{json_event.message.get("id.resp_h_name.src")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       # Zeek duration is in seconds; ECS event.duration is in nanoseconds.
       # Guard: only set when present and numeric (Zeek may emit "-" or omit it).
       - set:
           event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
         filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+      # resp_cc is the country the responder sits in, whichever side is local.
+      - set:
+          destination.geo.country_iso_code: '{{json_event.message.get("resp_cc")}}'
+        filter: '{{json_event.message.get("resp_cc") != None}}'
+      # remote_* geolocates the endpoint outside the monitored network;
+      # local_orig / local_resp are what say which of the two that is.
+      # remote_latitude / remote_longitude are deliberately left out: the sensor
+      # serialises them with the bytes of the double in reverse order, so the
+      # exported values are unusable (37.751 comes out as -1.04e+172). The city,
+      # country and ASN of the same enrichment are unaffected.
+      - set:
+          destination.geo.city_name: '{{json_event.message.get("remote_city")}}'
+          destination.geo.country_name: '{{json_event.message.get("remote_country")}}'
+          destination.as.number: '{{json_event.message.get("remote_asn")}}'
+          destination.as.organization.name: '{{json_event.message.get("remote_organization")}}'
+        filter: '{{json_event.message.get("local_resp") == False and json_event.message.get("remote_country") != None}}'
+      - set:
+          source.geo.city_name: '{{json_event.message.get("remote_city")}}'
+          source.geo.country_name: '{{json_event.message.get("remote_country")}}'
+          source.as.number: '{{json_event.message.get("remote_asn")}}'
+          source.as.organization.name: '{{json_event.message.get("remote_organization")}}'
+        filter: '{{json_event.message.get("local_orig") == False and json_event.message.get("remote_country") != None}}'
       # Native Corelight entity enrichment (role / user / location)
       - set:
           source.user.name: '{{json_event.message.get("enrichment_orig.user")}}'
@@ -158,10 +234,28 @@ stages:
   set_dns_fields:
     actions:
       - set:
+          dns.id: '{{json_event.message.get("trans_id")}}'
           dns.question.name: '{{json_event.message.get("query")}}'
           dns.question.type: '{{json_event.message.get("qtype_name")}}'
+          dns.question.class: '{{json_event.message.get("qclass_name")}}'
           dns.response_code: '{{json_event.message.get("rcode_name")}}'
+          corelight.dns.qtype: '{{json_event.message.get("qtype")}}'
+          corelight.dns.qclass: '{{json_event.message.get("qclass")}}'
+          corelight.dns.rcode: '{{json_event.message.get("rcode")}}'
+          corelight.dns.rejected: '{{json_event.message.get("rejected")}}'
+          corelight.dns.z: '{{json_event.message.get("Z")}}'
+          corelight.dns.ttls: '{{json_event.message.get("TTLs")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      # ECS models the DNS header bits as a list of the flags that are set.
+      - set:
+          dns.header_flags: >
+            [
+                {% if json_event.message.get("AA") %}"AA",{% endif %}
+                {% if json_event.message.get("TC") %}"TC",{% endif %}
+                {% if json_event.message.get("RD") %}"RD",{% endif %}
+                {% if json_event.message.get("RA") %}"RA",{% endif %}
+            ]
+        filter: '{{json_event.message.get("AA") or json_event.message.get("TC") or json_event.message.get("RD") or json_event.message.get("RA")}}'
       - set:
           dns.answers: >
             [
@@ -177,16 +271,53 @@ stages:
   set_http_fields:
     actions:
       - set:
-          url.domain: '{{json_event.message.get("host")}}'
           url.path: '{{json_event.message.get("uri")}}'
           http.request.method: '{{json_event.message.get("method")}}'
+          http.version: '{{json_event.message.get("version")}}'
           http.response.status_code: '{{json_event.message.get("status_code")}}'
           http.request.body.bytes: '{{json_event.message.get("request_body_len")}}'
           http.response.body.bytes: '{{json_event.message.get("response_body_len")}}'
+          corelight.http.status_msg: '{{json_event.message.get("status_msg")}}'
+          corelight.http.info_code: '{{json_event.message.get("info_code")}}'
+          corelight.http.info_msg: '{{json_event.message.get("info_msg")}}'
+          corelight.http.trans_depth: '{{json_event.message.get("trans_depth")}}'
+          corelight.http.origin: '{{json_event.message.get("origin")}}'
+          corelight.http.proxied: '{{json_event.message.get("proxied")}}'
+          corelight.http.tags: '{{json_event.message.get("tags")}}'
+          # The headers Corelight kept verbatim for each direction.
+          corelight.http.client_headers: '{{json_event.message.get("client_headers")}}'
+          corelight.http.server_headers: '{{json_event.message.get("server_headers")}}'
+          # The files carried by the transaction; the join key back to files.log.
+          corelight.http.orig_fuids: '{{json_event.message.get("orig_fuids")}}'
+          corelight.http.orig_mime_types: '{{json_event.message.get("orig_mime_types")}}'
+          corelight.http.orig_filenames: '{{json_event.message.get("orig_filenames")}}'
+          corelight.http.resp_fuids: '{{json_event.message.get("resp_fuids")}}'
+          corelight.http.resp_mime_types: '{{json_event.message.get("resp_mime_types")}}'
+          corelight.http.resp_filenames: '{{json_event.message.get("resp_filenames")}}'
+          corelight.http.post_body: '{{json_event.message.get("post_body")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      # The Host: header. Zeek names it "host"; the Corelight export renames it
+      # "dest_host" and appends the port when it is not the default one.
+      - set:
+          url.domain: '{{json_event.message.get("host")}}'
+        filter: '{{json_event.message.get("host") != None}}'
+      - set:
+          url.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
+        filter: '{{json_event.message.get("host") == None and json_event.message.get("dest_host") != None}}'
       - set:
           user_agent.original: '{{json_event.message.get("user_agent")}}'
         filter: '{{json_event.message.get("user_agent") != None}}'
+      - set:
+          http.request.referrer: '{{json_event.message.get("referrer")}}'
+        filter: '{{json_event.message.get("referrer") != None}}'
+      # The Server: response header, i.e. the software answering.
+      - set:
+          corelight.http.server: '{{json_event.message.get("server")}}'
+        filter: '{{json_event.message.get("server") != None}}'
+      # Basic-auth account, when the client sent one.
+      - set:
+          source.user.name: '{{json_event.message.get("username")}}'
+        filter: '{{json_event.message.get("username") != None}}'
 
   # ----------------------------------------------------------------
   # ssl.log
@@ -201,8 +332,23 @@ stages:
           tls.client.ja3: '{{json_event.message.get("ja3")}}'
           tls.server.ja3s: '{{json_event.message.get("ja3s")}}'
           tls.established: '{{json_event.message.get("established")}}'
+          tls.resumed: '{{json_event.message.get("resumed")}}'
+          tls.next_protocol: '{{json_event.message.get("next_protocol")}}'
           corelight.ssl.validation_status: '{{json_event.message.get("validation_status")}}'
+          # The per-record letters Zeek uses to summarise the handshake.
+          corelight.ssl.history: '{{json_event.message.get("ssl_history")}}'
+          corelight.ssl.last_alert: '{{json_event.message.get("last_alert")}}'
+          corelight.ssl.sni_matches_cert: '{{json_event.message.get("sni_matches_cert")}}'
+          # Fingerprints of the presented chains; the join key back to x509.log.
+          corelight.ssl.cert_chain_fps: '{{json_event.message.get("cert_chain_fps")}}'
+          corelight.ssl.client_cert_chain_fps: '{{json_event.message.get("client_cert_chain_fps")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          x509.subject.distinguished_name: '{{json_event.message.get("subject")}}'
+        filter: '{{json_event.message.get("subject") != None}}'
+      - set:
+          x509.issuer.distinguished_name: '{{json_event.message.get("issuer")}}'
+        filter: '{{json_event.message.get("issuer") != None}}'
 
   # ----------------------------------------------------------------
   # files.log
@@ -215,10 +361,34 @@ stages:
           file.hash.sha256: '{{json_event.message.get("sha256")}}'
           file.mime_type: '{{json_event.message.get("mime_type")}}'
           file.size: '{{json_event.message.get("seen_bytes")}}'
+          file.name: '{{json_event.message.get("filename")}}'
           corelight.files.source: '{{json_event.message.get("source")}}'
+          corelight.files.fuid: '{{json_event.message.get("fuid")}}'
+          corelight.files.depth: '{{json_event.message.get("depth")}}'
+          corelight.files.analyzers: '{{json_event.message.get("analyzers")}}'
+          corelight.files.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.files.local_orig: '{{json_event.message.get("local_orig")}}'
+          corelight.files.total_bytes: '{{json_event.message.get("total_bytes")}}'
+          corelight.files.missing_bytes: '{{json_event.message.get("missing_bytes")}}'
+          corelight.files.overflow_bytes: '{{json_event.message.get("overflow_bytes")}}'
+          corelight.files.timedout: '{{json_event.message.get("timedout")}}'
+          corelight.files.extracted: '{{json_event.message.get("extracted")}}'
+          # The connections the file was seen on; the join key back to conn.log.
+          corelight.files.conn_uids: '{{json_event.message.get("conn_uids")}}'
       - set:
           event.category: ["file"]
           event.type: ["info"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+      # Some sensor generations write files.log without a connection tuple; the
+      # endpoints are then only available as the tx_hosts / rx_hosts sets.
+      - set:
+          source.ip: '{{json_event.message.get("tx_hosts")[0]}}'
+        filter: '{{json_event.message.get("id.orig_h") == None and json_event.message.get("tx_hosts") | length > 0}}'
+      - set:
+          destination.ip: '{{json_event.message.get("rx_hosts")[0]}}'
+        filter: '{{json_event.message.get("id.resp_h") == None and json_event.message.get("rx_hosts") | length > 0}}'
 
   # ----------------------------------------------------------------
   # suricata_corelight (IDS alerts)
@@ -230,10 +400,24 @@ stages:
           rule.name: '{{json_event.message.get("alert.signature")}}'
           rule.category: '{{json_event.message.get("alert.category")}}'
           rule.id: '{{json_event.message.get("alert.signature_id")}}'
+          rule.version: '{{json_event.message.get("alert.rev")}}'
           event.severity: '{{json_event.message.get("alert.severity")}}'
           action.name: '{{json_event.message.get("alert.action")}}'
           event.action: '{{json_event.message.get("alert.action")}}'
           network.protocol: '{{json_event.message.get("service")}}'
+          corelight.suricata.gid: '{{json_event.message.get("alert.gid")}}'
+          corelight.suricata.metadata: '{{json_event.message.get("alert.metadata")}}'
+          corelight.suricata.flow_metadata: '{{json_event.message.get("metadata")}}'
+          # Identifiers that tie the alert back to conn.log (suri_ids) and to the
+          # Suricata flow it was raised on.
+          corelight.suricata.suri_id: '{{json_event.message.get("suri_id")}}'
+          corelight.suricata.flow_id: '{{json_event.message.get("flow_id")}}'
+          corelight.suricata.tx_id: '{{json_event.message.get("tx_id")}}'
+          corelight.suricata.icmp_type: '{{json_event.message.get("icmp_type")}}'
+          corelight.suricata.icmp_code: '{{json_event.message.get("icmp_code")}}'
+          # The packet that triggered the rule, base64 and printable.
+          corelight.suricata.payload: '{{json_event.message.get("payload")}}'
+          corelight.suricata.payload_printable: '{{json_event.message.get("payload_printable")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.kind: "alert"
@@ -249,7 +433,10 @@ stages:
           threat.indicator.name: '{{json_event.message.get("seen.indicator")}}'
           threat.indicator.type: '{{json_event.message.get("seen.indicator_type")}}'
           corelight.intel.where: '{{json_event.message.get("seen.where")}}'
+          corelight.intel.node: '{{json_event.message.get("seen.node")}}'
           corelight.intel.sources: '{{json_event.message.get("sources")}}'
+          # The intel item categories the indicator matched.
+          corelight.intel.matched: '{{json_event.message.get("matched")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.kind: "enrichment"
@@ -265,12 +452,34 @@ stages:
       # for every other log type); expose the notice text as a dedicated field.
       - set:
           rule.name: '{{json_event.message.get("note")}}'
+          network.transport: '{{json_event.message.get("proto")}}'
+          event.severity: '{{json_event.message.get("severity.level")}}'
           corelight.notice.message: '{{json_event.message.get("msg")}}'
           corelight.notice.sub: '{{json_event.message.get("sub")}}'
+          corelight.notice.severity: '{{json_event.message.get("severity.name")}}'
+          corelight.notice.actions: '{{json_event.message.get("actions")}}'
+          corelight.notice.suppress_for: '{{json_event.message.get("suppress_for")}}'
+          corelight.notice.peer_descr: '{{json_event.message.get("peer_descr")}}'
+          corelight.notice.file_desc: '{{json_event.message.get("file_desc")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.kind: "alert"
           event.type: ["info"]
+      - set:
+          file.mime_type: '{{json_event.message.get("file_mime_type")}}'
+          corelight.files.fuid: '{{json_event.message.get("fuid")}}'
+        filter: '{{json_event.message.get("fuid") != None}}'
+      # A notice is not always tied to a connection: when it is not, the
+      # endpoints are reported as src / dst / p instead of the id.* tuple.
+      - set:
+          source.ip: '{{json_event.message.get("src")}}'
+        filter: '{{json_event.message.get("id.orig_h") == None and json_event.message.get("src") != None}}'
+      - set:
+          destination.ip: '{{json_event.message.get("dst")}}'
+        filter: '{{json_event.message.get("id.resp_h") == None and json_event.message.get("dst") != None}}'
+      - set:
+          destination.port: '{{json_event.message.get("p")}}'
+        filter: '{{json_event.message.get("id.resp_p") == None and json_event.message.get("p") != None}}'
 
   # ----------------------------------------------------------------
   # ssh.log
@@ -316,19 +525,18 @@ stages:
         filter: '{{json_event.message.get("auth_success") == False}}'
       # remote_location.* geolocates the endpoint outside the monitored network;
       # "direction" is what says which of the two endpoints that is.
+      # remote_location.latitude / .longitude are left out for the same reason as
+      # in conn.log: the sensor reverses the bytes of the double when it
+      # serialises them, so the coordinates cannot be used.
       - set:
           destination.geo.city_name: '{{json_event.message.get("remote_location.city")}}'
           destination.geo.region_name: '{{json_event.message.get("remote_location.region")}}'
           destination.geo.country_iso_code: '{{json_event.message.get("remote_location.country_code")}}'
-          destination.geo.location.lat: '{{json_event.message.get("remote_location.latitude")}}'
-          destination.geo.location.lon: '{{json_event.message.get("remote_location.longitude")}}'
         filter: '{{json_event.message.get("direction") == "OUTBOUND" and json_event.message.get("remote_location.country_code") != None}}'
       - set:
           source.geo.city_name: '{{json_event.message.get("remote_location.city")}}'
           source.geo.region_name: '{{json_event.message.get("remote_location.region")}}'
           source.geo.country_iso_code: '{{json_event.message.get("remote_location.country_code")}}'
-          source.geo.location.lat: '{{json_event.message.get("remote_location.latitude")}}'
-          source.geo.location.lon: '{{json_event.message.get("remote_location.longitude")}}'
         filter: '{{json_event.message.get("direction") == "INBOUND" and json_event.message.get("remote_location.country_code") != None}}'
 
   # ----------------------------------------------------------------
@@ -539,6 +747,7 @@ stages:
           file.ctime: '{{json_event.message.get("times.changed")}}'
           corelight.smb_files.data_offset_req: '{{json_event.message.get("data_offset_req")}}'
           corelight.smb_files.data_len_req: '{{json_event.message.get("data_len_req")}}'
+          corelight.smb_files.data_len_rsp: '{{json_event.message.get("data_len_rsp")}}'
           corelight.smb_files.previous_name: '{{json_event.message.get("prev_name")}}'
           corelight.fuid: '{{json_event.message.get("fuid")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
@@ -636,6 +845,7 @@ stages:
           corelight.x509.basic_constraints_path_length: '{{json_event.message.get("basic_constraints.path_length")}}'
           file.hash.sha256: '{{json_event.message.get("fingerprint")}}'
           corelight.x509.key_type: '{{json_event.message.get("certificate.key_type")}}'
+          corelight.x509.curve: '{{json_event.message.get("certificate.curve")}}'
           corelight.x509.basic_constraints_ca: '{{json_event.message.get("basic_constraints.ca")}}'
           corelight.x509.client_cert: '{{json_event.message.get("client_cert")}}'
           corelight.x509.host_cert: '{{json_event.message.get("host_cert")}}'
@@ -1017,6 +1227,11 @@ stages:
           network.protocol: "modbus"
           network.transport: '{{json_event.message.get("proto")}}'
           corelight.modbus.exception: '{{json_event.message.get("exception")}}'
+          # Transaction identifier, unit (slave) address and whether the record
+          # is the request or the response.
+          corelight.modbus.tid: '{{json_event.message.get("tid")}}'
+          corelight.modbus.unit: '{{json_event.message.get("unit")}}'
+          corelight.modbus.pdu_type: '{{json_event.message.get("pdu_type")}}'
           corelight.modbus.register: '{{json_event.message.get("register")}}'
           corelight.modbus.track_address: '{{json_event.message.get("track_address")}}'
           corelight.modbus.old_value: '{{json_event.message.get("old_val")}}'
@@ -1068,10 +1283,8 @@ stages:
           host.ip: '{{json_event.message.get("host_ip")}}'
           corelight.known.host_type: '{{json_event.message.get("host_type")}}'
           corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
-          corelight.known.conns_opened: '{{json_event.message.get("conns_opened")}}'
-          corelight.known.conns_closed: '{{json_event.message.get("conns_closed")}}'
-          corelight.known.conns_pending: '{{json_event.message.get("conns_pending")}}'
           corelight.known.long_conns: '{{json_event.message.get("long_conns")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
           corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
           corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
           corelight.known.criticality: '{{json_event.message.get("ep.criticality")}}'
@@ -1082,6 +1295,23 @@ stages:
       - set:
           event.category: ["network", "host"]
           event.type: ["info"]
+      # The connection counters are spelled n_* by the sensor and conns_* by
+      # older builds; both are read into the same fields.
+      - set:
+          corelight.known.conns_opened: '{{json_event.message.get("n_opened")}}'
+          corelight.known.conns_closed: '{{json_event.message.get("n_closed")}}'
+          corelight.known.conns_pending: '{{json_event.message.get("n_pending")}}'
+        filter: '{{json_event.message.get("n_opened") != None}}'
+      - set:
+          corelight.known.conns_opened: '{{json_event.message.get("conns_opened")}}'
+          corelight.known.conns_closed: '{{json_event.message.get("conns_closed")}}'
+          corelight.known.conns_pending: '{{json_event.message.get("conns_pending")}}'
+        filter: '{{json_event.message.get("conns_opened") != None}}'
+      # The known_* logs report how long the entity was observed over the
+      # interval the record covers.
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
 
   # ----------------------------------------------------------------
   # known_services.log
@@ -1094,16 +1324,35 @@ stages:
           # exposed as the destination of a would-be connection.
           destination.ip: '{{json_event.message.get("host_ip")}}'
           destination.port: '{{json_event.message.get("port_num")}}'
+          # The transport is spelled "protocol" by the sensor and "port_proto"
+          # by older builds.
           network.transport: '{{json_event.message.get("port_proto")}}'
-          network.protocol: '{{json_event.message.get("service")}}'
+          corelight.known.service: '{{json_event.message.get("service")}}'
           corelight.known.application: '{{json_event.message.get("app")}}'
           corelight.known.software: '{{json_event.message.get("software")}}'
           corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
+          corelight.known.num_conns_complete: '{{json_event.message.get("num_conns_complete")}}'
+          corelight.known.num_conns_pending: '{{json_event.message.get("num_conns_pending")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
           corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
           corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
           corelight.kuid: '{{json_event.message.get("kuid")}}'
       - set:
           event.type: ["info"]
+      - set:
+          network.transport: '{{json_event.message.get("protocol")}}'
+        filter: '{{json_event.message.get("port_proto") == None and json_event.message.get("protocol") != None}}'
+      # "service" is the set of application protocols Zeek recognised on the
+      # port; ECS network.protocol holds a single one.
+      - set:
+          network.protocol: '{{json_event.message.get("service")[0] | lower}}'
+        filter: '{{json_event.message.get("service") is sequence and json_event.message.get("service") is not string and json_event.message.get("service") | length > 0}}'
+      - set:
+          network.protocol: '{{json_event.message.get("service")}}'
+        filter: '{{json_event.message.get("service") is string}}'
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
 
   # ----------------------------------------------------------------
   # known_certs.log
@@ -1112,13 +1361,332 @@ stages:
     actions:
       - set:
           host.ip: '{{json_event.message.get("host_ip")}}'
+          # The certificate was seen being served on host_ip:port.
+          destination.ip: '{{json_event.message.get("host_ip")}}'
+          destination.port: '{{json_event.message.get("port")}}'
+          network.transport: '{{json_event.message.get("protocol")}}'
           file.hash.sha1: '{{json_event.message.get("hash")}}'
+          x509.subject.distinguished_name: '{{json_event.message.get("subject")}}'
           x509.issuer.distinguished_name: '{{json_event.message.get("issuer_subject")}}'
           x509.serial_number: '{{json_event.message.get("serial")}}'
           corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
+          corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
           corelight.known.last_active_interval: '{{json_event.message.get("last_active_interval")}}'
           corelight.known.last_active_session: '{{json_event.message.get("last_active_session")}}'
           corelight.kuid: '{{json_event.message.get("kuid")}}'
       - set:
           event.category: ["network", "file"]
+          event.type: ["info"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # known_domains.log
+  # ----------------------------------------------------------------
+  set_known_domains_fields:
+    actions:
+      - set:
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          corelight.known.domain: '{{json_event.message.get("domain")}}'
+          corelight.known.protocols: '{{json_event.message.get("protocols")}}'
+          corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.category: ["network", "host"]
+          event.type: ["info"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # known_names.log
+  # ----------------------------------------------------------------
+  set_known_names_fields:
+    actions:
+      - set:
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          host.hostname: '{{json_event.message.get("hostname")}}'
+          host.name: '{{json_event.message.get("hostname")}}'
+          corelight.known.protocols: '{{json_event.message.get("protocols")}}'
+          corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.category: ["network", "host"]
+          event.type: ["info"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # known_devices.log
+  # ----------------------------------------------------------------
+  set_known_devices_fields:
+    actions:
+      - set:
+          host.ip: '{{json_event.message.get("host_ip")}}'
+          host.mac: '{{json_event.message.get("mac")}}'
+          # The organisation the MAC prefix belongs to, or "Randomized" when the
+          # device rotates its address.
+          corelight.known.vendor_mac: '{{json_event.message.get("vendor_mac")}}'
+          corelight.known.protocols: '{{json_event.message.get("protocols")}}'
+          corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
+          corelight.known.annotations: '{{json_event.message.get("annotations")}}'
+          corelight.kuid: '{{json_event.message.get("kuid")}}'
+      - set:
+          event.category: ["network", "host"]
+          event.type: ["info"]
+      - set:
+          event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
+        filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
+
+  # ----------------------------------------------------------------
+  # modbus_detailed.log
+  # The Modbus header fields (tid, unit, function) are shared with
+  # modbus.log so that one search matches both.
+  # ----------------------------------------------------------------
+  set_modbus_detailed_fields:
+    actions:
+      - set:
+          network.protocol: "modbus"
+          event.action: '{{json_event.message.get("func")}}'
+          corelight.modbus.function: '{{json_event.message.get("func")}}'
+          corelight.modbus.tid: '{{json_event.message.get("tid")}}'
+          corelight.modbus.unit: '{{json_event.message.get("unit")}}'
+          corelight.modbus.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.modbus.request_response: '{{json_event.message.get("request_response")}}'
+          # The register range the operation addresses, and the data it carries.
+          corelight.modbus.address: '{{json_event.message.get("address")}}'
+          corelight.modbus.quantity: '{{json_event.message.get("quantity")}}'
+          corelight.modbus.values: '{{json_event.message.get("values")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # modbus_read_device_identification.log
+  # ----------------------------------------------------------------
+  set_modbus_rdi_fields:
+    actions:
+      - set:
+          network.protocol: "modbus"
+          event.action: '{{json_event.message.get("func")}}'
+          corelight.modbus.function: '{{json_event.message.get("func")}}'
+          corelight.modbus.tid: '{{json_event.message.get("tid")}}'
+          corelight.modbus.unit: '{{json_event.message.get("unit")}}'
+          corelight.modbus.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.modbus.request_response: '{{json_event.message.get("request_response")}}'
+          # Which identification object of the device is being read; this is how
+          # OT asset discovery over Modbus becomes visible.
+          corelight.modbus.mei_type: '{{json_event.message.get("mei_type")}}'
+          corelight.modbus.device_id_code: '{{json_event.message.get("device_id_code")}}'
+          corelight.modbus.object_id_code: '{{json_event.message.get("object_id_code")}}'
+          corelight.modbus.object_id: '{{json_event.message.get("object_id")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # cotp.log (ISO 8073 transport, the layer S7comm rides on)
+  # ----------------------------------------------------------------
+  set_cotp_fields:
+    actions:
+      - set:
+          network.protocol: "cotp"
+          event.action: '{{json_event.message.get("pdu_name")}}'
+          corelight.cotp.pdu_code: '{{json_event.message.get("pdu_code")}}'
+          corelight.cotp.pdu_name: '{{json_event.message.get("pdu_name")}}'
+          corelight.cotp.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # s7comm_read_szl.log (reading a PLC's system status list)
+  # ----------------------------------------------------------------
+  set_s7comm_read_szl_fields:
+    actions:
+      - set:
+          network.protocol: "s7comm"
+          event.action: '{{json_event.message.get("method")}}'
+          corelight.s7comm.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.s7comm.pdu_reference: '{{json_event.message.get("pdu_reference")}}'
+          corelight.s7comm.method: '{{json_event.message.get("method")}}'
+          # Which system status list is read; "Component Identification" is how a
+          # PLC inventory scan shows up.
+          corelight.s7comm.szl_id: '{{json_event.message.get("szl_id")}}'
+          corelight.s7comm.szl_id_name: '{{json_event.message.get("szl_id_name")}}'
+          corelight.s7comm.szl_index: '{{json_event.message.get("szl_index")}}'
+          corelight.s7comm.return_code: '{{json_event.message.get("return_code")}}'
+          corelight.s7comm.return_code_name: '{{json_event.message.get("return_code_name")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("return_code_name") == "Success"}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("return_code_name") not in [None, "Success"]}}'
+
+  # ----------------------------------------------------------------
+  # dnp3_objects.log
+  # ----------------------------------------------------------------
+  set_dnp3_objects_fields:
+    actions:
+      - set:
+          network.protocol: "dnp3"
+          event.action: '{{json_event.message.get("function_code")}}'
+          corelight.dnp3.function_code: '{{json_event.message.get("function_code")}}'
+          corelight.dnp3.object_type: '{{json_event.message.get("object_type")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+
+  # ----------------------------------------------------------------
+  # dnp3_control.log
+  # This is the log that shows an outstation being commanded: a
+  # SELECT / OPERATE pair on a control relay output block.
+  # ----------------------------------------------------------------
+  set_dnp3_control_fields:
+    actions:
+      - set:
+          network.protocol: "dnp3"
+          event.action: '{{json_event.message.get("function_code")}}'
+          corelight.dnp3.function_code: '{{json_event.message.get("function_code")}}'
+          corelight.dnp3.block_type: '{{json_event.message.get("block_type")}}'
+          corelight.dnp3.index_number: '{{json_event.message.get("index_number")}}'
+          corelight.dnp3.trip_control_code: '{{json_event.message.get("trip_control_code")}}'
+          corelight.dnp3.operation_type: '{{json_event.message.get("operation_type")}}'
+          corelight.dnp3.execute_count: '{{json_event.message.get("execute_count")}}'
+          corelight.dnp3.on_time: '{{json_event.message.get("on_time")}}'
+          corelight.dnp3.off_time: '{{json_event.message.get("off_time")}}'
+          corelight.dnp3.status_code: '{{json_event.message.get("status_code")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("status_code") == "Success"}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("status_code") not in [None, "Success"]}}'
+
+  # ----------------------------------------------------------------
+  # enip.log (EtherNet/IP)
+  # ----------------------------------------------------------------
+  set_enip_fields:
+    actions:
+      - set:
+          network.protocol: "enip"
+          event.action: '{{json_event.message.get("enip_command")}}'
+          corelight.enip.command: '{{json_event.message.get("enip_command")}}'
+          corelight.enip.command_code: '{{json_event.message.get("enip_command_code")}}'
+          corelight.enip.status: '{{json_event.message.get("enip_status")}}'
+          corelight.enip.length: '{{json_event.message.get("length")}}'
+          corelight.enip.session_handle: '{{json_event.message.get("session_handle")}}'
+          corelight.enip.sender_context: '{{json_event.message.get("sender_context")}}'
+          corelight.enip.options: '{{json_event.message.get("options")}}'
+          corelight.enip.is_orig: '{{json_event.message.get("is_orig")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "protocol"]
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("enip_status") == "Success"}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("enip_status") not in [None, "Success"]}}'
+
+  # ----------------------------------------------------------------
+  # etc_viz.log (Encrypted Traffic Collection visibility)
+  # Reports how much of each direction of a session was actually
+  # encrypted. This log carries no connection tuple: the server side is
+  # reported as server_a / server_p.
+  # ----------------------------------------------------------------
+  set_etc_viz_fields:
+    actions:
+      - set:
+          destination.ip: '{{json_event.message.get("server_a")}}'
+          destination.port: '{{json_event.message.get("server_p")}}'
+          # Two letters, one per direction, saying whether it looked clear (c/C)
+          # or encrypted (e/E).
+          corelight.etc_viz.viz_stat: '{{json_event.message.get("viz_stat")}}'
+          corelight.etc_viz.c2s_size: '{{json_event.message.get("c2s_viz.size")}}'
+          corelight.etc_viz.c2s_enc_dev: '{{json_event.message.get("c2s_viz.enc_dev")}}'
+          corelight.etc_viz.c2s_enc_frac: '{{json_event.message.get("c2s_viz.enc_frac")}}'
+          corelight.etc_viz.c2s_clr_frac: '{{json_event.message.get("c2s_viz.clr_frac")}}'
+          corelight.etc_viz.c2s_pdu1_enc: '{{json_event.message.get("c2s_viz.pdu1_enc")}}'
+          corelight.etc_viz.c2s_clr_ex: '{{json_event.message.get("c2s_viz.clr_ex")}}'
+          corelight.etc_viz.s2c_size: '{{json_event.message.get("s2c_viz.size")}}'
+          corelight.etc_viz.s2c_enc_dev: '{{json_event.message.get("s2c_viz.enc_dev")}}'
+          corelight.etc_viz.s2c_enc_frac: '{{json_event.message.get("s2c_viz.enc_frac")}}'
+          corelight.etc_viz.s2c_clr_frac: '{{json_event.message.get("s2c_viz.clr_frac")}}'
+          corelight.etc_viz.s2c_pdu1_enc: '{{json_event.message.get("s2c_viz.pdu1_enc")}}'
+          corelight.etc_viz.s2c_clr_ex: '{{json_event.message.get("s2c_viz.clr_ex")}}'
+          corelight.etc_viz.service: '{{json_event.message.get("service")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["connection", "info"]
+
+  # ----------------------------------------------------------------
+  # analyzer.log
+  # Reports a protocol analyzer that was disabled or that failed on a
+  # connection — useful both for tuning and for spotting traffic
+  # deliberately shaped to confuse the sensor.
+  # ----------------------------------------------------------------
+  set_analyzer_fields:
+    actions:
+      - set:
+          network.transport: '{{json_event.message.get("proto")}}'
+          corelight.analyzer.kind: '{{json_event.message.get("analyzer_kind")}}'
+          corelight.analyzer.name: '{{json_event.message.get("analyzer_name")}}'
+          corelight.analyzer.failure_reason: '{{json_event.message.get("failure_reason")}}'
+          corelight.analyzer.failure_data: '{{json_event.message.get("failure_data")}}'
+          corelight.uid: '{{json_event.message.get("uid")}}'
+      - set:
+          event.type: ["info"]
+      - set:
+          network.protocol: '{{json_event.message.get("analyzer_name") | lower}}'
+        filter: '{{json_event.message.get("analyzer_kind") == "protocol" and json_event.message.get("analyzer_name") != None}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("failure_reason") != None}}'
+
+  # ----------------------------------------------------------------
+  # unknown_protocols.log
+  # A payload the sensor could not attribute to any analyzer. There is
+  # no connection tuple: only the analyzer stack and the first bytes.
+  # ----------------------------------------------------------------
+  set_unknown_protocols_fields:
+    actions:
+      - set:
+          corelight.unknown_protocols.analyzer: '{{json_event.message.get("analyzer")}}'
+          corelight.unknown_protocols.analyzer_history: '{{json_event.message.get("analyzer_history")}}'
+          corelight.unknown_protocols.protocol_id: '{{json_event.message.get("protocol_id")}}'
+          corelight.unknown_protocols.protocol_name: '{{json_event.message.get("protocol_name")}}'
+          corelight.unknown_protocols.first_bytes: '{{json_event.message.get("first_bytes")}}'
+      - set:
+          event.type: ["info"]
+
+  # ----------------------------------------------------------------
+  # generic_dns_tunnels.log
+  # A detection: a domain carrying more DNS payload than a resolver
+  # ever would, i.e. tunnelling or exfiltration over DNS.
+  # ----------------------------------------------------------------
+  set_generic_dns_tunnels_fields:
+    actions:
+      - set:
+          source.ip: '{{json_event.message.get("dns_client")}}'
+          network.protocol: "dns"
+          dns.question.registered_domain: '{{json_event.message.get("domain")}}'
+          # Volume seen for that domain over the window the sensor measured.
+          corelight.generic_dns_tunnels.bytes: '{{json_event.message.get("bytes")}}'
+          corelight.generic_dns_tunnels.capture_secs: '{{json_event.message.get("capture_secs")}}'
+      - set:
+          event.kind: "alert"
+          event.category: ["network", "intrusion_detection"]
           event.type: ["info"]

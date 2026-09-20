@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dnp3.log`: map the request and reply function codes and the internal indications the outstation returned.
 - `s7comm.log`: map the message class, the function and subfunction, the PDU reference that pairs a request with its reply, and the error the PLC returned.
 - `known_hosts.log`: map the observed host to `host.ip`, the role Corelight inferred for it, the connection counters, and the criticality, description, source and status the entity inventory holds for it.
-- `known_services.log`: map the service to `network.protocol` and the pair it answers on to `destination.ip` / `destination.port`, with the application and the software banner observed.
+- `known_services.log`: map the pair the service answers on to `destination.ip` / `destination.port`, the first application protocol recognised on it to `network.protocol`, and the application and the software banner observed.
 - `known_certs.log`: map the certificate fingerprint to `file.hash.sha1` and the issuer and serial onto `x509.*`.
 - Smart descriptions for `x509`, `rdp`, `dhcp`, `encrypted_dns`, `known_users`, `weird`, `modbus`, `dnp3`, `s7comm`, `known_hosts`, `known_services` and `known_certs`.
 
@@ -58,6 +58,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rdp.log`: map the Corelight RDP fingerprint (RDFP), the requested colour depth, the client product identifier and the TLS state.
 - `x509.log`: map the email, address and URI subject alternative names, and the path length constraint.
 
+- Support for the fifteen remaining log types the sensor sends: `conn_long.log`, `known_domains.log`, `known_names.log`, `known_devices.log`, `modbus_detailed.log`, `modbus_read_device_identification.log`, `cotp.log`, `s7comm_read_szl.log`, `dnp3_objects.log`, `dnp3_control.log`, `enip.log`, `etc_viz.log`, `analyzer.log`, `unknown_protocols.log` and `generic_dns_tunnels.log`. Every log type a Corelight sensor exports is now parsed.
+- `conn_long.log`: the periodic report the sensor writes for a connection that is still open. It shares the schema of `conn.log` and is parsed by the same stage, so a long-lived session is described the same way whether it is reported while open or once closed.
+- `known_domains.log`, `known_names.log` and `known_devices.log`: map the entity inventory entries for a domain, a host name and a device, under the `corelight.known.*` namespace the whole `known_*` family shares. The name goes to `host.hostname` and the device hardware address to `host.mac`.
+- `modbus_detailed.log`: map the function, the register or coil the request addresses, the quantity of values it covers and the values themselves, which is what makes a write to a specific register visible rather than just "a Modbus write happened".
+- `modbus_read_device_identification.log`: map the MEI type, the conformity level and the vendor, product and revision strings the device returns.
+- `cotp.log`: map the ISO 8073 PDU carried under TPKT, which is the transport S7comm rides on.
+- `s7comm_read_szl.log`: map the system status list being read from the PLC, the method and the return code, plus `event.outcome`.
+- `dnp3_objects.log`: map the object group, variation and range of a DNP3 request or reply, one level below the function code `dnp3.log` reports.
+- `dnp3_control.log`: map the control relay output block: the operation type, the trip control code, the point index and the status the outstation returned, plus `event.outcome`. This is the log that shows an operator (or an attacker) actuating a point.
+- `enip.log`: map the EtherNet/IP command, its status, the session handle and the sender context, plus `event.outcome`.
+- `etc_viz.log`: map the encrypted traffic collection statistics Corelight derives for a session. The log carries only the server side of the pair, so only `destination.*` is populated.
+- `analyzer.log`: report the protocol, file and packet analyzers that gave up on a session, with the reason and `event.outcome` set to `failure`. An analyzer failing is how parsing gaps and evasion attempts surface.
+- `unknown_protocols.log`: map the analyzer that met traffic it could not identify, the protocol identifier and the first bytes it saw. This log carries no connection tuple at all.
+- `generic_dns_tunnels.log`: report the domains Corelight suspects of carrying a DNS tunnel under the `intrusion_detection` event category, with the queried domain, the volume observed and the observation window.
+- Smart descriptions for every dataset that had none: the fifteen log types above, and the twenty authentication, mail, file and protocol logs added earlier in this release (`ssh`, `kerberos`, `ntlm`, `ldap`, `ldap_search`, `dce_rpc`, `smtp`, `smtp_links`, `smb_files`, `smb_mapping`, `ftp`, `pe`, `ocsp`, `quic`, `ntp`, `snmp`, `mysql`, `tunnel`, `ipsec` and `software`).
+
 ### Changed
 
 - `known_users.log`: the counters and annotations move from `corelight.known_users.*` to `corelight.known.*`, the namespace now shared by the whole `known_*` family.
@@ -66,6 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `suricata_corelight`: also map `alert.action` to `event.action` (in addition to `action.name`).
 - `conn.log`: `source.user.roles` is now emitted as an array; `event.duration` is now emitted as an integer (nanoseconds).
 - Detection rules now reference the relevant Zeek/Suricata documentation instead of a generic integration link.
+- `conn.log` and `ssh.log`: the latitude and longitude of the Corelight geolocation enrichment are no longer mapped to `source.geo.location` / `destination.geo.location`. The sensor serialises those two doubles with their bytes in reverse order, so the exported values are meaningless (a latitude of 37.751 arrives as -1.04e+172). The city, region, country and ASN of the same enrichment are unaffected and still mapped.
+- `known_services.log`: the application protocol is now really emitted as `network.protocol`. Its guard ended on the `service` list itself, which the engine does not read as a condition, so the assignment never ran.
+- `files.log`: the `tx_hosts` / `rx_hosts` fallback used when the log carries no connection tuple now really runs, for the same reason.
+- `_meta/fields.yml`: fifty-two fields declared as `keyword` are now declared with the type the sensor actually sends — `boolean` for the flags (`conn.local_orig`, `dns.rejected`, `files.timedout`, `ssl.sni_matches_cert`, …), `long` for the counters and identifiers, `float` for the fractions. They were reported as strings before, which prevented range queries and aggregations on them.
+- `_meta/fields.yml`: every field now carries a description.
 
 ## 2026-06-17 - 1.0.0
 
