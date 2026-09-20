@@ -194,6 +194,17 @@ stages:
           corelight.conn.resp_names: '{{json_event.message.get("id.resp_h_name.vals")}}'
           corelight.conn.resp_names_source: '{{json_event.message.get("id.resp_h_name.src")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      # orig_bytes/resp_bytes count payload only, and Zeek omits them entirely
+      # when a connection carries no payload (a SYN with no reply, a reject, an
+      # ICMP exchange). orig_ip_bytes and resp_ip_bytes count every byte seen on
+      # the wire and are always present, so they are the fallback for ECS
+      # *.bytes; without it those connections report no volume at all.
+      - set:
+          source.bytes: '{{json_event.message.get("orig_ip_bytes")}}'
+        filter: '{{json_event.message.get("orig_bytes") == None and json_event.message.get("orig_ip_bytes") != None}}'
+      - set:
+          destination.bytes: '{{json_event.message.get("resp_ip_bytes")}}'
+        filter: '{{json_event.message.get("resp_bytes") == None and json_event.message.get("resp_ip_bytes") != None}}'
       # Zeek duration is in seconds; ECS event.duration is in nanoseconds.
       # Guard: only set when present and numeric (Zeek may emit "-" or omit it).
       - set:

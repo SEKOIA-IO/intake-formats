@@ -98,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `files.log`: the `tx_hosts` / `rx_hosts` fallback used when the log carries no connection tuple now really runs, for the same reason.
 - `_meta/fields.yml`: fifty-two fields declared as `keyword` are now declared with the type the sensor actually sends — `boolean` for the flags (`conn.local_orig`, `dns.rejected`, `files.timedout`, `ssl.sni_matches_cert`, …), `long` for the counters and identifiers, `float` for the fractions. They were reported as strings before, which prevented range queries and aggregations on them.
 - `_meta/fields.yml`: every field now carries a description.
+- `conn.log`: a connection that carries no payload now reports its volume. `orig_bytes` / `resp_bytes` count payload only and Zeek omits them entirely on a SYN with no reply, a reject or an ICMP exchange, so `source.bytes` / `destination.bytes` now fall back to `orig_ip_bytes` / `resp_ip_bytes`, which count every byte seen on the wire and are always present. Those two counters also stay available as `corelight.conn.orig_ip_bytes` / `corelight.conn.resp_ip_bytes`.
 - `ssl.log`: the certificate subject and issuer move from `x509.subject.distinguished_name` / `x509.issuer.distinguished_name` to `tls.server.subject` / `tls.server.issuer`. The certificate presented in a session belongs to the server, and that is where ECS holds it; `x509.log` keeps reporting its own certificates under `x509.*`.
 
 ## 2026-06-17 - 1.0.0
