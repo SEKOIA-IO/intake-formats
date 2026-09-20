@@ -152,6 +152,7 @@ stages:
           destination.ip: '{{json_event.message.get("id.resp_h")}}'
           destination.port: '{{json_event.message.get("id.resp_p")}}'
           observer.name: '{{json_event.message.get("_system_name")}}'
+          observer.hostname: '{{json_event.message.get("_system_name")}}'
       - set:
           event.category: ["network"]
           event.type: ["connection"]
@@ -237,6 +238,8 @@ stages:
   set_dns_fields:
     actions:
       - set:
+          network.protocol: "dns"
+          network.transport: '{{json_event.message.get("proto")}}'
           dns.id: '{{json_event.message.get("trans_id")}}'
           dns.question.name: '{{json_event.message.get("query")}}'
           dns.question.type: '{{json_event.message.get("qtype_name")}}'
@@ -267,6 +270,13 @@ stages:
                 {% endfor %}
             ]
         filter: '{{json_event.message.get("answers") != None}}'
+      # The resolver answered, so the outcome is the response code it returned.
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("rcode_name") == "NOERROR"}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("rcode_name") not in [None, "NOERROR"]}}'
 
   # ----------------------------------------------------------------
   # http.log
@@ -274,6 +284,7 @@ stages:
   set_http_fields:
     actions:
       - set:
+          network.transport: "tcp"
           url.path: '{{json_event.message.get("uri")}}'
           http.request.method: '{{json_event.message.get("method")}}'
           http.version: '{{json_event.message.get("version")}}'
@@ -303,10 +314,20 @@ stages:
       # "dest_host" and appends the port when it is not the default one.
       - set:
           url.domain: '{{json_event.message.get("host")}}'
+          destination.domain: '{{json_event.message.get("host")}}'
         filter: '{{json_event.message.get("host") != None}}'
       - set:
           url.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
+          destination.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
         filter: '{{json_event.message.get("host") == None and json_event.message.get("dest_host") != None}}'
+      # Zeek reports the MIME types of the bodies as sets, one entry per file
+      # carried; ECS holds a single type per direction.
+      - set:
+          http.request.mime_type: '{{json_event.message.get("orig_mime_types")[0]}}'
+        filter: '{{json_event.message.get("orig_mime_types") is sequence and json_event.message.get("orig_mime_types") is not string and json_event.message.get("orig_mime_types") | length > 0}}'
+      - set:
+          http.response.mime_type: '{{json_event.message.get("resp_mime_types")[0]}}'
+        filter: '{{json_event.message.get("resp_mime_types") is sequence and json_event.message.get("resp_mime_types") is not string and json_event.message.get("resp_mime_types") | length > 0}}'
       - set:
           user_agent.original: '{{json_event.message.get("user_agent")}}'
         filter: '{{json_event.message.get("user_agent") != None}}'
@@ -328,6 +349,7 @@ stages:
   set_ssl_fields:
     actions:
       - set:
+          network.transport: "tcp"
           tls.version: '{{json_event.message.get("version")}}'
           tls.cipher: '{{json_event.message.get("cipher")}}'
           tls.curve: '{{json_event.message.get("curve")}}'
@@ -346,12 +368,31 @@ stages:
           corelight.ssl.cert_chain_fps: '{{json_event.message.get("cert_chain_fps")}}'
           corelight.ssl.client_cert_chain_fps: '{{json_event.message.get("client_cert_chain_fps")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
+      # The certificate presented in this session belongs to the server; ECS
+      # holds its subject and issuer under tls.server.
       - set:
-          x509.subject.distinguished_name: '{{json_event.message.get("subject")}}'
+          tls.server.subject: '{{json_event.message.get("subject")}}'
         filter: '{{json_event.message.get("subject") != None}}'
       - set:
-          x509.issuer.distinguished_name: '{{json_event.message.get("issuer")}}'
+          tls.server.issuer: '{{json_event.message.get("issuer")}}'
         filter: '{{json_event.message.get("issuer") != None}}'
+      - set:
+          tls.client.subject: '{{json_event.message.get("client_subject")}}'
+        filter: '{{json_event.message.get("client_subject") != None}}'
+      - set:
+          tls.client.issuer: '{{json_event.message.get("client_issuer")}}'
+        filter: '{{json_event.message.get("client_issuer") != None}}'
+      - set:
+          destination.domain: '{{json_event.message.get("server_name")}}'
+        filter: '{{json_event.message.get("server_name") != None}}'
+      # Zeek reports "ok" when the chain validated, and the OpenSSL error
+      # otherwise.
+      - set:
+          event.outcome: "success"
+        filter: '{{json_event.message.get("validation_status") == "ok"}}'
+      - set:
+          event.outcome: "failure"
+        filter: '{{json_event.message.get("validation_status") not in [None, "ok"]}}'
 
   # ----------------------------------------------------------------
   # files.log
@@ -381,6 +422,10 @@ stages:
       - set:
           event.category: ["file"]
           event.type: ["info"]
+      # The analyzer the file was carried by, e.g. "HTTP" or "SMTP".
+      - set:
+          network.protocol: '{{json_event.message.get("source") | lower}}'
+        filter: '{{json_event.message.get("source") != None}}'
       - set:
           event.duration: '{{(json_event.message.get("duration") | float * 1000000000) | int}}'
         filter: '{{json_event.message.get("duration") not in [None, "-"]}}'
@@ -491,6 +536,7 @@ stages:
     actions:
       - set:
           network.protocol: "ssh"
+          network.transport: "tcp"
           corelight.ssh.client: '{{json_event.message.get("client")}}'
           corelight.ssh.server: '{{json_event.message.get("server")}}'
           corelight.ssh.version: '{{json_event.message.get("version")}}'
@@ -596,6 +642,7 @@ stages:
           source.user.name: '{{json_event.message.get("username")}}'
           source.user.domain: '{{json_event.message.get("domainname")}}'
           source.domain: '{{json_event.message.get("hostname")}}'
+          network.transport: "tcp"
           destination.domain: '{{json_event.message.get("server_nb_computer_name")}}'
           corelight.ntlm.server_dns_computer_name: '{{json_event.message.get("server_dns_computer_name")}}'
           corelight.ntlm.server_tree_name: '{{json_event.message.get("server_tree_name")}}'
@@ -740,6 +787,7 @@ stages:
     actions:
       - set:
           network.protocol: "smb"
+          network.transport: "tcp"
           # `object_path` is the share, `name` the path of the file inside it.
           file.directory: '{{json_event.message.get("object_path")}}'
           file.name: '{{json_event.message.get("name")}}'
@@ -779,6 +827,7 @@ stages:
     actions:
       - set:
           network.protocol: "smb"
+          network.transport: "tcp"
           corelight.smb_mapping.object_path: '{{json_event.message.get("object_path")}}'
           corelight.smb_mapping.path: '{{json_event.message.get("path")}}'
           corelight.smb_mapping.service: '{{json_event.message.get("service")}}'
@@ -1150,6 +1199,7 @@ stages:
           package.name: '{{json_event.message.get("name")}}'
           corelight.software.type: '{{json_event.message.get("software_type")}}'
           corelight.software.unparsed_version: '{{json_event.message.get("unparsed_version")}}'
+          host.ip: '{{json_event.message.get("host_header")}}'
           corelight.software.host: '{{json_event.message.get("host_header")}}'
           corelight.software.port: '{{json_event.message.get("host_p")}}'
           corelight.software.version.major: '{{json_event.message.get("version.major")}}'
@@ -1392,11 +1442,17 @@ stages:
     actions:
       - set:
           host.ip: '{{json_event.message.get("host_ip")}}'
+          destination.domain: '{{json_event.message.get("domain")}}'
           corelight.known.domain: '{{json_event.message.get("domain")}}'
           corelight.known.protocols: '{{json_event.message.get("protocols")}}'
           corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
           corelight.known.annotations: '{{json_event.message.get("annotations")}}'
           corelight.kuid: '{{json_event.message.get("kuid")}}'
+      # The application protocols the entity was seen using; ECS
+      # network.protocol holds a single one.
+      - set:
+          network.protocol: '{{json_event.message.get("protocols")[0] | lower}}'
+        filter: '{{json_event.message.get("protocols") is sequence and json_event.message.get("protocols") is not string and json_event.message.get("protocols") | length > 0}}'
       - set:
           event.category: ["network", "host"]
           event.type: ["info"]
@@ -1417,6 +1473,11 @@ stages:
           corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
           corelight.known.annotations: '{{json_event.message.get("annotations")}}'
           corelight.kuid: '{{json_event.message.get("kuid")}}'
+      # The application protocols the entity was seen using; ECS
+      # network.protocol holds a single one.
+      - set:
+          network.protocol: '{{json_event.message.get("protocols")[0] | lower}}'
+        filter: '{{json_event.message.get("protocols") is sequence and json_event.message.get("protocols") is not string and json_event.message.get("protocols") | length > 0}}'
       - set:
           event.category: ["network", "host"]
           event.type: ["info"]
@@ -1439,6 +1500,11 @@ stages:
           corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
           corelight.known.annotations: '{{json_event.message.get("annotations")}}'
           corelight.kuid: '{{json_event.message.get("kuid")}}'
+      # The application protocols the entity was seen using; ECS
+      # network.protocol holds a single one.
+      - set:
+          network.protocol: '{{json_event.message.get("protocols")[0] | lower}}'
+        filter: '{{json_event.message.get("protocols") is sequence and json_event.message.get("protocols") is not string and json_event.message.get("protocols") | length > 0}}'
       - set:
           event.category: ["network", "host"]
           event.type: ["info"]

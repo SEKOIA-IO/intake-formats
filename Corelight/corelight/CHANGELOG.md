@@ -74,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `generic_dns_tunnels.log`: report the domains Corelight suspects of carrying a DNS tunnel under the `intrusion_detection` event category, with the queried domain, the volume observed and the observation window.
 - Smart descriptions for every dataset that had none: the fifteen log types above, and the twenty authentication, mail, file and protocol logs added earlier in this release (`ssh`, `kerberos`, `ntlm`, `ldap`, `ldap_search`, `dce_rpc`, `smtp`, `smtp_links`, `smb_files`, `smb_mapping`, `ftp`, `pe`, `ocsp`, `quic`, `ntp`, `snmp`, `mysql`, `tunnel`, `ipsec` and `software`).
 
+- `observer.hostname`: the name the sensor reports for itself is now mapped there as well as to `observer.name`, on every log type.
+- `dns.log`: map the transport the query travelled over to `network.transport`, and derive `event.outcome` from the response code the resolver returned.
+- `ssl.log`: map the SNI to `destination.domain` as well as `tls.client.server_name`, the client certificate subject and issuer to `tls.client.subject` / `tls.client.issuer`, and derive `event.outcome` from the chain validation.
+- `http.log`: map the `Host:` header to `destination.domain` as well as `url.domain`, and the MIME type of each direction to `http.request.mime_type` / `http.response.mime_type`.
+- `files.log`: map the analyzer that carried the file (`HTTP`, `SMTP`, `FTP_DATA`, …) to `network.protocol`.
+- `known_domains.log`: map the observed domain to `destination.domain`.
+- `known_domains.log`, `known_names.log` and `known_devices.log`: map the first application protocol the entity was seen using to `network.protocol`; the whole set stays under `corelight.known.protocols`.
+- `software.log`: map the address the software was observed on to `host.ip`.
+- `ssh.log`, `smb_files.log`, `smb_mapping.log`, `ntlm.log`: set `network.transport`, which these logs do not carry but their protocol mandates.
+
 ### Changed
 
 - `known_users.log`: the counters and annotations move from `corelight.known_users.*` to `corelight.known.*`, the namespace now shared by the whole `known_*` family.
@@ -88,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `files.log`: the `tx_hosts` / `rx_hosts` fallback used when the log carries no connection tuple now really runs, for the same reason.
 - `_meta/fields.yml`: fifty-two fields declared as `keyword` are now declared with the type the sensor actually sends — `boolean` for the flags (`conn.local_orig`, `dns.rejected`, `files.timedout`, `ssl.sni_matches_cert`, …), `long` for the counters and identifiers, `float` for the fractions. They were reported as strings before, which prevented range queries and aggregations on them.
 - `_meta/fields.yml`: every field now carries a description.
+- `ssl.log`: the certificate subject and issuer move from `x509.subject.distinguished_name` / `x509.issuer.distinguished_name` to `tls.server.subject` / `tls.server.issuer`. The certificate presented in a session belongs to the server, and that is where ECS holds it; `x509.log` keeps reporting its own certificates under `x509.*`.
 
 ## 2026-06-17 - 1.0.0
 
