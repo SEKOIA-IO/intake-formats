@@ -6,7 +6,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "%{SESSION_TYPE_1}|%{SESSION_TYPE_2}|%{SESSION_TYPE_3}|%{SESSION_TYPE_4}|%{SESSION_TYPE_6}|%{CONNECTIONS}|%{FAULT}|%{FAULT_TYPE_2}|%{HTTP_LOGS_1}|%{HTTP_LOGS_4}|%{HTTP_LOGS_2}|%{HTTP_LOGS_3}|%{LOGIN}|%{OTHERS_EVENTS_TYPE_6}|%{OTHERS_EVENTS}|%{OTHERS_EVENTS_TYPE_2}|%{OTHERS_EVENTS_TYPE_3}|%{OTHERS_EVENTS_TYPE_5}|%{OTHERS_EVENTS_TYPE_7}|%{OTHERS_EVENTS_TYPE_7_1}|%{OTHERS_EVENTS_TYPE_8}|%{OTHERS_EVENTS_TYPE_9}|%{OTHERS_EVENTS_TYPE_10}|%{VLSI_API}|%{VIDM_HTTP}|%{VIDM_LOG}|%{VMCAD}|%{PERMISSION_TYPE_1}|%{PERMISSION_TYPE_2}|%{SESSION_COUNT}|%{OTHERS_EVENTS_TYPE_12}|%{TOMCAT_ACCESS}|%{DNSMASQ_QUERY}|%{WCP_SERVICE}"
+        pattern: "%{SESSION_TYPE_1}|%{SESSION_TYPE_2}|%{SESSION_TYPE_3}|%{SESSION_TYPE_4}|%{SESSION_TYPE_6}|%{CONNECTIONS}|%{FAULT}|%{FAULT_TYPE_2}|%{HTTP_LOGS_1}|%{HTTP_LOGS_4}|%{HTTP_LOGS_2}|%{HTTP_LOGS_3}|%{LOGIN}|%{OTHERS_EVENTS_TYPE_6}|%{OTHERS_EVENTS}|%{OTHERS_EVENTS_TYPE_2}|%{OTHERS_EVENTS_TYPE_3}|%{OTHERS_EVENTS_TYPE_5}|%{OTHERS_EVENTS_TYPE_7}|%{OTHERS_EVENTS_TYPE_7_1}|%{OTHERS_EVENTS_TYPE_8}|%{OTHERS_EVENTS_TYPE_9}|%{OTHERS_EVENTS_TYPE_10}|%{VLSI_API}|%{VIDM_HTTP}|%{VIDM_LOG}|%{VMCAD}|%{PERMISSION_TYPE_1}|%{PERMISSION_TYPE_2}|%{PERMISSION_TYPE_3}|%{MODIFY_ENTRY}|%{SESSION_COUNT}|%{OTHERS_EVENTS_TYPE_12}|%{TOMCAT_ACCESS}|%{DNSMASQ_QUERY}|%{WCP_SERVICE}"
         custom_patterns:
           SESSION_TYPE_1: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA:source_user_name}\] \[%{HOSTNAME:hostname}\] \[%{INT}] \[(?P<reason>Cannot login %{USERNAME:username}@%{IP:ip_address})\]'
           SESSION_TYPE_2: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA}\] \[%{DATA}\] \[%{INT}\] \[(?P<reason>User %{USERNAME_WITH_DOMAIN} logged in as %{DATA})\]'
@@ -38,6 +38,9 @@ pipeline:
           PERMISSION_TYPE_1: '%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\[%{INT:pid}:%{DATA:thread}\] \[OpId=%{UUID:operid}\] \[%{DATA:logger}\] (%{PERMISSION_TYPE_1_MESSAGE_1}|%{GREEDYDATA})'
           PERMISSION_TYPE_1_MESSAGE_1: "User \\{Name: %{DATA:username}, Domain: %{DATA:user_domain}\\} with role '%{DATA:role}' is authorized for method call '%{DATA:resource_name}'"
           PERMISSION_TYPE_2: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA} %{DATA} %{DATA:log_level} %{DATA:logger} opId=%{DATA}?\] (?P<reason>User %{USERNAME_WITH_DOMAIN} who belongs to group %{DATA:user_group} %{DATA} to invoke API %{DATA:resource_name})'
+          PERMISSION_TYPE_3: "%{TIMESTAMP_ISO8601:timestamp} %{DATA:log_level} %{DATA:process}\\[%{INT:pid}:%{DATA:thread}\\] \\[OpId=%{DATA:operationID}\\] \\[%{DATA:logger}\\] \\[User \\{Name: %{DATA:username}, Domain: %{DATA:user_domain}\\} with role '%{DATA:role}'\\] Adding users '\\[\\{Name: %{DATA:target_username}, Domain: %{DATA:target_user_domain}\\}\\]' to local group '%{DATA:group_name}'"
+
+          MODIFY_ENTRY: '%{TIMESTAMP_ISO8601:timestamp}:%{DATA}:INFO: (?P<reason>Modify Entry) \(cn=%{DATA:vmware_vcenter_ldap_cn}, EID %{DATA:entry_id}\)\(from %{IP:source_ip}\)\(by %{USERNAME:username}@%{DATA:user_domain}\)\(via %{DATA:access_method}\)\(USN %{DATA:usn}\)'
 
           SESSION_COUNT: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA} %{DATA} %{DATA:log_level} %{DATA:logger} opId=%{DATA}?\] (Session count for user \[after add\]: %{USERNAME_WITH_DOMAIN} is %{NUMBER:num_sessions}|%{GREEDYDATA:reason})'
 
@@ -147,6 +150,10 @@ stages:
           vmware_vcenter.user_role: "{{parsed_event.message.role}}"
           vmware_vcenter.resource_name: "{{parsed_event.message.resource_name}}"
           vmware_vcenter.num_sessions: "{{parsed_event.message.num_sessions}}"
+          vmware_vcenter.ldap.cn: "{{parsed_event.message.vmware_vcenter_ldap_cn}}"
+          user.target.name: "{{parsed_event.message.target_username}}"
+          user.target.domain: "{{parsed_event.message.target_user_domain}}"
+          group.name: "{{parsed_event.message.group_name}}"
 
       - set:
           "@timestamp": "{{parsed_date.datetime}}"
@@ -208,7 +215,7 @@ stages:
           vim.event.BadUsernameSessionEvent: ["end"]
           vim.event.UserLogoutSessionEvent: ["end"]
           vim.event.AlreadyAuthenticatedSessionEvent: ["end"]
-          vim.event.VmReconfiguredEvent: ["changed"]
+          vim.event.VmReconfiguredEvent: ["change"]
         mapping:
           parsed_event.message.event_code: event.type
         fallback: ["connection"]
@@ -259,7 +266,20 @@ stages:
       - set:
           event.category: ["iam"]
           event.type: ["info"]
-        filter: "{{ parsed_event.message.logger in ('com.vmware.identity.vlsi.RoleBasedAuthorizer', 'com.vmware.vcenter.trustmanagement.vapi.impl.setup.AuthzPermissionValidator')}}"
+        filter: "{{ parsed_event.message.logger in ('com.vmware.identity.vlsi.RoleBasedAuthorizer', 'com.vmware.vcenter.trustmanagement.vapi.impl.setup.AuthzPermissionValidator', 'com.vmware.identity.admin.vlsi.PrincipalManagementServiceImpl')}}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
+          event.action: "user_add_to_group"
+          event.reason: "User added to '{{parsed_event.message.group_name}}' group"
+        filter: "{{ parsed_event.message.logger == 'com.vmware.identity.admin.vlsi.PrincipalManagementServiceImpl' and parsed_event.message.get('target_username') != None and parsed_event.message.get('group_name') != None }}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
+          event.action: "modify_entry"
+        filter: "{{ parsed_event.message.get('vmware_vcenter_ldap_cn') != None }}"
 
       - set:
           event.category: ["session"]
