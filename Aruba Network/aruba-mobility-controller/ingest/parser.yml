@@ -6,16 +6,12 @@ ignored_values:
   - ""
 pipeline:
   - name: parsed_header
-    description: ""
-    filter: ""
     external:
       name: cef.parse-cef
       properties:
         input_field: "{{original.message}}"
         output_field: message
   - name: parsed_nested_message
-    description: ""
-    filter: ""
     external:
       name: grok.match
       properties:
@@ -31,7 +27,6 @@ pipeline:
           PLAIN_TEXT_MESSSAGES: "%{GREEDYDATA:log_description}"
           EVENT_CODE_MESSAGES_PREFIX: '[0-9]\[[0-9]+\]\:\s'
   - name: parsed_event
-    description: ""
     filter: "{{parsed_nested_message.message.error_number != None }}"
     external:
       name: grok.case_match
@@ -234,7 +229,6 @@ pipeline:
           NOTPARENTHESIS: '[^\(]+'
           NOTSLASH: '[^\/]+'
   - name: parsed_event
-    description: ""
     filter: "{{not parsed_event is defined or parsed_event.message == None}}"
     external:
       name: grok.match
@@ -256,7 +250,6 @@ pipeline:
             (?<action>trace_rotate_file): rotating
             (%{PATH:file_path}|%{DATA:file_name})
   - name: parsed_event
-    description: ""
     filter: >-
       {{not parsed_event is defined and
       parsed_nested_message.message.error_number == None }}
@@ -274,57 +267,18 @@ pipeline:
             USER: %{NOTSPACE:user_name} connected from %{IP:source_ip} has
             (?<action>logged out)%{GREEDYDATA}
   - name: ecs_observer_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_event_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_process_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_user_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_host_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_network_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_source_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_destination_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_file_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: custom_fields_mapping
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_authentication_categorization
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_host_categorization
-    description: ""
-    filter: ""
-    external: null
   - name: ecs_outcome_categorization
-    description: ""
-    filter: ""
-    external: null
 stages:
   ecs_observer_mapping:
     actions:
@@ -333,8 +287,6 @@ stages:
           observer.product: "{{parsed_header.message.DeviceProduct}}"
           observer.version: "{{parsed_header.message.DeviceVersion}}"
           observer.hostname: "{{parsed_header.message.dvchost}}"
-        filter: ""
-        name: set
   ecs_event_mapping:
     actions:
       - set:
@@ -342,42 +294,30 @@ stages:
           event.action: "{{parsed_event.message.action}}"
           event.reason: "{{parsed_event.message.reason}}"
           event.dataset: "{{parsed_event.message.Name}}"
-        filter: ""
-        name: set
       - set:
           log.description: "{{parsed_nested_message.message.log_description}}"
-        filter: ""
-        name: set
   ecs_process_mapping:
     actions:
       - set:
           process.pid: "{{parsed_header.message.dvcpid}}"
           process.name: "{{parsed_header.message.deviceProcessName}}"
           process.command_line: "{{parsed_event.message.command_line}}"
-        filter: ""
-        name: set
   ecs_user_mapping:
     actions:
       - set:
           user.name: "{{parsed_event.message.user_name}}"
           user.roles: "{{parsed_event.message.user_role}}"
           user.changes.roles: "{{parsed_event.message.user_new_role}}"
-        filter: ""
-        name: set
   ecs_host_mapping:
     actions:
       - set:
           host.name: "{{parsed_event.message.server_name}}"
           host.domain: "{{parsed_event.message.domain}}"
-        filter: ""
-        name: set
   ecs_network_mapping:
     actions:
       - set:
           network.vlan.id: "{{parsed_event.message.vlan_id}}"
           network.protocol: "{{parsed_event.message.connection_type}}"
-        filter: ""
-        name: set
   ecs_source_mapping:
     actions:
       - set:
@@ -387,25 +327,18 @@ stages:
       - set:
           source.mac: "{{parsed_event.message.station_mac}}"
           source.port: "{{parsed_event.message.source_port}}"
-        filter: ""
-        name: set
   ecs_destination_mapping:
     actions:
       - set:
           destination.ip: "{{parsed_event.message.destination_ip}}"
         filter: "{{parsed_event.message.destination_ip | is_ipaddress}}"
-        name: set
       - set:
           destination.port: "{{parsed_event.message.destination_port}}"
-        filter: ""
-        name: set
   ecs_file_mapping:
     actions:
       - set:
           file.name: "{{parsed_event.message.file_name}}"
           file.path: "{{parsed_event.message.file_path}}"
-        filter: ""
-        name: set
   custom_fields_mapping:
     actions:
       - set:
@@ -418,12 +351,9 @@ stages:
           aruba.mobility_controller.access_point.name: "{{parsed_event.message.ap_name}}"
           aruba.mobility_controller.authentication.method: "{{parsed_event.message.authentication_method}}"
           aruba.mobility_controller.authentication.server: "{{parsed_event.message.authentication_server}}"
-        filter: ""
-        name: set
       - set:
           aruba.mobility_controller.access_point.ip: "{{parsed_event.message.ap_ip}}"
         filter: "{{parsed_event.message.ap_ip | is_ipaddress}}"
-        name: set
   ecs_authentication_categorization:
     actions:
       - set:
@@ -440,7 +370,6 @@ stages:
           'dot1x' in final.event.action|lower or 'ldap' in
           final.event.action|lower) and not final.event.action in
           ["trace_rotate_file","trace_on"]}}
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['end']}}"
         filter: >-
@@ -448,7 +377,6 @@ stages:
           final.event.category and ('logout' in final.event.action|lower or 
           'logoff' in final.event.action|lower or 'logged out' in
           final.event.action|lower or 'deauth' in final.event.action|lower)}}
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['start']}}"
         filter: >-
@@ -460,20 +388,17 @@ stages:
           final.event.action|lower or 'logged in' in final.event.action|lower or
           'authenticate' in final.event.action|lower or 'reject' in
           final.event.action|lower or 'auth_send' in final.event.action|lower)}}
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['info']}}"
         filter: >-
           {{'info' not in final.event.type and 'authentication' in
           final.event.category and 'end' not in final.event.type and 'start' not
           in final.event.type}}
-        name: set
   ecs_host_categorization:
     actions:
       - set:
           event.category: "{{(final.event.category|default([])) + ['host']}}"
         filter: "{{not final.event.category is defined}}"
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['change']}}"
         filter: >-
@@ -481,21 +406,18 @@ stages:
           and ('upgrading' in final.log.description|lower or ('change' in
           final.log.description|lower and not 'no change' in
           final.log.description|lower))}}
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['end']}}"
         filter: >-
           {{'end' not in final.event.type and 'host' in final.event.category and
           ('went down' in final.log.description|lower or 'rebooting' in
           final.log.description|lower)}}
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['start']}}"
         filter: >-
           {{'start' not in final.event.type and 'host' in final.event.category
           and ('booted' in final.log.description|lower or 'rebooted' in
           final.log.description|lower)}}
-        name: set
       - set:
           event.type: "{{(final.event.type|default([])) + ['info']}}"
         filter: >-
@@ -503,7 +425,6 @@ stages:
           and 'host' in final.event.category and ('end' not in final.event.type
           and 'start' not in final.event.type and 'change' not in
           final.event.type and 'access' not in final.event.type))}}
-        name: set
   ecs_outcome_categorization:
     actions:
       - set:
@@ -513,7 +434,6 @@ stages:
           or 'reject' in final.event.action|lower or 'denied' in
           final.event.type or parsed_event.message.result == '1' or 'fail' in
           parsed_event.message.result|lower)}}
-        name: set
       - set:
           event.outcome: unknown
         filter: >-
@@ -524,4 +444,3 @@ stages:
           {{final.event.type != ['info'] and (('success' in
           final.event.action|lower and not 'unsuccess' in
           final.event.action|lower) or final.event.outcome is not defined)}}
-        name: set
