@@ -3,6 +3,13 @@ pipeline:
   - name: parsed_event
     external:
       name: json.parse-json
+  - name: parse_details
+    filter: "{{parsed_event.message.details not in [None, ''] and parsed_event.message.details | trim not in ['', '[]']}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parsed_event.message.details}}"
+        output_field: details
   - name: parse_date
     external:
       name: date.parse
@@ -152,6 +159,9 @@ stages:
       - set:
           file.name: "{{parsed_event.message.object}}"
         filter: '{{parsed_event.message.filename == null and parsed_event.message.object_type in ["File", "Document", "Folder"]}}'
+      - set:
+          url.domain: '{{(((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain") | map(attribute="value") | first)}}'
+        filter: '{{parse_details.details != null and parse_details.details | length > 0 and (((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain") | list | length) > 0}}'
   set_netskope_fields:
     actions:
       - set:
@@ -171,6 +181,10 @@ stages:
       - set:
           netskope.events.other_categories: "{{parsed_event.message.other_categories}}"
         filter: "{{parsed_event.message.other_categories | length > 0}}"
+
+      - set:
+          netskope.events.domain_notes: '{{(((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain/Notes") | map(attribute="value") | first)}}'
+        filter: '{{parse_details.details != null and parse_details.details | length > 0 and (((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain/Notes") | list | length) > 0}}'
 
       - set:
           netskope.events.severity_id: "{{parsed_event.message.severity_id}}"
