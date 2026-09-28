@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-14
+
+### Fixed
+
+- Type custom field `action.properties.Task` as `keyword`: NxLog can resolve `Task` to a string, which failed the parsing of `action.properties`
+
 ## [1.0.2] - 2026-09-10
 
 ### Added
