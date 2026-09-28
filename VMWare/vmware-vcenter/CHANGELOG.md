@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Parse "Modify Entry" logs and extract:
+  - `event.action`
+  - `vmware_vcenter.entry_cn`
+- Parse SSO group management logs for "Adding users to group" and extract:
+  - acting user and domain
+  - actor role
+  - target user information
+  - target group in `group.name`
+
+### Changed
+
+- Add normalized group membership change description: `User added to '{group.name}' group`
+
 ## 2026-08-14 - 1.0.1
 
 ### Added
