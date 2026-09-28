@@ -7,20 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-09-14
+## [1.0.2] - 2026-09-28
 
-### Changed
+### Fixed
 
-- Parse the client IP of `user@IP` session events (login, logout, bad username, SSH session) as `source.ip` instead of `host.ip`
+- Fix existing ECS fields:
+  - `host.ip`: stop populating `host.ip` from `user@IP` session events
+  - `source.ip`: parse client IP extracted from `user@IP` session events (login, logout, bad username, SSH session)
 
-## 2026-08-14 - 1.0.1
+## [1.0.1] - 2026-08-14
 
 ### Added
 
 - Parse new ECS fields:
   - `service.name`
 
-## 2023-10-02 - 1.0.0
+## [1.0.0] - 2023-10-02
 
 ### Changed
 
