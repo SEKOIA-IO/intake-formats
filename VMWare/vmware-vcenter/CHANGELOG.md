@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-06
+
+### Added
+
+- Parse new ECS fields for `Modify Entry` events:
+  - `event.action`
+- Parse new custom fields for `Modify Entry` events:
+  - `vmware_vcenter.entry_cn`
+- Parse new fields logs for ` SSO group management` events (`Adding users to group`):
+  - acting user and domain
+  - actor role
+  - target user information
+  - target group in `group.name`
+
+### Changed
+
+- Add normalized group membership change description: `User added to '{group.name}' group`
+
 ## [1.0.2] - 2026-09-28
 
 ### Fixed
