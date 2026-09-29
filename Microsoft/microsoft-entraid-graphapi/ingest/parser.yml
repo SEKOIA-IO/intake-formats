@@ -25,16 +25,21 @@ pipeline:
         input_field: "{{json_event.message.activityDateTime}}"
         output_field: date
 
-  - name: set_common_fields
+  - name: set_ecs_fields
 
-  - name: set_actor_target_user_fields
+  - name: set_custom_fields_azure
 
-  - name: set_target_user_fields_from_action_properties
+  - name: set_custom_fields_azuread
 
-  - name: set_ecs_category
+  - name: set_custom_fields_action
+
+  - name: set_ecs_user_target_fields
+
+  - name: normalize_ecs_event_classification
 
 stages:
-  set_common_fields:
+  # ECS-first stage: keep only ECS and common fields here.
+  set_ecs_fields:
     actions:
       - set:
           "@timestamp": "{{parsed_date.date}}"
@@ -43,6 +48,7 @@ stages:
           cloud.service.name: "Azure EntraId"
 
           error.code: "{{json_event.message.status.errorCode}}"
+          event.code: "{{json_event.message.status.errorCode}}"
           event.outcome: "{{json_event.message.result}}"
           event.action: "{{json_event.message.activityDisplayName}}"
           error.message: "{{json_event.message.status.failureReason}}"
@@ -53,11 +59,11 @@ stages:
 
           trace.id: "{{json_event.message.correlationId}}"
 
-          user.id: "{{json_event.message.userId or json_event.message.initiatedBy.user.id}}"
-          user.name: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName or json_event.message.userDisplayName or json_event.message.initiatedBy.user.displayName}}"
+          user.id: "{{json_event.message.userId or json_event.message.initiatedBy.user.id or json_event.message.initiatedBy.app.servicePrincipalId}}"
+          user.name: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName or json_event.message.userDisplayName or json_event.message.initiatedBy.user.displayName or json_event.message.initiatedBy.app.displayName}}"
           user.email: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName}}"
 
-          source.ip: "{{json_event.message.ipAddress or json_event.message.initiatedBy.user.ipAddress}}"
+          source.ip: "{{json_event.message.ipAddress or json_event.message.initiatedBy.user.ipAddress or json_event.message.initiatedBy.app.ipAddress}}"
           source.geo.city_name: "{{json_event.message.location.city}}"
           source.geo.region_name: "{{json_event.message.location.state}}"
           source.geo.country_iso_code: "{{json_event.message.location.countryOrRegion}}"
@@ -73,29 +79,71 @@ stages:
           service.id: "{{json_event.message.appId}}"
           service.name: "{{json_event.message.appDisplayName or json_event.message.loggedByService}}"
 
+      - set:
+          host.id: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' -%}{{item.id}}{%- endif -%}
+            {%- endfor -%}
+          host.name: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' -%}{{item.displayName}}{%- endif -%}
+            {%- endfor -%}
+          host.os.name: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' -%}{{item.operatingSystem}}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
+
+      - set:
+          service.id: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'application' -%}{{item.id}}{%- endif -%}
+            {%- endfor -%}
+          service.name: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'application' -%}{{item.displayName}}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
+
+      # For PIM events, the initiatedBy user is "Azure AD PIM" (the service).
+      # The actual user is in targetResources with type "User".
+      - set:
+          user.name: >
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type == 'User' -%}{{ item.userPrincipalName or item.displayName }}{%- endif -%}
+            {%- endfor -%}
+          user.email: >
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type == 'User' -%}{{ item.userPrincipalName }}{%- endif -%}
+            {%- endfor -%}
+          user.id: >
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.type == 'User' -%}{{ item.id }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.loggedByService == 'PIM' and json_event.message.targetResources | length > 0}}"
+
+      - set:
+          user_agent.original: >
+            {%- for item in json_event.message.additionalDetails -%}
+              {%- if item.key == 'User-Agent' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
+
+  set_custom_fields_azure:
+    actions:
+      - set:
+          azure.entraid.properties.appliedConditionalAccessPolicies: "{{json_event.message.appliedConditionalAccessPolicies}}"
           azure.entraid.properties.clientAppUsed: "{{json_event.message.clientAppUsed}}"
           azure.entraid.properties.conditionalAccessStatus: "{{json_event.message.conditionalAccessStatus}}"
           azure.entraid.properties.isInteractive: "{{json_event.message.isInteractive}}"
+          azure.entraid.properties.operationType: "{{json_event.message.operationType}}"
+          azure.entraid.properties.resourceId: "{{json_event.message.resourceId}}"
           azure.entraid.properties.riskDetail: "{{json_event.message.riskDetail}}"
+          azure.entraid.properties.riskEventTypes: "{{json_event.message.riskEventTypes}}"
           azure.entraid.properties.riskLevelAggregated: "{{json_event.message.riskLevelAggregated}}"
           azure.entraid.properties.riskLevelDuringSignIn: "{{json_event.message.riskLevelDuringSignIn}}"
           azure.entraid.properties.riskState: "{{json_event.message.riskState}}"
-          azure.entraid.properties.riskEventTypes: "{{json_event.message.riskEventTypes}}"
-          azure.entraid.properties.resourceId: "{{json_event.message.resourceId}}"
-          azure.entraid.properties.appliedConditionalAccessPolicies: "{{json_event.message.appliedConditionalAccessPolicies}}"
-          azure.entraid.properties.operationType: "{{json_event.message.operationType}}"
-          azuread.correlationId: "{{json_event.message.correlationId}}"
-
-      # For the backward compatibility with Entra ID format
-      - set:
-          azuread.properties.conditionalAccessStatus: "{{json_event.message.conditionalAccessStatus}}"
-          azuread.properties.riskDetail: "{{json_event.message.riskDetail}}"
-          azuread.properties.riskLevelAggregated: "{{json_event.message.riskLevelAggregated}}"
-          azuread.properties.riskLevelDuringSignIn: "{{json_event.message.riskLevelDuringSignIn}}"
-          azuread.properties.riskState: "{{json_event.message.riskState}}"
-          azuread.properties.riskEventTypes: "{{json_event.message.riskEventTypes}}"
-          azuread.properties.resourceId: "{{json_event.message.resourceId}}"
-          azuread.properties.status.errorCode: "{{json_event.message.status.errorCode}}"
+          azure.entraid.properties.status.errorCode: "{{json_event.message.status.errorCode}}"
 
       - set:
           azure.entraid.properties.modifiedProperties: >
@@ -105,23 +153,10 @@ stages:
                 {% for prop in item.modifiedProperties %}
                   {{prop}},
                 {% endfor %}
-              {% else %}
-                  null,
               {% endif %}
             {% endfor %}
             ]
-        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'user'}}"
-
-      - set:
-          host.id: "{{json_event.message.targetResources[0].id}}"
-          host.name: "{{json_event.message.targetResources[0].displayName}}"
-          host.os.name: "{{json_event.message.targetResources[0].operatingSystem}}"
-        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'device'}}"
-
-      - set:
-          service.id: "{{json_event.message.targetResources[0].id}}"
-          service.name: "{{json_event.message.targetResources[0].displayName}}"
-        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'application'}}"
+        filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
 
       - set:
           azure.entraid.properties.conditionalAccessPolicy.displayName: >-
@@ -156,45 +191,119 @@ stages:
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
-
         filter: "{{json_event.message.targetResources | length > 0}}"
-
-      # For PIM events, the initiatedBy user is "Azure AD PIM" (the service).
-      # The actual user is in targetResources with type "User".
-      - set:
-          user.name: >
-            {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.userPrincipalName or item.displayName }}{%- endif -%}
-            {%- endfor -%}
-          user.email: >
-            {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.userPrincipalName }}{%- endif -%}
-            {%- endfor -%}
-          user.id: >
-            {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.id }}{%- endif -%}
-            {%- endfor -%}
-        filter: "{{json_event.message.loggedByService == 'PIM' and json_event.message.targetResources | length > 0}}"
 
       # azure.entraid.properties.targetServicePrincipalDisplayName - aligned with azure-ad Event Hub parser
       - set:
-          azure.entraid.properties.targetServicePrincipalDisplayName: "{{json_event.message.targetResources[0].displayName}}"
-          azuread.properties.targetServicePrincipalDisplayName: "{{json_event.message.targetResources[0].displayName}}"
-        filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type == 'ServicePrincipal'}}"
+          azure.entraid.properties.targetServicePrincipalDisplayName: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) == 'ServicePrincipal' -%}{{item.displayName}}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
 
       # azure.entraid.properties.appId - aligned with azure-ad Event Hub parser
       - set:
           azure.entraid.properties.appId: >
-            {%- for item in json_event.message.additionalDetails -%}
-              {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
-            {%- endfor -%}
-          azuread.properties.appId: >
-            {%- for item in json_event.message.additionalDetails -%}
-              {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
-            {%- endfor -%}
-        filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
+            {%- set values -%}
+            {%- if json_event.message.additionalDetails != null -%}
+              {%- for item in json_event.message.additionalDetails -%}
+                {%- if item.key == 'AppId' and item.value != null and item.value != '' -%}
+                  {{ item.value }}|||
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else json_event.message.appId }}
+        filter: "{{(json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0) or json_event.message.appId != null}}"
 
-  set_actor_target_user_fields:
+  set_custom_fields_azuread:
+    actions:
+      # For the backward compatibility with Entra ID format
+      - set:
+          azuread.properties.appliedConditionalAccessPolicies: "{{json_event.message.appliedConditionalAccessPolicies}}"
+          azuread.properties.clientAppUsed: "{{json_event.message.clientAppUsed}}"
+          azuread.properties.conditionalAccessStatus: "{{json_event.message.conditionalAccessStatus}}"
+          azuread.correlationId: "{{json_event.message.correlationId}}"
+          azuread.properties.isInteractive: "{{json_event.message.isInteractive}}"
+          azuread.properties.operationType: "{{json_event.message.operationType}}"
+          azuread.properties.resourceId: "{{json_event.message.resourceId}}"
+          azuread.properties.riskDetail: "{{json_event.message.riskDetail}}"
+          azuread.properties.riskEventTypes: "{{json_event.message.riskEventTypes}}"
+          azuread.properties.riskLevelAggregated: "{{json_event.message.riskLevelAggregated}}"
+          azuread.properties.riskLevelDuringSignIn: "{{json_event.message.riskLevelDuringSignIn}}"
+          azuread.properties.riskState: "{{json_event.message.riskState}}"
+          azuread.properties.status.errorCode: "{{json_event.message.status.errorCode}}"
+
+      - set:
+          azuread.properties.modifiedProperties: >
+            [
+            {% for item in json_event.message.targetResources %}
+              {% if item.modifiedProperties != null %}
+                {% for prop in item.modifiedProperties %}
+                  {{prop}},
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+            ]
+        filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
+
+      - set:
+          azuread.properties.conditionalAccessPolicy.displayName: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.modifiedProperties != null -%}
+                {%- for prop in item.modifiedProperties -%}
+                  {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
+                    {{(prop.newValue | from_json).displayName}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endfor -%}
+
+          azuread.properties.conditionalAccessPolicy.newState: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.modifiedProperties != null -%}
+                {%- for prop in item.modifiedProperties -%}
+                  {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
+                    {{(prop.newValue | from_json).state}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endfor -%}
+
+          azuread.properties.conditionalAccessPolicy.oldState: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if item.modifiedProperties != null -%}
+                {%- for prop in item.modifiedProperties -%}
+                  {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.oldValue != null -%}
+                    {{(prop.oldValue | from_json).state}}
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.targetResources | length > 0}}"
+
+      - set:
+          azuread.properties.targetServicePrincipalDisplayName: >-
+            {%- for item in json_event.message.targetResources -%}
+              {%- if (item.type or item.Type) == 'ServicePrincipal' -%}{{item.displayName}}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
+
+      - set:
+          azuread.properties.appId: >
+            {%- set values -%}
+            {%- if json_event.message.additionalDetails != null -%}
+              {%- for item in json_event.message.additionalDetails -%}
+                {%- if item.key == 'AppId' and item.value != null and item.value != '' -%}
+                  {{ item.value }}|||
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else json_event.message.appId }}
+        filter: "{{(json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0) or json_event.message.appId != null}}"
+
+  set_custom_fields_action:
     # Avoid confusion: keep actor (user.*) and impacted target user (user.target.*) distinct.
     # Build targeted user metadata only when the impacted target user is different from the actor.
     # Keep this logic generic (no action-name hardcoding) to avoid event-specific regressions.
@@ -217,14 +326,15 @@ stages:
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
-              {%- if targetResource.type == "User" and not is_actor -%}
+              {%- if (targetResource.type or targetResource.Type) == "User" and not is_actor -%}
                 {'name': '{{(targetResource.userPrincipalName or targetResource.displayName) | lower}}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
               {%- endif -%}
             {%- endfor -%}
             ]
         filter: "{{json_event.message.targetResources | length > 0}}"
 
-  set_target_user_fields_from_action_properties:
+  # Derived ECS user.target.* fields depend on action.properties built in the previous stage.
+  set_ecs_user_target_fields:
     actions:
       # Keep user.target.* scalar by selecting only the first impacted user.
       - set:
@@ -237,7 +347,7 @@ stages:
                     (actor_id != null and item.id != null and item.id == actor_id)
                     or (actor_upn != null and item.userPrincipalName != null and (item.userPrincipalName | lower) == (actor_upn | lower))
                   ) -%}
-              {%- if item.type != null and item.type | lower == 'user' and not is_actor -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'user' and not is_actor -%}
                 {{ item.userPrincipalName or item.displayName }}|||
               {%- endif -%}
             {%- endfor -%}
@@ -252,7 +362,7 @@ stages:
                     (actor_id != null and item.id != null and item.id == actor_id)
                     or (actor_upn != null and item.userPrincipalName != null and (item.userPrincipalName | lower) == (actor_upn | lower))
                   ) -%}
-              {%- if item.type != null and item.type | lower == 'user' and not is_actor -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'user' and not is_actor -%}
                 {{ item.id }}|||
               {%- endif -%}
             {%- endfor -%}
@@ -267,7 +377,7 @@ stages:
                     (actor_id != null and item.id != null and item.id == actor_id)
                     or (actor_upn != null and item.userPrincipalName != null and (item.userPrincipalName | lower) == (actor_upn | lower))
                   ) -%}
-              {%- if item.type != null and item.type | lower == 'user' and not is_actor -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'user' and not is_actor -%}
                 {{ item.userPrincipalName or '' }}|||
               {%- endif -%}
             {%- endfor -%}
@@ -275,7 +385,8 @@ stages:
             {{ (values | default('')).split('|||')[0] if (values | default('')) != '' and (values | default('')).split('|||')[0] != '' else None }}
         filter: '{{json_event.message.get("targetResources") != None}}'
 
-  set_ecs_category:
+  # Keep category/outcome normalization last to preserve final ECS classification.
+  normalize_ecs_event_classification:
     actions:
       - set:
           event.category: ["iam"]
