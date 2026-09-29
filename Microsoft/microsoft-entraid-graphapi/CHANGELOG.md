@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extend parsing of existing ECS fields:
-  - generalize `targetResources` matching (position-independent, supports both `type` and `Type`) across event families:
+  - generalize `targetResources` matching (position-independent, supports both `type` and `Type`) across event families and harden scalar extraction (deterministic first match) to avoid silent value concatenation:
     - `host.id`
     - `host.name`
     - `host.os.name`
@@ -30,9 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `service.name`
   - extend fallback mapping with `initiatedBy.app.ipAddress` when present:
     - `source.ip`
-  - extend actor fallback mapping for app-initiated events when user actor fields are absent:
-    - `user.id` from `initiatedBy.app.servicePrincipalId`
-    - `user.name` from `initiatedBy.app.displayName`
+  - keep fallback-only by preserving browser-derived value when `deviceDetail.browser` is already present:
+    - `user_agent.original`
+  - extend user identity mapping for app-initiated and PIM events:
+    - `user.id` from `initiatedBy.app.servicePrincipalId` when actor user fields are absent
+    - `user.name` from `initiatedBy.app.displayName` when actor user fields are absent
+    - `user.id`, `user.name`, and `user.email` from PIM impacted-user targets with support for both `targetResources[].type` and `targetResources[].Type`
 - Extend parsing of existing custom fields:
   - extend fallback mapping with `message.appId` when `additionalDetails[].key == "AppId"` is absent:
     - `azure.entraid.properties.appId`
@@ -49,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `azure.entraid.properties.modifiedProperties`
     - `azure.entraid.properties.targetServicePrincipalDisplayName`
     - `azuread.properties.modifiedProperties`
+    - `azuread.properties.targetServicePrincipalDisplayName`
+  - harden scalar extraction when multiple target resources match to avoid silent value concatenation:
+    - `azure.entraid.properties.targetServicePrincipalDisplayName`
     - `azuread.properties.targetServicePrincipalDisplayName`
   - add forward-compatibility alias for existing Azure AD custom field:
     - `azure.entraid.properties.status.errorCode`

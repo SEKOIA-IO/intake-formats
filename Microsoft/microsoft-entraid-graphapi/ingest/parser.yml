@@ -59,11 +59,32 @@ stages:
 
           trace.id: "{{json_event.message.correlationId}}"
 
-          user.id: "{{json_event.message.userId or json_event.message.initiatedBy.user.id or json_event.message.initiatedBy.app.servicePrincipalId}}"
-          user.name: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName or json_event.message.userDisplayName or json_event.message.initiatedBy.user.displayName or json_event.message.initiatedBy.app.displayName}}"
-          user.email: "{{json_event.message.userPrincipalName or json_event.message.initiatedBy.user.userPrincipalName}}"
+          user.id: >-
+            {{
+              json_event.message.userId
+              or (json_event.message.initiatedBy.user.id if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)
+              or (json_event.message.initiatedBy.app.servicePrincipalId if json_event.message.initiatedBy != null and json_event.message.initiatedBy.app != null else None)
+            }}
+          user.name: >-
+            {{
+              json_event.message.userPrincipalName
+              or (json_event.message.initiatedBy.user.userPrincipalName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)
+              or json_event.message.userDisplayName
+              or (json_event.message.initiatedBy.user.displayName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)
+              or (json_event.message.initiatedBy.app.displayName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.app != null else None)
+            }}
+          user.email: >-
+            {{
+              json_event.message.userPrincipalName
+              or (json_event.message.initiatedBy.user.userPrincipalName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)
+            }}
 
-          source.ip: "{{json_event.message.ipAddress or json_event.message.initiatedBy.user.ipAddress or json_event.message.initiatedBy.app.ipAddress}}"
+          source.ip: >-
+            {{
+              json_event.message.ipAddress
+              or (json_event.message.initiatedBy.user.ipAddress if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)
+              or (json_event.message.initiatedBy.app.ipAddress if json_event.message.initiatedBy != null and json_event.message.initiatedBy.app != null else None)
+            }}
           source.geo.city_name: "{{json_event.message.location.city}}"
           source.geo.region_name: "{{json_event.message.location.state}}"
           source.geo.country_iso_code: "{{json_event.message.location.countryOrRegion}}"
@@ -81,53 +102,98 @@ stages:
 
       - set:
           host.id: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' -%}{{item.id}}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' and item.id != null -%}
+                {{ item.id }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
           host.name: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' -%}{{item.displayName}}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' and item.displayName != null -%}
+                {{ item.displayName }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
           host.os.name: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' -%}{{item.operatingSystem}}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'device' and item.operatingSystem != null -%}
+                {{ item.operatingSystem }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
 
       - set:
           service.id: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'application' -%}{{item.id}}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'application' and item.id != null -%}
+                {{ item.id }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
           service.name: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'application' -%}{{item.displayName}}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'application' and item.displayName != null -%}
+                {{ item.displayName }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
 
       # For PIM events, the initiatedBy user is "Azure AD PIM" (the service).
       # The actual user is in targetResources with type "User".
       - set:
           user.name: >
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.userPrincipalName or item.displayName }}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'user' and (item.userPrincipalName != null or item.displayName != null) -%}
+                {{ item.userPrincipalName or item.displayName }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
           user.email: >
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.userPrincipalName }}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'user' and item.userPrincipalName != null -%}
+                {{ item.userPrincipalName }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
           user.id: >
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if item.type == 'User' -%}{{ item.id }}{%- endif -%}
+              {%- if (item.type or item.Type) != null and ((item.type or item.Type) | lower) == 'user' and item.id != null -%}
+                {{ item.id }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.loggedByService == 'PIM' and json_event.message.targetResources | length > 0}}"
 
       - set:
           user_agent.original: >
+            {%- set values -%}
             {%- for item in json_event.message.additionalDetails -%}
-              {%- if item.key == 'User-Agent' -%}{{ item.value }}{%- endif -%}
+              {%- if item.key == 'User-Agent' and item.value != null and item.value != '' -%}
+                {{ item.value }}|||
+              {%- endif -%}
             {%- endfor -%}
-        filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
+        filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0 and (json_event.message.deviceDetail == null or json_event.message.deviceDetail.browser == null or json_event.message.deviceDetail.browser == '') and (final.user_agent == null or final.user_agent.original == null or final.user_agent.original == '')}}"
 
   set_custom_fields_azure:
     actions:
@@ -160,45 +226,59 @@ stages:
 
       - set:
           azure.entraid.properties.conditionalAccessPolicy.displayName: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
               {%- if item.modifiedProperties != null -%}
                 {%- for prop in item.modifiedProperties -%}
                   {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
-                    {{(prop.newValue | from_json).displayName}}
+                    {{(prop.newValue | from_json).displayName}}|||
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
 
           azure.entraid.properties.conditionalAccessPolicy.newState: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
               {%- if item.modifiedProperties != null -%}
                 {%- for prop in item.modifiedProperties -%}
                   {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
-                    {{(prop.newValue | from_json).state}}
+                    {{(prop.newValue | from_json).state}}|||
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
 
           azure.entraid.properties.conditionalAccessPolicy.oldState: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
               {%- if item.modifiedProperties != null -%}
                 {%- for prop in item.modifiedProperties -%}
                   {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.oldValue != null -%}
-                    {{(prop.oldValue | from_json).state}}
+                    {{(prop.oldValue | from_json).state}}|||
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.targetResources | length > 0}}"
 
       # azure.entraid.properties.targetServicePrincipalDisplayName - aligned with azure-ad Event Hub parser
       - set:
           azure.entraid.properties.targetServicePrincipalDisplayName: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) == 'ServicePrincipal' -%}{{item.displayName}}{%- endif -%}
+              {%- if (item.type or item.Type) == 'ServicePrincipal' and item.displayName != null and item.displayName != '' -%}
+                {{ item.displayName }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
 
       # azure.entraid.properties.appId - aligned with azure-ad Event Hub parser
@@ -249,44 +329,58 @@ stages:
 
       - set:
           azuread.properties.conditionalAccessPolicy.displayName: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
               {%- if item.modifiedProperties != null -%}
                 {%- for prop in item.modifiedProperties -%}
                   {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
-                    {{(prop.newValue | from_json).displayName}}
+                    {{(prop.newValue | from_json).displayName}}|||
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
 
           azuread.properties.conditionalAccessPolicy.newState: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
               {%- if item.modifiedProperties != null -%}
                 {%- for prop in item.modifiedProperties -%}
                   {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.newValue != null -%}
-                    {{(prop.newValue | from_json).state}}
+                    {{(prop.newValue | from_json).state}}|||
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
 
           azuread.properties.conditionalAccessPolicy.oldState: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
               {%- if item.modifiedProperties != null -%}
                 {%- for prop in item.modifiedProperties -%}
                   {%- if prop.displayName == 'ConditionalAccessPolicy' and prop.oldValue != null -%}
-                    {{(prop.oldValue | from_json).state}}
+                    {{(prop.oldValue | from_json).state}}|||
                   {%- endif -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.targetResources | length > 0}}"
 
       - set:
           azuread.properties.targetServicePrincipalDisplayName: >-
+            {%- set values -%}
             {%- for item in json_event.message.targetResources -%}
-              {%- if (item.type or item.Type) == 'ServicePrincipal' -%}{{item.displayName}}{%- endif -%}
+              {%- if (item.type or item.Type) == 'ServicePrincipal' and item.displayName != null and item.displayName != '' -%}
+                {{ item.displayName }}|||
+              {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else '' }}
         filter: "{{json_event.message.get('targetResources') != None and json_event.message.targetResources | length > 0}}"
 
       - set:
