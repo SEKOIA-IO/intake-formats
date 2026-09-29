@@ -12,11 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix existing ECS fields:
-  - `event.outcome`: map Connectra failed-login `outcome` aliases and fallback values to `failure` instead of defaulting to `success`
-
-### Changed
-
-- Rename Connectra test fixtures to `CEF_connectra_XX` naming convention
+  - `action.outcome`: map Connectra failed-login `outcome` aliases (`failure`, `failed`, `fail`) to `failure`
+  - `event.outcome`: align with the updated `action.outcome` mapping on those Connectra failed-login aliases
 
 ## [1.0.2] - 2026-09-01
 
