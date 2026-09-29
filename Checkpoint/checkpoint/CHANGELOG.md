@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Map the raw `outcome` field to `action.outcome` to stop defaulting failed events to `success`
+
 ## [1.0.2] - 2026-09-01
 
 ### Added
