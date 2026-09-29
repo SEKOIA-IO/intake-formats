@@ -33,9 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - keep fallback-only by preserving browser-derived value when `deviceDetail.browser` is already present:
     - `user_agent.original`
   - extend user identity mapping for app-initiated and PIM events:
-    - `user.id` from `initiatedBy.app.servicePrincipalId` when actor user fields are absent
-    - `user.name` from `initiatedBy.app.displayName` when actor user fields are absent
+    - `user.id` and `user.name` from `initiatedBy.app` (`servicePrincipalId` and `displayName`) when actor user fields are absent
     - `user.id`, `user.name`, and `user.email` from PIM impacted-user targets with support for both `targetResources[].type` and `targetResources[].Type`
+    - improve PIM handling end-to-end: detect PIM from `initiatedBy.user.displayName == "Azure AD PIM"` (including events logged by `Core Directory`) and avoid re-emitting the selected impacted user as `user.target.*`
 - Extend parsing of existing custom fields:
   - extend fallback mapping with `message.appId` when `additionalDetails[].key == "AppId"` is absent:
     - `azure.entraid.properties.appId`
