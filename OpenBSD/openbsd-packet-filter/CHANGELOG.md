@@ -7,8 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2023-08-29 - 1.0.1
+## [1.0.4] - 2026-09-28
+
+### Fixed
+
+- Parse filterlog events whose reason is hyphenated, such as `ip-option`, `bad-offset` or `state-mismatch`, which were dropped by the grok pattern, which previously accepted only single-word reasons
+
+## [1.0.3] - 2026-09-04
+
+### Fixed
+
+- Parse filterlog events that carry no protocol-specific section, such as non-initial IPv4 fragments (`offset` greater than zero) whose transport header is absent, which were previously dropped by the grok pattern, which required the transport section to be present
+
+## [1.0.2] - 2026-08-31
+
+### Added
+
+- Parse new ECS fields:
+  - `network.transport` for IPv6 ICMP filterlog events
+  - `network.type` for IPv4/IPv6 TCP, UDP, ICMP, CARP, and ICMP error-like events
+- Parse new custom fields:
+  - `openbsd.pf.icmp.datalength` for IPv6 ICMP filterlog events
+- Add descriptions for all `openbsd.pf.*` custom fields in metadata
+- Enrich smart-descriptions with specific ICMP request and ICMP unreachable templates
 
 ### Changed
 
-- fix the format in order to apply smart-descriptions for the UDP events
+- Parse existing custom fields more consistently:
+  - `openbsd.pf.transport.options` for TCP events
+- Change `openbsd.pf.carp.advbase` and `openbsd.pf.carp.advskew` field types from `keyword` to `integer` to match their numeric semantics
+
+### Fixed
+
+- Fix IPv6 ICMP parsing by accepting hyphenated IPv6 protocol tokens in PF IPv6 logs
+- Anonymize test fixtures with RFC 5737 TEST-NET IPv4 ranges
+
+## [1.0.1] - 2023-08-29
+
+### Changed
+
+- Fix the format in order to apply smart-descriptions for the UDP events
