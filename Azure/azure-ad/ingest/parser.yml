@@ -40,6 +40,10 @@ pipeline:
   - name: set_ecs_network_fields
   - name: set_ecs_related_fields
   - name: set_ecs_source_fields
+  - name: read_service_principal_modified_properties
+    filter: "{{ parsed_event.message.properties != null and parsed_event.message.properties.targetResources != null and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list | length > 0 }}"
+  - name: read_message_properties_location_geoCoordinates
+    filter: "{{ parsed_event.message.properties != null and parsed_event.message.properties.location != null }}"
   - name: read_device_details
     filter: "{{ parsed_event.message.deviceDetail != null }}"
 
@@ -258,6 +262,76 @@ stages:
               {%- if item.key == 'Oauth Scope Info' -%}{{ item.value }}{%- endif -%}
             {%- endfor -%}
 
+  read_message_properties_location_geoCoordinates:
+    actions:
+      - set:
+          source.geo.name: "{{ parsed_event.message.properties.location}}"
+        filter: "{{ parsed_event.message.properties.location != null and parsed_event.message.properties.location is string}}"
+
+      - set:
+          source.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
+          source.geo.region_name: "{{ parsed_event.message.properties.location.state or parsed_event.message.properties.__UDI_RequiredFields_RegionScope}}"
+
+      - set:
+          source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
+        filter: "{{ parsed_event.message.properties.location.geoCoordinates | length > 0 }}"
+
+  read_service_principal_modified_properties:
+    actions:
+      - set:
+          azuread.properties.targetServicePrincipalAppIdNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'ServicePrincipal.AppId' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleAssignmentCreatedDateTimeNewValue:
+            >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRoleAssignment.CreatedDateTime' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleAssignmentLastModifiedDateTimeNewValue:
+            >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRoleAssignment.LastModifiedDateTime' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleDisplayNameNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRole.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleIdNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRole.Id' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleValueNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'AppRole.Value' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalDisplayNameNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'ServicePrincipal.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalNameNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'ServicePrincipal.Name' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalNamesNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'TargetId.ServicePrincipalNames' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalObjectIdNewValue: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'ServicePrincipal.ObjectID' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+
   azuread:
     actions:
       - set:
@@ -344,6 +418,8 @@ stages:
             {%- for prop in properties -%}
               {%- if prop.displayName == 'ServicePrincipal.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
             {%- endfor -%}
+          source.ip: "{{parsed_event.message.ipAddress}}"
+        filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
 
       - set:
           azuread.resourceId: "{{parsed_event.message.resourceId}}"
