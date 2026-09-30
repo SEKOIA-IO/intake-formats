@@ -10,12 +10,26 @@ pipeline:
         input_field: json_event.message.creationDate
         output_field: date
         timezone: "Europe/Paris"
+    filter: "{{json_event.message.creationDate != null}}"
   - name: metadata
   - name: initiator
   - name: permission
   - name: detection
   - name: correlation
   - name: compliance
+  - name: set_new_events
+    filter: "{{json_event.message.creationDate == null}}"
+  - name: set_new_events_correlation
+    filter: "{{json_event.message.creationDate == null and json_event.message.deviceCorrelation != null}}"
+  - name: set_new_events_emmApplication
+    filter: "{{json_event.message.creationDate == null and json_event.message.emmApplication != null}}"
+  - name: set_new_events_compliance
+    filter: "{{json_event.message.creationDate == null and json_event.message.deviceApplicationCompliance != null}}"
+  - name: set_new_events_integration
+    filter: "{{json_event.message.creationDate == null and json_event.message.integration != null}}"
+  - name: set_device_compliance
+    filter: "{{json_event.message.deviceCompliance != null}}"
+
 stages:
   metadata:
     actions:
@@ -206,3 +220,164 @@ stages:
           pradeo.device.emm: "{{json_event.message.content.deviceCompliance.device.emmDeviceInfo.emm}}"
           pradeo.compliance.matchedResponseRules: "{{json_event.message.content.deviceCompliance.matchedResponseRules}}"
           pradeo.detection.status: "{{json_event.message.content.deviceCompliance.status}}"
+
+  set_new_events:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.device.emmDeviceInfo.lastSynchronizationDate | to_rfc3339}}"
+          event.category: ["process"]
+          event.type: '{{["change"] if "update" in json_event.message.device.emmDeviceInfo.integration.jobs else ["info"]}}'
+          pradeo.metadata.creationDate: "{{json_event.message.device.emmDeviceInfo.integration.creationDate}}"
+          pradeo.device.id: "{{json_event.message.device.id}}"
+          pradeo.device.serialNumber: "{{json_event.message.device.serialNumber}}"
+          pradeo.device.name: "{{json_event.message.device.name}}"
+          pradeo.device.email: "{{json_event.message.device.email}}"
+          pradeo.device.imei: "{{json_event.message.device.imei}}"
+          pradeo.device.byod: "{{json_event.message.device.byod}}"
+          pradeo.device.declaredOperatingSystem: "{{json_event.message.device.declaredOperatingSystem}}"
+          pradeo.device.declaredOperatingSystemVersion: "{{json_event.message.device.declaredOperatingSystemVersion}}"
+          pradeo.device.declaredOperatingSystemSecurityPatchDate: "{{json_event.message.device.declaredOperatingSystemSecurityPatchDate | to_rfc3339}}"
+          pradeo.device.declaredModel: "{{json_event.message.device.declaredModel}}"
+          pradeo.device.lastConnection: "{{json_event.message.device.enrollmentStatus.lastConnection}}"
+          pradeo.device.coupled: "{{json_event.message.device.enrollmentStatus.coupled}}"
+          pradeo.device.mdmId: "{{json_event.message.device.emmDeviceInfo.externalId}}"
+          pradeo.device.emm: "{{json_event.message.device.emmDeviceInfo.integration.emm}}"
+          pradeo.device.is_active: "{{json_event.message.device.emmDeviceInfo.integration.active}}"
+          pradeo.device.jobs: "{{json_event.message.device.emmDeviceInfo.integration.jobs.split((','))}}"
+          host.os.name: "{{json_event.message.device.operatingSystem.product}}"
+          host.os.version: "{{json_event.message.device.operatingSystem.version}}"
+          user.email: "{{json_event.message.device.email}}"
+
+      - set:
+          host.os.type: "{{json_event.message.device.operatingSystem.name | lower}}"
+        filter: '{{json_event.message.device.operatingSystem.name != null and json_event.message.device.operatingSystem.name | lower in ["android", "ios", "windows", "macos", "unix", "linux"]}}'
+
+  set_new_events_correlation:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.deviceCorrelation.device.emmDeviceInfo.lastSynchronizationDate | to_rfc3339}}"
+          event.category: ["process"]
+          event.type: '{{["change"] if "update" in json_event.message.deviceCorrelation.device.emmDeviceInfo.integration.jobs else ["info"]}}'
+          pradeo.metadata.creationDate: "{{json_event.message.deviceCorrelation.creationDate | to_rfc3339}}"
+          pradeo.device.id: "{{json_event.message.deviceCorrelation.device.id}}"
+          pradeo.device.serialNumber: "{{json_event.message.deviceCorrelation.device.serialNumber}}"
+          pradeo.device.name: "{{json_event.message.deviceCorrelation.device.name}}"
+          pradeo.device.email: "{{json_event.message.deviceCorrelation.device.email}}"
+          pradeo.device.imei: "{{json_event.message.deviceCorrelation.device.imei}}"
+          pradeo.device.byod: "{{json_event.message.deviceCorrelation.device.byod}}"
+          pradeo.device.declaredOperatingSystem: "{{json_event.message.deviceCorrelation.device.declaredOperatingSystem}}"
+          pradeo.device.declaredOperatingSystemVersion: "{{json_event.message.deviceCorrelation.device.declaredOperatingSystemVersion}}"
+          pradeo.device.declaredOperatingSystemSecurityPatchDate: "{{json_event.message.deviceCorrelation.device.declaredOperatingSystemSecurityPatchDate | to_rfc3339}}"
+          pradeo.device.declaredModel: "{{json_event.message.deviceCorrelation.device.declaredModel}}"
+          pradeo.device.lastConnection: "{{json_event.message.deviceCorrelation.device.enrollmentStatus.lastConnection | to_rfc3339}}"
+          pradeo.device.coupled: "{{json_event.message.deviceCorrelation.device.enrollmentStatus.coupled}}"
+          pradeo.device.mdmId: "{{json_event.message.deviceCorrelation.device.emmDeviceInfo.externalId}}"
+          pradeo.device.emm: "{{json_event.message.deviceCorrelation.device.emmDeviceInfo.integration.emm}}"
+          pradeo.device.is_active: "{{json_event.message.deviceCorrelation.device.emmDeviceInfo.integration.active}}"
+          pradeo.device.jobs: "{{json_event.message.deviceCorrelation.device.emmDeviceInfo.integration.jobs.split((','))}}"
+          pradeo.policy.id: "{{json_event.message.deviceCorrelation.detectionPolicy.id}}"
+          pradeo.policy.name: "{{json_event.message.deviceCorrelation.detectionPolicy.name}}"
+          pradeo.correlation.applicationThreatLevel: "{{json_event.message.deviceCorrelation.applicationThreatLevel}}"
+          pradeo.correlation.networkThreatLevel: "{{json_event.message.deviceCorrelation.networkThreatLevel}}"
+          pradeo.correlation.systemThreatLevel: "{{json_event.message.deviceCorrelation.systemThreatLevel}}"
+          pradeo.correlation.matchedSystemStatusLevels: "{{json_event.message.deviceCorrelation.matchedSystemStatusLevels}}"
+          pradeo.correlation.matchedNetworkStatusLevels: "{{json_event.message.deviceCorrelation.matchedNetworkStatusLevels}}"
+          rule.category: "{{json_event.message.deviceCorrelation.detectionPolicy.type}}"
+          rule.version: "{{json_event.message.deviceCorrelation.detectionPolicy.version}}"
+          user.email: "{{json_event.message.deviceCorrelation.device.email}}"
+
+  set_new_events_emmApplication:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.emmApplication.integration.lastModificationDate | to_rfc3339}}"
+          event.category: ["process"]
+          pradeo.metadata.creationDate: "{{json_event.message.emmApplication.integration.creationDate}}"
+          event.type: '{{["change"] if "update" in json_event.message.emmApplication.jobs else ["info"]}}'
+          pradeo.application.id: "{{json_event.message.emmApplication.id}}"
+          pradeo.application.package: "{{json_event.message.emmApplication.application.package.package}}"
+          pradeo.application.system: "{{json_event.message.emmApplication.application.package.system}}"
+          pradeo.application.version: "{{json_event.message.emmApplication.application.version}}"
+          pradeo.application.versionCode: "{{json_event.message.emmApplication.application.versionCode}}"
+          pradeo.application.name: "{{json_event.message.emmApplication.application.name}}"
+          pradeo.application.md5: "{{json_event.message.emmApplication.application.md5}}"
+          pradeo.application.sha1: "{{json_event.message.emmApplication.application.sha1}}"
+          pradeo.application.sha256: "{{json_event.message.emmApplication.application.sha256}}"
+          pradeo.device.emm: "{{json_event.message.emmApplication.integration.emm}}"
+          pradeo.device.is_active: "{{json_event.message.emmApplication.integration.active}}"
+          pradeo.device.jobs: "{{json_event.message.emmApplication.integration.jobs.split((','))}}"
+
+  set_new_events_compliance:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.emmDeviceInfo.lastSynchronizationDate | to_rfc3339}}"
+          event.category: ["process"]
+          event.type: ["change"]
+          pradeo.metadata.creationDate: "{{json_event.message.deviceApplicationCompliance.creationDate | to_rfc3339}}"
+          pradeo.device.id: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.id}}"
+          pradeo.device.serialNumber: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.serialNumber}}"
+          pradeo.device.name: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.name}}"
+          pradeo.device.email: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.email}}"
+          pradeo.device.imei: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.imei}}"
+          pradeo.device.byod: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.byod}}"
+          pradeo.device.declaredOperatingSystem: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystem}}"
+          pradeo.device.declaredOperatingSystemVersion: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystemVersion}}"
+          pradeo.device.declaredOperatingSystemSecurityPatchDate: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystemSecurityPatchDate | to_rfc3339}}"
+          pradeo.device.declaredModel: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.declaredModel}}"
+          pradeo.device.lastConnection: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.enrollmentStatus.lastConnection | to_rfc3339}}"
+          pradeo.device.coupled: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.enrollmentStatus.coupled}}"
+          pradeo.device.mdmId: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.emmDeviceInfo.externalId}}"
+          pradeo.compliance.matchedResponseRules: "{{json_event.message.deviceApplicationCompliance.matchedResponseRules}}"
+          pradeo.application.id: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.id}}"
+          pradeo.application.package: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.package.package}}"
+          pradeo.application.system: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.package.system}}"
+          pradeo.application.version: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.version}}"
+          pradeo.application.versionCode: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.versionCode}}"
+          pradeo.application.name: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.name}}"
+          pradeo.application.md5: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.md5}}"
+          pradeo.application.sha1: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.sha1}}"
+          pradeo.application.sha256: "{{json_event.message.deviceApplicationCompliance.deviceApplication.application.sha256}}"
+          pradeo.detection.status: "{{json_event.message.deviceApplicationCompliance.status}}"
+          user.email: "{{json_event.message.deviceApplicationCompliance.deviceApplication.device.email}}"
+
+  set_new_events_integration:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.lastSynchronizationDate | to_rfc3339}}"
+          event.category: ["process"]
+          event.type: '{{["change"] if "update" in json_event.message.integration.jobs else ["info"]}}'
+          pradeo.metadata.creationDate: "{{json_event.message.integration.creationDate}}"
+          pradeo.device.emm: "{{json_event.message.integration.emm}}"
+          pradeo.device.name: "{{json_event.message.integration.name}}"
+          pradeo.device.is_active: "{{json_event.message.integration.active}}"
+          pradeo.device.jobs: "{{json_event.message.integration.jobs.split((','))}}"
+          pradeo.policy.id: "{{json_event.message.integration.company.defaultDetectionPolicy.id}}"
+          pradeo.policy.name: "{{json_event.message.integration.company.defaultDetectionPolicy.name}}"
+          rule.category: "{{json_event.message.integration.company.defaultDetectionPolicy.type}}"
+          rule.version: "{{json_event.message.integration.company.defaultDetectionPolicy.version}}"
+          error.message: "{{json_event.message.error}}"
+
+  set_device_compliance:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.deviceCompliance.device.emmDeviceInfo.lastSynchronizationDate | to_rfc3339}}"
+          pradeo.metadata.creationDate: "{{json_event.message.deviceCompliance.creationDate | to_rfc3339}}"
+          pradeo.device.id: "{{json_event.message.deviceCompliance.device.id}}"
+          pradeo.device.serialNumber: "{{json_event.message.deviceCompliance.device.serialNumber}}"
+          pradeo.device.imei: "{{json_event.message.deviceCompliance.device.imei}}"
+          pradeo.device.name: "{{json_event.message.deviceCompliance.device.name}}"
+          pradeo.device.email: "{{json_event.message.deviceCompliance.device.email}}"
+          pradeo.device.byod: "{{json_event.message.deviceCompliance.device.byod}}"
+          pradeo.device.declaredOperatingSystem: "{{json_event.message.deviceCompliance.device.declaredOperatingSystem}}"
+          pradeo.device.declaredOperatingSystemVersion: "{{json_event.message.deviceCompliance.device.declaredOperatingSystemVersion}}"
+          pradeo.device.declaredOperatingSystemSecurityPatchDate: "{{json_event.message.deviceCompliance.device.declaredOperatingSystemSecurityPatchDate | to_rfc3339}}"
+          pradeo.device.declaredModel: "{{json_event.message.deviceCompliance.device.declaredModel}}"
+          pradeo.device.lastConnection: "{{json_event.message.deviceCompliance.device.enrollmentStatus.lastConnection | to_rfc3339}}"
+          pradeo.device.coupled: "{{json_event.message.deviceCompliance.device.enrollmentStatus.coupled}}"
+          pradeo.device.mdmId: "{{json_event.message.deviceCompliance.device.emmDeviceInfo.externalId}}"
+          pradeo.compliance.matchedResponseRules: "{{json_event.message.deviceCompliance.matchedResponseRules}}"
+          pradeo.detection.status: "{{json_event.message.deviceCompliance.status}}"
+          pradeo.policy.id: "{{json_event.message.deviceCompliance.device.group.detectionPolicy.id}}"
+          pradeo.policy.name: "{{json_event.message.deviceCompliance.device.group.detectionPolicy.name}}"
+          rule.category: "{{json_event.message.deviceCompliance.device.group.detectionPolicy.type}}"
+          rule.version: "{{json_event.message.deviceCompliance.device.group.detectionPolicy.version}}"
+          user.email: "{{json_event.message.deviceCompliance.device.email}}"

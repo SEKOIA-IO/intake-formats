@@ -14,6 +14,24 @@ pipeline:
         output_field: message
         pattern: "%{EMAILADDRESS:email}"
     filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null and json_event.message.protoPayload.authenticationInfo.principalEmail != null}}"
+  - name: parse_service_account_key_response_name
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.protoPayload.response.name}}"
+        output_field: message
+        pattern: "projects/%{DATA:project_id}/serviceAccounts/%{EMAILADDRESS:service_account_email}/keys/%{NOTSPACE:key_id}"
+    filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.response != null and json_event.message.protoPayload.response.name != null}}"
+  - name: parse_service_account_key_auth_name
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.protoPayload.authenticationInfo.serviceAccountKeyName}}"
+        output_field: message
+        pattern: "//iam.googleapis.com/projects/%{DATA:project_id}/serviceAccounts/%{EMAILADDRESS:service_account_email}/keys/%{NOTSPACE:key_id}"
+    filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null and json_event.message.protoPayload.authenticationInfo.serviceAccountKeyName != null}}"
   - name: google_cloud_audit
   - name: parse_operation
   - name: parse_resourceLocation
@@ -80,9 +98,48 @@ stages:
 
       - set:
           google_cloud_audit.protoPayload.response.type: "{{json_event.message.protoPayload.response.get('@type')}}"
+          google_cloud_audit.protoPayload.response.name: "{{json_event.message.protoPayload.response.name}}"
           google_cloud_audit.protoPayload.response.bindings: "{{json_event.message.protoPayload.response.bindings}}"
           google_cloud_audit.protoPayload.response.etag: "{{json_event.message.protoPayload.response.etag}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.response != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.authenticationInfo.serviceAccountKeyName: "{{json_event.message.protoPayload.authenticationInfo.serviceAccountKeyName}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.authenticationInfo != null and json_event.message.protoPayload.authenticationInfo.serviceAccountKeyName != null}}"
+
+      - set:
+          cloud.project.id: "{{parse_service_account_key_response_name.message.project_id}}"
+          user.target.email: "{{parse_service_account_key_response_name.message.service_account_email}}"
+          user.target.name: "{{parse_service_account_key_response_name.message.service_account_email}}"
+          google_cloud_audit.service_account.email: "{{parse_service_account_key_response_name.message.service_account_email}}"
+          google_cloud_audit.service_account.key.id: "{{parse_service_account_key_response_name.message.key_id}}"
+          google_cloud_audit.service_account.key.name: "{{json_event.message.protoPayload.response.name}}"
+        filter: "{{parse_service_account_key_response_name != null and parse_service_account_key_response_name.message.project_id != null and parse_service_account_key_response_name.message.service_account_email != null and parse_service_account_key_response_name.message.key_id != null}}"
+
+      - set:
+          cloud.project.id: "{{parse_service_account_key_auth_name.message.project_id}}"
+          user.target.email: "{{parse_service_account_key_auth_name.message.service_account_email}}"
+          user.target.name: "{{parse_service_account_key_auth_name.message.service_account_email}}"
+          google_cloud_audit.service_account.email: "{{parse_service_account_key_auth_name.message.service_account_email}}"
+          google_cloud_audit.service_account.key.id: "{{parse_service_account_key_auth_name.message.key_id}}"
+          google_cloud_audit.service_account.key.name: "{{json_event.message.protoPayload.authenticationInfo.serviceAccountKeyName}}"
+        filter: "{{parse_service_account_key_auth_name != null and parse_service_account_key_auth_name.message.project_id != null and parse_service_account_key_auth_name.message.service_account_email != null and parse_service_account_key_auth_name.message.key_id != null}}"
+
+      - set:
+          google_cloud_audit.service_account.key.key_algorithm: "{{json_event.message.protoPayload.response.key_algorithm}}"
+          google_cloud_audit.service_account.key.key_origin: "{{json_event.message.protoPayload.response.key_origin}}"
+          google_cloud_audit.service_account.key.key_type: "{{json_event.message.protoPayload.response.key_type}}"
+          google_cloud_audit.service_account.key.valid_after_time: "{{json_event.message.protoPayload.response.valid_after_time.seconds}}"
+          google_cloud_audit.service_account.key.valid_before_time: "{{json_event.message.protoPayload.response.valid_before_time.seconds}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.response != null}}"
+
+      - set:
+          google_cloud_audit.service_account.key.private_key_type: "{{json_event.message.protoPayload.response.private_key_type}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.response != null and json_event.message.protoPayload.response.private_key_type != null}}"
+
+      - set:
+          google_cloud_audit.service_account.key.private_key_type: "{{json_event.message.protoPayload.request.private_key_type}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.request != null and json_event.message.protoPayload.request.private_key_type != null and (json_event.message.protoPayload.response == null or json_event.message.protoPayload.response.private_key_type == null)}}"
 
       - set:
           google_cloud_audit.protoPayload.type: "{{json_event.message.protoPayload.get('@type')}}"

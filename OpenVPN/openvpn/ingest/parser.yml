@@ -6,10 +6,11 @@ pipeline:
       properties:
         input_field: "original.message"
         output_field: pre_message
-        pattern: '\s*(%{LOG_DATE:date} %{LOG_TIME:time} )?%{DATA:raw_message}'
+        pattern: '\s*(%{LOG_DATE:date} %{LOG_TIME:time} |%{OVPN_DATE:ovpn_date} )?%{DATA:raw_message}'
         custom_patterns:
           LOG_DATE: '%{YEAR}\-%{MONTHNUM}\-%{MONTHDAY}'
           LOG_TIME: '%{HOUR}\:%{MINUTE}\:%{SECOND}'
+          OVPN_DATE: "%{DAY} %{MONTH} +%{MONTHDAY} %{TIME} %{YEAR}"
 
   - name: parsed_event
     external:
@@ -26,7 +27,7 @@ pipeline:
           TUNNEL_3: "net_%{DATA}: %{IP}/%{NUMBER} %{WORD} %{IP:peer_ip} %{DATA}"
           TUNNEL_4: "net_%{DATA}: %{WORD} %{NUMBER} %{WORD} %{WORD:observer_interface}"
           TUNNEL_5: "net_%{DATA}_up: %{WORD} %{WORD:observer_interface} %{WORD}"
-          TUNNEL_6: "%{DATA:datetime} us=%{NUMBER} %{IP:client_ip}:%{NUMBER:client_port} TLS: %{DATA:event_reason} for username '%{DATA:user_name}'"
+          TUNNEL_6: "us=%{NUMBER} %{IP:client_ip}:%{NUMBER:client_port} TLS: %{DATA:event_reason} for username '%{DATA:user_name}'"
           CLIENT_CONNECTION_1: "%{DATA} %{IP:nat_ip} -> %{WORD:client_domain}/%{IP:client_ip}:%{NUMBER:client_port}"
           CLIENT_CONNECTION_2: "%{DATA} %{WORD:client_domain}/%{IP:client_ip}:%{NUMBER:client_port}: %{IP:nat_ip}"
           CLIENT_CONNECTION_3: "%{WORD:client_domain},%{IP:nat_ip},"
@@ -54,7 +55,7 @@ pipeline:
           LDAP_ERROR_USER_NOT_FOUND: '%{LDAP_MESSAGE_USER:ldap_message} "%{USERNAME:user_name}" was not found.'
 
           CHANNEL_CIPHER: "Cipher '%{DATA:tls_cipher}' %{GREEDYDATA}"
-          CHANNEL_1: "%{DATA:datetime} us=%{NUMBER} %{IP:client_ip}:%{NUMBER:client_port} %{DATA} Data Channel: (%{CHANNEL_CIPHER:event_reason}|%{GREEDYDATA:event_reason})"
+          CHANNEL_1: "us=%{NUMBER} %{IP:client_ip}:%{NUMBER:client_port} %{DATA} Data Channel: (%{CHANNEL_CIPHER:event_reason}|%{GREEDYDATA:event_reason})"
 
   - name: parse_ldap_kv
     filter: "{{parsed_event.message != None and parsed_event.message.ldap_kvs != None}}"
@@ -89,10 +90,10 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{parsed_event.message.datetime}}" # Tue Aug 12 08:26:30 2025
+        input_field: "{{pre_parsing.pre_message.ovpn_date}}"
         output_field: datetime
         format: "%a %b %d %H:%M:%S %Y"
-    filter: "{{ parsed_event.message.datetime != None }}"
+    filter: "{{ pre_parsing.pre_message.ovpn_date != None }}"
 
   - name: set_common_fields
 

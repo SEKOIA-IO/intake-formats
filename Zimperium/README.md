@@ -1,0 +1,7 @@
+# Zimperium
+
+## Description
+Zimperium is a global leader in mobile security, providing an AI-driven platform designed to protect enterprise devices and applications from advanced cyber threats. Their technology offers real-time, on-device protection against phishing, malware, and network attacks across iOS, Android, and ChromeOS. By integrating security into the entire app lifecycle, they help organizations secure critical data and maintain regulatory compliance in a mobile-first world.
+
+## Intakes
+*

@@ -13,14 +13,32 @@ pipeline:
         input_field: "{{parse_event.message.eventdate or parse_event.message.BitdefenderGZDetectionTime or parse_event.message.end or parse_event.message.start}}"
         output_field: datetime
 
+  - name: parse_attack_techniques
+    filter: '{{parse_event.message.get("BitdefenderGZAttCkId") not in [None, ""]}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_event.message.BitdefenderGZAttCkId}}"
+        output_field: "techniques"
+
+  - name: parse_attack_types
+    filter: '{{parse_event.message.get("BitdefenderGZAttackTypes") not in [None, ""]}}'
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parse_event.message.BitdefenderGZAttackTypes}}"
+        output_field: "types"
+
   - name: set_event_fields
   - name: set_ecs_fields
+  - name: set_new_incident_fields
+    filter: "{{parse_event.message.BitdefenderGZModule == 'new-incident'}}"
 
 stages:
   set_event_fields:
     actions:
       - set:
-          event.action: "{{parse_event.message.act}}"
+          event.action: "{{parse_event.message.act or parse_event.message.BitdefenderGZMainAction}}"
           event.module: "{{parse_event.message.BitdefenderGZModule}}"
           event.severity: "{{parse_event.message.Severity}}"
           event.type: ["info"]
@@ -140,3 +158,34 @@ stages:
           threat.indicator.file.path: "{{parse_event.message.filePath}}"
           threat.indicator.file.name: "{{parse_event.message.filePath | basename}}"
         filter: "{{parse_event.message.get('BitdefenderGZMalwareType', '').lower() == 'file'}}"
+
+  set_new_incident_fields:
+    actions:
+      - set:
+          process.pid: "{{parse_event.message.spid}}"
+          process.executable: "{{parse_event.message.sproc}}"
+          process.command_line: "{{parse_event.message.BitdefenderGZProcessCommandLine}}"
+          process.parent.pid: "{{parse_event.message.BitdefenderGZParentPid}}"
+          process.parent.executable: "{{parse_event.message.BitdefenderGZParentPath}}"
+
+          file.hash.md5: "{{parse_event.message.fileHash}}"
+          file.hash.sha256: "{{parse_event.message.BitdefenderGZFileHashSha256}}"
+
+          bitdefender.gravityzone.incident.id: "{{parse_event.message.BitdefenderGZIncidentId}}"
+          bitdefender.gravityzone.incident.number: "{{parse_event.message.BitdefenderGZIncidentNumber}}"
+          bitdefender.gravityzone.incident.severity_score: "{{parse_event.message.BitdefenderGZSeverityScore}}"
+          bitdefender.gravityzone.incident.attack_entry: "{{parse_event.message.BitdefenderGZAttackEntry}}"
+          bitdefender.gravityzone.incident.main_action: "{{parse_event.message.BitdefenderGZMainAction}}"
+          bitdefender.gravityzone.incident.detection_name: "{{parse_event.message.BitdefenderGZDetectionName}}"
+
+      - set:
+          threat.technique.id: "{{parse_attack_techniques.techniques}}"
+        filter: '{{parse_attack_techniques.get("techniques") != None}}'
+
+      - set:
+          bitdefender.gravityzone.incident.attack_types: "{{parse_attack_types.types}}"
+        filter: '{{parse_attack_types.get("types") != None}}'
+
+      - set:
+          event.outcome: "success"
+        filter: "{{parse_event.message.get('BitdefenderGZMainAction') in ['blocked', 'detected', 'quarantined', 'cleaned', 'deleted']}}"

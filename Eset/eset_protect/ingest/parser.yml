@@ -1,8 +1,12 @@
 name: eset_protect
 pipeline:
   - name: json_event
+    filter: '{{original.message.strip("\ufeff \t\r\n") != "HEARTBEAT"}}'
     external:
       name: json.parse-json
+      properties:
+        input_field: '{{original.message.strip("\ufeff \t\r\n")}}'
+        output_field: message
 
   - name: parsed_occured
     external:
@@ -20,6 +24,9 @@ pipeline:
 
   - name: set_common_fields
   - name: set_process_fields
+
+  - name: set_heartbeat_type
+    filter: '{{original.message.strip("\ufeff \t\r\n") == "HEARTBEAT"}}'
 
   - name: set_audit_category_type
     filter: "{{json_event.message.get('event_type') == 'Audit_Event'}}"
@@ -111,6 +118,12 @@ stages:
         mapping:
           json_event.message.action: event.type
 
+  set_heartbeat_type:
+    actions:
+      - set:
+          # to avoid `no fields extracted` warning
+          event.dataset: ['{{original.message.strip("\ufeff \t\r\n").lower()}}']
+
   set_common_fields:
     actions:
       - set:
@@ -125,7 +138,6 @@ stages:
 
           event.reference: "{{json_event.message.eiconsolelink}}"
 
-          host.ip: ["{{json_event.message.ipv4}}"]
           host.name: "{{json_event.message.hostname}}"
           host.id: "{{json_event.message.source_uuid}}"
           host.os.full: "{{json_event.message.os_name}}"
@@ -151,6 +163,10 @@ stages:
           eset.protect.threat_type: "{{json_event.message.threat_type}}"
           eset.protect.threat_name: "{{json_event.message.threat_name}}"
           eset.protect.threat_flags: "{{json_event.message.threat_flags}}"
+
+      - set:
+          host.ip: ["{{json_event.message.ipv4}}"]
+        filter: "{{json_event.message.ipv4 | is_ipaddress}}"
 
       - translate:
         dictionary:
