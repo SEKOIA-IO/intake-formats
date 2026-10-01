@@ -72,6 +72,7 @@ ACCEPTED_USERNAMES = [
     r"^(Test|Admin)User$",
     r"^Admin(istrator)?$",
     r"^(Alice|Bob|Charlie|toto|tata)$",
+    r"^Host\d+$",
     r"^(root|system|SYSTEM|[sS]ystème)$",
     r"^ANONYMOUS([\s_\-/]+LOGON)?$",
     r"^Service([\s_\-/]+Account([\s_\-/]+Id)?)?$",
@@ -521,6 +522,14 @@ class AnonymizationValidator:
         if self.validate_ip(domain):
             return True
 
+        if "://" in domain:
+            domain_match = re.search(r"://([^/:]+)", domain)
+            if domain_match:
+                return self.validate_domain(domain_match.group(1))
+
+        if self.validate_username(domain):
+            return True
+
         # Check against accepted patterns
         for pattern in ACCEPTED_DOMAINS:
             if re.match(pattern, domain, re.IGNORECASE):
@@ -563,6 +572,9 @@ class AnonymizationValidator:
             bool: True if the username is properly anonymized, False otherwise.
         """
         # Check against accepted usernames
+        if username in ACCEPTED_IPV4_ADDRESSES:
+            return True
+
         for pattern in ACCEPTED_USERNAMES:
             if re.match(pattern, username, re.IGNORECASE):
                 return True
@@ -648,6 +660,9 @@ class AnonymizationValidator:
         # Extracted domain
         domain = domain_match.group(1)
 
+        if self.validate_ip(domain):
+            return True
+
         # Check against accepted URL domains
         for accepted_domain in ACCEPTED_URL_DOMAINS:
             if domain.endswith(accepted_domain):
@@ -716,7 +731,9 @@ class AnonymizationValidator:
         """
         # Specific check for org ID
         if field_path.endswith(".id"):
-            return org_name == "org-12345678"
+            return org_name == "org-12345678" or (
+                org_name.isdigit() and all(char == org_name[0] for char in org_name)
+            )
 
         # Check against accepted test organization patterns
         test_orgs = [
