@@ -60,7 +60,7 @@ ACCEPTED_DOMAINS = [
     r"^aws\.internal$",
     r"^(domain|acme|acme\s+domain|newcorp)$",
     r"^(localhost|hostname|company|example)(\.local(domain)?)?$",
-    r"^api\.chat\.org$",
+    r"^(mac\s?os\s?x|windows|linux|ubuntu|debian|android).*$",  # OS names for `host.os.name`
 ]
 
 ACCEPTED_USERNAMES = [
@@ -70,10 +70,8 @@ ACCEPTED_USERNAMES = [
     r"^UserName(\d+)?(\$)?$",
     r"^(Test|Admin)User$",
     r"^Admin(istrator)?$",
-    r"^Administrator\s*\([^\)]+\)$",
-    r"^(Alice|Bob|Charlie)$",
-    r"^user$",
-    r"^(root|system|SYSTEM)$",
+    r"^(Alice|Bob|Charlie|toto|tata)$",
+    r"^(root|system|SYSTEM|[sS]ystème)$",
     r"^ANONYMOUS([\s_\-/]+LOGON)?$",
     r"^Service([\s_\-/]+Account([\s_\-/]+Id)?)?$",
 ]
