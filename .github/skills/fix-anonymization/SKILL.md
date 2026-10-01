@@ -53,9 +53,9 @@ module/format requested by the user.
         for emails, `John Doe`/`user1` for names, obvious fake tokens/hashes, etc.). Keep the
         replacement consistent across the file if the same value appears multiple times, and keep
         it plausible for the field's data type.
-        → After editing, re-run the parser tests for that format (see `validate-parser` skill) to
-        confirm the parser output still matches, using `--fix-expectations` only if the change only
-        affects the raw/anonymized value and not real parsing logic.
+        → After editing, run `mise run test --format <format-slug>` to confirm the parser output
+        still matches. Pass `--fix-expectations` only if the change affects only the raw/anonymized
+        value and not real parsing logic.
 
       - **Case B — False positive / overly strict validator**: the value is already a clearly
         anonymized/redacted/safe value (per the guide) but doesn't match any pattern in
