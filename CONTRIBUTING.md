@@ -42,5 +42,4 @@ To ensure the quality of contribution, the following points will be reviewed in 
 
 - Have clear descriptions for new modules, new formats and taxonomy.
 - A logo is provided for any new modules and any new formats.
-- Tests should cover at least 75% of parsers.
 - At least one smart-description is provide for any new format.
