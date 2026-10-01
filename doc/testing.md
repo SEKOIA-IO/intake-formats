@@ -49,6 +49,16 @@ To execute a subset of tests, you could define some options:
 
 The option `--fix-expectations` can be used to automatically replace the expected files with the actual result in the test files. Use this option carefully to avoid data loss in your test files.
 
+## Anonymize test fixtures
+
+To anonymize sensitive values inside test fixture messages for changed modules, use `mise run anonymize-tests`.
+
+```shell
+$ mise run anonymize-tests
+```
+
+The command finds modules changed against `origin/develop` and updates both `input.message` and `expected.message` in place for each processed test file.
+
 
 ## Validate the format
 
