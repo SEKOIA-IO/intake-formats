@@ -1,0 +1,207 @@
+name: cisco-secure-access-web
+pipeline:
+  - name: parsed_dsv
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - timestamp
+          - policy_identity_label
+          - internal_client_ip
+          - external_client_ip
+          - destination_ip
+          - content_type
+          - action
+          - url
+          - referer
+          - user_agent
+          - status_code
+          - request_size
+          - response_size
+          - response_body_size
+          - sha_sha256
+          - categories
+          - av_detections
+          - puas
+          - amp_disposition
+          - amp_malware_name
+          - amp_score
+          - policy_identity_type
+          - blocked_categories
+          - identities
+          - identity_types
+          - request_method
+          - dlp_status
+          - certificate_errors
+          - file_name
+          - ruleset_id
+          - rule_id
+          - destination_list_ids
+          - isolate_action
+          - file_action
+          - warn_status
+          - forwarding_method
+          - producer
+          - msp_organization_id
+          - geo_location_of_blocked_destination_countries
+          - application_ids
+          - hostname
+          - data_center
+          - egress
+          - server_name
+          - time_based_rule
+          - security_overridden
+          - detected_response_file_type
+          - warn_categories
+          - organization_id
+          - application_entity_name
+          - application_entity_category
+          - egress_ip
+          - ai_model_name
+          - ai_supply_chain_categories
+          - event_correlation_id
+        delimiter: ","
+
+  - name: parsed_url
+    filter: "{{parsed_dsv.message.url | length > 0}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_dsv.message.url}}"
+        pattern: "%{URIPROTO:schema}://(?:%{USER:user}(?::[^@]*)?@)?(?:%{URIHOST:domain})?(?:%{URIPATHPARAM})?"
+
+  - name: set_ecs_fields
+
+  - name: set_custom_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.category: ["network", "web"]
+          event.type: ["access", "connection"]
+          observer.vendor: "Cisco"
+          observer.product: "Secure Access"
+          observer.type: "proxy"
+          event.dataset: "web"
+
+      - set:
+          "@timestamp": "{{parsed_dsv.message.timestamp | to_rfc3339}}"
+          http.response.mime_type: "{{parsed_dsv.message.content_type}}"
+
+          event.action: "{{parsed_dsv.message.action | lower}}"
+
+          url.original: "{{parsed_dsv.message.url}}"
+          destination.domain: "{{parsed_url.message.domain}}"
+
+          http.request.referrer: "{{parsed_dsv.message.referer}}"
+          user_agent.original: "{{parsed_dsv.message.user_agent}}"
+
+          http.response.status_code: "{{parsed_dsv.message.status_code}}"
+          http.request.bytes: "{{parsed_dsv.message.request_size}}"
+          http.response.bytes: "{{parsed_dsv.message.response_size}}"
+          http.response.body.bytes: "{{parsed_dsv.message.response_body_size}}"
+
+          file.name: "{{parsed_dsv.message.file_name}}"
+          file.hash.sha256: "{{parsed_dsv.message.sha_sha256}}"
+
+          http.request.method: "{{parsed_dsv.message.request_method}}"
+
+          rule.ruleset: "{{parsed_dsv.message.ruleset_id}}"
+          rule.id: "{{parsed_dsv.message.rule_id}}"
+
+          host.name: "{{parsed_dsv.message.hostname}}"
+          host.hostname: "{{parsed_dsv.message.hostname}}"
+
+          tls.client.server_name: "{{parsed_dsv.message.server_name}}"
+          destination.geo.country_iso_code: "{{parsed_dsv.message.geo_location_of_blocked_destination_countries}}"
+
+          organization.id: "{{parsed_dsv.message.organization_id}}"
+
+      - translate:
+        dictionary:
+          "blocked": ["failure"]
+          "allowed": ["success"]
+        mapping:
+          final.event.action: event.outcome
+
+      - set:
+          source.ip: "{{parsed_dsv.message.internal_client_ip}}"
+        filter: "{{parsed_dsv.message.internal_client_ip | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_dsv.message.external_client_ip}}"
+        filter: "{{parsed_dsv.message.external_client_ip | is_ipaddress}}"
+
+      - set:
+          destination.ip: "{{parsed_dsv.message.destination_ip}}"
+        filter: "{{parsed_dsv.message.destination_ip | is_ipaddress}}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          cisco_secure_access.web.policy_identity_label: "{{parsed_dsv.message.policy_identity_label}}"
+          cisco_secure_access.web.policy_identity_type: "{{parsed_dsv.message.policy_identity_type}}"
+
+      - set:
+          cisco_secure_access.web.identities: "{{parsed_dsv.message.identities.split(',')}}"
+        filter: "{{parsed_dsv.message.identities | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.identity_types: "{{parsed_dsv.message.identity_types.split(',')}}"
+        filter: "{{parsed_dsv.message.identity_types | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.categories: "{{parsed_dsv.message.categories.split(',')}}"
+        filter: "{{parsed_dsv.message.categories | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.blocked_categories: "{{parsed_dsv.message.blocked_categories.split(',')}}"
+        filter: "{{parsed_dsv.message.blocked_categories | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.warn_categories: "{{parsed_dsv.message.warn_categories.split(',')}}"
+        filter: "{{parsed_dsv.message.warn_categories | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.puas: "{{parsed_dsv.message.puas.split(',')}}"
+        filter: "{{parsed_dsv.message.puas | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.ai_supply_chain_categories: "{{parsed_dsv.message.ai_supply_chain_categories.split(',') | map('trim') | list}}"
+        filter: "{{parsed_dsv.message.ai_supply_chain_categories | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.application_ids: "{{parsed_dsv.message.application_ids.split(',')}}"
+        filter: "{{parsed_dsv.message.application_ids | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.destination_list_ids: "{{parsed_dsv.message.destination_list_ids.split(',')}}"
+        filter: "{{parsed_dsv.message.destination_list_ids | length > 0}}"
+
+      - set:
+          cisco_secure_access.web.av_detections: "{{parsed_dsv.message.av_detections}}"
+          cisco_secure_access.web.amp.disposition: "{{parsed_dsv.message.amp_disposition}}"
+          cisco_secure_access.web.amp.malware_name: "{{parsed_dsv.message.amp_malware_name}}"
+          cisco_secure_access.web.amp.score: "{{parsed_dsv.message.amp_score}}"
+          cisco_secure_access.web.dlp_status: "{{parsed_dsv.message.dlp_status}}"
+          cisco_secure_access.web.certificate_errors: "{{parsed_dsv.message.certificate_errors}}"
+          cisco_secure_access.web.isolate_action: "{{parsed_dsv.message.isolate_action}}"
+          cisco_secure_access.web.file_action: "{{parsed_dsv.message.file_action}}"
+          cisco_secure_access.web.warn_status: "{{parsed_dsv.message.warn_status}}"
+          cisco_secure_access.web.forwarding_method: "{{parsed_dsv.message.forwarding_method}}"
+          cisco_secure_access.web.producer: "{{parsed_dsv.message.producer}}"
+          cisco_secure_access.web.msp_organization_id: "{{parsed_dsv.message.msp_organization_id}}"
+          cisco_secure_access.web.application_entity_name: "{{parsed_dsv.message.application_entity_name}}"
+          cisco_secure_access.web.application_entity_category: "{{parsed_dsv.message.application_entity_category}}"
+          cisco_secure_access.web.data_center: "{{parsed_dsv.message.data_center}}"
+          cisco_secure_access.web.egress: "{{parsed_dsv.message.egress}}"
+          cisco_secure_access.web.egress_ip: "{{parsed_dsv.message.egress_ip}}"
+          cisco_secure_access.web.time_based_rule: "{{parsed_dsv.message.time_based_rule}}"
+          cisco_secure_access.web.security_overridden: "{{parsed_dsv.message.security_overridden}}"
+          cisco_secure_access.web.detected_response_file_type: "{{parsed_dsv.message.detected_response_file_type}}"
+          cisco_secure_access.web.ai_model_name: "{{parsed_dsv.message.ai_model_name}}"
+          cisco_secure_access.web.event_correlation_id: "{{parsed_dsv.message.event_correlation_id}}"
