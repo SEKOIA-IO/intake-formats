@@ -7,9 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2024-06-10 - 1.0.1
+## [1.0.2] - 2026-09-03
+
+### Added
+
+- Parse new ECS fields:
+  - `event.action` for DNS "received notify" events
+  - `event.outcome` for DNS zone transfer allowed/denied events
+  - `source.address` when RPZ source is logged as a hostname
+
+### Changed
+
+- Anonymize and harmonize JSON test fixtures naming
 
 ### Fixed
 
-- remove syslog header from the tests and the grok pattern
+- Support signed DNS update logs with TSIG key suffix in the DNS header
+
+## [1.0.1] - 2024-06-10
+
+### Fixed
+
+- Remove syslog header from the tests and the grok pattern
 - Add support for DNS Guardian list logs

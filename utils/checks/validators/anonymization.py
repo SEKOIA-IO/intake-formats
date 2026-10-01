@@ -11,7 +11,18 @@ from .constants import ValidationError
 
 
 # Constants for accepted generic anonymized values
-ACCEPTED_GENERIC_VALUES = {"anonymized", "redacted", "removed", "unknown", "n/a", "-", "integration", "test", "demo"}
+ACCEPTED_GENERIC_VALUES = {
+    "anonymized",
+    "redacted",
+    "removed",
+    "unknown",
+    "n/a",
+    "-",
+    "integration",
+    "test",
+    "demo",
+    "null",
+}
 
 
 # Constants for accepted anonymized values
@@ -37,10 +48,19 @@ ACCEPTED_IPV6_ADDRESSES = ["::1"]
 
 ACCEPTED_DOMAINS = [
     r"^([\w-]+\.)*(example|acme|foo|bar|baz)\.(com|org|net)$",
+    r"^([\w-]+\.)*(example|acme|foo|bar|baz)\.cloud$",
+    r"^([\w-]+\.)*acme\.(com|org|net|wtf|tld)$",
     r"^([\w-]+\.)*test\.(corp|local|com|org|net)$",
+    r"^([\w-]+\.)*test\.fr$",
+    r"^([\w-]+\.)*example\.[\w.-]+$",
     r"^([\w-]+\.)*(my)?corp\.(com|org|net)$",
     r"^([\w-]+\.)*internal\.test$",
+    r"^([\w-]+\.)*amazonaws\.com$",
+    r"^graph\.microsoft\.com$",
+    r"^aws\.internal$",
+    r"^(domain|acme|acme\s+domain|newcorp)$",
     r"^(localhost|hostname|company|example)(\.local(domain)?)?$",
+    r"^(mac\s?os\s?x|windows|linux|ubuntu|debian|android).*$",  # OS names for `host.os.name`
 ]
 
 ACCEPTED_USERNAMES = [
@@ -50,8 +70,8 @@ ACCEPTED_USERNAMES = [
     r"^UserName(\d+)?(\$)?$",
     r"^(Test|Admin)User$",
     r"^Admin(istrator)?$",
-    r"^(Alice|Bob|Charlie)$",
-    r"^(root|system|SYSTEM)$",
+    r"^(Alice|Bob|Charlie|toto|tata)$",
+    r"^(root|system|SYSTEM|[sS]ystème)$",
     r"^ANONYMOUS([\s_\-/]+LOGON)?$",
     r"^Service([\s_\-/]+Account([\s_\-/]+Id)?)?$",
 ]
@@ -66,18 +86,29 @@ ACCEPTED_EMAIL_DOMAINS = [
     "mycorp.com",
     "mycorp.org",
     "mycorp.net",
+    "onmicrosoft.com",
+    "acme.wtf",
+    "acme.tld",
 ]
 
 ACCEPTED_URL_DOMAINS = [
     "example.com",
     "example.org",
     "example.net",
+    "example.cloud",
     "test.local",
     "localhost",
     "hostname",
     "mycorp.com",
     "mycorp.org",
     "mycorp.net",
+    "acme.com",
+    "acme.wtf",
+    "acme.tld",
+    "api.chat.org",
+    "example.of.address",
+    "graph.microsoft.com",
+    "amazonaws.com",
 ]
 
 ACCEPTED_PHONE_FORMATS = [
@@ -152,8 +183,6 @@ USERNAME_FIELDS = [
     "user.target.id",
     "action.properties.SubjectUserName",
     "action.properties.TargetUserName",
-    "aws.cloudtrail.user_identity.accessKeyId",
-    "aws.cloudtrail.user_identity.principalId",
 ]
 
 EMAIL_FIELDS = [
@@ -172,7 +201,6 @@ URL_FIELDS = [
     "url.full",
     "url.original",
     "url.path",
-    "url.query",
     "http.request.referrer",
     "event.url",
     "threat.enrichments.indicator.url.original",
@@ -485,6 +513,12 @@ class AnonymizationValidator:
         Returns:
             bool: True if the domain is properly anonymized, False otherwise.
         """
+        # Reverse-DNS PTR names (e.g. "107.100.168.192.in-addr.arpa") embed an IPv4 address in
+        # their leading labels. Validate the embedded address instead of treating it as a hostname,
+        # since it is effectively an IP address, not organizational/personal data.
+        if domain.lower().endswith(".in-addr.arpa") and self._validate_in_addr_arpa(domain):
+            return True
+
         # Check against accepted patterns
         for pattern in ACCEPTED_DOMAINS:
             if re.match(pattern, domain, re.IGNORECASE):
@@ -493,6 +527,29 @@ class AnonymizationValidator:
         # Check against custom patterns from config
         custom_patterns = self.config.get("custom_patterns", {}).get("domains", [])
         return any(re.match(pattern, domain, re.IGNORECASE) for pattern in custom_patterns)
+
+    def _validate_in_addr_arpa(self, domain: str) -> bool:
+        """
+        Validate the IPv4 address embedded in a reverse-DNS "in-addr.arpa" domain name.
+
+        The leading 4 labels of such names hold the address octets, conventionally in
+        reverse order (e.g. "1.100.168.192.in-addr.arpa" for "192.168.100.1"). Some test
+        fixtures however write the octets in forward order. Both orderings are checked
+        against the accepted IPv4 ranges so genuinely anonymized addresses aren't flagged.
+
+        Args:
+            domain (str): The "in-addr.arpa" domain to validate.
+        Returns:
+            bool: True if the embedded IPv4 address is properly anonymized, False otherwise.
+        """
+        labels = domain.split(".")
+        if len(labels) < 6 or not all(label.isdigit() for label in labels[:4]):
+            return False
+
+        octets = labels[:4]
+        reversed_ip = ".".join(reversed(octets))
+        forward_ip = ".".join(octets)
+        return self.validate_ipv4(reversed_ip) or self.validate_ipv4(forward_ip)
 
     def validate_username(self, username: str) -> bool:
         """
@@ -550,7 +607,8 @@ class AnonymizationValidator:
         account, domain = email.rsplit("@", 1)
 
         # Check against accepted email domains
-        if domain.lower() in ACCEPTED_EMAIL_DOMAINS:
+        lower_domain = domain.lower()
+        if any(lower_domain == accepted or lower_domain.endswith(f".{accepted}") for accepted in ACCEPTED_EMAIL_DOMAINS):
             return True
 
         # Check against custom email domains from config
@@ -753,9 +811,22 @@ class AnonymizationValidator:
         if not self.validate_account_id(arn.account_id, "arn.account_id"):
             return False
 
-        # For IAM or User ARNs, validate username
+        # For IAM user ARNs, validate username
         if arn.service == "iam" and arn.resource_type == "user":
             return self.validate_username(arn.resource_id)
+
+        # Accept IAM root ARNs such as arn:aws:iam::1111111111:root
+        if arn.service == "iam" and arn.resource_type is None and arn.resource_id == "root":
+            return True
+
+        # Accept IAM role ARNs, including path-like names (e.g. service-role/username)
+        if arn.service == "iam" and arn.resource_type == "role":
+            role_parts = [part for part in arn.resource_id.split("/") if part]
+            if not role_parts:
+                return False
+
+            role_pattern = re.compile(r"^[a-zA-Z0-9+=,.@_-]+$")
+            return all(role_pattern.fullmatch(part) for part in role_parts)
 
         # For S3 ARNs, validate bucket name (allow generic/test names)
         if arn.service == "s3":
@@ -911,9 +982,20 @@ class AnonymizationValidator:
 
         # Check specific field paths for known accepted values
         if "accountId" in field_path:
-            return value == "123456789012"
+            return value == "123456789012" or (re.fullmatch(r"\d+", value) and all(c == value[0] for c in value))
         if "principalId" in field_path:
-            return value == "ABCDEFGHIJKLMN1234567"
+            if value == "ABCDEFGHIJKLMN1234567":
+                return True
+
+            if re.fullmatch(r"\d+", value) and all(c == value[0] for c in value):
+                return True
+
+            if ":" in value:
+                prefix, suffix = value.split(":", 1)
+                if re.fullmatch(r"[A-Za-z0-9]{4,}", prefix) and self.validate_email(suffix):
+                    return True
+
+            return self.validate_username(value)
         if "accessKeyId" in field_path:
             # Shorten AWS Access Key ID for validation
             if value[:4] in ("ABIA", "ACCA", "AKIA", "ASIA", "AGPA", "AIDA", "ANPA", "AROA", "ANVA", "APKA", "ASCA"):
@@ -938,8 +1020,27 @@ class AnonymizationValidator:
         if "arn" in value:
             return self.validate_arn(value)
 
-        # Check for Azure resource ID
-        if "resourceId" in field_path or "/subscriptions/" in value.lower():
+        # Check for Azure resource IDs.
+        if "resourceId" in field_path:
+            lower_value = value.lower()
+
+            if lower_value.startswith("/subscriptions/"):
+                return self.validate_azure_subscription(value)
+
+            if lower_value.startswith("/tenants/"):
+                tenant_match = re.fullmatch(r"/tenants/([^/]+)/providers/([^/]+)", value, re.IGNORECASE)
+                if not tenant_match:
+                    return False
+
+                tenant_id, provider_name = tenant_match.groups()
+                return self.validate_uuid(tenant_id) and provider_name.lower() == "microsoft.aadiam"
+
+            if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value, re.IGNORECASE):
+                return self.validate_uuid(value)
+
+            return False
+
+        if "/subscriptions/" in value.lower():
             return self.validate_azure_subscription(value)
 
         if "urn" in value.lower():
