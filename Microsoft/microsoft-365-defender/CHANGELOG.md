@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Normalize `email.message_id` by removing surrounding angle brackets from Microsoft Defender XDR `InternetMessageId` values when present.
+
 ## [1.0.8] - 2026-08-12
 
 ### Added
