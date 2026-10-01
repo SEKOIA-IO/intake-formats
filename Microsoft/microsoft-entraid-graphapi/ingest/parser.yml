@@ -27,6 +27,10 @@ pipeline:
 
   - name: set_common_fields
 
+  - name: set_actor_target_user_fields
+
+  - name: set_target_user_fields_from_action_properties
+
   - name: set_ecs_category
 
 stages:
@@ -109,27 +113,6 @@ stages:
         filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'user'}}"
 
       - set:
-          user.target.name: >-
-            {%- for item in json_event.message.targetResources -%}
-              {%- if item.type != null and item.type | lower == 'user' -%}
-                {{ item.userPrincipalName or item.displayName }}
-              {%- endif -%}
-            {%- endfor -%}
-          user.target.id: >-
-            {%- for item in json_event.message.targetResources -%}
-              {%- if item.type != null and item.type | lower == 'user' -%}
-                {{ item.id }}
-              {%- endif -%}
-            {%- endfor -%}
-          user.target.email: >-
-            {%- for item in json_event.message.targetResources -%}
-              {%- if item.type != null and item.type | lower == 'user' -%}
-                {{ item.userPrincipalName }}
-              {%- endif -%}
-            {%- endfor -%}
-        filter: '{{json_event.message.get("targetResources") != None}}'
-
-      - set:
           host.id: "{{json_event.message.targetResources[0].id}}"
           host.name: "{{json_event.message.targetResources[0].displayName}}"
           host.os.name: "{{json_event.message.targetResources[0].operatingSystem}}"
@@ -139,25 +122,6 @@ stages:
           service.id: "{{json_event.message.targetResources[0].id}}"
           service.name: "{{json_event.message.targetResources[0].displayName}}"
         filter: "{{json_event.message.targetResources | length > 0 and json_event.message.targetResources[0].type | lower == 'application'}}"
-
-      # action.properties - aligned with azure-ad Event Hub parser
-      - set:
-          action.properties: >
-            [
-            {%- for targetResource in json_event.message.targetResources -%}
-              {%- if targetResource.modifiedProperties != null -%}
-                {%- for modifiedProperty in targetResource.modifiedProperties -%}
-                  {%- if modifiedProperty.displayName != "Included Updated Properties" -%}
-                    {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or Null}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
-                  {%- endif -%}
-                {%- endfor -%}
-              {%- endif -%}
-              {%- if targetResource.type == "User" and targetResource.userPrincipalName != null -%}
-                {'name': '{{targetResource.userPrincipalName | lower}}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
-              {%- endif -%}
-            {%- endfor -%}
-            ]
-        filter: "{{json_event.message.targetResources | length > 0}}"
 
       - set:
           azure.entraid.properties.conditionalAccessPolicy.displayName: >-
@@ -229,6 +193,87 @@ stages:
               {%- if item.key == 'AppId' -%}{{ item.value }}{%- endif -%}
             {%- endfor -%}
         filter: "{{json_event.message.additionalDetails != null and json_event.message.additionalDetails | length > 0}}"
+
+  set_actor_target_user_fields:
+    # Avoid confusion: keep actor (user.*) and impacted target user (user.target.*) distinct.
+    # Build targeted user metadata only when the impacted target user is different from the actor.
+    # Keep this logic generic (no action-name hardcoding) to avoid event-specific regressions.
+    actions:
+      # Keep `targetedUser` only for impacted users (target different from actor).
+      - set:
+          action.properties: >
+            {%- set actor_id = json_event.message.userId or (json_event.message.initiatedBy.user.id if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None) -%}
+            {%- set actor_upn = (json_event.message.userPrincipalName or (json_event.message.initiatedBy.user.userPrincipalName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)) -%}
+            [
+            {%- for targetResource in json_event.message.targetResources -%}
+              {%- set is_actor = (
+                    (actor_id != null and targetResource.id != null and targetResource.id == actor_id)
+                    or (actor_upn != null and targetResource.userPrincipalName != null and (targetResource.userPrincipalName | lower) == (actor_upn | lower))
+                  ) -%}
+              {%- if targetResource.modifiedProperties != null -%}
+                {%- for modifiedProperty in targetResource.modifiedProperties -%}
+                  {%- if modifiedProperty.displayName != "Included Updated Properties" -%}
+                    {'name': '{{modifiedProperty.displayName or Null}}', 'newValue': '{{modifiedProperty.newValue or ""}}', 'oldValue': '{{modifiedProperty.oldValue or ""}}'},
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+              {%- if targetResource.type == "User" and not is_actor -%}
+                {'name': '{{(targetResource.userPrincipalName or targetResource.displayName) | lower}}', 'id': '{{targetResource.id}}', 'type': 'targetedUser'},
+              {%- endif -%}
+            {%- endfor -%}
+            ]
+        filter: "{{json_event.message.targetResources | length > 0}}"
+
+  set_target_user_fields_from_action_properties:
+    actions:
+      # Keep user.target.* scalar by selecting only the first impacted user.
+      - set:
+          user.target.name: >-
+            {%- set actor_id = json_event.message.userId or (json_event.message.initiatedBy.user.id if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None) -%}
+            {%- set actor_upn = (json_event.message.userPrincipalName or (json_event.message.initiatedBy.user.userPrincipalName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)) -%}
+            {%- set values -%}
+            {%- for item in json_event.message.targetResources -%}
+              {%- set is_actor = (
+                    (actor_id != null and item.id != null and item.id == actor_id)
+                    or (actor_upn != null and item.userPrincipalName != null and (item.userPrincipalName | lower) == (actor_upn | lower))
+                  ) -%}
+              {%- if item.type != null and item.type | lower == 'user' and not is_actor -%}
+                {{ item.userPrincipalName or item.displayName }}|||
+              {%- endif -%}
+            {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else None }}
+          user.target.id: >-
+            {%- set actor_id = json_event.message.userId or (json_event.message.initiatedBy.user.id if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None) -%}
+            {%- set actor_upn = (json_event.message.userPrincipalName or (json_event.message.initiatedBy.user.userPrincipalName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)) -%}
+            {%- set values -%}
+            {%- for item in json_event.message.targetResources -%}
+              {%- set is_actor = (
+                    (actor_id != null and item.id != null and item.id == actor_id)
+                    or (actor_upn != null and item.userPrincipalName != null and (item.userPrincipalName | lower) == (actor_upn | lower))
+                  ) -%}
+              {%- if item.type != null and item.type | lower == 'user' and not is_actor -%}
+                {{ item.id }}|||
+              {%- endif -%}
+            {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else None }}
+          user.target.email: >-
+            {%- set actor_id = json_event.message.userId or (json_event.message.initiatedBy.user.id if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None) -%}
+            {%- set actor_upn = (json_event.message.userPrincipalName or (json_event.message.initiatedBy.user.userPrincipalName if json_event.message.initiatedBy != null and json_event.message.initiatedBy.user != null else None)) -%}
+            {%- set values -%}
+            {%- for item in json_event.message.targetResources -%}
+              {%- set is_actor = (
+                    (actor_id != null and item.id != null and item.id == actor_id)
+                    or (actor_upn != null and item.userPrincipalName != null and (item.userPrincipalName | lower) == (actor_upn | lower))
+                  ) -%}
+              {%- if item.type != null and item.type | lower == 'user' and not is_actor -%}
+                {{ item.userPrincipalName or '' }}|||
+              {%- endif -%}
+            {%- endfor -%}
+            {%- endset -%}
+            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' and (values | default('')).split('|||')[0] != '' else None }}
+        filter: '{{json_event.message.get("targetResources") != None}}'
 
   set_ecs_category:
     actions:
