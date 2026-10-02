@@ -6,27 +6,49 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "%{AUTH}|%{WEB}|%{TASK}|%{FIREWALL}|%{DEFAULT}"
+        pattern: "%{AUTH}|%{WEB}|%{TASK}|%{FIREWALL}|%{SESSION}|%{SUDO}|%{STORAGE}|%{DEFAULT}"
         custom_patterns:
           HEADER: '%{SYSLOGTIMESTAMP:timestamp} %{IPORHOST:hostname} \(?%{DATA:process_name}\)?\[%{POSINT:process_id}\]:'
 
-          AUTH: "%{HEADER} %{AUTH_DESC}"
-          AUTH_DESC: "%{AUTH_1}|%{AUTH_2}|%{AUTH_3}|%{AUTH_4}|%{AUTH_5}|%{AUTH_6}"
+          # The syslog header is optional: events forwarded through syslog only contain the message part
+          AUTH: "(%{HEADER} )?%{AUTH_DESC}"
+          AUTH_DESC: "%{AUTH_1}|%{AUTH_2}|%{AUTH_3}|%{AUTH_4}|%{AUTH_5}|%{AUTH_6}|%{AUTH_7}|%{AUTH_8}|%{AUTH_9}|%{AUTH_10}|%{AUTH_11}|%{AUTH_12}|%{AUTH_13}"
           AUTH_1: "pam_unix(%{DATA}): (?P<reason>authentication failure); %{DATA:kv}"
-          AUTH_2: 'pam_unix(%{DATA}): (?P<reason>session (opened|closed)) for user %{DATA:user_name}\(uid=%{INT:uid}\) by %{USERNAME}\(uid=%{INT}\)'
+          AUTH_2: 'pam_unix(%{DATA}): (?P<reason>session (opened|closed)) for user %{USERNAME:user_name}(\(uid=%{INT:uid}\))?( by %{DATA}\(uid=%{INT}\))?'
           AUTH_3: "(?P<reason>Invalid user) %{DATA:user_name} from %{IP:source_ip} port %{POSINT:source_port}"
           AUTH_4: "(?P<reason>Failed password for invalid user) %{DATA:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{DATA:service}"
           AUTH_5: "(?P<reason>Accepted password) for %{DATA:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{DATA:service}"
           AUTH_6: "<%{DATA}> (?P<reason>successful auth) for user '%{DATA:user_name}@%{DATA:realm}'"
+          AUTH_7: '(?P<reason>Failed %{NOTSPACE:auth_method}) for (invalid user )?%{USERNAME:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{WORD:service}( \[preauth\])?'
+          AUTH_8: "(?P<reason>Accepted %{NOTSPACE:auth_method}) for %{USERNAME:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{WORD:service}(: %{GREEDYDATA})?"
+          AUTH_9: "(?P<reason>authentication failure); rhost=%{IP:source_ip} user=%{DATA:user_name}(@%{DATA:realm})? msg=%{GREEDYDATA:auth_message}"
+          AUTH_10: '(error: )?(?P<reason>maximum authentication attempts exceeded) for (invalid user )?%{USERNAME:user_name} from %{IP:source_ip} port %{POSINT:source_port} %{WORD:service}( \[preauth\])?'
+          AUTH_11: '(?P<reason>Connection closed by (authenticating|invalid) user) %{USERNAME:user_name} %{IP:source_ip} port %{POSINT:source_port}( \[preauth\])?'
+          AUTH_12: '(?P<reason>Disconnected from (authenticating |invalid )?user) %{USERNAME:user_name} %{IP:source_ip} port %{POSINT:source_port}( \[preauth\])?'
+          AUTH_13: "(?P<reason>PAM %{INT} more authentication failures); %{DATA:kv}"
 
           WEB: '%{IP:source_ip} - %{DATA:user_name}@%{DATA:realm} \[%{WEB_TIMESTAMP:web_timestamp}\] \"%{WORD:http_method} %{DATA:url} HTTP/%{NUMBER:http_version}\" (?:-|%{INT:http_status}) (?:-|%{INT:http_response_body_bytes})'
 
-          TASK: "%{HEADER} <%{DATA:user_name}@%{DATA:realm}> (?P<task_action>(start|starting|end)) task %{DATA:task_id}(: %{DATA:task_result})?"
+          TASK: "(%{HEADER} )?<%{DATA:user_name}@%{DATA:realm}> (?P<task_action>(start|starting|end)) task %{DATA:task_id}(: %{DATA:task_result})?"
           TASK_SERVICE: "%{HEADER} "
 
           FIREWALL: "%{NUMBER:vm_id} %{DATA:log_id} %{DATA:chain}-(?P<direction>IN|OUT) %{FW_TIMESTAMP:fw_timestamp} %{DATA:action}: %{GREEDYDATA:kv}"
 
-          DEFAULT: "%{HEADER} %{DATA:reason}"
+          SESSION: "(%{HEADER} )?%{SESSION_DESC}"
+          SESSION_DESC: "%{SESSION_1}|%{SESSION_2}|%{SESSION_3}"
+          SESSION_1: '(?P<reason>New session %{NOTSPACE:session_id} of user %{USERNAME:user_name})\.'
+          SESSION_2: '(?P<reason>Session %{NOTSPACE:session_id} logged out)\. Waiting for processes to exit\.'
+          SESSION_3: '(?P<reason>Removed session %{NOTSPACE:session_id})\.'
+
+          SUDO: "(%{HEADER} )?%{SUDO_DESC}"
+          SUDO_DESC: '\s*%{USERNAME:user_name} : (%{DATA:sudo_error} ; )?TTY=%{DATA} ; PWD=%{DATA:working_directory} ; USER=%{DATA:target_user_name} ; (%{DATA} ; )?COMMAND=%{GREEDYDATA:command_line}'
+
+          STORAGE: "(%{HEADER} )?%{STORAGE_DESC}"
+          STORAGE_DESC: "%{STORAGE_1}|%{STORAGE_2}"
+          STORAGE_1: "%{NOTSPACE:storage_name}: (?P<reason>error fetching datastores) - %{GREEDYDATA:error_message}"
+          STORAGE_2: "(?P<reason>storage '%{DATA:storage_name}' is not online)"
+
+          DEFAULT: "(%{HEADER} )?%{DATA:reason}"
 
           WEB_TIMESTAMP: "%{MONTHDAY}/%{MONTHNUM}/%{YEAR}:%{TIME} %{ISO8601_TIMEZONE}"
           FW_TIMESTAMP: "%{MONTHDAY}/%{MONTH}/%{YEAR}:%{TIME} %{ISO8601_TIMEZONE}"
@@ -48,6 +70,15 @@ pipeline:
         input_field: "{{parse_event.message.fw_timestamp}}"
         output_field: timestamp
         format: "%d/%b/%Y:%H:%M:%S %z"
+
+  - name: parse_storage_error
+    filter: "{{parse_event.message.error_message | length > 0}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_event.message.error_message}}"
+        output_field: message
+        pattern: "%{GREEDYDATA}connect to %{IPORHOST:destination_host}:%{POSINT:destination_port}%{GREEDYDATA}"
 
   - name: parse_kv
     filter: "{{parse_event.message.kv | length > 0}}"
@@ -97,7 +128,7 @@ stages:
           process.name: "{{parse_event.message.process_name}}"
           process.pid: "{{parse_event.message.process_id}}"
 
-          user.name: "{{parse_event.message.user_name}}"
+          user.name: "{{parse_event.message.user_name or parse_kv.message.user}}"
 
           source.ip: "{{parse_event.message.source_ip or parse_kv.message.SRC or parse_kv.message.rhost}}"
           source.port: "{{parse_event.message.source_port or parse_kv.message.SPT}}"
@@ -187,6 +218,109 @@ stages:
           event.action: "session_opened"
         filter: "{{ 'session opened' in original.message }}"
 
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+          event.action: "session_closed"
+        filter: "{{ 'session closed' in original.message }}"
+
+      - set:
+          event.outcome: "failure"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "failed_{{ parse_event.message.auth_method | replace('-', '_') | replace('/', '_') }}"
+        filter: "{{ final.event.reason.startswith('Failed ') and 'Failed password' not in final.event.reason }}"
+
+      - set:
+          event.outcome: "success"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "accepted_{{ parse_event.message.auth_method | replace('-', '_') | replace('/', '_') }}"
+        filter: "{{ final.event.reason.startswith('Accepted ') and 'Accepted password' not in final.event.reason }}"
+
+      - set:
+          error.message: "{{ parse_event.message.auth_message }}"
+        filter: "{{ parse_event.message.auth_message | length > 0 }}"
+
+      - set:
+          event.outcome: "failure"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.action: "max_auth_attempts_exceeded"
+        filter: "{{ 'maximum authentication attempts exceeded' in final.event.reason }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["end"]
+          event.action: "connection_closed_preauth"
+        filter: "{{ final.event.reason.startswith('Connection closed by ') }}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+          event.action: "disconnected"
+        filter: "{{ final.event.reason.startswith('Disconnected from ') }}"
+
+      # Sessions (systemd-logind)
+      - set:
+          event.category: ["session"]
+          event.type: ["start"]
+          event.action: "new_session"
+        filter: "{{ final.event.reason.startswith('New session ') }}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+          event.action: "session_logged_out"
+        filter: "{{ final.event.reason.startswith('Session ') and final.event.reason.endswith(' logged out') }}"
+
+      - set:
+          event.category: ["session"]
+          event.type: ["end"]
+          event.action: "session_removed"
+        filter: "{{ final.event.reason.startswith('Removed session ') }}"
+
+      # Sudo
+      - set:
+          event.category: ["process"]
+          event.type: ["start"]
+          event.action: "sudo_command"
+          event.outcome: "success"
+          user.target.name: "{{ parse_event.message.target_user_name }}"
+          process.command_line: "{{ parse_event.message.command_line }}"
+          process.working_directory: "{{ parse_event.message.working_directory }}"
+        filter: "{{ parse_event.message.command_line | length > 0 }}"
+
+      - set:
+          event.outcome: "failure"
+          event.reason: "{{ parse_event.message.sudo_error }}"
+        filter: "{{ parse_event.message.sudo_error | length > 0 }}"
+
+      # Storage
+      - set:
+          event.type: ["error"]
+          event.action: "storage_error"
+          event.outcome: "failure"
+          error.message: "{{ parse_event.message.error_message }}"
+        filter: "{{ parse_event.message.error_message | length > 0 }}"
+
+      - set:
+          event.type: ["error"]
+          event.action: "storage_offline"
+          event.outcome: "failure"
+        filter: "{{ final.event.reason.endswith(' is not online') }}"
+
+      - set:
+          destination.ip: "{{ parse_storage_error.message.destination_host }}"
+        filter: "{{ parse_storage_error.message.destination_host | is_ipaddress }}"
+
+      - set:
+          destination.domain: "{{ parse_storage_error.message.destination_host }}"
+        filter: "{{ parse_storage_error.message.destination_host | length > 0 and not (parse_storage_error.message.destination_host | is_ipaddress) }}"
+
+      - set:
+          destination.port: "{{ parse_storage_error.message.destination_port }}"
+
       # Firewall
       - set:
           event.action: "{{ parse_event.message.action | lower }}"
@@ -215,3 +349,5 @@ stages:
           proxmox.proxmox_ve.auth.realm: "{{ parse_event.message.realm }}"
           proxmox.proxmox_ve.task.id: "{{ parse_event.message.task_id }}"
           proxmox.proxmox_ve.task.result: "{{ parse_event.message.task_result }}"
+          proxmox.proxmox_ve.session.id: "{{ parse_event.message.session_id }}"
+          proxmox.proxmox_ve.storage.name: "{{ parse_event.message.storage_name }}"
