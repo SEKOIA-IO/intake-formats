@@ -12,4 +12,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix CEF test expectations for `Application Control Detection Alert` when repeated keys are present in input
-- Fix CEF test expectations for `Syslog Website Accessed` to align URL and related host extraction with parser output
+- Extract hostname from `request` before mapping `destination.domain` in `Syslog Website Accessed` events
+- Anonymize `Syslog Website Accessed` fixture request host with an `example.com` domain and regenerate URL/domain expectations
