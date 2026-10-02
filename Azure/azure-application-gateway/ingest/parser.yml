@@ -52,7 +52,7 @@ stages:
           observer.vendor: "Microsoft"
 
           rule.id: "{{json_event.message.properties.ruleId}}"
-          rule.name: "{{json_event.message.listenerName or json_event.message.ruleName}}"
+          rule.name: "{{json_event.message.ruleName or json_event.message.listenerName}}"
           rule.ruleset: "{{json_event.message.properties.ruleSetType}}"
           rule.version: "{{json_event.message.properties.ruleSetVersion}}"
 
@@ -105,11 +105,20 @@ stages:
 
       # Performance-specific ECS classification
       - set:
+          "@timestamp": "{{json_event.message.time.split('.')[0] + 'Z'}}"
           event.action: "{{json_event.message.metricName}}"
           event.dataset: "ApplicationGatewayPerformance"
           event.outcome: "unknown"
           event.type: ["info"]
-        filter: "{{json_event.message.metricName != null}}"
+        filter: "{{json_event.message.metricName != null and json_event.message.time != null and '.' in json_event.message.time}}"
+
+      - set:
+          "@timestamp": "{{json_event.message.time}}"
+          event.action: "{{json_event.message.metricName}}"
+          event.dataset: "ApplicationGatewayPerformance"
+          event.outcome: "unknown"
+          event.type: ["info"]
+        filter: "{{json_event.message.metricName != null and json_event.message.time != null and '.' not in json_event.message.time}}"
 
       # Destination derivation from serverRouted and hostname/host fields
       - set:
@@ -130,6 +139,18 @@ stages:
       - set:
           destination.domain: "{{json_event.message.properties.hostname.split(':')[0]}}"
         filter: "{{':' in json_event.message.properties.hostname and not (json_event.message.properties.hostname.split(':')[0] | is_ipaddress)}}"
+
+      - set:
+          destination.address: "{{json_event.message.properties.hostname}}"
+        filter: "{{json_event.message.properties.hostname != null and ':' not in json_event.message.properties.hostname}}"
+
+      - set:
+          destination.domain: "{{json_event.message.properties.hostname}}"
+        filter: "{{json_event.message.properties.hostname != null and ':' not in json_event.message.properties.hostname and not (json_event.message.properties.hostname | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{json_event.message.properties.hostname}}"
+        filter: "{{json_event.message.properties.hostname != null and ':' not in json_event.message.properties.hostname and (json_event.message.properties.hostname | is_ipaddress)}}"
 
       - set:
           destination.address: "{{json_event.message.properties.host}}"

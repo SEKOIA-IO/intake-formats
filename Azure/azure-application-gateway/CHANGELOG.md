@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extend parsing of existing ECS fields:
+  - `@timestamp`: normalize performance timestamp from `time` (including fractional-second values) so metric events consistently emit `@timestamp`
+  - `destination.*`: enrich firewall events when `hostname` is provided without port by setting `destination.address` and `destination.domain`/`destination.ip`
   - `event.action`: extend handling across log types
     - performance: `event.action` is populated from `metricName`
   - `event.dataset`: extend handling across log types  
@@ -60,5 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.type`: extend handling across log types
     - access/firewall: `event.type=["access","connection"]`
     - performance: `event.type=["info"]`
+  - `rule.name`: prefer top-level `ruleName` and use `listenerName` as fallback
 - Cover access, firewall, and performance log types with dedicated ECS/custom stages
 - Keep only high-signal Azure Application Gateway custom fields and metric fields
