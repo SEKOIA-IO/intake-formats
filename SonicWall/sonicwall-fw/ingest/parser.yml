@@ -70,6 +70,17 @@ pipeline:
         custom_patterns:
           FILE: "%{WORD}(.%{WORD})?"
 
+  - name: extract_request_url
+    description: "Extract hostname from request field"
+    filter: "{{parsed_event.message.request != null}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.request}}"
+        output_field: result
+        pattern: "(?:%{URIPROTO:scheme}://)?(?:%{URIHOST:domain})?(?:%{URIPATHPARAM:path})?"
+
   - name: set_timestamp
   - name: set_cef_header_fields
   - name: set_sonicwall_fields
@@ -110,7 +121,7 @@ stages:
     actions:
       - set:
           destination.bytes: "{{parsed_event.message.in}}"
-          destination.domain: "{{parsed_event.message.request or parsed_event.message.get('destination DnsDomain') or parsed_event.message.dhost or parsed_event.message.dntdom}}"
+          destination.domain: "{{extract_request_url.result.domain or parsed_event.message.get('destination DnsDomain') or parsed_event.message.dhost or parsed_event.message.dntdom}}"
           destination.port: "{{parsed_event.message.dpt}}"
           destination.ip: "{{parsed_event.message.dst or parsed_event.message.dstV6}}"
           destination.mac: "{{parsed_event.message.dmac}}"

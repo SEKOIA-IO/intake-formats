@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
@@ -100,6 +100,8 @@ class SmartDescription(BaseModel):
 
 
 class TestFile(BaseModel):
+    __test__: ClassVar[bool] = False
+
     input: dict[str, Any]
     expected: dict[str, Any]
 
