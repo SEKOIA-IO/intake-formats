@@ -52,6 +52,7 @@ ACCEPTED_DOMAINS = [
     r"^([\w-]+\.)*acme\.(com|org|net|wtf|tld)$",
     r"^([\w-]+\.)*test\.(corp|local|com|org|net)$",
     r"^([\w-]+\.)*test\.fr$",
+    r"^([\w-]+\.)*chat\.org$",
     r"^([\w-]+\.)*example\.[\w.-]+$",
     r"^([\w-]+\.)*(my)?corp\.(com|org|net)$",
     r"^([\w-]+\.)*internal\.test$",
@@ -69,7 +70,9 @@ ACCEPTED_USERNAMES = [
     r"^User\d+$",
     r"^UserName(\d+)?(\$)?$",
     r"^(Test|Admin)User$",
+    r"^user$",
     r"^Admin(istrator)?$",
+    r"^Administrator\s*\([^()]+\)$",
     r"^(Alice|Bob|Charlie|toto|tata)$",
     r"^(root|system|SYSTEM|[sS]ystème)$",
     r"^ANONYMOUS([\s_\-/]+LOGON)?$",
@@ -513,6 +516,10 @@ class AnonymizationValidator:
         Returns:
             bool: True if the domain is properly anonymized, False otherwise.
         """
+        # Domain-like fields may contain plain IP addresses in some logs.
+        if self.validate_ip(domain):
+            return True
+
         # Reverse-DNS PTR names (e.g. "107.100.168.192.in-addr.arpa") embed an IPv4 address in
         # their leading labels. Validate the embedded address instead of treating it as a hostname,
         # since it is effectively an IP address, not organizational/personal data.
