@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-09-14
+
+### Added
+
+- Parse new fields for Compromised Credential alerts:
+  - `netskope.alerts.breach_date`
+  - `user.target.email`
+
 ## 2026-08-14
 
 ### Added
