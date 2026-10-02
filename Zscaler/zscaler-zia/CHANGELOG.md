@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Replace `api.chat.org` fixture host values with `api.example.org` in web event tests to comply with anonymization rules
+- Replace non-reserved domains in `refererURL` and `user.email` with reserved `example.*` domains in web event fixtures
 - Update expected URL/domain derivations in web event tests after host anonymization
 
 ## 2026-08-19 - 1.1.2
