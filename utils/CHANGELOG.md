@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-10-02
+
+### Fixed
+
+- Accept domain-like anonymized values used in fixtures, including `example.*` subdomains and IP values in domain fields
+- Accept additional anonymized username patterns used in fixtures, including user and the Microsoft service principal `Administrator` (`Microsoft.Office.Datacenter.Torus.PowerShellWorker`)
+- Prevent pytest from collecting the single smart description CLI utility as a test module
+- Prevent pytest from collecting validator utility classes named `Test*` as tests
+
 ## 2026-08-10
 
 ### Fixed
