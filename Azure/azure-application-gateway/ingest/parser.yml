@@ -4,50 +4,161 @@ pipeline:
     external:
       name: json.parse-json
 
-  - name: parsed_date
+  - name: parsed_timestamp_from_timestamp
     external:
       name: date.parse
       properties:
-        # Maybe also it should be just `time` field in original message
         input_field: "{{json_event.message.timeStamp}}"
-        output_field: date
+        output_field: date_timestamp
+    filter: "{{json_event.message.timeStamp != null}}"
+
+  - name: parsed_timestamp_from_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.time}}"
+        output_field: date_time
+    filter: "{{json_event.message.time != null}}"
 
   - name: set_ecs_fields
+  - name: set_custom_fields
 
 stages:
   set_ecs_fields:
     actions:
       - set:
-          "@timestamp": "{{parsed_date.date}}"
+          "@timestamp": "{{parsed_timestamp_from_timestamp.date_timestamp or parsed_timestamp_from_time.date_time}}"
 
+          cloud.instance.id: "{{json_event.message.properties.instanceId}}"
           cloud.provider: "Azure"
           cloud.service.name: "Azure Application Gateway"
-          cloud.instance.id: "{{json_event.message.properties.instanceId}}"
 
-          event.category: ["network"]
-          event.type: ["access", "connection"]
-          event.dataset: "{{json_event.message.operationName}}"
-          event.reason: "{{json_event.message.properties.message}}"
+          destination.bytes: "{{json_event.message.properties.sentBytes}}"
+
           event.action: "{{json_event.message.properties.action}}"
+          event.category: ["network"]
+          event.dataset: "{{json_event.message.operationName or 'ApplicationGatewayPerformance'}}"
+          event.reason: "{{json_event.message.properties.message}}"
 
+          http.request.method: "{{json_event.message.properties.httpMethod}}"
+          http.response.mime_type: "{{json_event.message.properties.contentType}}"
+          http.response.status_code: "{{json_event.message.properties.httpStatus}}"
+          http.version: "{{json_event.message.properties.httpVersion.split('/')[1]}}"
+
+          network.bytes: "{{json_event.message.properties.get('receivedBytes', 0) + json_event.message.properties.get('sentBytes', 0)}}"
+          network.protocol: "{{json_event.message.properties.httpVersion.split('/')[0] | lower}}"
+
+          observer.product: "Azure Application Gateway"
+          observer.vendor: "Microsoft"
+
+          rule.id: "{{json_event.message.properties.ruleId}}"
+          rule.name: "{{json_event.message.listenerName or json_event.message.ruleName}}"
+          rule.ruleset: "{{json_event.message.properties.ruleSetType}}"
+          rule.version: "{{json_event.message.properties.ruleSetVersion}}"
+
+          source.bytes: "{{json_event.message.properties.receivedBytes}}"
           source.ip: "{{json_event.message.properties.clientIP or json_event.message.properties.clientIp}}"
           source.port: "{{json_event.message.properties.clientPort}}"
-          source.bytes: "{{json_event.message.properties.receivedBytes}}"
-          destination.bytes: "{{json_event.message.properties.sentBytes}}"
-          network.bytes: "{{json_event.message.properties.get('receivedBytes', 0) + json_event.message.properties.get('sentBytes', 0)}}"
-          user_agent.original: "{{json_event.message.properties.userAgent}}"
-          http.request.method: "{{json_event.message.properties.httpMethod}}"
-          http.response.status_code: "{{json_event.message.properties.httpStatus}}"
-          url.original: "{{json_event.message.properties.originalRequestUriWithArgs}}"
 
-          azure.application_gateway.transactionId: "{{json_event.message.properties.transactionId}}"
-          azure.application_gateway.error_info: "{{json_event.message.properties.error_info}}"
-          azure.application_gateway.serverStatus: "{{json_event.message.properties.serverStatus}}"
-          azure.application_gateway.sslClientVerify: "{{json_event.message.properties.sslClientVerify}}"
-          azure.application_gateway.message: "{{json_event.message.properties.message}}"
-          azure.application_gateway.details.message: "{{json_event.message.properties.details.message}}"
+          tls.cipher: "{{json_event.message.properties.sslCipher}}"
+          tls.version: "{{json_event.message.properties.sslProtocol.split('v')[1]}}"
+          tls.version_protocol: "{{json_event.message.properties.sslProtocol.split('v')[0] | lower}}"
+
+          url.original: "{{json_event.message.properties.originalRequestUriWithArgs}}"
+          url.path: "{{json_event.message.properties.requestUri}}"
+          url.query: "{{json_event.message.properties.requestQuery}}"
+
+          user_agent.original: "{{json_event.message.properties.userAgent}}"
+
+      # Access-specific ECS classification
+      - set:
+          event.outcome: "success"
+          event.type: ["access", "connection"]
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.httpStatus != null and json_event.message.properties.httpStatus | int < 400}}"
+
+      - set:
+          event.outcome: "failure"
+          event.type: ["access", "connection"]
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.httpStatus != null and json_event.message.properties.httpStatus | int >= 400}}"
+
+      - set:
+          event.outcome: "unknown"
+          event.type: ["access", "connection"]
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.httpStatus == null}}"
+
+      # Firewall-specific ECS classification
+      - set:
+          event.type: ["access", "connection"]
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall'}}"
+
+      - set:
+          event.outcome: "failure"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and json_event.message.properties.action != null and (json_event.message.properties.action | lower) in ['blocked', 'block', 'deny', 'denied']}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and json_event.message.properties.action != null and (json_event.message.properties.action | lower) in ['allow', 'allowed', 'pass', 'passed']}}"
+
+      - set:
+          event.outcome: "unknown"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and (json_event.message.properties.action == null or (json_event.message.properties.action | lower) not in ['blocked', 'block', 'deny', 'denied', 'allow', 'allowed', 'pass', 'passed'])}}"
+
+      # Performance-specific ECS classification
+      - set:
+          event.action: "{{json_event.message.metricName}}"
+          event.dataset: "ApplicationGatewayPerformance"
+          event.outcome: "unknown"
+          event.type: ["info"]
+        filter: "{{json_event.message.metricName != null}}"
+
+      # Destination derivation from serverRouted and hostname/host fields
+      - set:
+          destination.ip: "{{json_event.message.properties.serverRouted.split(':')[0]}}"
+          destination.port: "{{json_event.message.properties.serverRouted.split(':')[1]}}"
+        filter: "{{':' in json_event.message.properties.serverRouted and (json_event.message.properties.serverRouted.split(':')[0] | is_ipaddress)}}"
 
       - set:
           destination.ip: "{{json_event.message.properties.hostname.split(':')[0]}}"
           destination.port: "{{json_event.message.properties.hostname.split(':')[1]}}"
+        filter: "{{':' in json_event.message.properties.hostname and (json_event.message.properties.hostname.split(':')[0] | is_ipaddress)}}"
+
+      - set:
+          destination.address: "{{json_event.message.properties.hostname.split(':')[0]}}"
+          destination.port: "{{json_event.message.properties.hostname.split(':')[1]}}"
         filter: "{{':' in json_event.message.properties.hostname}}"
+
+      - set:
+          destination.domain: "{{json_event.message.properties.hostname.split(':')[0]}}"
+        filter: "{{':' in json_event.message.properties.hostname and not (json_event.message.properties.hostname.split(':')[0] | is_ipaddress)}}"
+
+      - set:
+          destination.address: "{{json_event.message.properties.host}}"
+        filter: "{{json_event.message.properties.host != null}}"
+
+      - set:
+          destination.domain: "{{json_event.message.properties.host}}"
+        filter: "{{json_event.message.properties.host != null and not (json_event.message.properties.host | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{json_event.message.properties.host}}"
+        filter: "{{json_event.message.properties.host | is_ipaddress}}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          azure.application_gateway.details.message: "{{json_event.message.properties.details.message}}"
+          azure.application_gateway.error_info: "{{json_event.message.properties.error_info}}"
+          azure.application_gateway.message: "{{json_event.message.properties.message}}"
+          azure.application_gateway.serverStatus: "{{json_event.message.properties.serverStatus}}"
+          azure.application_gateway.sslClientVerify: "{{json_event.message.properties.sslClientVerify}}"
+          azure.application_gateway.transactionId: "{{json_event.message.properties.transactionId}}"
+
+      - set:
+          azure.application_gateway.metric.average: "{{json_event.message.average}}"
+          azure.application_gateway.metric.count: "{{json_event.message.count}}"
+          azure.application_gateway.metric.maximum: "{{json_event.message.maximum}}"
+          azure.application_gateway.metric.minimum: "{{json_event.message.minimum}}"
+          azure.application_gateway.metric.name: "{{json_event.message.metricName}}"
+          azure.application_gateway.metric.time_grain: "{{json_event.message.timeGrain}}"
+          azure.application_gateway.metric.total: "{{json_event.message.total}}"
+        filter: "{{json_event.message.metricName != null}}"
