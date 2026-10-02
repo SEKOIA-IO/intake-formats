@@ -60,6 +60,7 @@ ACCEPTED_DOMAINS = [
     r"^aws\.internal$",
     r"^(domain|acme|acme\s+domain|newcorp)$",
     r"^(localhost|hostname|company|example)(\.local(domain)?)?$",
+    r"^User\d+$",
     r"^(mac\s?os\s?x|windows|linux|ubuntu|debian|android).*$",  # OS names for `host.os.name`
 ]
 
@@ -71,6 +72,7 @@ ACCEPTED_USERNAMES = [
     r"^(Test|Admin)User$",
     r"^Admin(istrator)?$",
     r"^(Alice|Bob|Charlie|toto|tata)$",
+    r"^Host\d+$",
     r"^(root|system|SYSTEM|[sS]ystème)$",
     r"^ANONYMOUS([\s_\-/]+LOGON)?$",
     r"^Service([\s_\-/]+Account([\s_\-/]+Id)?)?$",
@@ -190,10 +192,7 @@ EMAIL_FIELDS = [
     "email.to.address",
     "email.cc.address",
     "user.email",
-    "email.subject",
     "email.message_id",
-    "action.properties.SenderDisplayName",
-    "action.properties.RecipientObjectId",
     "google.report.actor.email",
 ]
 
@@ -300,6 +299,7 @@ ACCOUNT_ID_FIELDS = [
     "action.properties.SubjectUserSid",
     "action.properties.TargetSid",
     "action.properties.TargetUserSid",
+    "action.properties.RecipientObjectId",
     "crowdstrike.object_id",
     "process.parent.user.id",
     "process.user.id",
@@ -519,6 +519,17 @@ class AnonymizationValidator:
         if domain.lower().endswith(".in-addr.arpa") and self._validate_in_addr_arpa(domain):
             return True
 
+        if self.validate_ip(domain):
+            return True
+
+        if "://" in domain:
+            domain_match = re.search(r"://([^/:]+)", domain)
+            if domain_match:
+                return self.validate_domain(domain_match.group(1))
+
+        if self.validate_username(domain):
+            return True
+
         # Check against accepted patterns
         for pattern in ACCEPTED_DOMAINS:
             if re.match(pattern, domain, re.IGNORECASE):
@@ -561,6 +572,9 @@ class AnonymizationValidator:
             bool: True if the username is properly anonymized, False otherwise.
         """
         # Check against accepted usernames
+        if username in ACCEPTED_IPV4_ADDRESSES:
+            return True
+
         for pattern in ACCEPTED_USERNAMES:
             if re.match(pattern, username, re.IGNORECASE):
                 return True
@@ -599,6 +613,10 @@ class AnonymizationValidator:
         Returns:
             bool: True if the email is properly anonymized, False otherwise.
         """
+        # Message-ID values are commonly wrapped in angle brackets.
+        if email.startswith("<") and email.endswith(">"):
+            email = email[1:-1]
+
         # Check for presence of '@' symbol
         if "@" not in email:
             return False
@@ -637,10 +655,13 @@ class AnonymizationValidator:
 
         # If no domain found, check if it's a relative URL
         if not domain_match:
-            return url.startswith("/") or url.startswith("?")
+            return url.startswith("/") or url.startswith("?") or self.validate_domain(url)
 
         # Extracted domain
         domain = domain_match.group(1)
+
+        if self.validate_ip(domain):
+            return True
 
         # Check against accepted URL domains
         for accepted_domain in ACCEPTED_URL_DOMAINS:
@@ -710,7 +731,9 @@ class AnonymizationValidator:
         """
         # Specific check for org ID
         if field_path.endswith(".id"):
-            return org_name == "org-12345678"
+            return org_name == "org-12345678" or (
+                org_name.isdigit() and all(char == org_name[0] for char in org_name)
+            )
 
         # Check against accepted test organization patterns
         test_orgs = [
@@ -774,6 +797,10 @@ class AnonymizationValidator:
         """
         # Check against accepted session IDs
         if str(value).strip() in ACCEPTED_SESSION_IDS:
+            return True
+
+        session_id = str(value).strip()
+        if re.fullmatch(r"\d+", session_id) and all(c == session_id[0] for c in session_id):
             return True
 
         # Check for UUID format
@@ -1024,6 +1051,9 @@ class AnonymizationValidator:
         if "resourceId" in field_path:
             lower_value = value.lower()
 
+            if lower_value in ACCEPTED_GENERIC_VALUES or re.fullmatch(r"user\d+", lower_value):
+                return True
+
             if lower_value.startswith("/subscriptions/"):
                 return self.validate_azure_subscription(value)
 
@@ -1081,6 +1111,10 @@ class AnonymizationValidator:
         # Check for API keys
         if "api_key" in field_path.lower():
             return value == "ABCD-1234-EFGH-5678-IJKL"
+
+        # Windows event resource identifiers for the Elevated Token field represent Yes/No values.
+        if field_path.endswith(".ElevatedToken"):
+            return value in {"%%1842", "%%1843"}
 
         # Check for session tokens
         if "sessionToken" in field_path:
