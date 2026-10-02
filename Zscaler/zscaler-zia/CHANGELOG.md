@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-10-02 - 1.1.3
+
+### Fixed
+
+- Replace `api.chat.org` fixture host values with `api.example.org` in web event tests to comply with anonymization rules
+- Update expected URL/domain derivations in web event tests after host anonymization
+
 ## 2026-08-19 - 1.1.2
 
 ### Changed
