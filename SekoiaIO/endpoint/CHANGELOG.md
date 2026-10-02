@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix existing ECS fields:
-  - `host.os.type`: apply Windows fallback only when host OS type is missing to avoid overriding explicit Linux host context
   - `event.outcome`:
     - prevent Linux and non-Windows events from inheriting Windows auth outcome rules derived from `action.properties.EventType` or `event.code`
     - normalize to ECS values (`success`, `failure`, `unknown`) and fallback to `unknown` when deterministic success/failure mapping is not possible
+    - canonicalize input variants such as `Unknown`/`UNKNOWN` to `unknown`
+  - `host.os.type`: apply Windows fallback only when host OS type is missing to avoid overriding explicit Linux host context
 - Fix existing custom fields:
   - `sekoiaio.server.os.type`: apply Windows fallback only when host OS type is missing to avoid overriding explicit Linux host context
 
