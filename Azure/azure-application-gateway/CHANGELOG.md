@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - performance: `event.action` is populated from `metricName`
   - `event.dataset`: extend handling across log types  
     - performance: `event.dataset="ApplicationGatewayPerformance"`
+    - common mapping: use only provided `operationName` to avoid classifying incomplete non-metric events as performance
   - `event.outcome`: extend normalization to all log types
     - access: success/failure from `http.response.status_code`, fallback `unknown`
     - firewall: success/failure from `event.action` semantic values, fallback `unknown`
@@ -62,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.type`: extend handling across log types
     - access/firewall: `event.type=["access","connection"]`
     - performance: `event.type=["info"]`
+  - `network.bytes`: cast `receivedBytes` and `sentBytes` to integers before addition to preserve correct totals on legacy string payloads
   - `rule.name`: prefer top-level `ruleName` and use `listenerName` as fallback
 - Cover access, firewall, and performance log types with dedicated ECS/custom stages
 - Keep only high-signal Azure Application Gateway custom fields and metric fields
+- Extend fixture coverage for outcome/timestamp branches and anonymization edge cases
