@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 2025-10-15 - 1.0.0
+### [1.0.1] - 2026-10-05
+
+### Changed
+
+- Ignore CSV header rows in parser-specific routing to avoid mapping them as transaction events
+
+### Fixed
+
+- Prevent parsing warnings on CSV header rows by handling them as ignored header-only records
+
+### [1.0.0] - 2025-10-15
 
 #### Added
 
