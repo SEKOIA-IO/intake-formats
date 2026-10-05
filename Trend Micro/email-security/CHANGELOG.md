@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-05
+
+### Added
+
+- Parse `trendmicro.email.size` from source `size`.
+
 ## [1.0.2] - 2026-09-29
 
 ### Added
