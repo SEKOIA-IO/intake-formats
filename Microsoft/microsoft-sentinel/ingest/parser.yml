@@ -35,12 +35,12 @@ pipeline:
         input_field: "{{json_event.message.object.properties.createdTimeUtc}}"
         output_field: timestamp
 
-  - name: parsed_incident_last_timestamp
+  - name: parsed_incident_last_activity_timestamp
     filter: "{{json_event.message.object.properties is defined}}"
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.object.properties.lastModifiedTimeUtc}}"
+        input_field: "{{json_event.message.object.properties.lastActivityTimeUtc}}"
         output_field: timestamp
 
   - name: parsed_incident_first_activity_timestamp
@@ -88,7 +88,7 @@ stages:
       - set:
           "@timestamp": "{{parsed_incident_timestamp.timestamp}}"
           event.action: "{{json_event.message.objectEventType}}"
-          event.end: "{{parsed_incident_last_timestamp.timestamp}}"
+          event.end: "{{parsed_incident_last_activity_timestamp.timestamp}}"
           event.start: "{{parsed_incident_first_activity_timestamp.timestamp}}"
           event.provider: "{{json_event.message.object.properties.providerName}}"
           event.reason: "{{json_event.message.object.properties.description}}"
@@ -146,7 +146,7 @@ stages:
           cloud.instance.id: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('azureID') | map(attribute='azureID') | unique | list or None}}"
           cloud.instance.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('hostName') | map(attribute='hostName') | unique | list or None}}"
           host.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('hostName') | map(attribute='hostName') | unique | list or None}}"
-          host.ip: "{{((json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('ipAddress') | map(attribute='ipAddress') | list) + (json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('privateIpAddress') | map(attribute='privateIpAddress') | list) + (json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('publicIpAddress') | map(attribute='publicIpAddress') | list) + (json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('address') | map(attribute='address') | list)) | unique | list or None}}"
+          host.ip: "{{((json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('ipAddress') | map(attribute='ipAddress') | list) + (json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('privateIpAddress') | map(attribute='privateIpAddress') | list) + (json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('publicIpAddress') | map(attribute='publicIpAddress') | list)) | unique | list or None}}"
           host.domain: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('ntDomain') | map(attribute='ntDomain') | unique | list or None}}"
           host.os.type: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('osFamily') | map(attribute='osFamily') | map('lower') | reject('equalto', 'unknown') | unique | list or None}}"
           host.os.version: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('osVersion') | map(attribute='osVersion') | unique | list or None}}"
@@ -165,6 +165,7 @@ stages:
 
       # Ip entities
       - set:
+          source.address: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | selectattr('properties.address') | map(attribute='properties.address') | unique | list or None}}"
           source.ip: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | selectattr('properties.address') | map(attribute='properties.address') | unique | list or None}}"
           source.geo.city_name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('city') | map(attribute='city') | unique | list or None}}"
           source.geo.country_iso_code: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('countryCode') | map(attribute='countryCode') | unique | list or None}}"
