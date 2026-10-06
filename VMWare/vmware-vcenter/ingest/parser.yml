@@ -288,7 +288,9 @@ stages:
           user.target.name: "{{parsed_target_users_json.message | map(attribute='name') | list | first}}"
           user.target.domain: "{{parsed_target_users_json.message | map(attribute='domain') | list | first}}"
           user.roles: "{{[parsed_event.message.role]}}"
-          related.user: "{{[parsed_event.message.username] + (parsed_target_users_json.message | map(attribute='name') | list)}}"
+          related.user:
+            - "{{parsed_event.message.username}}"
+            - "{{parsed_target_users_json.message | map(attribute='name') | list | first}}"
           vmware_vcenter.target_user_names: "{{parsed_target_users_json.message | map(attribute='name') | list}}"
           vmware_vcenter.target_user_domains: "{{parsed_target_users_json.message | map(attribute='domain') | list}}"
           group.name: "{{parsed_event.message.group_name}}"
@@ -297,6 +299,15 @@ stages:
           event.category: ["iam"]
           event.type: ["change"]
         filter: "{{parsed_event.message.get('group_name') != None}}"
+
+      - set:
+          related.user:
+            - "{{parsed_event.message.username}}"
+            - "{{parsed_event.message.target_users.split('}, {')[0].split(', Domain: ')[0].replace('[{Name: ', '')}}"
+            - "{{parsed_event.message.target_users.split('}, {')[1].split(', Domain: ')[0].replace('Name: ', '')}}"
+          destination.user.name: "{{parsed_event.message.target_users.split('}, {')[1].split(', Domain: ')[0].replace('Name: ', '')}}"
+          destination.user.domain: "{{parsed_event.message.target_users.split('}, {')[1].split(', Domain: ')[1].replace('}]', '')}}"
+        filter: "{{parsed_event.message.get('group_name') != None and '}, {' in parsed_event.message.target_users}}"
 
       - set:
           event.action: modify-entry
