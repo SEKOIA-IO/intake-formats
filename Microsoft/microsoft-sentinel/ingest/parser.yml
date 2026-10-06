@@ -25,6 +25,13 @@ pipeline:
         input_field: "{{json_event.message.last_activity_time_utc }}"
         output_field: timestamp
 
+  - name: parsed_first_activity_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.first_activity_time_utc }}"
+        output_field: timestamp
+
   - name: set_ecs_fields
 
   - name: parsed_incident_timestamp
@@ -67,7 +74,7 @@ stages:
           event.type: ["info"]
           event.reason: "{{json_event.message.description}}"
           event.url: "{{json_event.message.incident_url}}"
-          event.start: "{{parsed_last_activity_timestamp.timestamp}}"
+          event.start: "{{parsed_first_activity_timestamp.timestamp}}"
           event.end: "{{parsed_last_timestamp.timestamp}}"
 
           observer.vendor: "Microsoft"
@@ -181,10 +188,11 @@ stages:
           threat.software.type: "Malware"
         filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Malware') | list | length > 0}}"
 
-      # Url entities (scalar for one entity, multi-value ECS field for multiple entities)
+      # Url entities (keep ECS url.* scalar for stable URL derivatives, preserve all originals in custom field)
       - set:
           url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | first}}"
         filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | list | length == 1}}"
       - set:
-          url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | unique | list or None}}"
+          url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | first}}"
+          microsoft.sentinel.url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | unique | list or None}}"
         filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | list | length > 1}}"
