@@ -18,6 +18,13 @@ pipeline:
         input_field: "{{json_event.message.last_modified_time_utc }}"
         output_field: timestamp
 
+  - name: parsed_last_activity_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.last_activity_time_utc }}"
+        output_field: timestamp
+
   - name: set_ecs_fields
 
   - name: parsed_incident_timestamp
@@ -36,6 +43,14 @@ pipeline:
         input_field: "{{json_event.message.object.properties.lastModifiedTimeUtc}}"
         output_field: timestamp
 
+  - name: parsed_incident_first_activity_timestamp
+    filter: "{{json_event.message.object.properties is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.object.properties.firstActivityTimeUtc}}"
+        output_field: timestamp
+
   - name: set_incident_fields
     filter: "{{json_event.message.object.properties is defined}}"
 
@@ -52,6 +67,7 @@ stages:
           event.type: ["info"]
           event.reason: "{{json_event.message.description}}"
           event.url: "{{json_event.message.incident_url}}"
+          event.start: "{{parsed_last_activity_timestamp.timestamp}}"
           event.end: "{{parsed_last_timestamp.timestamp}}"
 
           observer.vendor: "Microsoft"
@@ -71,19 +87,35 @@ stages:
     actions:
       - set:
           "@timestamp": "{{parsed_incident_timestamp.timestamp}}"
+          event.action: "{{json_event.message.objectEventType}}"
           event.end: "{{parsed_incident_last_timestamp.timestamp}}"
+          event.start: "{{parsed_incident_first_activity_timestamp.timestamp}}"
+          event.provider: "{{json_event.message.object.properties.providerName}}"
           event.reason: "{{json_event.message.object.properties.description}}"
           event.url: "{{json_event.message.object.properties.incidentUrl}}"
 
+          cloud.provider: "azure"
+          cloud.account.id: "{{json_event.message.workspaceInfo.SubscriptionId}}"
+
           log.level: "{{json_event.message.object.properties.severity}}"
           user.email: "{{json_event.message.object.properties.owner.email}}"
+
+          observer.name: "{{json_event.message.workspaceInfo.WorkspaceName}}"
+
+          rule.id: "{{json_event.message.object.properties.relatedAnalyticRuleIds | unique | list or None}}"
+
+          threat.tactic.name: "{{json_event.message.object.properties.additionalData.tactics | unique | list or None}}"
+          threat.technique.id: "{{json_event.message.object.properties.additionalData.techniques | unique | list or None}}"
 
           microsoft.sentinel.title: "{{json_event.message.object.properties.title}}"
           microsoft.sentinel.classification.type: "{{json_event.message.object.properties.classification}}"
           microsoft.sentinel.classification.comment: "{{json_event.message.object.properties.classificationComment}}"
           microsoft.sentinel.classification.reason: "{{json_event.message.object.properties.classificationReason}}"
+          microsoft.sentinel.provider_incident_id: "{{json_event.message.object.properties.providerIncidentId}}"
           microsoft.sentinel.status: "{{json_event.message.object.properties.status}}"
           microsoft.sentinel.incident.number: "{{json_event.message.object.properties.incidentNumber}}"
+          microsoft.sentinel.workspace.id: "{{json_event.message.workspaceId}}"
+          microsoft.sentinel.workspace.resource_group: "{{json_event.message.workspaceInfo.ResourceGroupName}}"
 
   set_incident_entities_fields:
     actions:
@@ -138,6 +170,8 @@ stages:
           source.geo.country_iso_code: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('countryCode') | map(attribute='countryCode') | unique | list or None}}"
           source.geo.country_name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('countryName') | map(attribute='countryName') | unique | list or None}}"
           source.geo.region_name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('state') | map(attribute='state') | unique | list or None}}"
+          source.as.number: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('asn') | map(attribute='asn') | unique | list or None}}"
+          source.as.organization.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('organization') | map(attribute='organization') | unique | list or None}}"
 
       # Malware entities
       - set:
