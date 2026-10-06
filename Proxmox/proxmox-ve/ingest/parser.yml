@@ -30,7 +30,6 @@ pipeline:
           WEB: '%{IP:source_ip} - %{DATA:user_name}@%{DATA:realm} \[%{WEB_TIMESTAMP:web_timestamp}\] \"%{WORD:http_method} %{DATA:url} HTTP/%{NUMBER:http_version}\" (?:-|%{INT:http_status}) (?:-|%{INT:http_response_body_bytes})'
 
           TASK: "(%{HEADER} )?<%{DATA:user_name}@%{DATA:realm}> (?P<task_action>(start|starting|end)) task %{DATA:task_id}(: %{DATA:task_result})?"
-          TASK_SERVICE: "%{HEADER} "
 
           FIREWALL: "%{NUMBER:vm_id} %{DATA:log_id} %{DATA:chain}-(?P<direction>IN|OUT) %{FW_TIMESTAMP:fw_timestamp} %{DATA:action}: %{GREEDYDATA:kv}"
 
@@ -48,6 +47,7 @@ pipeline:
           STORAGE_1: "%{NOTSPACE:storage_name}: (?P<reason>error fetching datastores) - %{GREEDYDATA:error_message}"
           STORAGE_2: "(?P<reason>storage '%{DATA:storage_name}' is not online)"
 
+          # Catch-all: any other line (including unknown or malformed ones) is kept in event.reason
           DEFAULT: "(%{HEADER} )?%{DATA:reason}"
 
           WEB_TIMESTAMP: "%{MONTHDAY}/%{MONTHNUM}/%{YEAR}:%{TIME} %{ISO8601_TIMEZONE}"
@@ -298,14 +298,14 @@ stages:
 
       # Storage
       - set:
-          event.type: ["error"]
+          event.type: ["info"]
           event.action: "storage_error"
           event.outcome: "failure"
           error.message: "{{ parse_event.message.error_message }}"
         filter: "{{ parse_event.message.error_message | length > 0 }}"
 
       - set:
-          event.type: ["error"]
+          event.type: ["info"]
           event.action: "storage_offline"
           event.outcome: "failure"
         filter: "{{ final.event.reason.endswith(' is not online') }}"
@@ -320,6 +320,7 @@ stages:
 
       - set:
           destination.port: "{{ parse_storage_error.message.destination_port }}"
+        filter: "{{ parse_storage_error.message.destination_port | length > 0 }}"
 
       # Firewall
       - set:
