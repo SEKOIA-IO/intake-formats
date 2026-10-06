@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - actor role
   - target user information
   - target group in `group.name`
+  - full target user list in `vmware_vcenter.target_user_names`
 
 ### Changed
 
