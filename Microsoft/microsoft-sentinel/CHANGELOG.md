@@ -45,11 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `process.command_line`
     - `process.pid`
     - `process.start`
-  - Rule related fields from incident metadata:
-    - `rule.id`
   - Related fields:
     - `related.hash`
     - `related.ip`
+  - Rule related fields from incident metadata:
+    - `rule.id`
   - Source related fields from Ip entities:
     - `source.address`
     - `source.as.number`
@@ -74,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `microsoft.sentinel.resource.subscription_id`
   - Incident metadata fields:
     - `microsoft.sentinel.provider_incident_id`
+    - `microsoft.sentinel.url.original`
     - `microsoft.sentinel.workspace.id`
     - `microsoft.sentinel.workspace.resource_group`
 - Add smart descriptions for incidents with related entities
@@ -95,7 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `microsoft.sentinel.status`
   - `microsoft.sentinel.title`
 - Use `related.ip` in smart descriptions that mention incident IP addresses
-- Preserve multiple Process and Url entities by mapping their ECS fields as multi-value when incidents contain more than one related entity
+- Preserve multiple Process entities by mapping ECS `process.*` fields as multi-value lists when incidents contain more than one related process
+- Preserve multiple Url entities by storing all raw values in `microsoft.sentinel.url.original` while keeping ECS `url.*` stable for derived URL normalization
 - Enrich smart descriptions with higher-signal summaries for tactic/technique, source context, and workspace context
 
 ### Fixed
@@ -104,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix existing ECS fields:
   - `cloud.instance.name`: derive values from Host entities so they match the source used for `cloud.instance.id`
   - `event.end`: map to `lastActivityTimeUtc` (last observed activity) instead of `lastModifiedTimeUtc`
+  - `event.start`: map legacy events to `first_activity_time_utc` and leave it unset when the source timestamp is unavailable
   - `host.ip`: restrict extraction to explicit host IP attributes to avoid non-IP host address values
   - `source.address`: map raw IP entity address values explicitly alongside `source.ip`
   - `source.geo.*`: map incident Ip entity geolocation fields to `source.*` instead of attributing them to `host.*`
