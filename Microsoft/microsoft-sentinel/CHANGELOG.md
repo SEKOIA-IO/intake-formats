@@ -94,9 +94,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `microsoft.sentinel.incident.number`
   - `microsoft.sentinel.status`
   - `microsoft.sentinel.title`
-- Derive `cloud.instance.name` from Host entities so it matches the source of `cloud.instance.id`
-- Populate `host.ip` only from Host entity address fields
-- Map incident Ip entity address and geolocation fields to `source.*` instead of attributing them to `host.*`
 - Use `related.ip` in smart descriptions that mention incident IP addresses
 - Preserve multiple Process and Url entities by mapping their ECS fields as multi-value when incidents contain more than one related entity
 - Enrich smart descriptions with higher-signal summaries for tactic/technique, source context, and workspace context
@@ -104,3 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix the owner email variable in smart descriptions to use `user.email`
+- Fix existing ECS fields:
+  - `cloud.instance.name`: derive values from Host entities so they match the source used for `cloud.instance.id`
+  - `event.end`: map to `lastActivityTimeUtc` (last observed activity) instead of `lastModifiedTimeUtc`
+  - `host.ip`: restrict extraction to explicit host IP attributes to avoid non-IP host address values
+  - `source.address`: map raw IP entity address values explicitly alongside `source.ip`
+  - `source.geo.*`: map incident Ip entity geolocation fields to `source.*` instead of attributing them to `host.*`
