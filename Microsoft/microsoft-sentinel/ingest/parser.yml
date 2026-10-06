@@ -20,6 +20,28 @@ pipeline:
 
   - name: set_ecs_fields
 
+  - name: parsed_incident_timestamp
+    filter: "{{json_event.message.object.properties is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.object.properties.createdTimeUtc}}"
+        output_field: timestamp
+
+  - name: parsed_incident_last_timestamp
+    filter: "{{json_event.message.object.properties is defined}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.object.properties.lastModifiedTimeUtc}}"
+        output_field: timestamp
+
+  - name: set_incident_fields
+    filter: "{{json_event.message.object.properties is defined}}"
+
+  - name: set_incident_entities_fields
+    filter: "{{json_event.message.object.properties.relatedEntities is defined}}"
+
 stages:
   set_ecs_fields:
     actions:
@@ -44,3 +66,79 @@ stages:
           microsoft.sentinel.classification.reason: "{{json_event.message.classification_reason}}"
           microsoft.sentinel.status: "{{json_event.message.status}}"
           microsoft.sentinel.incident.number: "{{json_event.message.incident_number}}"
+
+  set_incident_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_incident_timestamp.timestamp}}"
+          event.end: "{{parsed_incident_last_timestamp.timestamp}}"
+          event.reason: "{{json_event.message.object.properties.description}}"
+          event.url: "{{json_event.message.object.properties.incidentUrl}}"
+
+          log.level: "{{json_event.message.object.properties.severity}}"
+          user.email: "{{json_event.message.object.properties.owner.email}}"
+
+          microsoft.sentinel.title: "{{json_event.message.object.properties.title}}"
+          microsoft.sentinel.classification.type: "{{json_event.message.object.properties.classification}}"
+          microsoft.sentinel.classification.comment: "{{json_event.message.object.properties.classificationComment}}"
+          microsoft.sentinel.classification.reason: "{{json_event.message.object.properties.classificationReason}}"
+          microsoft.sentinel.status: "{{json_event.message.object.properties.status}}"
+          microsoft.sentinel.incident.number: "{{json_event.message.object.properties.incidentNumber}}"
+
+  set_incident_entities_fields:
+    actions:
+      # CloudApplication entities
+      - set:
+          cloud.service.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'CloudApplication') | map(attribute='properties') | selectattr('appName') | map(attribute='appName') | unique | list or None}}"
+          cloud.instance.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'CloudApplication') | map(attribute='properties') | selectattr('instanceName') | map(attribute='instanceName') | unique | list or None}}"
+
+      # AzureResource entities
+      - set:
+          microsoft.sentinel.resource.id: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'AzureResource') | map(attribute='properties') | selectattr('resourceId') | map(attribute='resourceId') | unique | list or None}}"
+          microsoft.sentinel.resource.subscription_id: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'AzureResource') | map(attribute='properties') | selectattr('subscriptionId') | map(attribute='subscriptionId') | unique | list or None}}"
+
+      # File entities
+      - set:
+          file.directory: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'File') | map(attribute='properties') | selectattr('directory') | map(attribute='directory') | unique | list or None}}"
+          file.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'File') | map(attribute='properties') | selectattr('fileName') | map(attribute='fileName') | unique | list or None}}"
+
+      # FileHash entities
+      - set:
+          file.hash.md5: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'FileHash') | map(attribute='properties') | selectattr('algorithm', 'equalto', 'MD5') | map(attribute='hashValue') | map('lower') | unique | list or None}}"
+          file.hash.sha1: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'FileHash') | map(attribute='properties') | selectattr('algorithm', 'equalto', 'SHA1') | map(attribute='hashValue') | map('lower') | unique | list or None}}"
+          file.hash.sha256: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'FileHash') | map(attribute='properties') | selectattr('algorithm', 'equalto', 'SHA256') | map(attribute='hashValue') | map('lower') | unique | list or None}}"
+          related.hash: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'FileHash') | map(attribute='properties') | selectattr('algorithm', 'in', ['MD5', 'SHA1', 'SHA256']) | map(attribute='hashValue') | map('lower') | unique | list or None}}"
+
+      # Host entities
+      - set:
+          cloud.instance.id: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('azureID') | map(attribute='azureID') | unique | list or None}}"
+          host.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('hostName') | map(attribute='hostName') | unique | list or None}}"
+          host.domain: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('ntDomain') | map(attribute='ntDomain') | unique | list or None}}"
+          host.os.type: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('osFamily') | map(attribute='osFamily') | map('lower') | reject('equalto', 'unknown') | unique | list or None}}"
+          host.os.version: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('osVersion') | map(attribute='osVersion') | unique | list or None}}"
+
+      # Ip entities
+      - set:
+          host.ip: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('address') | map(attribute='address') | unique | list or None}}"
+          host.geo.city_name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('city') | map(attribute='city') | unique | list or None}}"
+          host.geo.country_iso_code: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('countryCode') | map(attribute='countryCode') | unique | list or None}}"
+          host.geo.country_name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('countryName') | map(attribute='countryName') | unique | list or None}}"
+          host.geo.region_name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('location') | map(attribute='location') | selectattr('state') | map(attribute='state') | unique | list or None}}"
+          related.ip: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Ip') | map(attribute='properties') | selectattr('address') | map(attribute='address') | unique | list or None}}"
+
+      # Process entities (scalar ECS fields: keep the first process entity)
+      - set:
+          process.command_line: "{{(json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | first).commandLine}}"
+          process.pid: "{{(json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | first).processId}}"
+          process.start: "{{(json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | first).creationTimeUtc}}"
+
+      # Malware entities
+      - set:
+          threat.software.name: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Malware') | map(attribute='properties') | selectattr('malwareName') | map(attribute='malwareName') | unique | list or None}}"
+      - set:
+          threat.software.type: "Malware"
+        filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Malware') | list | length > 0}}"
+
+      # Url entities (scalar ECS field: keep the first url entity)
+      - set:
+          url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | first}}"
