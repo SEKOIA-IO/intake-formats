@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Related fields:
     - `related.hash`
     - `related.ip`
+  - Source related fields from Ip entities:
+    - `source.address`
+    - `source.geo.city_name`
+    - `source.geo.country_iso_code`
+    - `source.geo.country_name`
+    - `source.geo.region_name`
+    - `source.ip`
   - Threat related fields from Malware entities:
     - `threat.software.name`
     - `threat.software.type`
@@ -49,25 +56,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Azure resource related fields from AzureResource entities:
     - `microsoft.sentinel.resource.id`
     - `microsoft.sentinel.resource.subscription_id`
+  - Cloud application related fields from CloudApplication entities:
+    - `microsoft.sentinel.cloud_application.instance.name`
 - Add smart descriptions for incidents with related entities
 
 ### Changed
 
-- Extend parsing of existing ECS/custom fields to incidents in the `object.properties` format:
+- Extend parsing of existing ECS fields to incidents in the `object.properties` format:
   - `@timestamp`
   - `event.end`
   - `event.reason`
   - `event.url`
   - `log.level`
+  - `user.email`
+- Extend parsing of existing custom fields to incidents in the `object.properties` format:
   - `microsoft.sentinel.classification.comment`
   - `microsoft.sentinel.classification.reason`
   - `microsoft.sentinel.classification.type`
   - `microsoft.sentinel.incident.number`
   - `microsoft.sentinel.status`
   - `microsoft.sentinel.title`
-  - `user.email`
+- Derive `cloud.instance.name` from Host entities so it matches the source of `cloud.instance.id`
+- Populate `host.ip` only from Host entity address fields
+- Map incident Ip entity address and geolocation fields to `source.*` instead of attributing them to `host.*`
+- Use `related.ip` in smart descriptions that mention incident IP addresses
 
 ### Fixed
 
 - Fix the owner email variable in smart descriptions to use `user.email`
-
