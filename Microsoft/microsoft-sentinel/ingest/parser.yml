@@ -119,11 +119,17 @@ stages:
           host.os.type: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('osFamily') | map(attribute='osFamily') | map('lower') | reject('equalto', 'unknown') | unique | list or None}}"
           host.os.version: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Host') | map(attribute='properties') | selectattr('osVersion') | map(attribute='osVersion') | unique | list or None}}"
 
-      # Process entities (scalar ECS fields: keep the first process entity)
+      # Process entities (scalar for one entity, multi-value ECS fields for multiple entities)
       - set:
           process.command_line: "{{(json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | first).commandLine}}"
           process.pid: "{{(json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | first).processId}}"
           process.start: "{{(json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | first).creationTimeUtc}}"
+        filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | list | length == 1}}"
+      - set:
+          process.command_line: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | selectattr('commandLine') | map(attribute='commandLine') | unique | list or None}}"
+          process.pid: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | selectattr('processId') | map(attribute='processId') | unique | list or None}}"
+          process.start: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | map(attribute='properties') | selectattr('creationTimeUtc') | map(attribute='creationTimeUtc') | unique | list or None}}"
+        filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Process') | list | length > 1}}"
 
       # Ip entities
       - set:
@@ -140,6 +146,10 @@ stages:
           threat.software.type: "Malware"
         filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Malware') | list | length > 0}}"
 
-      # Url entities (scalar ECS field: keep the first url entity)
+      # Url entities (scalar for one entity, multi-value ECS field for multiple entities)
       - set:
           url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | first}}"
+        filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | list | length == 1}}"
+      - set:
+          url.original: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | map(attribute='properties') | selectattr('url') | map(attribute='url') | unique | list or None}}"
+        filter: "{{json_event.message.object.properties.relatedEntities | selectattr('kind', 'equalto', 'Url') | list | length > 1}}"
