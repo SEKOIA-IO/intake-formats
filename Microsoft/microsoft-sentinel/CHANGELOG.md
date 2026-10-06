@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Populate `host.ip` only from Host entity address fields
 - Map incident Ip entity address and geolocation fields to `source.*` instead of attributing them to `host.*`
 - Use `related.ip` in smart descriptions that mention incident IP addresses
+- Preserve multiple Process and Url entities by mapping their ECS fields as multi-value when incidents contain more than one related entity
 
 ### Fixed
 
