@@ -14,9 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a dedicated stage to parse incidents in the `object.properties` format with their related entities
 - Parse new ECS fields:
   - Cloud related fields from CloudApplication and Host entities:
+    - `cloud.account.id`
+    - `cloud.provider`
     - `cloud.instance.id`
     - `cloud.instance.name`
     - `cloud.service.name`
+  - Event related fields from incident and alert metadata:
+    - `event.action`
+    - `event.provider`
+    - `event.start`
   - File related fields from File and FileHash entities:
     - `file.directory`
     - `file.hash.md5`
@@ -33,15 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `host.name`
     - `host.os.type`
     - `host.os.version`
+  - Observer related fields from workspace metadata:
+    - `observer.name`
   - Process related fields from Process entities:
     - `process.command_line`
     - `process.pid`
     - `process.start`
+  - Rule related fields from incident metadata:
+    - `rule.id`
   - Related fields:
     - `related.hash`
     - `related.ip`
   - Source related fields from Ip entities:
     - `source.address`
+    - `source.as.number`
+    - `source.as.organization.name`
     - `source.geo.city_name`
     - `source.geo.country_iso_code`
     - `source.geo.country_name`
@@ -50,14 +62,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Threat related fields from Malware entities:
     - `threat.software.name`
     - `threat.software.type`
+    - `threat.tactic.name`
+    - `threat.technique.id`
   - URL related fields from Url entities:
     - `url.original`
 - Parse new custom fields:
+  - Cloud application related fields from CloudApplication entities:
+    - `microsoft.sentinel.cloud_application.instance.name`
   - Azure resource related fields from AzureResource entities:
     - `microsoft.sentinel.resource.id`
     - `microsoft.sentinel.resource.subscription_id`
-  - Cloud application related fields from CloudApplication entities:
-    - `microsoft.sentinel.cloud_application.instance.name`
+  - Incident metadata fields:
+    - `microsoft.sentinel.provider_incident_id`
+    - `microsoft.sentinel.workspace.id`
+    - `microsoft.sentinel.workspace.resource_group`
 - Add smart descriptions for incidents with related entities
 
 ### Changed
@@ -81,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Map incident Ip entity address and geolocation fields to `source.*` instead of attributing them to `host.*`
 - Use `related.ip` in smart descriptions that mention incident IP addresses
 - Preserve multiple Process and Url entities by mapping their ECS fields as multi-value when incidents contain more than one related entity
+- Enrich smart descriptions with higher-signal summaries for tactic/technique, source context, and workspace context
 
 ### Fixed
 
