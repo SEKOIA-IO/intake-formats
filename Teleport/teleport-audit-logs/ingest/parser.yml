@@ -48,7 +48,7 @@ pipeline:
       properties:
         input_field: "{{parsed_event.message.db_uri}}"
         output_field: message
-        pattern: "%{DATA:host}:%{POSINT:port}"
+        pattern: "(%{IP:ip}|%{DATA:host})(:%{POSINT:port})?"
   - name: ecs_observer_mapping
   - name: ecs_event_mapping
   - name: ecs_error_mapping
@@ -73,7 +73,7 @@ pipeline:
   - name: ecs_iam_categorization
   - name: ecs_outcome_categorization
     filter: >-
-      {{not final.event.type == ['info'] or final.event.action in ['mfa_auth_challenge.validate']}}
+      {{not final.event.type == ['info'] or final.event.action in ['mfa_auth_challenge.validate','session.upload']}}
 stages:
   ecs_observer_mapping:
     actions:
@@ -149,8 +149,9 @@ stages:
       - set:
           network.direction: outbound
         filter: >-
-          {{(parsed_addr is defined or parsed_remote is defined or parsed_local is defined) and (parsed_event.message.event in ['session.connect'] or parsed_event.message.event.startswith('desktop.') or parsed_event.message.event.startswith('linux.desktop') 
-           or parsed_event.message.event.startswith('windows.desktop'))}}
+          {{(parsed_addr is defined or parsed_remote is defined or parsed_local is defined or parsed_db_uri is defined) and (parsed_event.message.event in ['session.connect'] or
+          parsed_event.message.event.startswith('desktop.') or parsed_event.message.event.startswith('linux.desktop') or parsed_event.message.event.startswith('windows.desktop') or 
+          parsed_event.message.event.startswith('db.'))}}
       - set:
           network.direction: inbound
         filter: >-
@@ -209,6 +210,12 @@ stages:
         filter: >-
           {{parsed_remote is defined and parsed_remote.message != none and final.network.direction == 'outbound'}}
       - set:
+          destination.ip: "{{parsed_db_uri.message.ip}}"
+          destination.port: "{{parsed_db_uri.message.port}}"
+          destination.domain: "{{parsed_db_uri.message.host}}"
+        filter: >-
+          {{parsed_db_uri is defined and parsed_db_uri.message != none and final.network.direction == 'outbound'}}
+      - set:
           destination.bytes: "{{parsed_event.message.tx}}"
           destination.domain: "{{parsed_event.message.identity.desktop_name}}"
       - set:
@@ -229,6 +236,9 @@ stages:
     actions:
       - set:
           process.command_line: "{{parsed_event.message.command or parsed_event.message.db_query}}"
+      - set:
+          process.command_line: "{{parsed_event.message.query}}"
+        filter: '{{parsed_event.message.event.startswith(''db.'')}}'
   ecs_orchestrator_mapping:
     actions:
       - set:
@@ -236,7 +246,7 @@ stages:
           orchestrator.namespace: >-
             {{parsed_event.message.resource_namespace or
             parsed_event.message.kubernetes_pod_namespace}}
-          orchestrator.resource.name: "{{parsed_event.message.kubernetes_pod_name}}"
+          orchestrator.resource.name: "{{parsed_event.message.kubernetes_pod_name or parsed_event.message.resource_name }}"
           orchestrator.resource.type: "{{final.teleport.resource.kind}}"
           orchestrator.cluster.name: "{{parsed_event.message.kubernetes_cluster}}"
         filter: "{{parsed_event.message.kubernetes_cluster is defined}}"
@@ -290,11 +300,12 @@ stages:
           teleport.ssm.command.id: "{{parsed_event.message.command_id}}"
           teleport.ssm.invocation_url: "{{parsed_event.message.invocation_url}}"
           teleport.ssm.status: "{{parsed_event.message.status}}"
+          teleport.ssm.exit_code: "{{parsed_event.message.exit_code}}"
           teleport.user.kind: "{{parsed_event.message.user_kind}}"
       - set:
           teleport.session.id: "{{parsed_event.message.sid}}"
           teleport.session.start: "{{parsed_event.message.session_start}}"
-          teleport.session.end: "{{parsed_event.message.session_end}}"
+          teleport.session.end: "{{parsed_event.message.session_end or parsed_event.message.session_stop}}"
           teleport.session.interactive: "{{parsed_event.message.interactive}}"
           teleport.session.recording: "{{parsed_event.message.session_recording}}"
           teleport.session.enhanced_recording: "{{parsed_event.message.enhanced_recording}}"
@@ -309,6 +320,10 @@ stages:
           teleport.db.origin: "{{parsed_event.message.db_origin}}"
           teleport.db.service: "{{parsed_event.message.db_service}}"
           teleport.db.protocol: "{{parsed_event.message.db_protocol}}"
+      - set:
+          teleport.db.query: "{{parsed_event.message.query}}"
+          teleport.db.parameters: "{{parsed_event.message.parameters}}"
+        filter: "{{parsed_event.message.event.startswith('db')}}"
       - set:
           teleport.mfa.device.name: "{{parsed_event.message.mfa_device_name}}"
           teleport.mfa.device.type: "{{parsed_event.message.mfa_device_type}}"
@@ -362,6 +377,8 @@ stages:
           teleport.application.name: "{{parsed_event.message.name}}"
         filter: >-
           {{parsed_event.message.event.startswith('app.') and parsed_event.message.event.split('.')|length <=2}}
+      - set:
+          kubernetes.group.name: "{{parsed_event.message.kubernetes_groups}}"
 
   ecs_authentication_categorization:
     actions:
