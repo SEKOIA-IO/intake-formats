@@ -9,6 +9,15 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
+  - name: parse_timestamp
+    filter: "{{json_event.message['@timestamp'] | length > 0}}"
+    external:
+      name: date.parse
+      properties:
+        # a bare path is required: date.parse does not resolve `['@timestamp']` subscripts
+        input_field: json_event.message.@timestamp
+        output_field: datetime
+        timezone: UTC
   - name: set_ecs_fields
   - name: set_custom_fields
     description: Seckiot fields
@@ -32,7 +41,7 @@ stages:
   set_ecs_fields:
     actions:
       - set:
-          "@timestamp": "{{json_event.message['@timestamp']}}"
+          "@timestamp": "{{parse_timestamp.datetime}}"
   set_custom_fields:
     actions:
       - set:
@@ -46,6 +55,7 @@ stages:
           event.outcome: "{{json_event.message.event.outcome}}"
           event.severity: "{{json_event.message.event.severity}}"
           event.provider: "{{json_event.message.skt.module}}"
+          event.action: "{{json_event.message.rule.name}}"
       # the vendor sends `event.category: ["info"]`, which is not an ECS category
       - dictionary:
           Detection Engine: ["intrusion_detection"]
@@ -61,8 +71,19 @@ stages:
           observer.vendor: "{{json_event.message.observer.vendor}}"
           observer.product: "{{json_event.message.observer.product}}"
           observer.version: "{{json_event.message.observer.version}}"
-          observer.ingress.zone: "{{json_event.message.skt.capture_zone}}"
+      # the sniffer and the capture zone are either a name (e.g. `br0`, `default`) or a UUID
+      - set:
+          observer.ingress.interface.id: "{{json_event.message.skt.sniffer}}"
+        filter: "{{json_event.message.skt.sniffer | length == 36 and json_event.message.skt.sniffer.count('-') == 4}}"
+      - set:
           observer.ingress.interface.name: "{{json_event.message.skt.sniffer}}"
+        filter: "{{json_event.message.skt.sniffer | length > 0 and not (json_event.message.skt.sniffer | length == 36 and json_event.message.skt.sniffer.count('-') == 4)}}"
+      - set:
+          seckiot.capture_zone.id: "{{json_event.message.skt.capture_zone}}"
+        filter: "{{json_event.message.skt.capture_zone | length == 36 and json_event.message.skt.capture_zone.count('-') == 4}}"
+      - set:
+          observer.ingress.zone: "{{json_event.message.skt.capture_zone}}"
+        filter: "{{json_event.message.skt.capture_zone | length > 0 and not (json_event.message.skt.capture_zone | length == 36 and json_event.message.skt.capture_zone.count('-') == 4)}}"
   network:
     actions:
       - set:
@@ -102,7 +123,7 @@ stages:
           device.model.identifier: "{{json_event.message.skt.assets | map(attribute='modele') | select | list or ''}}"
           seckiot.assets.category: "{{json_event.message.skt.assets | map(attribute='category') | select | list or ''}}"
           seckiot.assets.description: "{{json_event.message.skt.assets | map(attribute='description') | select | list or ''}}"
-          seckiot.assets.purdue_level: "{{json_event.message.skt.assets | map(attribute='level') | select('number') | list or ''}}"
+          seckiot.assets.purdue_level: "{{json_event.message.skt.assets | map(attribute='level', default=-1) | map('int', -1) | select('ge', 0) | list or ''}}"
   vulnerability:
     actions:
       - set:
