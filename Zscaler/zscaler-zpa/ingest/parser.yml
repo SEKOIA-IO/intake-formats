@@ -31,6 +31,7 @@ pipeline:
   - name: zpa_log_type_mapping
   - name: ecs_observer_mapping
   - name: ecs_event_mapping
+  - name: ecs_error_mapping
   - name: ecs_source_mapping
   - name: ecs_destination_mapping
   - name: ecs_network_mapping
@@ -41,6 +42,7 @@ pipeline:
   - name: ecs_user_agent_mapping
   - name: ecs_url_mapping
   - name: ecs_http_mapping
+  - name: ecs_rule_mapping
   - name: ecs_organization_mapping
   - name: ecs_cloud_mapping
   - name: custom_fields_mapping
@@ -123,6 +125,11 @@ stages:
           event.outcome: failure
         filter: >-
           {{parsed_event.message.SessionStatus == 'ZPN_STATUS_DISCONNECTED' or parsed_event.message.SessionStatus == 'ZPN_STATUS_AUTH_FAILED'}}
+  ecs_error_mapping:
+    actions:
+      - set:
+          error.message: "{{parsed_event.message.PRAErrorStatus or parsed_event.message.InternalReason}}"
+        filter: "{{(parsed_event.message.PRAErrorStatus is defined and parsed_event.message.PRAErrorStatus | length > 0) or (parsed_event.message.InternalReason is defined and parsed_event.message.InternalReason | length > 0)}}"
   ecs_source_mapping:
     actions:
       - set:
@@ -159,6 +166,9 @@ stages:
           network.bytes: "{{parsed_event.message.TotalBytesProcessed}}"
           network.protocol: "{{parsed_event.message.Protocol}}"
       - set:
+          network.application: "{{parsed_event.message.PRAConsoleType | lower}}"
+        filter: "{{parsed_event.message.PRAConsoleType is defined and parsed_event.message.PRAConsoleType | length > 0}}"
+      - set:
           network.iana_number: "{{parsed_event.message.IPProtocol}}"
         filter: "{{parsed_event.message.IPProtocol is defined}}"
   ecs_host_mapping:
@@ -173,6 +183,9 @@ stages:
             {{parsed_event.message.UserID or parsed_event.message.ModifiedByUser or parsed_event.message.NameID or parsed_event.message.Username or parsed_event.message.User}}
           user.domain: >-
             {{parsed_event.message.Idp}}
+      - set:
+          user.target.name: "{{parsed_event.message.PRACredentialUserName}}"
+        filter: "{{parsed_event.message.PRACredentialUserName is defined and parsed_event.message.PRACredentialUserName | length > 0}}"
   ecs_service_mapping:
     actions:
       - set:
@@ -206,6 +219,12 @@ stages:
       - set:
           http.version: "{{parsed_event.message.Protocol}}"
         filter: "{{final.event.dataset == 'appprotection'}}"
+  ecs_rule_mapping:
+    actions:
+      - set:
+          rule.name: "{{parsed_event.message.Policy}}"
+          rule.id: "{{parsed_event.message.PRACapabilityPolicyID or parsed_event.message.PRACredentialPolicyID}}"
+        filter: '{{final.event.dataset == "user-activity"}}'
   custom_fields_mapping:
     actions:
       - set:
@@ -239,6 +258,16 @@ stages:
           zscaler.zpa.app_connector.port: "{{parsed_event.message.ConnectorPort}}"
           zscaler.zpa.app_group_name: "{{parsed_event.message.AppGroup}}"
           zscaler.zpa.app_connector.zen: "{{parsed_event.message.ConnectorZEN}}"
+          zscaler.zpa.pra.approval_id: "{{parsed_event.message.PRAApprovalID}}"
+          zscaler.zpa.pra.capability_policy_id: "{{parsed_event.message.PRACapabilityPolicyID}}"
+          zscaler.zpa.pra.connection_id: "{{parsed_event.message.PRAConnectionID}}"
+          zscaler.zpa.pra.credential_login_type: "{{parsed_event.message.PRACredentialLoginType}}"
+          zscaler.zpa.pra.credential_policy_id: "{{parsed_event.message.PRACredentialPolicyID}}"
+          zscaler.zpa.pra.file_transfer_list: "{{parsed_event.message.PRAFileTransferList}}"
+          zscaler.zpa.pra.recording_status: "{{parsed_event.message.PRARecordingStatus}}"
+          zscaler.zpa.pra.session_type: "{{parsed_event.message.PRASessionType}}"
+          zscaler.zpa.pra.shared_mode: "{{parsed_event.message.PRASharedMode}}"
+          zscaler.zpa.pra.shared_users_list: "{{parsed_event.message.PRASharedUsersList or parsed_event.message.PRASharedUserList}}"
         filter: '{{final.event.dataset == "user-activity"}}'
 
       - set:
