@@ -17,8 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `file.code_signature.exists`: map from raw field `IsSigned`
   - `file.code_signature.subject_name`: map from raw field `Signer`
   - `file.code_signature.trusted`: map from raw field `IsTrusted`
-  - `file.origin_referrer_url`: map from raw field `FileOriginReferrerUrl`
-  - `file.origin_url`: map from raw field `FileOriginUrl`
   - `process.entity_id`: map from raw fields `InitiatingProcessUniqueId` and `ProcessUniqueId` when available
   - `source.domain`: map from raw field `RemoteDeviceName` in device event/logon contexts
   - `source.port`: map from raw field `RemotePort` in `DeviceLogonEvents` events
