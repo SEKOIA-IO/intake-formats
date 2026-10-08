@@ -9,11 +9,13 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-  - name: parsed_date
+  - name: parse_timestamp
+    filter: "{{json_event.message['@timestamp'] | length > 0}}"
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.timestamp}}"
+        # a bare path is required: date.parse does not resolve `['@timestamp']` subscripts
+        input_field: json_event.message.@timestamp
         output_field: datetime
         timezone: UTC
   - name: set_ecs_fields
@@ -31,87 +33,62 @@ pipeline:
     description: source field
   - name: destination
     description: destination field
+  - name: assets
+    description: assets involved in the alert
   - name: vulnerability
     description: vulnerability field
 stages:
   set_ecs_fields:
     actions:
       - set:
-          "@timestamp": "{{parsed_date.datetime}}"
+          "@timestamp": "{{parse_timestamp.datetime}}"
   set_custom_fields:
     actions:
       - set:
-          seckiot.module: "{{json_event.message.skt.module}}"
           seckiot.alert.id: "{{json_event.message.skt.alert_id}}"
-          seckiot.assets.id: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{asset.id}}",
-              {%- endfor -%}
-            ]
-          seckiot.assets.name: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{(asset.name if asset.name else "unknown")}}",
-              {%- endfor -%}
-            ]
-          seckiot.sensor.name: "{{json_event.message.skt.sensor}}"
-          seckiot.sniffer.name: "{{json_event.message.skt.sniffer}}"
-          seckiot.assets.entity: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{ (asset.entity if asset.entity else "unknown") }}",
-              {%- endfor -%}
-            ]
-          seckiot.assets.system: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{ (asset.system if asset.system else "unknown")}}",
-              {%- endfor -%}
-            ]
-          seckiot.assets.version: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{ (asset.version if asset.version else "unknown") }}",
-              {%- endfor -%}
-            ]
-          seckiot.assets.category: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{ (asset.category if asset.category else "unknown")}}",
-              {%- endfor -%}
-            ]
-          seckiot.catch_area.name: "{{json_event.message.skt.capture_zone}}"
-          seckiot.assets.description: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{(asset.description if asset.description else "unknown")}}",
-              {%- endfor -%}
-            ]
-          seckiot.assets.localisation: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{(asset.localisation if asset.localisation else "unknown")}}",
-              {%- endfor -%}
-            ]
-          seckiot.assets.perdue_level: |
-            [ {%- for asset in json_event.message.skt.assets -%}
-              "{{(asset.level if asset.level else "unknown")}}",
-              {%- endfor -%}
-            ]
+          seckiot.session.id: "{{json_event.message.skt.session}}"
   event:
     actions:
       - set:
           event.kind: "{{json_event.message.event.kind}}"
           event.type: "{{json_event.message.event.type}}"
           event.outcome: "{{json_event.message.event.outcome}}"
-          event.category: "{{json_event.message.event.category}}"
           event.severity: "{{json_event.message.event.severity}}"
+          event.provider: "{{json_event.message.skt.module}}"
+          event.action: "{{json_event.message.rule.name}}"
+      # the vendor sends `event.category: ["info"]`, which is not an ECS category
+      - dictionary:
+          Detection Engine: ["intrusion_detection"]
+          Cartography: ["network"]
+          CVE: ["vulnerability"]
+        mapping:
+          json_event.message.skt.module: event.category
   observer:
     actions:
       - set:
-          observer.name: "{{json_event.message.event.outcome}}"
+          observer.name: "{{json_event.message.observer.name or json_event.message.skt.sensor}}"
           observer.type: "{{json_event.message.observer._type}}"
           observer.vendor: "{{json_event.message.observer.vendor}}"
           observer.product: "{{json_event.message.observer.product}}"
           observer.version: "{{json_event.message.observer.version}}"
+      # the sniffer and the capture zone are either a name (e.g. `br0`, `default`) or a UUID
+      - set:
+          observer.ingress.interface.id: "{{json_event.message.skt.sniffer}}"
+        filter: "{{json_event.message.skt.sniffer | length == 36 and json_event.message.skt.sniffer.count('-') == 4}}"
+      - set:
+          observer.ingress.interface.name: "{{json_event.message.skt.sniffer}}"
+        filter: "{{json_event.message.skt.sniffer | length > 0 and not (json_event.message.skt.sniffer | length == 36 and json_event.message.skt.sniffer.count('-') == 4)}}"
+      - set:
+          seckiot.capture_zone.id: "{{json_event.message.skt.capture_zone}}"
+        filter: "{{json_event.message.skt.capture_zone | length == 36 and json_event.message.skt.capture_zone.count('-') == 4}}"
+      - set:
+          observer.ingress.zone: "{{json_event.message.skt.capture_zone}}"
+        filter: "{{json_event.message.skt.capture_zone | length > 0 and not (json_event.message.skt.capture_zone | length == 36 and json_event.message.skt.capture_zone.count('-') == 4)}}"
   network:
     actions:
       - set:
-          network.protocol: "{{json_event.message.protocol.name}}"
-          network.transport: "{{json_event.message.protocol.transport}}"
+          network.protocol: "{{json_event.message.network.protocol | lower}}"
+          network.transport: "{{json_event.message.network.transport | lower}}"
   rule:
     actions:
       - set:
@@ -132,6 +109,21 @@ stages:
           destination.ip: "{{json_event.message.destination.ip}}"
           destination.mac: "{{json_event.message.destination.mac}}"
           destination.port: "{{json_event.message.destination.port}}"
+  assets:
+    # one value per asset involved in the alert; empty attributes are skipped
+    actions:
+      - set:
+          host.id: "{{json_event.message.skt.assets | map(attribute='id') | select | list or ''}}"
+          host.name: "{{json_event.message.skt.assets | map(attribute='name') | select | list or ''}}"
+          host.type: "{{json_event.message.skt.assets | map(attribute='entity') | select | list or ''}}"
+          host.os.name: "{{json_event.message.skt.assets | map(attribute='system') | select | list or ''}}"
+          host.os.version: "{{json_event.message.skt.assets | map(attribute='version') | select | list or ''}}"
+          host.geo.name: "{{json_event.message.skt.assets | map(attribute='localisation') | select | list or ''}}"
+          device.manufacturer: "{{json_event.message.skt.assets | map(attribute='hardware_vendor') | select | list or ''}}"
+          device.model.identifier: "{{json_event.message.skt.assets | map(attribute='modele') | select | list or ''}}"
+          seckiot.assets.category: "{{json_event.message.skt.assets | map(attribute='category') | select | list or ''}}"
+          seckiot.assets.description: "{{json_event.message.skt.assets | map(attribute='description') | select | list or ''}}"
+          seckiot.assets.purdue_level: "{{json_event.message.skt.assets | map(attribute='level', default=-1) | map('int', -1) | select('ge', 0) | list or ''}}"
   vulnerability:
     actions:
       - set:
