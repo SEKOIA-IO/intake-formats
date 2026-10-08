@@ -61,6 +61,7 @@ ACCEPTED_DOMAINS = [
     r"^(domain|acme|acme\s+domain|newcorp)$",
     r"^(localhost|hostname|company|example)(\.local(domain)?)?$",
     r"^User\d+$",
+    r"^NT\sAUTHORITY$",
     r"^(mac\s?os\s?x|windows|linux|ubuntu|debian|android).*$",  # OS names for `host.os.name`
 ]
 
@@ -389,7 +390,7 @@ class AnonymizationValidator:
             try:
                 with open(file_path, "r") as f:
                     return json.load(f)
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError, OSError:
                 # If the config file is missing or invalid, return empty config.
                 # This is acceptable as the rest of the code can handle missing/empty config.
                 pass
@@ -464,7 +465,7 @@ class AnonymizationValidator:
             # Check ranges
             return any(ip in network for network in ACCEPTED_IPV4_RANGES)
 
-        except (ipaddress.AddressValueError, ValueError):
+        except ipaddress.AddressValueError, ValueError:
             return False
 
     def validate_ipv6(self, ip_str: str) -> bool:
@@ -485,7 +486,7 @@ class AnonymizationValidator:
             ip = ipaddress.IPv6Address(ip_str)
             return any(ip in network for network in ACCEPTED_IPV6_RANGES)
 
-        except (ipaddress.AddressValueError, ValueError):
+        except ipaddress.AddressValueError, ValueError:
             return False
 
     def validate_ip(self, ip_str: str) -> bool:
@@ -626,7 +627,9 @@ class AnonymizationValidator:
 
         # Check against accepted email domains
         lower_domain = domain.lower()
-        if any(lower_domain == accepted or lower_domain.endswith(f".{accepted}") for accepted in ACCEPTED_EMAIL_DOMAINS):
+        if any(
+            lower_domain == accepted or lower_domain.endswith(f".{accepted}") for accepted in ACCEPTED_EMAIL_DOMAINS
+        ):
             return True
 
         # Check against custom email domains from config
@@ -731,9 +734,7 @@ class AnonymizationValidator:
         """
         # Specific check for org ID
         if field_path.endswith(".id"):
-            return org_name == "org-12345678" or (
-                org_name.isdigit() and all(char == org_name[0] for char in org_name)
-            )
+            return org_name == "org-12345678" or (org_name.isdigit() and all(char == org_name[0] for char in org_name))
 
         # Check against accepted test organization patterns
         test_orgs = [
