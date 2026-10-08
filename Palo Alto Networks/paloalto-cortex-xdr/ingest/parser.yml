@@ -9,7 +9,7 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.detection_timestamp or json_event.message.event_timestamp}}"
+        input_field: "{{json_event.message.detection_timestamp or json_event.message.event_timestamp or json_event.message.source_insert_ts}}"
         output_field: datetime
 
   - name: parsed_description
@@ -34,7 +34,7 @@ pipeline:
 
   # Events within alert stage
   - name: set_alerts_events_fields
-    filter: '{{json_event.message.get("severity") != None }}'
+    filter: '{{json_event.message.get("severity") != None and json_event.message.get("events") != None and json_event.message.get("events") | length > 0 }}'
   # Separate events stage
   - name: set_events_fields
     filter: '{{json_event.message.get("agent_install_type") != None }}'
@@ -47,7 +47,7 @@ stages:
     actions:
       - set:
           "@timestamp": "{{parsed_timestamp.datetime}}"
-          event.ingested: "{{json_event.message.local_insert_ts | to_rfc3339}}"
+          event.ingested: "{{(json_event.message.local_insert_ts or json_event.message.source_insert_ts or json_event.message.detection_timestamp or json_event.message.event_timestamp) | to_rfc3339}}"
           event.kind: "alert"
           event.category: ["intrusion_detection"]
           event.type: ["info"]
@@ -56,36 +56,37 @@ stages:
           observer.vendor: "Palo Alto"
           observer.product: "Palo Alto Cortex XDR"
 
-          event.action: "{{json_event.message.action}}"
-          event.reason: "{{json_event.message.description}}"
-          event.outcome: "{{json_event.message.matching_status}}"
+          event.action: "{{json_event.message.action or json_event.message.issue_action_status_readable or json_event.message.issue_action_status or json_event.message.status}}"
+          event.reason: "{{json_event.message.description or json_event.message.issue_description}}"
+          event.outcome: "{{json_event.message.matching_status or json_event.message.status or json_event.message.issue_action_status or json_event.message.issue_action_status_readable}}"
 
           agent.version: "{{json_event.message.agent_version}}"
-          agent.name: "{{json_event.message.agent_fqdn}}"
+          agent.name: "{{json_event.message.agent_fqdn or json_event.message.agent_hostname}}"
 
           host.os.name: "{{json_event.message.agent_os_type}}"
           host.mac: "{{json_event.message.mac_address}}"
-          host.name: "{{json_event.message.host_name}}"
-          host.ip: "{{json_event.message.host_ip}}"
-          host.id: "{{json_event.message.endpoint_id}}"
+          host.name: "{{json_event.message.host_name or json_event.message.agent_hostname}}"
+          host.ip: "{{json_event.message.host_ip | default(json_event.message.agent_ip_addresses)}}"
+          host.id: "{{json_event.message.endpoint_id or json_event.message.agent_id}}"
 
-          paloalto.cortex.xdr.alert.name: "{{json_event.message.name}}"
-          paloalto.cortex.xdr.alert.category: "{{json_event.message.category}}"
+          paloalto.cortex.xdr.alert.name: "{{json_event.message.name or json_event.message.issue_name}}"
+          paloalto.cortex.xdr.alert.category: "{{json_event.message.category or json_event.message.issue_category}}"
           paloalto.cortex.xdr.alert.severity: "{{json_event.message.severity}}"
-          paloalto.cortex.xdr.alert.id: "{{json_event.message.alert_id}}"
+          paloalto.cortex.xdr.alert.id: "{{json_event.message.alert_id or json_event.message.issue_id}}"
           paloalto.cortex.xdr.alert.externalID: "{{json_event.message.external_id}}"
           paloalto.cortex.xdr.alert.ruleID.matching_service: "{{json_event.message.matching_service_rule_id}}"
           paloalto.cortex.xdr.alert.ruleID.filter: "{{json_event.message.filter_rule_id}}"
           paloalto.cortex.xdr.alert.caseID: "{{json_event.message.case_id}}"
-          paloalto.cortex.xdr.alert.is_whitelisted: "{{json_event.message.is_whitelisted}}"
-          paloalto.cortex.xdr.alert.resolution_status: "{{json_event.message.resolution_status}}"
+          paloalto.cortex.xdr.alert.is_whitelisted: "{{json_event.message.is_whitelisted | default(json_event.message.is_excluded)}}"
+          paloalto.cortex.xdr.alert.resolution_status: "{{json_event.message.resolution_status or json_event.message.status}}"
 
       # We need to split labels because ECS expects MITRE codes and names in different fields
       - set:
           threat.technique: >
             {%- set technique_ids = [] -%}
             {%- set technique_names = [] -%}
-            {%- for technique in json_event.message.mitre_technique_id_and_name -%}
+            {%- set mitre_techniques = json_event.message.mitre_technique_id_and_name or [] -%}
+            {%- for technique in mitre_techniques -%}
               {%- if technique is string and " - " in technique -%}
                 {%- set parts = technique.split(" - ", 1) -%}
                 {%- set _ = technique_ids.append(parts[0]) -%}
@@ -96,13 +97,14 @@ stages:
             {%- endfor -%}
             {%- set result = {"name": technique_names, "id": technique_ids} -%}
             {{ result }}
-        filter: "{{json_event.message.mitre_technique_id_and_name | length > 0}}"
+        filter: "{{json_event.message.mitre_technique_id_and_name != None and json_event.message.mitre_technique_id_and_name | length > 0}}"
 
       - set:
           threat.tactic: >
             {%- set tactic_ids = [] -%}
             {%- set tactic_names = [] -%}
-            {%- for tactic in json_event.message.mitre_tactic_id_and_name -%}
+            {%- set mitre_tactics = json_event.message.mitre_tactic_id_and_name or [] -%}
+            {%- for tactic in mitre_tactics -%}
               {%- if tactic is string and " - " in tactic -%}
                 {%- set parts = tactic.split(" - ", 1) -%}
                 {%- set _ = tactic_ids.append(parts[0]) -%}
@@ -113,7 +115,7 @@ stages:
             {%- endfor -%}
             {%- set result = {"name": tactic_names, "id": tactic_ids} -%}
             {{ result }}
-        filter: "{{json_event.message.mitre_tactic_id_and_name | length > 0}}"
+        filter: "{{json_event.message.mitre_tactic_id_and_name != None and json_event.message.mitre_tactic_id_and_name | length > 0}}"
 
   set_alerts_events_fields:
     actions:
