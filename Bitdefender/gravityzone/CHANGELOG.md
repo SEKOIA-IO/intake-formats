@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Map `agent.id` from `BitdefenderGZEndpointId`, so EDR agent identifiers are attached to host assets
+- Map `agent.id` from `deviceExternalId`, the unique GravityZone computer identifier expected by EDR actions (e.g. isolation), so agent identifiers are attached to host assets
 
 ### Fixed
 
