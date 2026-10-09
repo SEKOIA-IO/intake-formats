@@ -34,8 +34,9 @@ stages:
           error.code: "{{parsed_event.message.errorCode}}"
           http.request.id: "{{parsed_event.message.reqId}}"
           http.request.method: "{{parsed_event.message.reqMethod}}"
-          http.request.referrer: "{{parsed_event.message.referer}}" ### need url decode
+          http.request.referrer: "{{parsed_event.message.referer | replace('+', ' ') | replace('%2B', '+') | replace('%20', ' ') | replace('%2F', '/') | replace('%3A', ':') | replace('%3D', '=') | replace('%3F', '?') | replace('%26', '&') | replace('%28', '(') | replace('%29', ')') | replace('%3B', ';') | replace('%2C', ',') | replace('%25', '%')}}" ### partial url decode (common sequences only), to replace with a proper decode filter when available
           http.response.body.bytes: "{{parsed_event.message.rspContentLen}}"
+          http.response.bytes: "{{parsed_event.message.bytes}}"
           http.response.mime_type: "{{parsed_event.message.rspContentType}}"
           http.response.status_code: "{{parsed_event.message.statusCode}}"
           network.bytes: "{{parsed_event.message.totalBytes}}"
@@ -46,27 +47,20 @@ stages:
           source.geo.city_name: "{{parsed_event.message.city}}"
           source.geo.country_iso_code: "{{parsed_event.message.country}}"
           source.geo.region_name: "{{parsed_event.message.state}}" ### need url decode
-          source.ip: "{{parsed_event.message.cliIp}}"
-          tls.version: "{{parsed_event.message.tlsVersion | trim('TLSv')}}"
+          source.ip: "{{parsed_event.message.cliIP}}"
+          tls.version: "{{parsed_event.message.tlsVersion | replace('TLSv', '')}}"
           url.domain: "{{parsed_event.message.reqHost}}"
           url.path: "{{parsed_event.message.reqPath}}"
           url.port: "{{parsed_event.message.reqPort}}"
           url.query: "{{parsed_event.message.queryStr}}"
-          user_agent.original: "{{parsed_event.message.UA}}" ### need url decode
+          user_agent.original: "{{parsed_event.message.UA | replace('+', ' ') | replace('%2B', '+') | replace('%20', ' ') | replace('%2F', '/') | replace('%3A', ':') | replace('%3D', '=') | replace('%3F', '?') | replace('%26', '&') | replace('%28', '(') | replace('%29', ')') | replace('%3B', ';') | replace('%2C', ',') | replace('%25', '%')}}" ### partial url decode (common sequences only), to replace with a proper decode filter when available
 
       - set:
-          event.outcome: >
-            {%- set status_code = parsed_event.message.get('statusCode') | int -%}
-            {%- if status_code is not none -%}
-              {%- if status_code >= 200 and status_code < 400 -%}
-                success
-              {%- elif status_code >= 400 and status_code < 600 -%}
-                failure
-              {%- else -%}
-                unknown
-              {%- endif -%}
-            {%- else -%}
-              unknown
+          event.outcome: >-
+            {%- set status_code = parsed_event.message.get('statusCode') | int(0) -%}
+            {%- if 200 <= status_code < 400 -%}success
+            {%- elif 400 <= status_code < 600 -%}failure
+            {%- else -%}unknown
             {%- endif -%}
 
   set_custom_fields:
@@ -95,8 +89,8 @@ stages:
 
       - set:
           akamai.datastream2.cache_status: "{{parsed_event.message.cacheStatus}}"
-        filter: "{{parsed_event.message.get('cacheStatus') != None and parsed_event.message.get('cacheStatus') | int in [0, 1]}}"
+        filter: "{{ parsed_event.message.get('cacheStatus') not in [None, ''] }}"
 
       - set:
           akamai.datastream2.security_rules: "{{parsed_event.message.securityRules}}"
-        filter: "{{parsed_event.message.get('securityRules') in ['policyId','nonDeny','deny']}}"
+        filter: "{{ parsed_event.message.get('securityRules') not in [None, ''] }}"
