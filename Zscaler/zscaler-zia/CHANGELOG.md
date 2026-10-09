@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Replace non-reserved domains in `refererURL` and `user.email` with reserved `example.*` domains in web event fixtures
+- Replace public routable IP addresses with TEST-NET addresses in `test_event_web*.json` fixtures
 - Update expected URL/domain derivations in web event tests after host anonymization
 
 ## [1.1.2] - 2026-08-19
