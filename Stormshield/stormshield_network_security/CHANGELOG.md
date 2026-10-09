@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-09-14
+
+### Added
+
+- Parse `stormshield.url.category` custom field from `cat_site` raw field (URL filtering category of `ssl` and `web` logs)
+- Add `web` log test coverage
+
+### Fixed
+
+- Anonymize remaining firewall identifiers, router names, usernames and MAC addresses in test fixtures
+
 ## 2026-09-08
 
 ### Added
