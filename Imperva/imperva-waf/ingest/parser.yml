@@ -19,6 +19,8 @@ pipeline:
         input_field: parse_kv.message.end
         output_field: date
   - name: set_ecs_fields
+  - name: set_cloud_waf_fields
+    filter: "{{ parse_kv.message.DeviceProduct == 'SIEMintegration' }}"
   - name: set_imperva_fields
 stages:
   set_ecs_fields:
@@ -33,7 +35,6 @@ stages:
           http.request.referrer: "{{ parse_kv.message.ref }}"
           http.request.method: "{{ parse_kv.message.requestMethod or parse_kv.message.requestmethod }}"
           http.response.status_code: "{{ parse_kv.message.cn1 }}"
-          http.request.bytes: "{{ parse_kv.message.in }}"
           http.request.id: "{{ parse_kv.message.deviceExternalId or parse_kv.message.deviceExternalID }}"
           network.protocol: "{{ parse_kv.message.app | lower }}"
           source.domain: "{{ parse_kv.message.dhost }}"
@@ -116,7 +117,7 @@ stages:
       - set:
           event.type: '["connection", "denied"]'
           event.reason: "A challenge was submitted to the client"
-        filter: '{{ parse_kv.message.act != null and parse_kv.message.act.startswith("REQ_CHALLENGED")}}'
+        filter: '{{ parse_kv.message.act != null and (parse_kv.message.act.startswith("REQ_CHALLENGED") or parse_kv.message.act.startswith("REQ_CHALLENGE_"))}}'
       - set:
           event.type: '["connection", "error"]'
         filter: '{{ parse_kv.message.act != null and (parse_kv.message.act.startswith("REQ_BAD") or parse_kv.message.act.startswith("REQ_UNRESOLVED"))}}'
@@ -153,6 +154,29 @@ stages:
           "REQ_TOO_MANY_CONNECTIONS_TO_ORIGIN": "Too many connections on the destination"
         mapping:
           event.action: event.reason
+  set_cloud_waf_fields:
+    actions:
+      - set:
+          destination.ip: "{{ parse_kv.message.sip }}"
+        filter: "{{ parse_kv.message.sip | is_ipaddress }}"
+      - set:
+          destination.port: "{{ parse_kv.message.spt }}"
+        filter: "{{ parse_kv.message.spt != null and parse_kv.message.spt | re_match('^[0-9]{1,5}$') and 0 <= parse_kv.message.spt | int <= 65535 }}"
+      - set:
+          client.geo.country_iso_code: "{{ parse_kv.message.ccode | upper }}"
+        filter: "{{ parse_kv.message.ccode != null and parse_kv.message.ccode | re_match('^[A-Za-z]{2}$') }}"
+      - set:
+          organization.id: "{{ parse_kv.message.suid }}"
+        filter: "{{ parse_kv.message.suid != null and parse_kv.message.suid | re_match('^[0-9]+$') }}"
+      - set:
+          http.response.body.bytes: "{{ parse_kv.message.in }}"
+        filter: "{{ parse_kv.message.in != null and parse_kv.message.in | re_match('^[0-9]{1,19}$') and parse_kv.message.in | int <= 9223372036854775807 }}"
+      - set:
+          http.request.body.content: "{{ parse_kv.message.postbody }}"
+        filter: "{{ parse_kv.message.postbody != null and parse_kv.message.postbody != '' }}"
+      - set:
+          rule.category: "{{ parse_kv.message.Name }}"
+        filter: "{{ parse_kv.message.Name != null and parse_kv.message.Name != '' and parse_kv.message.Name != 'Normal' }}"
   set_imperva_fields:
     actions:
       - set:
@@ -166,8 +190,8 @@ stages:
           imperva.client.captcha_support: "{{ parse_kv.message.cs1 }}"
           imperva.visitor.id: "{{ parse_kv.message.cs4 }}"
           imperva.user_agent.type: "{{ parse_kv.message.dproc }}"
-          imperva.attack.type: "{{ parse_kv.message.filetype }}"
-          imperva.attack.id: "{{ parse_kv.message.filepermission }}"
+          imperva.attack.type: "{{ parse_kv.message.filetype if parse_kv.message.filetype != null else parse_kv.message.fileType }}"
+          imperva.attack.id: "{{ parse_kv.message.filepermission if parse_kv.message.filepermission != null else parse_kv.message.filePermission }}"
           imperva.rule.additional_info: "{{ parse_kv.message.cs11 }}"
           imperva.event.class_id: "{{ parse_kv.message.Name }}"
 
