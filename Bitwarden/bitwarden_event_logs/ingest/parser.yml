@@ -19,6 +19,8 @@ pipeline:
 
   - name: set_action_from_type
 
+  - name: set_taxonomy_and_product
+
   - name: set_outcome
 
 stages:
@@ -29,7 +31,7 @@ stages:
           observer.product: Password Manager
           event.dataset: bitwarden.event_logs
           event.kind: event
-          event.category: ["authentication", "iam"]
+          event.category: ["iam"]
           event.type: ["info"]
 
       - set:
@@ -203,11 +205,11 @@ stages:
               2304: 'service_account_created',
               2305: 'service_account_deleted',
               2500: 'send_text_created',
-              2501: 'send_file_created',
+              2501: 'send_text_created_with_email_verification',
               2502: 'send_text_created_with_password',
-              2503: 'send_file_created_with_password',
-              2504: 'send_text_created_with_email_verification',
-              2505: 'send_file_created_with_email_verification',
+              2503: 'send_file_created',
+              2504: 'send_file_created_with_email_verification',
+              2505: 'send_file_created_with_password',
               2506: 'send_text_edited',
               2507: 'send_file_edited',
               2508: 'send_text_deleted',
@@ -217,6 +219,25 @@ stages:
             } -%}
             {%- set event_type = parsed_event.message.type | default(parsed_event.message.typeId) -%}
             {{ action_map.get(event_type, 'bitwarden_event_' ~ (event_type | string)) }}
+
+  set_taxonomy_and_product:
+    actions:
+      - set:
+          event.category: ["authentication"]
+          event.type: ["info"]
+        filter: >-
+          {{(parsed_event.message.type | default(parsed_event.message.typeId)) in [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011]}}
+
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+        filter: >-
+          {{(parsed_event.message.type | default(parsed_event.message.typeId)) in [1600, 1601, 1602, 1603, 1604, 1605, 1606, 1607, 1608, 1609, 1610, 1611, 1612, 1613, 1614, 1615, 1616, 1617, 1618, 1619, 1620, 1621, 1622, 1623, 1624, 1625, 1626, 1627, 1628, 1700, 2000, 2001, 2002, 2003]}}
+
+      - set:
+          observer.product: Secrets Manager
+        filter: >-
+          {{(parsed_event.message.type | default(parsed_event.message.typeId)) >= 2100 and (parsed_event.message.type | default(parsed_event.message.typeId)) <= 2305}}
 
   set_outcome:
     actions:
