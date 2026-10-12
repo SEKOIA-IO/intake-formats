@@ -32,5 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix existing ECS fields:
+  - `destination.ip`: omit unspecified IPv4 and IPv6 addresses from raw field `sip`
+  - `destination.port`: omit port zero from raw field `spt`
   - `http.request.bytes`: remove the incorrect mapping of `in`, which represents response body bytes, and use `http.response.body.bytes` instead
   - `network.forwarded_ip`: extract and validate the first trimmed address from the `X-Forwarded-For` chain
