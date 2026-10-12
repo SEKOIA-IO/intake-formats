@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Add the Windows ARM64 download link to the intake description, next to the Windows x86-64 one
+- Add the GNU/Linux ARM64 download link to the intake description (in the description since 2026-06-24, never recorded here)
 
 ## 2026-10-02
 
