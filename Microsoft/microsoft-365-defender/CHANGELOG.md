@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-10-01
+
+### Fixed
+
+- Normalize existing ECS fields:
+  - `email.message_id`: remove surrounding angle brackets from Microsoft Defender XDR `InternetMessageId` values when present
+
 ## [1.0.8] - 2026-08-12
 
 ### Added
 
 - Parse new custom fields:
-    - `microsoft.defender.url_chain`
+  - `microsoft.defender.url_chain`
 
 ## [1.0.7] - 2026-08-12
 
@@ -25,15 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Parse custom fields:
-    - `microsoft.defender.threat.last_verdict`
-    - `microsoft.defender.threat.verdict`
+- Parse new custom fields:
+  - `microsoft.defender.threat.last_verdict`
+  - `microsoft.defender.threat.verdict`
 
 ## [1.0.5] - 2025-09-01
 
 ### Fixed
 
-- Add remote device name in DeviceLogonEvents
+- Add remote device name in `DeviceLogonEvents`
 
 ## [1.0.4] - 2025-08-06
 
@@ -49,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Add more fields and test
+- Add more fields and tests
 
 ## [1.0.2] - 2023-12-07
 

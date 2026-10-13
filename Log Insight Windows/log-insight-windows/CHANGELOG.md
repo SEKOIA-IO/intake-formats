@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2024-03-14 - 2.0.0
+## [2.0.1] - 2026-10-07
+
+### Fixed
+
+- Accept CRLF, tab, and space as field separators, for forwarders that flatten line breaks
+- Accept `Subject :` with a space before the colon
+- Add a fallback pattern for unsupported events to extract the action name from the first line instead of raising a parsing warning
+
+## [2.0.0] - 2024-03-14
 
 ### Added
 
