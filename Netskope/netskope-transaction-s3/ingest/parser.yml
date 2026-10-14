@@ -4,7 +4,7 @@ pipeline:
   # Legacy Transaction Events format (Format 1 to 4): the 6th field is the `bytes`
   # counter (numeric). Only run this stage when that field is NOT an IP address.
   - name: parse_event
-    filter: '{{ not (original.message.split(",")[5] | is_ipaddress) }}'
+    filter: '{{ not ((original.message.split(",")[0] | lower).endswith("date") and (original.message.split(",")[1] | lower) == "time") and not (original.message.split(",")[5] | is_ipaddress) }}'
     external:
       name: dsv.parse-dsv
       properties:
@@ -163,7 +163,7 @@ pipeline:
   # observed export omits the legacy `bytes` field and appends extra fields, so
   # the 6th field is the client IP. Only run this stage when it is an IP address.
   - name: parse_event
-    filter: '{{ original.message.split(",")[5] | is_ipaddress }}'
+    filter: '{{ not ((original.message.split(",")[0] | lower).endswith("date") and (original.message.split(",")[1] | lower) == "time") and original.message.split(",")[5] | is_ipaddress }}'
     external:
       name: dsv.parse-dsv
       properties:
@@ -370,8 +370,19 @@ pipeline:
         delimiter: ","
 
   - name: set_fields
+    filter: '{{ not ((original.message.split(",")[0] | lower).endswith("date") and (original.message.split(",")[1] | lower) == "time") }}'
+
+  - name: set_ignored_header_row
+    filter: '{{ (original.message.split(",")[0] | lower).endswith("date") and (original.message.split(",")[1] | lower) == "time" }}'
 
 stages:
+  set_ignored_header_row:
+    actions:
+      - set:
+          event.kind: "state"
+          event.reason: "Ignored CSV header row"
+          event.original: "{{ original.message }}"
+
   set_fields:
     actions:
       - set:
