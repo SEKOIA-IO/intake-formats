@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-10-14
+
+### Fixed
+
+- Normalize existing ECS fields:
+  - `email.message_id`: reintroduce the removal of surrounding angle brackets from Microsoft Defender XDR `InternetMessageId` values when present
+
 ## [1.0.11] - 2026-10-13
 
 ### Fixed
