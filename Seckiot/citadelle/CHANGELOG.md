@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-14
+
+### Removed
+
+- Remove deprecated custom fields as an acceptable breaking change:
+  - `seckiot.assets.entity`: replaced by ECS field `host.type`
+  - `seckiot.assets.id`: replaced by ECS field `host.id`
+  - `seckiot.assets.localisation`: replaced by ECS field `host.geo.name`
+  - `seckiot.assets.name`: replaced by ECS field `host.name`
+  - `seckiot.assets.perdue_level`: replaced by custom field `seckiot.assets.purdue_level`
+  - `seckiot.assets.system`: replaced by ECS field `host.os.name`
+  - `seckiot.assets.version`: replaced by ECS field `host.os.version`
+  - `seckiot.catch_area.name`: replaced by custom field `seckiot.capture_zone.id` for UUIDs or ECS field `observer.ingress.zone` otherwise
+  - `seckiot.module`: replaced by ECS field `event.provider`
+  - `seckiot.sensor.name`: replaced by ECS field `observer.name`
+  - `seckiot.sniffer.name`: replaced by ECS field `observer.ingress.interface.id` for UUIDs or `observer.ingress.interface.name` otherwise
+
 ## [1.0.0] - 2026-10-14
 
 ### Added
