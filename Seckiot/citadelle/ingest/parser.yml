@@ -10,7 +10,7 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
   - name: parse_timestamp
-    filter: "{{json_event.message['@timestamp'] | length > 0}}"
+    filter: "{{json_event.message.get('@timestamp') not in [None, '']}}"
     external:
       name: date.parse
       properties:
@@ -37,6 +37,8 @@ pipeline:
     description: assets involved in the alert
   - name: vulnerability
     description: vulnerability field
+  - name: deprecated_fields
+    description: legacy custom fields kept for backward compatibility
 stages:
   set_ecs_fields:
     actions:
@@ -98,6 +100,8 @@ stages:
     actions:
       - set:
           rule.uuid: "{{json_event.message.rule.uuid}}"
+          # deprecated: kept for backward compatibility, use `rule.uuid`
+          rule.id: "{{json_event.message.rule.uuid}}"
           rule.name: "{{json_event.message.rule.name}}"
           rule.author: "{{json_event.message.rule.author}}"
           rule.version: "{{json_event.message.rule.version}}"
@@ -120,7 +124,6 @@ stages:
       - set:
           host.id: "{{json_event.message.skt.assets | map(attribute='id') | select | list or ''}}"
           host.name: "{{json_event.message.skt.assets | map(attribute='name') | select | list or ''}}"
-          related.hosts: "{{json_event.message.skt.assets | map(attribute='name') | select | list or ''}}"
           host.type: "{{json_event.message.skt.assets | map(attribute='entity') | select | list or ''}}"
           host.os.name: "{{json_event.message.skt.assets | map(attribute='system') | select | list or ''}}"
           host.os.version: "{{json_event.message.skt.assets | map(attribute='version') | select | list or ''}}"
@@ -129,7 +132,7 @@ stages:
           device.model.identifier: "{{json_event.message.skt.assets | map(attribute='modele') | select | list or ''}}"
           seckiot.assets.category: "{{json_event.message.skt.assets | map(attribute='category') | select | list or ''}}"
           seckiot.assets.description: "{{json_event.message.skt.assets | map(attribute='description') | select | list or ''}}"
-          seckiot.assets.purdue_level: "{{json_event.message.skt.assets | map(attribute='level', default=-1) | map('int', -1) | select('ge', 0) | list or ''}}"
+          seckiot.assets.purdue_level: "{{json_event.message.skt.assets | map(attribute='level', default=-1) | map('int', -1) | select('ge', 0) | select('le', 6) | list or ''}}"
   vulnerability:
     actions:
       - set:
@@ -146,3 +149,18 @@ stages:
           vulnerability.scanner.vendor: "{{json_event.message.vulnerability.scanner.vendor}}"
           vulnerability.score.temporal: "{{json_event.message.vulnerability.score.temporal}}"
           vulnerability.score.environmental: "{{json_event.message.vulnerability.score.environmental}}"
+  deprecated_fields:
+    # deprecated custom fields, still populated until a customer announcement; use the ECS/custom replacements
+    actions:
+      - set:
+          seckiot.module: "{{json_event.message.skt.module}}"
+          seckiot.sensor.name: "{{json_event.message.skt.sensor}}"
+          seckiot.sniffer.name: "{{json_event.message.skt.sniffer}}"
+          seckiot.catch_area.name: "{{json_event.message.skt.capture_zone}}"
+          seckiot.assets.id: "{{final.host.id}}"
+          seckiot.assets.name: "{{final.host.name}}"
+          seckiot.assets.entity: "{{final.host.type}}"
+          seckiot.assets.system: "{{final.host.os.name}}"
+          seckiot.assets.version: "{{final.host.os.version}}"
+          seckiot.assets.localisation: "{{final.host.geo.name}}"
+          seckiot.assets.perdue_level: "{{(final.seckiot.assets.purdue_level or []) | map('string') | list or ''}}"
