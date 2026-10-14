@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `host.geo.name`: map raw field `skt.assets[].localisation`
   - `host.id`: map raw field `skt.assets[].id`
   - `host.name`: map raw field `skt.assets[].name`
+  - `related.hosts`: map raw field `skt.assets[].name`
   - `host.os.name`: map raw field `skt.assets[].system`
   - `host.os.version`: map raw field `skt.assets[].version`
   - `host.type`: map raw field `skt.assets[].entity`
