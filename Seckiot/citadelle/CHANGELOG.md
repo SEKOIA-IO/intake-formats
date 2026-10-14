@@ -33,8 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate custom fields from `text` to `keyword` (breaking full-text queries in favor of exact-match behavior):
+  - `seckiot.alert.id`
+  - `seckiot.assets.category`
+  - `seckiot.assets.description` 
 - Stop padding asset lists with `unknown` values
-- Migrate `seckiot.alert.id`, `seckiot.assets.category`, and `seckiot.assets.description` from `text` to `keyword` (breaking full-text queries in favor of exact-match behavior)
 - Rework smart descriptions for detection, cartography, and vulnerability alerts with richer ECS/custom-field context, stronger fallbacks, and deterministic priority from category-specific variants to generic fallbacks
 
 ### Fixed
@@ -51,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Remove legacy custom fields as a breaking change:
+- Remove legacy custom fields as an acceptable breaking change:
   - `seckiot.assets.entity`: replaced by ECS field `host.type`
   - `seckiot.assets.id`: replaced by ECS field `host.id`
   - `seckiot.assets.localisation`: replaced by ECS field `host.geo.name`
