@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `host.geo.name`: map raw field `skt.assets[].localisation`
   - `host.id`: map raw field `skt.assets[].id`
   - `host.name`: map raw field `skt.assets[].name`
-  - `related.hosts`: map raw field `skt.assets[].name`
+  - `related.hosts`: map raw field `skt.assets[].name` on applicable events
   - `host.os.name`: map raw field `skt.assets[].system`
   - `host.os.version`: map raw field `skt.assets[].version`
   - `host.type`: map raw field `skt.assets[].entity`
@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Stop padding asset lists with `unknown` values
+- Migrate `seckiot.alert.id`, `seckiot.assets.category`, and `seckiot.assets.description` from `text` to `keyword` (breaking full-text queries in favor of exact-match behavior)
 - Rework smart descriptions for detection, cartography, and vulnerability alerts with richer ECS/custom-field context, stronger fallbacks, and deterministic priority from category-specific variants to generic fallbacks
 
 ### Fixed
@@ -43,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `network.protocol`: parse raw field `network.protocol` and lowercase it
   - `network.transport`: parse raw field `network.transport` and lowercase it
   - `observer.name`: use raw field `observer.name`, falling back to `skt.sensor`, instead of the incorrect `event.outcome` mapping
-  - `event.action`: stop duplicating the detection signature from `rule.name`; keep it in `rule.name`
   - `event.category`: classify the unknown-device discovery rule as `host` rather than generic `network`
   - `rule.uuid`: map raw field `rule.uuid` to ECS `rule.uuid` instead of `rule.id`
 - Fix existing custom fields:
