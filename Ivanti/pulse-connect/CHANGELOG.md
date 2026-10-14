@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Parse `agent` into `user_agent.original`
-- Parse `sessionID` and `ivs` into `ivanti.connect_secure.session.id` and `ivanti.connect_secure.ivs`
+- Parse `sessionID` and `ivs` into `ivanti.connect_secure.session.id` and `ivanti.connect_secure.instant_virtual_system`
 - Parse `FBR32068` (bookmark access) and `WEB20174` (web request) events
 - Set `event.outcome` for Host Checker events (`AUT24803`, `AUT24804`)
 
