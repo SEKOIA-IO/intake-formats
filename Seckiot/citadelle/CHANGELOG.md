@@ -7,32 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-10-14 - 1.1.0
-
 ### Changed
 
-- Map assets to ECS `host.*` (`id`, `name`, `type`, `os.name`, `os.version`, `geo.name`) fields instead of `seckiot.assets.*`
-- Map the module to `event.provider` and the sensor to `observer.name`
-- Map the sniffer to `observer.ingress.interface.id` when it is a UUID, `observer.ingress.interface.name` otherwise
-- Map the capture zone to `seckiot.capture_zone.id` when it is a UUID, `observer.ingress.zone` otherwise
-- Accept Purdue levels sent as strings
-- Rework smart descriptions and add one for vulnerabilities
-- Set `event.category` to a valid ECS category according to the module
-- Rename `seckiot.assets.perdue_level` to `seckiot.assets.purdue_level` (type `long`)
-- No longer pad asset lists with `unknown` values
+- Improve smart descriptions for detection, cartography, and vulnerability alerts with richer ECS/custom-field context and stronger fallbacks
+- Order smart descriptions from category-specific variants to generic fallbacks for deterministic priority
+
+## [1.0.0] - 2026-10-14
 
 ### Added
 
-- Add `seckiot.session.id`
-- Map asset hardware vendor and model to `device.manufacturer` and `device.model.identifier`
-- Set `event.action` from the rule name
+- Parse new ECS fields:
+  - `device.manufacturer`: map raw field `skt.assets[].hardware_vendor`
+  - `device.model.identifier`: map raw field `skt.assets[].modele`
+  - `event.category`: derive valid ECS categories from raw field `skt.module` (`Detection Engine` to `intrusion_detection`, `Cartography` to `network`, and `CVE` to `vulnerability`), with unknown-device discovery classified as `host`
+  - `event.ingested`: map raw field `event.ingested`
+  - `event.provider`: map raw field `skt.module`
+  - `host.geo.name`: map raw field `skt.assets[].localisation`
+  - `host.id`: map raw field `skt.assets[].id`
+  - `host.name`: map raw field `skt.assets[].name`
+  - `host.os.name`: map raw field `skt.assets[].system`
+  - `host.os.version`: map raw field `skt.assets[].version`
+  - `host.type`: map raw field `skt.assets[].entity`
+  - `observer.ingress.interface.id`: map raw field `skt.sniffer` when it contains a UUID
+  - `observer.ingress.interface.name`: map raw field `skt.sniffer` when it is not a UUID
+  - `observer.ingress.zone`: map raw field `skt.capture_zone` when it is not a UUID
+- Parse new custom fields:
+  - `seckiot.capture_zone.id`: map raw field `skt.capture_zone` when it contains a UUID
+  - `seckiot.session.id`: map raw field `skt.session`
 
-### Removed
+### Changed
 
-- Remove custom fields `seckiot.module`, `seckiot.sensor.name`, `seckiot.sniffer.name`, `seckiot.catch_area.name`, `seckiot.assets.id`, `seckiot.assets.name`, `seckiot.assets.entity`, `seckiot.assets.system`, `seckiot.assets.version` and `seckiot.assets.localisation`, replaced by the ECS fields above
+- Stop padding asset lists with `unknown` values
+- Rework smart descriptions and add one for vulnerabilities
 
 ### Fixed
 
-- Fix `@timestamp`, which was never extracted from the event (now parsed with `date.parse` in UTC)
-- Fix `network.protocol` and `network.transport`, which were never extracted
-- Fix `observer.name`, which was mapped from `event.outcome`
+- Fix existing ECS fields:
+  - `@timestamp`: parse raw field `@timestamp` in UTC with `date.parse` instead of using the ingestion time
+  - `network.protocol`: parse raw field `network.protocol` and lowercase it
+  - `network.transport`: parse raw field `network.transport` and lowercase it
+  - `observer.name`: use raw field `observer.name`, falling back to `skt.sensor`, instead of the incorrect `event.outcome` mapping
+  - `event.action`: stop duplicating the detection signature from `rule.name`; keep it in `rule.name`
+  - `event.category`: classify the unknown-device discovery rule as `host` rather than generic `network`
+  - `rule.uuid`: map raw field `rule.uuid` to ECS `rule.uuid` instead of `rule.id`
+- Fix existing custom fields:
+  - `seckiot.assets.purdue_level`: correct the `perdue_level` typo, set the type to `long`, parse raw field `skt.assets[].level` when sent as a string, and accept level zero
+
+### Removed
+
+- Remove legacy custom fields as a breaking change:
+  - `seckiot.assets.entity`: replaced by ECS field `host.type`
+  - `seckiot.assets.id`: replaced by ECS field `host.id`
+  - `seckiot.assets.localisation`: replaced by ECS field `host.geo.name`
+  - `seckiot.assets.name`: replaced by ECS field `host.name`
+  - `seckiot.assets.system`: replaced by ECS field `host.os.name`
+  - `seckiot.assets.version`: replaced by ECS field `host.os.version`
+  - `seckiot.catch_area.name`: replaced by custom field `seckiot.capture_zone.id` for UUIDs or ECS field `observer.ingress.zone` otherwise
+  - `seckiot.module`: replaced by ECS field `event.provider`
+  - `seckiot.sensor.name`: replaced by ECS field `observer.name`
+  - `seckiot.sniffer.name`: replaced by ECS field `observer.ingress.interface.id` for UUIDs or `observer.ingress.interface.name` otherwise
