@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Improve smart descriptions for detection, cartography, and vulnerability alerts with richer ECS/custom-field context and stronger fallbacks
-- Order smart descriptions from category-specific variants to generic fallbacks for deterministic priority
-
 ## [1.0.0] - 2026-10-14
 
 ### Added
@@ -38,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Stop padding asset lists with `unknown` values
-- Rework smart descriptions and add one for vulnerabilities
+- Rework smart descriptions for detection, cartography, and vulnerability alerts with richer ECS/custom-field context, stronger fallbacks, and deterministic priority from category-specific variants to generic fallbacks
 
 ### Fixed
 
