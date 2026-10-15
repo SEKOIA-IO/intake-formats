@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix parsing of existing ECS fields:
   - `event.outcome`: set to `failure` for failed logon and authentication events (4625, 4766, 4771, 4772, 4773, 4777, 4820 to 4824)
   - `process.name`: parse when the process information block ends the message
+    - preserve full process paths containing spaces for group-membership enumeration events, both at end of message and before a following section header
   - `user.domain`: map to the subject (actor) for non-logon events instead of `user.target.*`
   - `user.id`: map to the security identifier (SID) for non-logon events instead of the logon ID
   - `user.name`: map to the subject (actor) for non-logon events instead of `user.target.*`
@@ -50,13 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `user.target.domain`:
     - extract `DC` components case-insensitively without transformed-string offsets, including mixed-case `Dc=` and Unicode distinguished names
     - ignore escaped commas inside distinguished-name values (for example `CN=User\,DC=Test,...`) and keep only real `DC=` components
-  - `user.target.id`: map to the security identifier (SID) instead of the logon ID
+    - map logon events to New Logon / Account For Which Logon Failed domain values, and fallback to Subject domain for subject-only logoff events
+  - `user.target.id`:
+    - map to the security identifier (SID) instead of the logon ID
+    - map logon events to New Logon / Account For Which Logon Failed SID values, and fallback to Subject SID for subject-only logoff events
   - `user.target.name`:
     - keep full distinguished-name CN values when member names contain spaces or escaped commas (for example `CN=User\,One,...`)
     - handle escaped backslashes correctly (for example `CN=User\\,OU=...` resolves to `User\`)
     - decode escaped RFC4514 special characters in CN values (for example `CN=Test\+User,...` resolves to `Test+User`)
     - decode hexadecimal RFC4514 escapes in CN values, including case-insensitive UTF-8 multibyte escapes (for example `CN=User\2COne,...` resolves to `User,One`, `CN=Us\C3\A9r,...` and `CN=Us\C3\a9r,...` resolve to `Usér`, `CN=Us\C3\B6r,...` resolves to `Usör`)
     - preserve escaped backslashes before hexadecimal text so `CN=User\\2COne,...` resolves to `User\2COne` and `CN=User\5C20,...` resolves to `User\20`
+    - map logon events to New Logon / Account For Which Logon Failed account names, and fallback to Subject account name for subject-only logoff events
+  - `user.target.sid`: map logon events to New Logon / Account For Which Logon Failed SID values, and fallback to Subject SID for subject-only logoff events
 - Fix parsing of existing custom fields:
   - `action.properties.domain`: stop truncating at the first dot for target account events
   - `action.properties.id`: use a synthetic SID in account-modification fixture data instead of a production-looking domain SID
