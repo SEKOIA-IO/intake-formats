@@ -16,6 +16,8 @@ pipeline:
             (%{CRLF}|%{HT}|\s)+
           LOGON_ID: >-
             [\w\s]*
+          DOMAIN_NAME: >-
+            [\w.-]+( [\w.-]+)*
           #          # generic patterns
           SUBJECT: >-
             (Subject ?|Sujet ):%{F}(Security ID|ID de sécurité ):%{F}%{DATA:user_sid}%{F}(Account Name|Nom du compte ):%{F}%{DATA:user_name}%{F}(Account Domain|Domaine du compte ):%{F}%{DATA:user_domain}%{F}(Logon ID|ID d’ouverture de session |ID du compte ):%{F}%{DATA:user_id}%{F}
@@ -26,17 +28,21 @@ pipeline:
           LOGON_FAILURE: >-
             %{GREEDYDATA}?(Account For Which Logon Failed|Compte pour lequel l’ouverture de session a échoué ):%{F}(Security ID|ID de sécurité ):%{F}%{DATA:logon_id}%{F}(Account Name|Nom du compte ):%{F}%{DATA:logon_name}%{F}(Account Domain|Domaine du compte ):%{F}%{DATA:logon_domain}%{F}(Failure Information|Informations d’échec ):%{F}(Failure Reason|Raison de l’échec ):%{F}%{DATA:action_outcome_reason}%{F}(Status|Statut ):%{F}%{DATA:logon_opcode}%{F}
           TARGET_ACCOUNT: >-
-            %{GREEDYDATA}?(Target Account|Compte cible ):%{F}(Security ID|ID de sécurité ):%{F}%{DATA:logon_id}%{F}(Account Name|Nom du compte ):%{F}%{DATA:logon_name}%{F}(Account Domain|Domaine du compte ):%{F}%{LOGON_ID:logon_domain}%{F}?(Attributs modifiés :%{F}Nom du compte SAM :%{F}%{LOGON_ID:logon_logon_guid}%{F}Nom complet:%{F}%{DATA:user_name}%{F})?
+            %{GREEDYDATA}?(Target Account|Compte cible ):%{F}(Security ID|ID de sécurité ):%{F}%{DATA:logon_id}%{F}(Account Name|Nom du compte ):%{F}%{DATA:logon_name}%{F}(Account Domain|Domaine du compte ):%{F}%{DOMAIN_NAME:logon_domain}%{F}?(Attributs modifiés :%{F}Nom du compte SAM :%{F}%{LOGON_ID:logon_logon_guid}%{F}Nom complet:%{F}%{DATA:user_name}%{F})?
           ACCOUNT_MODIFICATION: >-
             Attributs modifiés :%{F}Nom du compte SAM :%{F}%{LOGON_ID:logon_logon_guid}%{F}Nom complet :%{F}%{DATA}%{F}Nom principal de l’utilisateur :%{F}(%{LOGON_ID}|-)%{F}Répertoire de base :%{F}%{DATA}%{F}Lecteur de base :%{F}%{DATA}%{F}Chemin d’accès au script :%{F}%{DATA}%{F}Chemin d’accès au profil :%{F}%{DATA}%{F}Stations de travail utilisateurs :%{F}%{DATA}%{F}Dernière modification du mot de passe le :%{F}%{DATESTAMP}%{F}Le compte expire le :%{F}%{DATA}{F}ID de groupe principal :%{F}%{LOGON_ID}%{F}Délégué autorisé :%{F}%{DATA}%{F}Ancienne valeur UAC :%{F}%{LOGON_ID}%{F}Nouvelle valeur UAC :%{F}%{LOGON_ID}%{F}Contrôle du compte d’utilisateur :%{F}(%{LOGON_ID}|-)%{F}Paramètres utilisateur :%{F}(%{LOGON_ID}|-)%{F}Historique SID :%{F}(%{LOGON_ID}|-)%{F}Horaire d’accès :%{F}
           PROCESS_INFO: >-
-            (Process Information|Informations sur le processus ):%{F}(Process ID|ID du processus |Caller Process ID|ID du processus appelant ):%{F}%{DATA:process_id}%{F}(Process Name|Nom du processus |Caller Process Name|Nom du processus appelant ):%{F}%{DATA:process_name}%{F}
+            (Process Information|Informations sur le processus ):%{F}(Process ID|ID du processus |Caller Process ID|ID du processus appelant ):%{F}%{DATA:process_id}%{F}(Process Name|Nom du processus |Caller Process Name|Nom du processus appelant ):%{F}%{DATA:process_name}(%{F}|$)
           PROCESS_INFO2: >-
             %{GREEDYDATA:action_name}\(utilisateur=%{GREEDYDATA:domain_user}\).
+          MEMBER: >-
+            (Member|Membre ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:member_sid}%{F}(Account Name|Nom du compte ?):%{F}%{DATA:member_name}%{F}
+          GROUP: >-
+            ((New |Deleted )?Group|Groupe ?|Nouveau groupe ?|Groupe supprimé ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:group_id}%{F}(Group Name|Nom du groupe ?):%{F}%{DATA:group_name}%{F}(Group Domain|Domaine du groupe ?):%{F}%{DATA:group_domain}%{F}
           NETWORK_INFO: >-
             (Network Information|Informations sur le réseau ):%{F}(Workstation Name|Nom de la station de travail ):%{F}%{DATA}%{F}(Source Network Address|Adresse du réseau source ):%{F}%{DATA}%{F}(Source Port|Port source ):%{F}%{DATA}%{F}
           WINDOWS: >-
-            %{DATA:action_name}%{F}%{SUBJECT}%{LOGON_INFO}?(%{NEW_LOGON}|%{LOGON_FAILURE}|%{TARGET_ACCOUNT})?%{PROCESS_INFO}?%{ACCOUNT_MODIFICATION}?%{NETWORK_INFO}?%{GREEDYDATA}?
+            %{DATA:action_name}%{F}%{SUBJECT}%{LOGON_INFO}?(%{NEW_LOGON}|%{LOGON_FAILURE}|%{TARGET_ACCOUNT})?%{MEMBER}?%{GROUP}?%{PROCESS_INFO}?%{ACCOUNT_MODIFICATION}?%{NETWORK_INFO}?%{GREEDYDATA}?
           MORE_FRENCH_WINDOWS: >-
             %{PROCESS_INFO2}
           # fallback for unsupported events: keep the first line as the action name
@@ -46,6 +52,7 @@ pipeline:
   - name: set_ecs_fields
   - name: translate_action_name
   - name: finalizer
+  - name: set_group_fields
 
 stages:
   finalizer:
@@ -54,23 +61,67 @@ stages:
           event.code: "{{final.action.id}}"
           event.outcome: "success"
       - set:
+          event.outcome: "failure"
+        filter: "{{event.message.action_outcome_reason not in [None, ''] or final.action.id in [4625, 4766, 4771, 4772, 4773, 4777, 4820, 4821, 4822, 4823, 4824]}}"
+      - set:
+          action.properties.subject_logon_id: "{{event.message.user_id}}"
           action.properties.type: "targetedUser"
           user.target.domain: "{{event.message.user_domain}}"
-          user.target.id: "{{event.message.user_id}}"
+          user.target.id: "{{event.message.user_sid}}"
           user.target.name: "{{event.message.user_name}}"
           user.target.sid: "{{event.message.user_sid}}"
-        filter: "{{event.message.LOGON_FAILURE != null or event.message.NEW_LOGON != null or event.message.LOGON_INFO != null }}"
+        filter: "{{(event.message.logon_logon_type or event.message.logon_logon_id or event.message.action_outcome_reason) not in [None, '']}}"
       - set:
+          action.properties.subject_logon_id: "{{event.message.user_id}}"
           action.properties.type: "targetedUser"
           user.domain: "{{event.message.user_domain}}"
-          user.id: "{{event.message.user_id}}"
+          user.id: "{{event.message.user_sid}}"
           user.name: "{{event.message.user_name}}"
           user.sid: "{{event.message.user_sid}}"
-        filter: "{{event.message.LOGON_FAILURE == null and event.message.NEW_LOGON == null and event.message.LOGON_INFO == null }}"
+        filter: "{{(event.message.logon_logon_type or event.message.logon_logon_id or event.message.action_outcome_reason) in [None, '']}}"
 
       - set:
           action.type: "Security"
-        filter: "{{final.action.id in [4624,4624,4634,4634,4738,4738,4724,4724,4672,4672,4648,4648,4799,4625]}}"
+        filter: "{{final.action.id in [4624,4625,4634,4648,4672,4724,4727,4728,4729,4730,4731,4732,4733,4734,4735,4737,4738,4754,4755,4756,4757,4758,4799]}}"
+
+  set_group_fields:
+    actions:
+      - set:
+          event.category: ["iam"]
+          event.type: ["group", "change"]
+          group.domain: "{{event.message.group_domain}}"
+          group.id: "{{event.message.group_id}}"
+          group.name: "{{event.message.group_name}}"
+        filter: "{{event.message.group_name not in [None, '', '-']}}"
+
+      - set:
+          event.type: ["group", "creation"]
+        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id in [4727, 4731, 4754]}}"
+      - set:
+          event.type: ["group", "deletion"]
+        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id in [4730, 4734, 4758]}}"
+      - set:
+          event.type: ["group", "info"]
+        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id == 4799}}"
+
+      - set:
+          action.properties.member_name: "{{event.message.member_name}}"
+          user.target.id: "{{event.message.member_sid}}"
+          user.target.sid: "{{event.message.member_sid}}"
+        filter: "{{event.message.member_sid not in [None, '', '-']}}"
+
+      # the member account name is usually a distinguished name: keep only its CN
+      - set:
+          user.target.name: "{{event.message.member_name.split(',')[0].split('=', 1)[1]}}"
+        filter: "{{event.message.member_name not in [None, ''] and event.message.member_name.upper().startswith('CN=')}}"
+      - set:
+          user.target.name: "{{event.message.member_name}}"
+        filter: "{{event.message.member_name not in [None, '', '-'] and not event.message.member_name.upper().startswith('CN=')}}"
+
+      # build the member domain from the DC components of the distinguished name
+      - set:
+          user.target.domain: "{{event.message.member_name[event.message.member_name.upper().find(',DC=') + 4:].replace(',DC=', '.').replace(',dc=', '.')}}"
+        filter: "{{event.message.member_name not in [None, ''] and ',DC=' in event.message.member_name.upper()}}"
 
   set_ecs_fields:
     actions:
