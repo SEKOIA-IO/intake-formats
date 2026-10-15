@@ -14,12 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse group management events (member added/removed, group created/changed/deleted, membership enumerated)
 - Parse new ECS fields:
   - `event.category` (`iam`)
-  - `event.type` (`group` with `creation`, `change`, `deletion` or `info` depending on the event ID)
-  - `group.domain`
-  - `group.id`
-  - `group.name`
+  - `event.type` (`group` with `creation`, `change`, `deletion` or `info` depending on the event ID) for group management raw events (`member added/removed`, `group created/changed/deleted`, `membership enumerated`)
+  - `group.domain` for group creation/deletion and membership raw events
+  - `group.id` for group creation/deletion and membership raw events
+  - `group.name` for group creation/deletion and membership raw events
 - Parse new custom fields:
-  - `action.properties.member_name`
+  - `action.properties.member_name` for group membership raw events (`member added/removed`)
   - `action.properties.subject_logon_id`
 
 ### Changed
