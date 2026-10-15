@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-15
+
+### Changed
+
+- Extend parsing of existing custom fields:
+  - `action.properties.Path` from PowerShell event message payloads when top-level `Path` is absent
+
 ## [1.0.3] - 2026-09-30
 
 ### Added
@@ -26,4 +33,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Add
 
-- Add registery.path field
+- Parse new ECS fields:
+  - `registry.path`
