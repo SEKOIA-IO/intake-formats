@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Extend parsing of existing ECS/custom fields to group membership events:
+- Extend parsing of existing ECS fields to group membership events:
   - `user.target.domain` (built from the `DC=` components of the member distinguished name)
   - `user.target.id`
   - `user.target.name`
@@ -33,12 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix existing ECS/custom fields:
-  - `user.domain`, `user.id`, `user.name`, `user.sid` now hold the subject (actor) for non-logon events, which were previously mapped to `user.target.*`
-  - `action.properties.domain` is no longer truncated at the first dot for target account events
-  - `process.name` is now parsed when the process information block ends the message
-  - `user.id` and `user.target.id` now hold the security identifier (SID) instead of the logon ID, which moves to `action.properties.subject_logon_id`
+- Fix parsing of existing ECS fields:
   - `event.outcome` is now `failure` for failed logon and authentication events (4625, 4766, 4771, 4772, 4773, 4777, 4820 to 4824)
+  - `process.name` is now parsed when the process information block ends the message
+  - `user.domain` now holds the subject (actor) for non-logon events, which was previously mapped to `user.target.*`
+  - `user.id` now holds the security identifier (SID) for non-logon events instead of the logon ID
+  - `user.name` now holds the subject (actor) for non-logon events, which was previously mapped to `user.target.*`
+  - `user.sid` now holds the subject (actor) SID for non-logon events, which was previously mapped to `user.target.*`
+  - `user.target.id` now holds the security identifier (SID) instead of the logon ID
+- Fix parsing of existing custom fields:
+  - `action.properties.domain` is no longer truncated at the first dot for target account events
+  - `action.properties.subject_logon_id` now holds the moved subject logon ID
 
 ## [2.0.1] - 2026-10-07
 
