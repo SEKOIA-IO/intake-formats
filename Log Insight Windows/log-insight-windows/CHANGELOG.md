@@ -24,12 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Extend parsing of existing ECS fields to group membership events:
-  - `user.target.domain` (built from the `DC=` components of the member distinguished name)
-  - `user.target.id`
-  - `user.target.name`
-  - `user.target.sid`
-- Classify group management events as `Security` in `action.type`
+- Extend parsing of existing ECS fields:
+  - `event.code`: parse localized French group-event titles
+  - `event.type`: parse localized French group-event titles and classify security-disabled lifecycle events (`creation` for 4744, 4749, 4759; `deletion` for 4748, 4753, 4763)
+  - `group.domain`: parse group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4755)
+  - `group.id`: parse group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4755)
+  - `group.name`: parse group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4755)
+  - `user.target.domain`: extend parsing on group membership events
+  - `user.target.id`: extend parsing on group membership events
+  - `user.target.name`: extend parsing on group membership events
+  - `user.target.sid`: extend parsing on group membership events
+- Extend parsing of existing custom fields:
+  - `action.id`: parse localized French group-event titles
+  - `action.type`: classify group management events as `Security`
 
 ### Fixed
 
@@ -41,8 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `user.name` now holds the subject (actor) for non-logon events, which was previously mapped to `user.target.*`
   - `user.sid` now holds the subject (actor) SID for non-logon events, which was previously mapped to `user.target.*`
   - `user.target.id` now holds the security identifier (SID) instead of the logon ID
+  - `user.target.name` now keeps full distinguished-name CN values when member names contain spaces or escaped commas (for example `CN=User\,One,...`)
 - Fix parsing of existing custom fields:
   - `action.properties.domain` is no longer truncated at the first dot for target account events
+  - `action.properties.member_name` now keeps the full member distinguished name when CN/OU values contain spaces
   - `action.properties.subject_logon_id` now holds the moved subject logon ID
 
 ## [2.0.1] - 2026-10-07
