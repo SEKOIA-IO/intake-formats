@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.2] - 2026-10-15
+## [2.0.2] - 2026-10-16
 
 ### Added
 
@@ -41,17 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix parsing of existing ECS fields:
-  - `event.outcome` is now `failure` for failed logon and authentication events (4625, 4766, 4771, 4772, 4773, 4777, 4820 to 4824)
-  - `process.name` is now parsed when the process information block ends the message
-  - `user.domain` now holds the subject (actor) for non-logon events, which was previously mapped to `user.target.*`
-  - `user.id` now holds the security identifier (SID) for non-logon events instead of the logon ID
-  - `user.name` now holds the subject (actor) for non-logon events, which was previously mapped to `user.target.*`
-  - `user.sid` now holds the subject (actor) SID for non-logon events, which was previously mapped to `user.target.*`
-  - `user.target.id` now holds the security identifier (SID) instead of the logon ID
-  - `user.target.domain` now extracts `DC` components case-insensitively without transformed-string offsets, including mixed-case `Dc=` and Unicode distinguished names
-  - `user.target.name` now keeps full distinguished-name CN values when member names contain spaces or escaped commas (for example `CN=User\,One,...`)
+  - `event.outcome`: set to `failure` for failed logon and authentication events (4625, 4766, 4771, 4772, 4773, 4777, 4820 to 4824)
+  - `process.name`: parse when the process information block ends the message
+  - `user.domain`: map to the subject (actor) for non-logon events instead of `user.target.*`
+  - `user.id`: map to the security identifier (SID) for non-logon events instead of the logon ID
+  - `user.name`: map to the subject (actor) for non-logon events instead of `user.target.*`
+  - `user.sid`: map to the subject (actor) SID for non-logon events instead of `user.target.*`
+  - `user.target.domain`:
+    - extract `DC` components case-insensitively without transformed-string offsets, including mixed-case `Dc=` and Unicode distinguished names
+    - ignore escaped commas inside distinguished-name values (for example `CN=User\,DC=Test,...`) and keep only real `DC=` components
+  - `user.target.id`: map to the security identifier (SID) instead of the logon ID
+  - `user.target.name`:
+    - keep full distinguished-name CN values when member names contain spaces or escaped commas (for example `CN=User\,One,...`)
+    - handle escaped backslashes correctly (for example `CN=User\\,OU=...` resolves to `User\`)
 - Fix parsing of existing custom fields:
-  - `action.properties.domain` is no longer truncated at the first dot for target account events
+  - `action.properties.domain`: stop truncating at the first dot for target account events
+  - `action.properties.id`: use a synthetic SID in account-modification fixture data instead of a production-looking domain SID
+  - `action.properties.member_name`: exclude encoded CRLF separators when blank encoded lines appear before `Group:`
 
 ## [2.0.1] - 2026-10-07
 
