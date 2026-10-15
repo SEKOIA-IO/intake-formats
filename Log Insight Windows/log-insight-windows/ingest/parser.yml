@@ -92,7 +92,7 @@ stages:
           group.domain: "{{event.message.logon_domain}}"
           group.id: "{{event.message.logon_id}}"
           group.name: "{{event.message.logon_name}}"
-        filter: "{{final.action.id in [4735, 4737, 4755] and event.message.group_name in [None, '', '-'] and event.message.logon_name not in [None, '', '-']}}"
+        filter: "{{final.action.id in [4735, 4737, 4745, 4750, 4755, 4760] and event.message.group_name in [None, '', '-'] and event.message.logon_name not in [None, '', '-']}}"
 
       - set:
           event.category: ["iam"]
@@ -120,7 +120,49 @@ stages:
 
       # the member account name is usually a distinguished name: keep only its CN
       - set:
-          user.target.name: '{{event.message.member_name.strip().replace("\\\\", "__ESC_BACKSLASH__").replace("\\,", "__ESC_COMMA__").split(",")[0].split("=", 1)[1].replace("__ESC_COMMA__", ",").replace("__ESC_BACKSLASH__", "\\")}}'
+          user.target.name: >-
+            {%- set cn_value = event.message.member_name.strip().replace("\\\\", "__ESC_BACKSLASH__").replace("\\,", "__ESC_COMMA__").split(",")[0].split("=", 1)[1] -%}
+            {{cn_value
+              | replace("__ESC_COMMA__", ",")
+              | replace("__ESC_BACKSLASH__", "\\")
+              | replace("\\+", "+")
+              | replace("\\\"", "\"")
+              | replace("\\<", "<")
+              | replace("\\>", ">")
+              | replace("\\;", ";")
+              | replace("\\=", "=")
+              | replace("\\#", "#")
+              | replace("\\ ", " ")
+              | replace("\\2C", ",")
+              | replace("\\2c", ",")
+              | replace("\\C3\\A9", "é")
+              | replace("\\c3\\a9", "é")
+              | replace("\\C3\\89", "É")
+              | replace("\\c3\\89", "É")
+              | replace("\\C3\\A8", "è")
+              | replace("\\c3\\a8", "è")
+              | replace("\\C3\\88", "È")
+              | replace("\\c3\\88", "È")
+              | replace("\\C3\\A0", "à")
+              | replace("\\c3\\a0", "à")
+              | replace("\\C3\\80", "À")
+              | replace("\\c3\\80", "À")
+              | replace("\\2B", "+")
+              | replace("\\2b", "+")
+              | replace("\\22", "\"")
+              | replace("\\23", "#")
+              | replace("\\3B", ";")
+              | replace("\\3b", ";")
+              | replace("\\3C", "<")
+              | replace("\\3c", "<")
+              | replace("\\3E", ">")
+              | replace("\\3e", ">")
+              | replace("\\3D", "=")
+              | replace("\\3d", "=")
+              | replace("\\5C", "\\")
+              | replace("\\5c", "\\")
+              | replace("\\20", " ")
+            }}
         filter: "{{event.message.member_name not in [None, ''] and event.message.member_name.strip().upper().startswith('CN=')}}"
       - set:
           user.target.name: "{{event.message.member_name.strip()}}"
@@ -128,7 +170,16 @@ stages:
 
       # build the member domain from the DC components of the distinguished name
       - set:
-          user.target.domain: '{{event.message.member_name.strip().replace("\\\\", "__ESC_BACKSLASH__").replace("\\,", "__ESC_COMMA__").lower().split(",dc=")[1:] | join(".") | replace("__esc_comma__", ",") | replace("__esc_backslash__", "\\")}}'
+          user.target.domain: >-
+            {%- set member_dn_parts = event.message.member_name.strip().replace("\\\\", "__ESC_BACKSLASH__").replace("\\,", "__ESC_COMMA__").split(",") -%}
+            {%- set member_dc_parts = [] -%}
+            {%- for member_dn_part in member_dn_parts -%}
+              {%- set normalized_member_dn_part = member_dn_part.strip() -%}
+              {%- if normalized_member_dn_part[:3].lower() == "dc=" -%}
+                {% set member_dc_parts = member_dc_parts.append(normalized_member_dn_part[3:]) %}
+              {%- endif -%}
+            {%- endfor -%}
+            {{member_dc_parts | join(".") | replace("__ESC_COMMA__", ",") | replace("__ESC_BACKSLASH__", "\\")}}
         filter: "{{event.message.member_name not in [None, ''] and ',dc=' in event.message.member_name.strip().lower()}}"
 
   set_ecs_fields:

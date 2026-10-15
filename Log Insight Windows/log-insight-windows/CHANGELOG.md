@@ -26,10 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extend parsing of existing ECS fields:
   - `event.code`: parse localized French group-event titles
-  - `event.type`: extend lifecycle typing on additional group-event families (`creation` for 4744, 4749, 4759 and `deletion` for 4748, 4753, 4763)
-  - `group.domain`: extend parsing to group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4755)
-  - `group.id`: extend parsing to group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4755)
-  - `group.name`: extend parsing to group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4755)
+  - `event.type`: extend lifecycle typing on additional group-event families (`creation` for 4744, 4749, 4759 and `deletion` for 4748, 4753, 4763), and extend group-change typing when groups are identified through `Target Account` / `Compte cible` (4745, 4750, 4760)
+  - `group.domain`: extend parsing to group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4745, 4750, 4755, 4760)
+  - `group.id`: extend parsing to group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4745, 4750, 4755, 4760)
+  - `group.name`: extend parsing to group-change events identified through `Target Account` / `Compte cible` (4735, 4737, 4745, 4750, 4755, 4760)
   - `user.target.domain`: extend parsing on group membership events
   - `user.target.id`: extend parsing on group membership events
   - `user.target.name`: extend parsing on group membership events
@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `user.target.name`:
     - keep full distinguished-name CN values when member names contain spaces or escaped commas (for example `CN=User\,One,...`)
     - handle escaped backslashes correctly (for example `CN=User\\,OU=...` resolves to `User\`)
+    - decode escaped RFC4514 special characters in CN values (for example `CN=Test\+User,...` resolves to `Test+User`)
+    - decode hexadecimal RFC4514 escapes in CN values, including UTF-8 multibyte escapes (for example `CN=User\2COne,...` resolves to `User,One`, `CN=Us\C3\A9r,...` resolves to `Usér`)
 - Fix parsing of existing custom fields:
   - `action.properties.domain`: stop truncating at the first dot for target account events
   - `action.properties.id`: use a synthetic SID in account-modification fixture data instead of a production-looking domain SID
