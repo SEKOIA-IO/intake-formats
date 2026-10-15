@@ -55,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - keep full distinguished-name CN values when member names contain spaces or escaped commas (for example `CN=User\,One,...`)
     - handle escaped backslashes correctly (for example `CN=User\\,OU=...` resolves to `User\`)
     - decode escaped RFC4514 special characters in CN values (for example `CN=Test\+User,...` resolves to `Test+User`)
-    - decode hexadecimal RFC4514 escapes in CN values, including UTF-8 multibyte escapes (for example `CN=User\2COne,...` resolves to `User,One`, `CN=Us\C3\A9r,...` resolves to `Usér`)
+    - decode hexadecimal RFC4514 escapes in CN values, including case-insensitive UTF-8 multibyte escapes (for example `CN=User\2COne,...` resolves to `User,One`, `CN=Us\C3\A9r,...` and `CN=Us\C3\a9r,...` resolve to `Usér`, `CN=Us\C3\B6r,...` resolves to `Usör`)
+    - preserve escaped backslashes before hexadecimal text so `CN=User\\2COne,...` resolves to `User\2COne` and `CN=User\5C20,...` resolves to `User\20`
 - Fix parsing of existing custom fields:
   - `action.properties.domain`: stop truncating at the first dot for target account events
   - `action.properties.id`: use a synthetic SID in account-modification fixture data instead of a production-looking domain SID
