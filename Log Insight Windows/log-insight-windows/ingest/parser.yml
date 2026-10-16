@@ -32,17 +32,17 @@ pipeline:
           ACCOUNT_MODIFICATION: >-
             Attributs modifiés :%{F}Nom du compte SAM :%{F}%{LOGON_ID:logon_logon_guid}%{F}Nom complet :%{F}%{DATA}%{F}Nom principal de l’utilisateur :%{F}(%{LOGON_ID}|-)%{F}Répertoire de base :%{F}%{DATA}%{F}Lecteur de base :%{F}%{DATA}%{F}Chemin d’accès au script :%{F}%{DATA}%{F}Chemin d’accès au profil :%{F}%{DATA}%{F}Stations de travail utilisateurs :%{F}%{DATA}%{F}Dernière modification du mot de passe le :%{F}%{DATESTAMP}%{F}Le compte expire le :%{F}%{DATA}{F}ID de groupe principal :%{F}%{LOGON_ID}%{F}Délégué autorisé :%{F}%{DATA}%{F}Ancienne valeur UAC :%{F}%{LOGON_ID}%{F}Nouvelle valeur UAC :%{F}%{LOGON_ID}%{F}Contrôle du compte d’utilisateur :%{F}(%{LOGON_ID}|-)%{F}Paramètres utilisateur :%{F}(%{LOGON_ID}|-)%{F}Historique SID :%{F}(%{LOGON_ID}|-)%{F}Horaire d’accès :%{F}
           PROCESS_INFO: >-
-            (Process Information|Informations sur le processus ):%{F}(Process ID|ID du processus |Caller Process ID|ID du processus appelant ):%{F}%{DATA:process_id}%{F}(Process Name|Nom du processus |Caller Process Name|Nom du processus appelant ):%{F}%{DATA:process_name}(%{F}(Network Information|Informations sur le réseau |Additional Information|Informations supplémentaires |Detailed Authentication Information|Informations détaillées sur l’authentification |Failure Information|Informations d’échec |Member|Membre ?|Group|Groupe ?|Target Account|Compte cible |Attributs modifiés ):%{F}|(%{CRLF})+$|$)
+            (Process Information|Informations sur le processus ):%{F}(Process ID|ID du processus |Caller Process ID|ID du processus appelant ):%{F}%{DATA:process_id}%{F}(Process Name|Nom du processus |Caller Process Name|Nom du processus appelant ):%{F}%{DATA:process_name}(%{F}|$)
           PROCESS_INFO2: >-
             %{GREEDYDATA:action_name}\(utilisateur=%{GREEDYDATA:domain_user}\).
-          MEMBER_WITH_GROUP: >-
-            (Member|Membre ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:member_sid}%{F}(Account Name|Nom du compte ?):%{F}%{DATA:member_name}%{F}((New |Deleted )?Group|Groupe ?|Nouveau groupe ?|Groupe supprimé ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:group_id}%{F}(Group Name|Nom du groupe ?):%{F}%{DATA:group_name}%{F}(Group Domain|Domaine du groupe ?):%{F}%{DATA:group_domain}(%{F}|$)
+          MEMBER: >-
+            (Member|Membre ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:member_sid}%{F}(Account Name|Nom du compte ?):%{F}%{DATA:member_name}%{F}
           GROUP: >-
-            ((New |Deleted )?Group|Groupe ?|Nouveau groupe ?|Groupe supprimé ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:group_id}%{F}(Group Name|Nom du groupe ?):%{F}%{DATA:group_name}%{F}(Group Domain|Domaine du groupe ?):%{F}%{DATA:group_domain}(%{F}|$)
+            ((New |Deleted )?Group|Groupe ?|Nouveau groupe ?|Groupe supprimé ?):%{F}(Security ID|ID de sécurité ?):%{F}%{DATA:group_id}%{F}(Group Name|Nom du groupe ?):%{F}%{DATA:group_name}%{F}(Group Domain|Domaine du groupe ?):%{F}%{DATA:group_domain}%{F}
           NETWORK_INFO: >-
             (Network Information|Informations sur le réseau ):%{F}(Workstation Name|Nom de la station de travail ):%{F}%{DATA}%{F}(Source Network Address|Adresse du réseau source ):%{F}%{DATA}%{F}(Source Port|Port source ):%{F}%{DATA}%{F}
           WINDOWS: >-
-            %{DATA:action_name}%{F}%{SUBJECT}%{LOGON_INFO}?(%{NEW_LOGON}|%{LOGON_FAILURE}|%{TARGET_ACCOUNT})?(%{MEMBER_WITH_GROUP}|%{GROUP})?%{PROCESS_INFO}?%{ACCOUNT_MODIFICATION}?%{NETWORK_INFO}?%{GREEDYDATA}?
+            %{DATA:action_name}%{F}%{SUBJECT}%{LOGON_INFO}?(%{NEW_LOGON}|%{LOGON_FAILURE}|%{TARGET_ACCOUNT})?%{MEMBER}?%{GROUP}?%{PROCESS_INFO}?%{ACCOUNT_MODIFICATION}?%{NETWORK_INFO}?%{GREEDYDATA}?
           MORE_FRENCH_WINDOWS: >-
             %{PROCESS_INFO2}
           # fallback for unsupported events: keep the first line as the action name
@@ -63,6 +63,7 @@ stages:
       - set:
           event.outcome: "failure"
         filter: "{{event.message.action_outcome_reason not in [None, ''] or final.action.id in [4625, 4766, 4771, 4772, 4773, 4777, 4820, 4821, 4822, 4823, 4824]}}"
+      # logon events: the target is the New Logon / Account For Which Logon Failed account
       - set:
           action.properties.subject_logon_id: "{{event.message.user_id}}"
           action.properties.type: "targetedUser"
@@ -71,6 +72,7 @@ stages:
           user.target.name: "{{event.message.logon_name}}"
           user.target.sid: "{{event.message.logon_id}}"
         filter: "{{(event.message.logon_logon_type or event.message.logon_logon_id or event.message.action_outcome_reason) not in [None, ''] and event.message.logon_name not in [None, '', '-']}}"
+      # logon events without a target account (e.g. logoff): fall back to the subject
       - set:
           action.properties.subject_logon_id: "{{event.message.user_id}}"
           action.properties.type: "targetedUser"
@@ -90,18 +92,10 @@ stages:
 
       - set:
           action.type: "Security"
-        filter: "{{final.action.id in [4624,4625,4634,4648,4672,4724,4727,4728,4729,4730,4731,4732,4733,4734,4735,4737,4738,4744,4745,4746,4747,4748,4749,4750,4751,4752,4753,4754,4755,4756,4757,4758,4759,4760,4761,4762,4763,4799]}}"
+        filter: "{{final.action.id in [4624,4625,4634,4648,4672,4724,4727,4728,4729,4730,4731,4732,4733,4734,4735,4737,4738,4754,4755,4756,4757,4758,4799]}}"
 
   set_group_fields:
     actions:
-      - set:
-          event.category: ["iam"]
-          event.type: ["group", "change"]
-          group.domain: "{{event.message.logon_domain}}"
-          group.id: "{{event.message.logon_id}}"
-          group.name: "{{event.message.logon_name}}"
-        filter: "{{final.action.id in [4735, 4737, 4745, 4750, 4755, 4760] and event.message.group_name in [None, '', '-'] and event.message.logon_name not in [None, '', '-']}}"
-
       - set:
           event.category: ["iam"]
           event.type: ["group", "change"]
@@ -112,93 +106,32 @@ stages:
 
       - set:
           event.type: ["group", "creation"]
-        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id in [4727, 4731, 4744, 4749, 4754, 4759]}}"
+        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id in [4727, 4731, 4754]}}"
       - set:
           event.type: ["group", "deletion"]
-        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id in [4730, 4734, 4748, 4753, 4758, 4763]}}"
+        filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id in [4730, 4734, 4758]}}"
       - set:
           event.type: ["group", "info"]
         filter: "{{event.message.group_name not in [None, '', '-'] and final.action.id == 4799}}"
 
       - set:
-          action.properties.member_name: "{{event.message.member_name.strip()}}"
+          action.properties.member_name: "{{event.message.member_name}}"
           user.target.id: "{{event.message.member_sid}}"
           user.target.sid: "{{event.message.member_sid}}"
         filter: "{{event.message.member_sid not in [None, '', '-']}}"
 
       # the member account name is usually a distinguished name: keep only its CN
       - set:
-          user.target.name: >-
-            {%- set cn_value = event.message.member_name.strip().replace("\\\\", "__ESC_BACKSLASH__").replace("\\,", "__ESC_COMMA__").split(",")[0].split("=", 1)[1] -%}
-            {{cn_value
-              | replace("__ESC_COMMA__", ",")
-              | replace("\\a", "\\A")
-              | replace("\\b", "\\B")
-              | replace("\\c", "\\C")
-              | replace("\\d", "\\D")
-              | replace("\\e", "\\E")
-              | replace("\\f", "\\F")
-              | replace("\\+", "+")
-              | replace("\\\"", "\"")
-              | replace("\\<", "<")
-              | replace("\\>", ">")
-              | replace("\\;", ";")
-              | replace("\\=", "=")
-              | replace("\\#", "#")
-              | replace("\\ ", " ")
-              | replace("\\2C", ",")
-              | replace("\\2c", ",")
-              | replace("\\C3\\A9", "é")
-              | replace("\\c3\\a9", "é")
-              | replace("\\C3\\89", "É")
-              | replace("\\c3\\89", "É")
-              | replace("\\C3\\A8", "è")
-              | replace("\\c3\\a8", "è")
-              | replace("\\C3\\88", "È")
-              | replace("\\c3\\88", "È")
-              | replace("\\C3\\A0", "à")
-              | replace("\\c3\\a0", "à")
-              | replace("\\C3\\80", "À")
-              | replace("\\c3\\80", "À")
-              | replace("\\C3\\B6", "ö")
-              | replace("\\c3\\b6", "ö")
-              | replace("\\C3\\96", "Ö")
-              | replace("\\c3\\96", "Ö")
-              | replace("\\2B", "+")
-              | replace("\\2b", "+")
-              | replace("\\22", "\"")
-              | replace("\\23", "#")
-              | replace("\\3B", ";")
-              | replace("\\3b", ";")
-              | replace("\\3C", "<")
-              | replace("\\3c", "<")
-              | replace("\\3E", ">")
-              | replace("\\3e", ">")
-              | replace("\\3D", "=")
-              | replace("\\3d", "=")
-              | replace("\\5C", "__ESC_BACKSLASH__")
-              | replace("\\5c", "__ESC_BACKSLASH__")
-              | replace("\\20", " ")
-              | replace("__ESC_BACKSLASH__", "\\")
-            }}
-        filter: "{{event.message.member_name not in [None, ''] and event.message.member_name.strip().upper().startswith('CN=')}}"
+          user.target.name: "{{event.message.member_name.split(',')[0].split('=', 1)[1]}}"
+        filter: "{{event.message.member_name not in [None, ''] and event.message.member_name.upper().startswith('CN=')}}"
       - set:
-          user.target.name: "{{event.message.member_name.strip()}}"
-        filter: "{{event.message.member_name not in [None, '', '-'] and not event.message.member_name.strip().upper().startswith('CN=')}}"
+          user.target.name: "{{event.message.member_name}}"
+        filter: "{{event.message.member_name not in [None, '', '-'] and not event.message.member_name.upper().startswith('CN=')}}"
 
       # build the member domain from the DC components of the distinguished name
       - set:
-          user.target.domain: >-
-            {%- set member_dn_parts = event.message.member_name.strip().replace("\\\\", "__ESC_BACKSLASH__").replace("\\,", "__ESC_COMMA__").split(",") -%}
-            {%- set member_dc_parts = [] -%}
-            {%- for member_dn_part in member_dn_parts -%}
-              {%- set normalized_member_dn_part = member_dn_part.strip() -%}
-              {%- if normalized_member_dn_part[:3].lower() == "dc=" -%}
-                {% set member_dc_parts = member_dc_parts.append(normalized_member_dn_part[3:]) %}
-              {%- endif -%}
-            {%- endfor -%}
-            {{member_dc_parts | join(".") | replace("__ESC_COMMA__", ",") | replace("__ESC_BACKSLASH__", "\\")}}
-        filter: "{{event.message.member_name not in [None, ''] and ',dc=' in event.message.member_name.strip().lower()}}"
+          user.target.domain: "{{event.message.member_name[event.message.member_name.upper().find(',DC=') + 4:].replace(',DC=', '.').replace(',dc=', '.')}}"
+        filter: "{{event.message.member_name not in [None, ''] and ',DC=' in event.message.member_name.upper()}}"
 
   set_ecs_fields:
     actions:
@@ -321,21 +254,15 @@ stages:
           A user account was disabled.: "4725"
           A user account was deleted.: "4726"
           A security-enabled global group was created.: "4727"
-          Un groupe global de sécurité a été créé.: "4727"
           A member was added to a security-enabled global group.: "4728"
           A member was removed from a security-enabled global group.: "4729"
           A security-enabled global group was deleted.: "4730"
-          Un groupe global de sécurité a été supprimé.: "4730"
           A security-enabled local group was created.: "4731"
-          Un groupe local de sécurité a été créé.: "4731"
           A member was added to a security-enabled local group.: "4732"
           A member was removed from a security-enabled local group.: "4733"
           A security-enabled local group was deleted.: "4734"
-          Un groupe local de sécurité a été supprimé.: "4734"
           A security-enabled local group was changed.: "4735"
-          Un groupe local de sécurité a été modifié.: "4735"
           A security-enabled global group was changed.: "4737"
-          Un groupe global de sécurité a été modifié.: "4737"
           A user account was changed.: "4738"
           Domain Policy was changed.: "4739"
           A user account was locked out.: "4740"
@@ -353,13 +280,10 @@ stages:
           A member was removed from a security-disabled global group.: "4752"
           A security-disabled global group was deleted.: "4753"
           A security-enabled universal group was created.: "4754"
-          Un groupe universel de sécurité a été créé.: "4754"
           A security-enabled universal group was changed.: "4755"
-          Un groupe universel de sécurité a été modifié.: "4755"
           A member was added to a security-enabled universal group.: "4756"
           A member was removed from a security-enabled universal group.: "4757"
           A security-enabled universal group was deleted.: "4758"
-          Un groupe universel de sécurité a été supprimé.: "4758"
           A security-disabled universal group was created.: "4759"
           A security-disabled universal group was changed.: "4760"
           A member was added to a security-disabled universal group.: "4761"
@@ -399,7 +323,6 @@ stages:
           An attempt was made to query the existence of a blank password for an account.: "4797"
           A user's local group membership was enumerated.: "4798"
           A security-enabled local group membership was enumerated.: "4799"
-          L’appartenance à un groupe local de sécurité a été énumérée.: "4799"
           The workstation was locked.: "4800"
           The workstation was unlocked.: "4801"
           The screen saver was invoked.: "4802"
