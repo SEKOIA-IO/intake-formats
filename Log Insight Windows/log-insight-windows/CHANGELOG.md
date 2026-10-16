@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.outcome`: set to `failure` for failed logon and authentication events (4625, 4766, 4771, 4772, 4773, 4777, 4820 to 4824)
   - `process.name`: parse when the process information block ends the message
     - preserve full process paths containing spaces for group-membership enumeration events, both at end of message and before a following section header
+    - stop process-name capture at flattened section headers without CRLF and trim trailing encoded CRLF separators
   - `user.domain`: map to the subject (actor) for non-logon events instead of `user.target.*`
   - `user.id`: map to the security identifier (SID) for non-logon events instead of the logon ID
   - `user.name`: map to the subject (actor) for non-logon events instead of `user.target.*`
