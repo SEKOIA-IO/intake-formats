@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-10-12
+
+### Added
+
+- Support PAN-OS correlated events CSV logs (`CORRELATION` type)
+- Parse ECS fields for correlated events: `rule.name`, `rule.id`, `event.reason`, `event.category` (`intrusion_detection`) and `event.type` (`indicator`)
+
 ## 2026-08-13
 
 ### Added
