@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-10-09
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `destination.packets`: parse `PacketsReceived` in JSON TRAFFIC events, including zero values
+  - `event.sequence`: parse the sequence number in CONFIG CSV events with or without change-detail columns
+  - `source.packets`: parse `PacketsSent` in JSON TRAFFIC events, including zero values
+  - `user.target.name`: extract the account name from CONFIG user-management XPath entries
+
+### Fixed
+
+- Fix existing ECS fields:
+  - `event.category`: classify CONFIG events as configuration changes and include IAM for targeted accounts
+  - `event.outcome`: normalize CONFIG results and report failed configuration changes as failures
+  - `event.type`: classify CONFIG events as changes and include user events for targeted accounts
+  - `observer.name`: map the device name from CONFIG CSV events with or without change-detail columns
+- Fix existing custom fields:
+  - `action.outcome`: normalize CONFIG results to `success` or `failure` consistently with `event.outcome`
+
 ## 2026-08-13
 
 ### Added
