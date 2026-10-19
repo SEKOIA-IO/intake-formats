@@ -10,5 +10,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Map AnyConnect roaming client identities to `host.name`, `host.hostname`, and
-	`host.ip` to improve endpoint search and asset correlation.
+  `host.ip` to improve endpoint search and asset correlation.
 - Prefer the roaming-client hostname in DNS smart descriptions when available.
