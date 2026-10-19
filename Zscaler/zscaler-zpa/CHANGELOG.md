@@ -7,14 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-10-07
+## [1.0.1] - 2026-10-19
 
 ### Added
 
 - Parse new ECS fields:
-  - `error.message` (extended with fallback from `InternalReason` when `PRAErrorStatus` is empty)
+  - `error.message`
   - `network.application`
-  - `rule.id`
   - `rule.name`
   - `user.target.name`
 - Parse new custom fields:
@@ -28,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `zscaler.zpa.pra.session_type`
   - `zscaler.zpa.pra.shared_mode`
   - `zscaler.zpa.pra.shared_users_list`
+
+### Fixed
+
+- Fix existing ECS fields:
+  - `event.reason`: keep `InternalReason` and stop fallback to `error.message`
 
 ## [1.0.0] - 2026-02-13
 
