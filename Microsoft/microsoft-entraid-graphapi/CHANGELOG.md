@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-09-29
+## [1.1.0] - 2026-10-19
 
 ### Added
 
@@ -48,13 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `azuread.properties.conditionalAccessPolicy.oldState`
     - `azuread.properties.isInteractive`
     - `azuread.properties.operationType`
-  - generalize `targetResources` matching (position-independent):
+  - generalize `targetResources` matching (position-independent) and harden extraction behavior for service-principal targets (deterministic first match and case-insensitive `ServicePrincipal` matching):
     - `azure.entraid.properties.modifiedProperties`
     - `azure.entraid.properties.targetServicePrincipalDisplayName`
     - `azuread.properties.modifiedProperties`
-    - `azuread.properties.targetServicePrincipalDisplayName`
-  - harden scalar extraction when multiple target resources match to avoid silent value concatenation:
-    - `azure.entraid.properties.targetServicePrincipalDisplayName`
     - `azuread.properties.targetServicePrincipalDisplayName`
   - add forward-compatibility alias for existing Azure AD custom field:
     - `azure.entraid.properties.status.errorCode`
@@ -67,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - rename `set_target_user_fields_from_action_properties` to `set_ecs_user_target_fields`
   - rename `set_ecs_category` to `normalize_ecs_event_classification`
 
-## 2026-07-29
+## [1.0.2] - 2026-07-29
 
 ### Fixed
 
@@ -76,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `action.properties` enrichment so `targetedUser` entries are added only for impacted users and not duplicated for the actor
 - Fix app-initiated scenarios by preserving impacted target user values when no actor user identity is available in top-level fields
 
-## 2026-07-21
+## [1.0.1] - 2026-07-21
 
 ### Added
 
@@ -91,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update PIM user override so `user.name` also prefers `targetResources[].userPrincipalName`
 - Update `user.email` behavior to keep the actor identity and avoid replacing it with the target user email
 
-## 2026-05-27
+## [1.0.0] - 2026-05-27
 
 ### Added
 
