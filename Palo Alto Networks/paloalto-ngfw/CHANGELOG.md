@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.type`: classify `CONFIG` events as changes and include user events for targeted accounts
   - `log.hostname`: map the device name to hostname after aligning `CONFIG` CSV column positions
   - `observer.name`: map the device name from aligned `CONFIG` CSV layouts with and without change-detail columns
+  - `url.original`: avoid populating placeholder-only URL values when URL source fields are empty
 - Fix existing custom fields:
   - `action.outcome`: normalize `CONFIG` and `Unauthorized` statuses to `success` or `failure` consistently with `event.outcome`
   - `paloalto.DGHierarchyLevel1`: map hierarchy level 1 from the corrected `CONFIG` CSV column position
