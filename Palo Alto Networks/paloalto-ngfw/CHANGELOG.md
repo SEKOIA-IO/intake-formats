@@ -7,27 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-10-09
+## [1.0.4] - 2026-10-20
 
 ### Changed
 
 - Extend parsing of existing ECS fields:
   - `destination.packets`: parse `PacketsReceived` in JSON TRAFFIC events, including zero values
-  - `event.sequence`: parse the sequence number in CONFIG CSV events with or without change-detail columns
+  - `event.sequence`: parse the sequence number in `CONFIG` CSV events with or without change-detail columns
   - `source.packets`: parse `PacketsSent` in JSON TRAFFIC events, including zero values
-  - `user.target.name`: extract the account name from CONFIG user-management XPath entries
+  - `user.target.name`: extract the account name from `CONFIG` user-management XPath entries
 
 ### Fixed
 
 - Fix existing ECS fields:
-  - `event.category`: classify CONFIG events as configuration changes and include IAM for targeted accounts
-  - `event.outcome`: normalize CONFIG results and report failed configuration changes as failures
-  - `event.type`: classify CONFIG events as changes and include user events for targeted accounts
-  - `observer.name`: map the device name from CONFIG CSV events with or without change-detail columns
+  - `event.category`: classify `CONFIG` events as configuration changes and include IAM for targeted accounts
+  - `event.outcome`: normalize `CONFIG` and `Unauthorized` statuses to report failed operations as failures
+  - `event.type`: classify `CONFIG` events as changes and include user events for targeted accounts
+  - `log.hostname`: map the device name to hostname after aligning `CONFIG` CSV column positions
+  - `observer.name`: map the device name from aligned `CONFIG` CSV layouts with and without change-detail columns
 - Fix existing custom fields:
-  - `action.outcome`: normalize CONFIG results to `success` or `failure` consistently with `event.outcome`
+  - `action.outcome`: normalize `CONFIG` and `Unauthorized` statuses to `success` or `failure` consistently with `event.outcome`
+  - `paloalto.DGHierarchyLevel1`: map hierarchy level 1 from the corrected `CONFIG` CSV column position
+  - `paloalto.DGHierarchyLevel2`: map hierarchy level 2 from the corrected `CONFIG` CSV column position
+  - `paloalto.DGHierarchyLevel3`: map hierarchy level 3 from the corrected `CONFIG` CSV column position
+  - `paloalto.DGHierarchyLevel4`: map hierarchy level 4 from the corrected `CONFIG` CSV column position
+  - `paloalto.VirtualSystemName`: map virtual system name from the corrected `CONFIG` CSV column position
+  - `paloalto.XPath`: preserve the XPath value from the 29-column `CONFIG` CSV variant
 
-## 2026-08-13
+## [1.0.3] - 2026-08-13
 
 ### Added
 
@@ -57,15 +64,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalize quote handling for audit `exe` and `acct` values to support both escaped and unescaped forms
 - Keep `user.id` as actor UID and map `acct` to `user.target.name` while preserving `user.name` for compatibility
 
-## 2025-16-01
+## [1.0.2] - 2025-16-01
 
-- Add parsing of session.id and session.endreason
+- Parse new custom fields:
+  - `paloalto.session.endreason`
+  - `paloalto.session.id`
 
-## 2025-07-01
+## [1.0.1] - 2025-07-01
 
-- Always display url.original
+- Always display ECS field `url.original`
 
-## 2024-15-01
+## [1.0.0] - 2024-15-01
 
 ### Update
 

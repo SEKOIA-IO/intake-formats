@@ -577,49 +577,10 @@ pipeline:
           - ClusterName
         delimiter: ","
 
-  # DECRYPTION CONFIG
+  # CONFIG CSV
   # https://docs.paloaltonetworks.com/pan-os/10-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/config-log-fields
   - name: parsed_event
-    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
-    external:
-      name: dsv.parse-dsv
-      properties:
-        input_field: original.message
-        output_field: message
-        columnnames:
-          - FutureUse
-          - ReceiveTime
-          - DeviceSN
-          - Type
-          - Subtype
-          - GenerateTime
-          - FutureUse
-          - SourceHostname
-          - VirtualSystemName
-          - Action
-          - SourceUser
-          - Client
-          - Result
-          - ConfigurationPath
-          - BeforeChangeDetail
-          - AfterChangeDetail
-          - SequenceNumber
-          - ActionFlags
-          - DGHierarchyLevel1
-          - DGHierarchyLevel2
-          - DGHierarchyLevel3
-          - DGHierarchyLevel4
-          - VirtualSystemName
-          - DeviceName
-          - DeviceGroup
-          - AuditComment
-          - FutureUse
-          - HighResTimestamp
-        delimiter: ","
-
-  # Parse CONFIG separately to preserve existing raw custom-field positions.
-  - name: parsed_config
-    filter: "{{parsed_dsv.message.Type == 'CONFIG' and (parsed_event.message.BeforeChangeDetail != None and parsed_event.message.BeforeChangeDetail.isdigit() and parsed_event.message.AfterChangeDetail != None and parsed_event.message.AfterChangeDetail.startswith('0x') and parsed_event.message.AuditComment != None and 'T' in parsed_event.message.AuditComment)}}"
+    filter: "{{parsed_dsv.message.Type == 'CONFIG' and original.message.split(',') | length == 29}}"
     external:
       name: dsv.parse-dsv
       properties:
@@ -640,6 +601,8 @@ pipeline:
           - Client
           - Result
           - ConfigurationPath
+          - BeforeChangeDetail
+          - AfterChangeDetail
           - SequenceNumber
           - ActionFlags
           - DGHierarchyLevel1
@@ -655,8 +618,8 @@ pipeline:
           - XPath
         delimiter: ","
 
-  - name: parsed_config
-    filter: "{{parsed_dsv.message.Type == 'CONFIG' and not (parsed_event.message.BeforeChangeDetail != None and parsed_event.message.BeforeChangeDetail.isdigit() and parsed_event.message.AfterChangeDetail != None and parsed_event.message.AfterChangeDetail.startswith('0x') and parsed_event.message.AuditComment != None and 'T' in parsed_event.message.AuditComment)}}"
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'CONFIG' and original.message.split(',') | length == 27}}"
     external:
       name: dsv.parse-dsv
       properties:
@@ -677,8 +640,6 @@ pipeline:
           - Client
           - Result
           - ConfigurationPath
-          - BeforeChangeDetail
-          - AfterChangeDetail
           - SequenceNumber
           - ActionFlags
           - DGHierarchyLevel1
@@ -700,7 +661,7 @@ pipeline:
       name: grok.match
       properties:
         raise_errors: false
-        input_field: "{{parsed_config.message.XPath or parsed_config.message.ConfigurationPath}}"
+        input_field: "{{parsed_event.message.XPath}}"
         pattern: >-
           ^/config/mgt-config/users/entry\[@name=['"](?P<target_name>[^'"]+)['"]\](?:/.*)?$
 
@@ -940,18 +901,22 @@ stages:
       - set:
           event.category: ["configuration"]
           event.type: ["change"]
-          observer.name: "{{parsed_config.message.DeviceName}}"
+          observer.name: "{{parsed_event.message.DeviceName}}"
       - set:
-          event.sequence: "{{parsed_config.message.SequenceNumber | int}}"
-        filter: "{{parsed_config.message.SequenceNumber != None and parsed_config.message.SequenceNumber.isdigit()}}"
+          event.sequence: "{{parsed_event.message.SequenceNumber | int}}"
+        filter: "{{parsed_event.message.SequenceNumber != None and parsed_event.message.SequenceNumber.isdigit()}}"
       - set:
           event.outcome: "success"
           action.outcome: "success"
-        filter: "{{parsed_config.message.Result == 'Succeeded'}}"
+        filter: "{{parsed_event.message.Result == 'Succeeded'}}"
       - set:
           event.outcome: "failure"
           action.outcome: "failure"
-        filter: "{{parsed_config.message.Result == 'Failed'}}"
+        filter: "{{parsed_event.message.Result == 'Failed'}}"
+      - set:
+          event.outcome: "failure"
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Result == 'Unauthorized'}}"
       - set:
           user.target.name: "{{parsed_config_target.message.target_name}}"
           event.category: ["configuration", "iam"]
@@ -994,6 +959,9 @@ stages:
           action.outcome: "success"
         filter: "{{parsed_event.message.get('Action') != None}}"
       - set:
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Status == 'Unauthorized' or parsed_event.message.PanOSEventStatus == 'Unauthorized' or parsed_event.message.EventStatus == 'Unauthorized' or parsed_event.message.Result == 'Unauthorized'}}"
+      - set:
           action.outcome: "{{parsed_event.message.Status}}"
         filter: "{{parsed_event.message.Status in ['success','failure', 'unknown']}}"
       - set:
@@ -1028,6 +996,9 @@ stages:
       - set:
           event.outcome: "failure"
         filter: "{{'Invalid' in parsed_event.message.msg}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.Status == 'Unauthorized' or parsed_event.message.PanOSEventStatus == 'Unauthorized' or parsed_event.message.EventStatus == 'Unauthorized' or parsed_event.message.Result == 'Unauthorized'}}"
 
   set_extracted_fields:
     actions:
