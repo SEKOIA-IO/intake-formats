@@ -7,12 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.4] - 2026-10-15
+## [1.0.4] - 2026-10-20
 
 ### Changed
 
 - Extend parsing of existing custom fields:
-  - `action.properties.Path` from PowerShell event message payloads when top-level `Path` is absent
+  - `action.properties.Path` from PowerShell event message payloads when top-level `Path` is absent or empty
 
 ## [1.0.3] - 2026-09-30
 
