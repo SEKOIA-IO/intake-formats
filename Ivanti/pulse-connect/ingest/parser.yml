@@ -152,11 +152,14 @@ stages:
 
       - set:
           http.request.method: "{{kv_event.message.op | upper}}"
+        filter: "{{final.event.code == 'WEB20174' and kv_event.message.op is defined and kv_event.message.op | string | trim | length > 0}}"
+
+      - set:
           http.response.status_code: "{{kv_event.message.result | int}}"
         filter: "{{final.event.code == 'WEB20174' and kv_event.message.result is defined and kv_event.message.result | string | trim | length > 0}}"
 
       - set:
-          event.duration: "{{kv_event.message.duration | int * 1000000000}}"
+          event.duration: "{{(kv_event.message.duration | float * 1000000000) | int}}"
         filter: "{{final.event.code == 'WEB20174' and kv_event.message.duration is defined and kv_event.message.duration | string | trim | length > 0}}"
 
   details_extraction:
@@ -180,6 +183,15 @@ stages:
           ivanti.connect_secure.bookmark.name: "{{msg_parsing.details.bookmark_name}}"
           ivanti.connect_secure.bookmark.type: "{{msg_parsing.details.bookmark_type}}"
           ivanti.connect_secure.bookmark.application_type: "{{msg_parsing.details.application_type}}"
+
+      # WEB20174: fall back on the method and status from msg when op or result are missing
+      - set:
+          http.request.method: "{{msg_parsing.details.http_method | upper}}"
+        filter: "{{msg_parsing.details.http_method != null and not final.get('http', {}).get('request', {}).get('method')}}"
+
+      - set:
+          http.response.status_code: "{{msg_parsing.details.http_status | int}}"
+        filter: "{{msg_parsing.details.http_status != null and not final.get('http', {}).get('response', {}).get('status_code')}}"
 
       - set:
           tls.client.x509.subject.common_name:

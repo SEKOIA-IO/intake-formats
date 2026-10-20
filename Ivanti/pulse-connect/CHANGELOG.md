@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse `agent` into `user_agent.original`
 - Parse `sessionID` and `ivs` into `ivanti.connect_secure.session.id` and `ivanti.connect_secure.instant_virtual_system`
 - Parse `FBR32068` (bookmark access) and `WEB20174` (web request) events
+  - `WEB20174`: the HTTP method and status fall back on `msg` when `op` or `result` are missing, and fractional durations are kept
 - Set `event.outcome` for Host Checker events (`AUT24803`, `AUT24804`)
 
 ### Fixed
