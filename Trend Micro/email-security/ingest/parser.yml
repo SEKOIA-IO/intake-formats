@@ -5,7 +5,8 @@ pipeline:
       name: json.parse-json
 
   - name: set_basic_fields
-  - name: set_additional_fields
+  - name: set_ecs_fields
+  - name: set_custom_fields
 
 stages:
   set_basic_fields:
@@ -16,16 +17,9 @@ stages:
           event.category: ["email"]
           event.type: ["info"]
 
-  set_additional_fields:
+  set_ecs_fields:
     actions:
       - set:
-          event.action: "{{ parse_event.message.action }}"
-          email.local_id: "{{ parse_event.message.mailID }}"
-          email.sender.address: "{{ parse_event.message.sender }}"
-          email.subject: "{{ parse_event.message.subject }}"
-          email.from.address: "{{ parse_event.message.headerFrom }}"
-          email.to.address: "{{ parse_event.message.headerTo }}"
-          email.message_id: "{{ parse_event.message.messageID.strip('<').strip('>') }}"
           email.attachments: >-
             {%- if parse_event.message.attachments -%}
             [
@@ -34,8 +28,26 @@ stages:
               {%- endfor -%}
             ]
             {%- endif -%}
-          trendmicro.email.embedded_urls: "{{ parse_event.message.embeddedUrls }}"
+          email.delivery_timestamp: "{{ parse_event.message.deliveryTime }}"
+          email.direction: "{{ 'inbound' if parse_event.message.direction == 'in' else 'outbound' if parse_event.message.direction == 'out' else parse_event.message.direction }}"
+          email.from.address: "{{ parse_event.message.headerFrom }}"
+          email.local_id: "{{ parse_event.message.mailID }}"
+          email.message_id: "{{ parse_event.message.messageID.strip('<').strip('>') }}"
+          email.sender.address: "{{ parse_event.message.sender }}"
+          email.subject: "{{ parse_event.message.subject }}"
+          email.to.address: "{{ parse_event.message.headerTo }}"
+          event.action: "{{ parse_event.message.action }}"
+          source.ip: "{{ parse_event.message.senderIP }}"
+
+      - set:
+          destination.address: "{{ parse_event.message.deliveredTo }}"
+        filter: "{{ parse_event.message.deliveredTo not in [None, '', 'none'] }}"
 
       - set:
           email.to.address: "{{ parse_event.message.recipient }}"
         filter: "{{ parse_event.message.headerTo in [None, '', ['']] and '@' in parse_event.message.recipient }}"
+
+  set_custom_fields:
+    actions:
+      - set:
+          trendmicro.email.embedded_urls: "{{ parse_event.message.embeddedUrls }}"
