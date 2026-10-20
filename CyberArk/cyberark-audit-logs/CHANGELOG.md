@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-09-29
+## [1.0.1] - 2026-10-20
 
-### Fixed
+### Changed
 
 - Extend ITDR field extraction to support new nested-key extraction from raw field `customData.nested_items`, while preserving existing flat-key extraction from raw field `customData.*`:
   - ECS fields:
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `cyberark.audit.status`
 - Split ITDR parser logic into dedicated stages with explicit priority and fallback (`nested` stage first, then `flat` fallback when nested values are missing)
 
-## 2026-09-09
+## [1.0.0] - 2026-09-09
 
 ### Added
 
