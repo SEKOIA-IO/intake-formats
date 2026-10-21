@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-09-30
-
 ### Added
 
 - Parse new custom fields from raw events `targetResources.modifiedProperties` when target resource type is `ServicePrincipal`:
@@ -29,8 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `azuread.properties.targetServicePrincipalNamesNewValue` from raw field `TargetId.ServicePrincipalNames`
     - `azuread.properties.targetServicePrincipalObjectIdNewValue` from raw field `ServicePrincipal.ObjectID`
 - Enrich smart descriptions using `azuread.properties.target*` custom fields
+
 ### Changed
 
 - Populate `azuread.properties.targetServicePrincipal*` keyword fields for both single and multiple `ServicePrincipal` targets using the first `ServicePrincipal` containing `modifiedProperties`.
 - Keep `azuread.properties.targetServicePrincipalDisplayName` populated for multiple `ServicePrincipal` targets (no loss of searchable field in multi-target events).
 - Make `azuread.properties.targetServicePrincipals` query-friendly by storing a flat array of display names instead of serialized JSON blobs.
+- Keep `azuread.properties.targetServicePrincipalAppRoleNewDisplayValue` for backward compatibility while also populating `azuread.properties.targetServicePrincipalAppRoleDisplayNameNewValue`.
+- Map `UserRiskEvents` to `event.category: ["authentication"]` and keep `event.type: ["info"]` for those events.
