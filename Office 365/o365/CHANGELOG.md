@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-10-20
+
+### Added
+
+- Parse new custom fields:
+    - `office365.exchange.save_to_sent_items`: parse `SaveToSentItems` from Exchange `Send`/`SendAs` events
+
 ## [1.0.4] - 2026-08-10
 
 ### Added
@@ -26,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Do not populate `user.target.name` when `TargetUserOrGroupType` is `SharePointGroup`, since the value is a SharePoint group name rather than a person
+- Parse Microsoft 365 Copilot `CopilotInteraction` audit events (RecordType `261`) from the `Audit.General` feed
 
 ## [1.0.2] - 2023-12-08
 

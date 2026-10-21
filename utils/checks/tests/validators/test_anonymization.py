@@ -66,13 +66,26 @@ class TestAnonymizationValidator:
         [
             ("example.com", True),  # Domain is accepted
             ("sub.example.org", True),  # Domain is accepted
+            ("example.cloud", True),  # Domain is accepted
             ("test.corp", True),  # Domain is accepted
             ("mycorp.com", True),  # Domain is accepted
             ("localhost", True),  # Domain is accepted
             ("hostname.local", True),  # Domain is accepted
             ("acme.net", True),  # Domain is accepted
+            ("api.chat.org", True),  # Domain is accepted
+            ("lambda.amazonaws.com", True),
+            ("connect.amazonaws.com", True),
+            ("aws.internal", True),
+            ("www.test.fr", True),
+            ("nginxe.test.fr", True),
+            ("server.acme.wtf", True),
+            ("server.acme.tld", True),
+            ("graph.microsoft.com", True),
+            ("8.8.8.8", True),
             ("test.com", True),  # Domain is accepted
             ("baz.net", True),  # Domain is accepted
+            ("domain", True),
+            ("Acme Domain", True),
             ("google.com", False),
             ("sekoia.io", False),
         ],
@@ -84,6 +97,10 @@ class TestAnonymizationValidator:
         "username, expected",
         [
             ("John.Doe", True),
+            ("user", True),
+            ("Anonymous", True),
+            ("JDOE-AAD@example.onmicrosoft.com", True),
+            ("Administrator (Microsoft.Office.Datacenter.Torus.PowerShellWorker)", True),
             ("User123", True),
             ("AdminUser", True),
             ("root", True),
@@ -103,6 +120,9 @@ class TestAnonymizationValidator:
         "email, expected",
         [
             ("test@example.com", True),  # Domain is accepted
+            ("user@acme.wtf", True),
+            ("user@acme.tld", True),
+            ("john.doe@example.onmicrosoft.com", True),
             ("john.doe@test.com", True),  # Domain is accepted
             ("redacted@domain.com", True),  # Account is redacted
             ("user1@mycorp.com", True),  # Domain is accepted
@@ -119,6 +139,12 @@ class TestAnonymizationValidator:
         [
             ("http://example.com/path", True),
             ("https://sub.test.local/page?query=1", True),
+            ("https://example.cloud", True),
+            ("https://api.chat.org/v1/events", True),
+            ("https://graph.microsoft.com/v1.0/users/john.doe@company.com/photo/$value", True),
+            ("https://example.of.address/12345", True),
+            ("http://acme.com/nuxeo/ui/", True),
+            ("https://rdp.acme.com/plugins/servlet/project-config/PVC/summary", True),
             ("/relative/path", True),
             ("?query=true", True),
             ("http://google.com", False),
@@ -230,10 +256,14 @@ class TestAnonymizationValidator:
             ("demo", "account.id", True),
             ("S-1-5-3", "account.id", True),
             ("123456789012", "accountId", True),
+            ("1111111111", "aws.cloudtrail.user_identity.accountId", True),
             ("john.doe@example.org", "account.id", True),
             ("11111111-1111-1111-1111-111111111111", "account.id", True),
             ("11111111111111", "account.id", True),
             ("ABCDEFGHIJKLMN1234567", "principalId", True),
+            ("1111111111", "principalId", True),
+            ("AO00000000000000000000:user@example.org", "principalId", True),
+            ("Anonymous", "principalId", True),
             ("AKIA1111111111111111", "accessKeyId", True),
             ("my-project", "project.id", True),
             ("my-instance", "instance.id", True),
@@ -257,6 +287,17 @@ class TestAnonymizationValidator:
             ("urn:ucode:2222222222222222", "account.id", True),
             ("urn:spo:anon", "account.id", True),
             ("urn:spo:guest:hash#68b329da9893e34099c7d8ad5cb9c940", "account.id", True),
+            (
+                "/TENANTS/11111111-1111-1111-1111-111111111111/PROVIDERS/MICROSOFT.AADIAM",
+                "azuread.resourceId",
+                True,
+            ),
+            (
+                "/tenants/22222222-2222-2222-2222-222222222222/providers/Microsoft.aadiam",
+                "azuread.resourceId",
+                True,
+            ),
+            ("77777777-7777-7777-7777-777777777777", "azuread.properties.resourceId", True),
             ("MyPrincipalID12345", "principalId", False),
             ("AKIAIOSFODNN7EXAMPLE", "accessKeyId", False),
             ("project-austin", "project.id", False),
@@ -301,6 +342,16 @@ class TestAnonymizationValidator:
         ],
     )
     def test_validate_arn(self, validator, value, expected):
+        assert validator.validate_arn(value) == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("arn:aws:iam::1111111111:root", True),
+            ("arn:aws:iam::1111111111:role/service-role/username", True),
+        ],
+    )
+    def test_validate_arn_additional(self, validator, value, expected):
         assert validator.validate_arn(value) == expected
 
     @pytest.mark.parametrize(
@@ -387,3 +438,43 @@ class TestAnonymizationValidator:
         assert "source.ip" in error_fields
         assert "user.name" in error_fields
         assert "domain" in error_fields
+
+    def test_validate_content_does_not_treat_aws_access_key_as_username(self, validator, monkeypatch):
+        monkeypatch.setattr("checks.validators.anonymization.INTAKES_PATH", Path("."))
+        test_content = {
+            "expected": {
+                "aws": {
+                    "cloudtrail": {
+                        "user_identity": {
+                            "accessKeyId": "ASIA1111111111111",
+                            "accountId": "1111111111",
+                        }
+                    }
+                }
+            }
+        }
+        file_path = Path("module/tests/test.json")
+        errors = validator.validate_content(test_content, file_path)
+
+        error_fields = {e.field_path for e in errors}
+        assert "aws.cloudtrail.user_identity.accessKeyId" not in error_fields
+        assert "aws.cloudtrail.user_identity.accountId" not in error_fields
+
+    def test_validate_content_ignores_url_query_as_url(self, validator, monkeypatch):
+        monkeypatch.setattr("checks.validators.anonymization.INTAKES_PATH", Path("."))
+        test_content = {
+            "expected": {
+                "url": {"query": "restype=share"},
+                "http": {
+                    "request": {
+                        "referrer": "https://graph.microsoft.com/v1.0/users/john.doe@company.com/photo/$value"
+                    }
+                },
+            }
+        }
+        file_path = Path("module/tests/test.json")
+        errors = validator.validate_content(test_content, file_path)
+
+        error_fields = {e.field_path for e in errors}
+        assert "url.query" not in error_fields
+        assert "http.request.referrer" not in error_fields
