@@ -44,8 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - mapped from raw field `device.email` for `DeviceComplianceUpdated` events
     - mapped from raw field `deviceSystemStatusRecord.device.email` for `DeviceSystemStatusRecordUpdated` events
 - Extend parsing of existing custom fields:
-  - `pradeo.device.serialNumber`: mapped from raw field `deviceSystemStatusRecord.device.serialNumber` for `DeviceSystemStatusRecordUpdated` events
+  - `pradeo.device.email`: mapped from raw field `deviceSystemStatusRecord.device.email` for `DeviceSystemStatusRecordUpdated` events
+  - `pradeo.device.id`: mapped from raw field `deviceSystemStatusRecord.device.id` for `DeviceSystemStatusRecordUpdated` events
   - `pradeo.device.imei`: mapped from raw field `deviceSystemStatusRecord.device.imei` for `DeviceSystemStatusRecordUpdated` events
+  - `pradeo.device.name`: mapped from raw field `deviceSystemStatusRecord.device.name` for `DeviceSystemStatusRecordUpdated` events
+  - `pradeo.device.serialNumber`: mapped from raw field `deviceSystemStatusRecord.device.serialNumber` for `DeviceSystemStatusRecordUpdated` events
 
 ## [1.0.0] - 2024-07-26
 
