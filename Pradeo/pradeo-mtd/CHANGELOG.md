@@ -52,9 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- metadata
-- initiator : get information about the user or device that make the action
-- permission : get information about the acceptance / reject of Pradeo agent permission
-- detection : get change of status in device configuration
-- correlation : get our threat level for a device configuration
-- compliance : get our decision about a device or an application
+- Add `compliance` parsing stage to capture compliance decisions for a device or an application
+- Add `correlation` parsing stage to capture threat level for a device configuration
+- Add `detection` parsing stage to capture status changes in device configuration
+- Add `initiator` parsing stage to capture information about the user or device that performs the action
+- Add `metadata` parsing stage to capture event metadata
+- Add `permission` parsing stage to capture acceptance or rejection of Pradeo agent permissions
