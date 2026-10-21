@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extend parsing of existing ECS fields:
-  - `@timestamp`: mapped from raw field `deviceSystemStatusRecord.device.enrollmentStatus.lastConnection`
+  - `@timestamp`: keep `creationDate` for wrapped events and map from raw field `deviceSystemStatusRecord.device.enrollmentStatus.lastConnection` only for root-level events
   - `event.category`: mapped from raw field `type` when value is `DeviceSystemStatusRecordUpdated` (`["host", "configuration"]`)
   - `host.os.type`:
     - mapped from raw field `deviceApplicationCompliance.deviceApplication.device.declaredOperatingSystem` for `DeviceApplicationComplianceUpdated` events
