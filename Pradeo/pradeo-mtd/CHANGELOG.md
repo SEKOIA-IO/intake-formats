@@ -38,7 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - mapped from raw field `deviceCorrelation.device.declaredOperatingSystemVersion` for `DeviceCorrelationUpdated` events
     - mapped from raw field `deviceNetworkStatusRecord.device.declaredOperatingSystemVersion` for `DeviceNetworkStatusRecordUpdated` events
     - mapped from raw field `deviceSystemStatusRecord.device.declaredOperatingSystemVersion` for `DeviceSystemStatusRecordUpdated` events
-  - `host.os.name`: mapped from raw field `deviceSystemStatusRecord.device.declaredOperatingSystem` for `DeviceSystemStatusRecordUpdated` events
   - `user.email`:
     - mapped from raw field `device.email` for `DeviceCorrelationUpdated` events
     - mapped from raw field `device.email` for `DeviceApplicationComplianceUpdated` events
