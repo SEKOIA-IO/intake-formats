@@ -1,4 +1,5 @@
 name: Winlogbeat
+ignored_values: ["", "-"]
 pipeline:
   - name: json
     external:
@@ -62,7 +63,6 @@ stages:
           file.extension: "{{json.event.winlog.event_data.TargetFilename.split('.') | last}}"
           file.drive_letter: "{{json.event.winlog.event_data.TargetFilename.split(':') | first}}"
           action.outcome: "{{json.event.event.outcome}}"
-          file: "{{json.event.file}}"
           jolokia: "{{json_event.event.jolokia}}"
           kubernetes: "{{json_event.event.kubernetes}}"
           host: "{{json.event.host}}"
@@ -129,46 +129,75 @@ stages:
         filter: "{{json.event.get('hashes') != None}}"
 
       - set:
+          file: >
+            {%- set source_file = json.event.file -%}
+            {%- set sanitized_file = {} -%}
+            {%- for key, value in source_file.items() if key not in ["extension", "drive_letter"] -%}
+              {%- set _ = sanitized_file.update({key: value}) -%}
+            {%- endfor -%}
+            {{sanitized_file}}
+        filter: "{{json.event.get('file') is mapping and json.event.file != {}}}"
+
+      - set:
+          file.extension: "{{(json.event.file.path | basename).split('.') | last}}"
+        filter: "{{json.event.get('file') is mapping and json.event.file.get('path') not in [None, '', '-'] and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') in [None, '', '-']) and json.event.get('script_path') in [None, '', '-'] and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('ScriptName') in [None, '', '-']) and ((json.event.file.path | basename).split('.') | length > 1)}}"
+
+      - delete:
+          - file.extension
+          - file.drive_letter
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') not in [None, '', '-']}}"
+
+      - set:
           file.path: "{{json.event.winlog.event_data.Path}}"
           file.directory: "{{json.event.winlog.event_data.Path | dirname}}"
           file.name: "{{json.event.winlog.event_data.Path | basename}}"
-        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') != None}}"
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') not in [None, '', '-']}}"
 
       - set:
           file.extension: "{{(json.event.winlog.event_data.Path | basename).split('.') | last}}"
-        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') != None and ((json.event.winlog.event_data.Path | basename).split('.') | length > 1)}}"
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') not in [None, '', '-'] and ((json.event.winlog.event_data.Path | basename).split('.') | length > 1)}}"
 
       - set:
           file.drive_letter: "{{json.event.winlog.event_data.Path.split(':') | first}}"
-        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') != None and (json.event.winlog.event_data.Path.split(':') | length > 1)}}"
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('Path') not in [None, '', '-'] and (json.event.winlog.event_data.Path.split(':') | length > 1)}}"
+
+      - delete:
+          - file.extension
+          - file.drive_letter
+        filter: "{{json.event.get('script_path') not in [None, '', '-'] and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') in [None, '', '-'])}}"
 
       - set:
           file.path: "{{json.event.script_path}}"
           file.directory: "{{json.event.script_path | dirname}}"
           file.name: "{{json.event.script_path | basename}}"
-        filter: "{{json.event.get('script_path') != None and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') == None)}}"
+        filter: "{{json.event.get('script_path') not in [None, '', '-'] and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') in [None, '', '-'])}}"
 
       - set:
           file.extension: "{{(json.event.script_path | basename).split('.') | last}}"
-        filter: "{{json.event.get('script_path') != None and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') == None) and ((json.event.script_path | basename).split('.') | length > 1)}}"
+        filter: "{{json.event.get('script_path') not in [None, '', '-'] and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') in [None, '', '-']) and ((json.event.script_path | basename).split('.') | length > 1)}}"
 
       - set:
           file.drive_letter: "{{json.event.script_path.split(':') | first}}"
-        filter: "{{json.event.get('script_path') != None and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') == None) and (json.event.script_path.split(':') | length > 1)}}"
+        filter: "{{json.event.get('script_path') not in [None, '', '-'] and (json.event.get('winlog') == None or json.event.winlog.get('event_data') == None or json.event.winlog.event_data.get('Path') in [None, '', '-']) and (json.event.script_path.split(':') | length > 1)}}"
+
+      - delete:
+          - file.extension
+          - file.drive_letter
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') not in [None, '', '-'] and json.event.winlog.event_data.get('Path') in [None, '', '-'] and json.event.get('script_path') in [None, '', '-']}}"
 
       - set:
           file.path: "{{json.event.winlog.event_data.ScriptName}}"
           file.directory: "{{json.event.winlog.event_data.ScriptName | dirname}}"
           file.name: "{{json.event.winlog.event_data.ScriptName | basename}}"
-        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') != None and json.event.winlog.event_data.get('Path') == None and json.event.get('script_path') == None}}"
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') not in [None, '', '-'] and json.event.winlog.event_data.get('Path') in [None, '', '-'] and json.event.get('script_path') in [None, '', '-']}}"
 
       - set:
           file.extension: "{{(json.event.winlog.event_data.ScriptName | basename).split('.') | last}}"
-        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') != None and json.event.winlog.event_data.get('Path') == None and json.event.get('script_path') == None and ((json.event.winlog.event_data.ScriptName | basename).split('.') | length > 1)}}"
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') not in [None, '', '-'] and json.event.winlog.event_data.get('Path') in [None, '', '-'] and json.event.get('script_path') in [None, '', '-'] and ((json.event.winlog.event_data.ScriptName | basename).split('.') | length > 1)}}"
 
       - set:
           file.drive_letter: "{{json.event.winlog.event_data.ScriptName.split(':') | first}}"
-        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') != None and json.event.winlog.event_data.get('Path') == None and json.event.get('script_path') == None and (json.event.winlog.event_data.ScriptName.split(':') | length > 1)}}"
+        filter: "{{json.event.get('winlog') != None and json.event.winlog.get('event_data') != None and json.event.winlog.event_data.get('ScriptName') not in [None, '', '-'] and json.event.winlog.event_data.get('Path') in [None, '', '-'] and json.event.get('script_path') in [None, '', '-'] and (json.event.winlog.event_data.ScriptName.split(':') | length > 1)}}"
 
       - set:
           process.pid: "{{json.event.winlog.process.pid}}"
@@ -389,19 +418,23 @@ stages:
             {%- if source_address != None and source_address not in ["", "-"] and source_address | is_ipaddress -%}
               {{source_address}}
             {%- endif -%}
-          source.port: "{{json.event.winlog.event_data.SourcePort | int}}"
           destination.address: "{{json.event.winlog.event_data.DestAddress}}"
           destination.ip: >
             {%- set destination_address = json.event.winlog.event_data.get("DestAddress") -%}
             {%- if destination_address != None and destination_address not in ["", "-"] and destination_address | is_ipaddress -%}
               {{destination_address}}
             {%- endif -%}
-          destination.port: "{{json.event.winlog.event_data.DestPort | int}}"
           network.iana_number: "{{json.event.winlog.event_data.Protocol}}"
           process.name: "{{json.event.winlog.event_data.Application | basename}}"
         filter: "{{json.event.event.get('code') | string == '5156'}}"
       - set:
-          network.direction: '{{{"%%14592":"inbound", "%%14593":"outbound"}[json.event.winlog.event_data.Direction]}}'
+          source.port: "{{json.event.winlog.event_data.SourcePort | int}}"
+        filter: '{{json.event.event.get("code") | string == "5156" and json.event.winlog.event_data.get("SourcePort") != None and json.event.winlog.event_data.SourcePort not in ["", "-"] and (json.event.winlog.event_data.SourcePort | string).isdigit()}}'
+      - set:
+          destination.port: "{{json.event.winlog.event_data.DestPort | int}}"
+        filter: '{{json.event.event.get("code") | string == "5156" and json.event.winlog.event_data.get("DestPort") != None and json.event.winlog.event_data.DestPort not in ["", "-"] and (json.event.winlog.event_data.DestPort | string).isdigit()}}'
+      - set:
+          network.direction: '{{{"%%14592":"ingress", "%%14593":"egress"}[json.event.winlog.event_data.Direction]}}'
         filter: '{{json.event.event.get("code") | string == "5156" and json.event.winlog.event_data.get("Direction") in ["%%14592", "%%14593"]}}'
       - set:
           network.transport: '{{{"1":"icmp", "6":"tcp", "17":"udp", "58":"ipv6-icmp"}[json.event.winlog.event_data.Protocol]}}'
