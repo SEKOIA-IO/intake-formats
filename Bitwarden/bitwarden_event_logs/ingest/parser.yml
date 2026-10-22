@@ -39,13 +39,9 @@ stages:
         filter: "{{parsed_date.timestamp != null}}"
 
       - set:
-          event.code: >-
-            {%- set raw_type = parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId -%}
-            {%- if raw_type is not none -%}
-            {{ raw_type | int | string }}
-            {%- endif -%}
+          event.code: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) | string}}"
         filter: >-
-          {{(parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) is not none}}
+          {{(parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) is not none}}
 
       - set:
           event.reason: "{{parsed_event.message.message}}"
@@ -68,11 +64,11 @@ stages:
         filter: "{{parsed_event.message.actingUserType != null}}"
 
       - set:
-          user.target.id: "{{parsed_event.message.memberId}}"
+          bitwarden.password_manager.member.id: "{{parsed_event.message.memberId}}"
         filter: "{{parsed_event.message.memberId != null}}"
 
       - set:
-          user.target.id: "{{parsed_event.message.organizationUserId}}"
+          bitwarden.password_manager.organization_user.id: "{{parsed_event.message.organizationUserId}}"
         filter: "{{parsed_event.message.organizationUserId != null}}"
 
       - set:
@@ -105,7 +101,8 @@ stages:
 
       - set:
           bitwarden.password_manager.item.id: "{{parsed_event.message.cipherId}}"
-        filter: "{{parsed_event.message.cipherId != null}}"
+        filter: >-
+          {{parsed_event.message.cipherId != null and ((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) >= 1100 and ((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) <= 1118}}
 
       - set:
           bitwarden.password_manager.collection.id: "{{parsed_event.message.collectionId}}"
@@ -258,11 +255,10 @@ stages:
               2510: 'send_text_accessed',
               2511: 'send_file_accessed'
             } -%}
-            {%- set raw_type = parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId -%}
-            {%- if raw_type is none -%}
+            {%- if event.code is none -%}
             bitwarden_event_unknown
             {%- else -%}
-            {%- set event_type = raw_type | int -%}
+            {%- set event_type = event.code | int -%}
             {{ action_map.get(event_type, 'bitwarden_event_' ~ (event_type | string)) }}
             {%- endif -%}
 
@@ -272,30 +268,73 @@ stages:
           event.category: ["authentication"]
           event.type: ["start"]
         filter: >-
-          {{((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) in [1000, 1004, 1005, 1006, 1010]}}
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1000, 1004, 1005, 1006, 1010]}}
 
       - set:
           event.category: ["iam"]
           event.type: ["change"]
         filter: >-
-          {{((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) in [1001, 1002, 1003, 1008, 1009, 1011]}}
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1001, 1002, 1003, 1008, 1009, 1011]}}
 
       - set:
           event.category: ["file"]
-          event.type: ["access"]
+          event.type: ["info"]
         filter: >-
-          {{((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) == 1007}}
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1007, 1602, 1603]}}
+
+      - set:
+          event.type: ["deletion"]
+        filter: >-
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1102, 1115, 1302, 1402, 1503, 1515, 1516, 1601, 2103, 2104, 2203, 2305, 2508, 2509]}}
+
+      - set:
+          event.type: ["creation"]
+        filter: >-
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1100, 1103, 1300, 1400, 1500, 1523, 2101, 2201, 2304, 2500, 2501, 2502, 2503, 2504, 2505]}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["group", "creation"]
+        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) == 1400}}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["group", "change"]
+        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) == 1401}}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["group", "deletion"]
+        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) == 1402}}"
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["user", "creation"]
+        filter: >-
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1500, 1523, 1524]}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["user", "change"]
+        filter: >-
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1501, 1502, 1504, 1505, 1506, 1507, 1508, 1509, 1510, 1511, 1512, 1513, 1514, 1517, 1518, 1519, 1520, 1521, 1525]}}
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["user", "deletion"]
+        filter: >-
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1503, 1515, 1516]}}
 
       - set:
           event.category: ["configuration"]
           event.type: ["change"]
         filter: >-
-          {{((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) in [1600, 1601, 1602, 1603, 1604, 1605, 1606, 1607, 1608, 1609, 1700, 2000, 2001, 2002, 2003]}}
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1600, 1604, 1605, 1606, 1607, 1608, 1609, 1700, 2000, 2001, 2002, 2003]}}
 
       - set:
           observer.product: Secrets Manager
         filter: >-
-          {{((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) >= 2100 and ((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) <= 2305}}
+          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) >= 2100 and ((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) <= 2305}}
 
   set_outcome:
     actions:
@@ -304,4 +343,4 @@ stages:
 
       - set:
           event.outcome: failure
-        filter: "{{((parsed_event.message.type if parsed_event.message.type is not none else parsed_event.message.typeId) | int) in [1005, 1006, 2003]}}"
+        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1005, 1006, 2003]}}"
