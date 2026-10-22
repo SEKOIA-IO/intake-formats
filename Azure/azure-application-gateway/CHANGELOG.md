@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-10-21
+## [1.0.0] - 2026-10-22
 
 ### Added
 
 - Parse new ECS fields:
+  - `event.category`
   - `event.outcome`
-  - `http.response.mime_type`
+  - `http.request.mime_type`
   - `http.version`
   - `network.protocol`
   - `observer.product`
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `tls.version`
   - `tls.version_protocol`
   - `url.domain`
+  - `url.port`
   - `url.path`
   - `url.query`
 - Parse new custom fields:
@@ -41,8 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extend parsing of existing ECS fields:
-  - `@timestamp`: normalize performance timestamp from `time` (including fractional-second values) so metric events consistently emit `@timestamp`
-  - `destination.*`: derive backend destination from `serverRouted` only, to keep `destination.ip`/`destination.port` aligned with the routed backend endpoint
+  - `destination.*`: derive backend destination from `serverRouted` for access logs, and map firewall `hostname` to `destination.ip`/`destination.port` when `hostname` contains an IP target
   - `event.action`: extend handling across log types
     - performance: `event.action` is populated from `metricName`
   - `event.dataset`: extend handling across log types  
@@ -54,17 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - performance: `unknown` by design
   - `event.type`: extend handling across log types
     - access: `event.type=["access","connection"]`
-    - firewall: `event.type=["allowed"]` for `Allowed`, `event.type=["denied"]` for `Blocked`, fallback `event.type=["access","connection"]`
+    - firewall: base `event.type=["access","connection"]`, overridden by `event.type=["allowed"]` for `Allowed`, `event.type=["denied"]` for `Blocked`, and `event.type=["info"]` for `Matched`/`Detected`
     - performance: `event.type=["info"]`
-  - `network.bytes`: set only when `receivedBytes` or `sentBytes` exists, and cast both to integers before addition to preserve correct totals on legacy string payloads
-  - `rule.name`: remove AGW routing identifiers from ECS rule naming to avoid mixing routing and WAF detection semantics
-  - `url.domain`: map request host from `originalHost` when available, with fallback to `host` (port stripped when present)
-- Extend parsing of existing custom fields:
-  - `azure.application_gateway.details.message`: extend extraction for firewall events when nested WAF details are present (`properties.details.message`)
-  - `azure.application_gateway.error_info`: extend extraction across access events (including legacy payload variants) when `properties.error_info` is present
-  - `azure.application_gateway.message`: extend extraction across access and firewall events from `properties.message`
-  - `azure.application_gateway.serverStatus`: extend extraction for access/backend-routing events from `properties.serverStatus`
-  - `azure.application_gateway.sslClientVerify`: extend extraction for TLS-enabled access events from `properties.sslClientVerify`
-  - `azure.application_gateway.transactionId`: extend extraction for access and firewall correlation from `properties.transactionId`
+  - `event.category`: keep `event.category=["network"]` for access/performance logs and classify firewall detections with `event.category=["network","intrusion_detection"]`
+  - AGW routing identifiers: map `ruleName` and `listenerName` to custom fields (`azure.application_gateway.routing_rule`, `azure.application_gateway.listener`) to avoid mixing routing metadata with WAF/detection rule semantics in ECS `rule.*`
+  - `url.domain`: map request host from `originalHost` when available, with fallback to `host` (port stripped when present), and map firewall `hostname` when the target is a domain name
 - Cover access, firewall, and performance log types with dedicated ECS/custom stages
 - Keep only high-signal Azure Application Gateway custom fields and metric fields
+
+### Fixed
+
+- Fix parsing of existing ECS fields:
+  - `@timestamp`: when `timeStamp` is missing, parse `time` as fallback (including 7-digit fractional timestamps on performance events)
+  - `network.bytes`: cast `receivedBytes`/`sentBytes` to integers before addition to avoid string concatenation on legacy payloads
+- Fix fixture anonymization:
+  - replace environment-specific API paths and identifiers in access/firewall test fixtures with generic values
