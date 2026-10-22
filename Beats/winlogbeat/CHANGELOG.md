@@ -24,13 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `network.direction`: map `winlog.event_data.Direction` (`%%14592`/`%%14593`) to `ingress` and `egress` for Security event 5156
   - `network.transport`: map from `winlog.event_data.Protocol` to known transport names for Security event 5156
   - `process.name`: map basename from `winlog.event_data.Application` for Security event 5156
+  - `process.pid`: map numeric `winlog.event_data.ProcessID` for Security event 5156
   - `source.ip`: duplicate `winlog.event_data.SourceAddress` when it is a valid IP for Security event 5156
   - `source.port`: map numeric `winlog.event_data.SourcePort` for Security event 5156
 
 ### Fixed
 
 - Fix existing ECS fields:
-  - `file.directory`: keep backslash separators when deriving directory from `winlog.event_data.ScriptName` in the PowerShell 4103 stage
+  - `file.hash.*`: preserve derived hash precedence by applying incoming `file` passthrough before hash extraction from `winlog.event_data.Hashes` and `hashes.*`
+  - `file.directory`:
+    - keep backslash separators when deriving directory from `winlog.event_data.ScriptName` in the PowerShell 4103 stage
+    - clear carried values when `Path`, `script_path`, or `ScriptName` is selected as the replacement source
   - `file.drive_letter`: preserve incoming values when no replacement source path is selected, and clear carried values before deriving from the selected path source
   - `file.extension`: preserve incoming values when no replacement source path is selected, and clear carried values before deriving from the selected path source
   - `file.name`: map basename from the selected source and fix the `json.event..winlog` typo in the PowerShell 4103 stage
