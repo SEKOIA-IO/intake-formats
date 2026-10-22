@@ -383,6 +383,30 @@ stages:
           event.outcome: "success"
         filter: "{{'Audit Success' in json.event.winlog.get('keywords')}}"
       - set:
+          source.address: "{{json.event.winlog.event_data.SourceAddress}}"
+          source.ip: >
+            {%- set source_address = json.event.winlog.event_data.get("SourceAddress") -%}
+            {%- if source_address != None and source_address not in ["", "-"] and source_address | is_ipaddress -%}
+              {{source_address}}
+            {%- endif -%}
+          source.port: "{{json.event.winlog.event_data.SourcePort | int}}"
+          destination.address: "{{json.event.winlog.event_data.DestAddress}}"
+          destination.ip: >
+            {%- set destination_address = json.event.winlog.event_data.get("DestAddress") -%}
+            {%- if destination_address != None and destination_address not in ["", "-"] and destination_address | is_ipaddress -%}
+              {{destination_address}}
+            {%- endif -%}
+          destination.port: "{{json.event.winlog.event_data.DestPort | int}}"
+          network.iana_number: "{{json.event.winlog.event_data.Protocol}}"
+          process.name: "{{json.event.winlog.event_data.Application}}"
+        filter: "{{json.event.event.get('code') | string == '5156'}}"
+      - set:
+          network.direction: '{{{"%%14592":"inbound", "%%14593":"outbound"}[json.event.winlog.event_data.Direction]}}'
+        filter: '{{json.event.event.get("code") | string == "5156" and json.event.winlog.event_data.get("Direction") in ["%%14592", "%%14593"]}}'
+      - set:
+          network.transport: '{{{"1":"icmp", "6":"tcp", "17":"udp", "58":"ipv6-icmp"}[json.event.winlog.event_data.Protocol]}}'
+        filter: '{{json.event.event.get("code") | string == "5156" and json.event.winlog.event_data.get("Protocol") in ["1", "6", "17", "58"]}}'
+      - set:
           winlog.logon.id: "{{json.event.winlog.event_data.TargetLogonId}}"
         filter: '{{json.event.event.get("code") in ["4634", "4647", "4964"]}}'
       - set:
