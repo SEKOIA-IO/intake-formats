@@ -31,10 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix existing ECS fields:
   - `file.directory`: keep backslash separators when deriving directory from `winlog.event_data.ScriptName` in the PowerShell 4103 stage
-  - `file.drive_letter`: clear carried values from raw `file.*` input before deriving from the selected path source
-  - `file.extension`: clear carried values from raw `file.*` input before deriving from the selected path source
+  - `file.drive_letter`: preserve incoming values when no replacement source path is selected, and clear carried values before deriving from the selected path source
+  - `file.extension`: preserve incoming values when no replacement source path is selected, and clear carried values before deriving from the selected path source
   - `file.name`: map basename from the selected source and fix the `json.event..winlog` typo in the PowerShell 4103 stage
-  - `file.path`: select one non-empty source with `Path` > `script_path` > `ScriptName` precedence for PowerShell events
+  - `file.path`: keep one non-empty source with `Path` > `script_path` > `ScriptName` precedence as the authoritative source for PowerShell events
 - Ignore empty-string and `-` placeholder values globally (`ignored_values`) to reduce placeholder-driven mapping artifacts
 - Reduce verbose fallback outputs in smart descriptions to prevent noise
 
