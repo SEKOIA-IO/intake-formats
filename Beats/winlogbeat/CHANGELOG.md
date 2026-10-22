@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-16
+
+### Fixed
+
+- Fix parsing of existing ECS fields:
+  - `file.name`:
+    - make basename extraction robust for PowerShell events by handling `winlog.event_data.Path`, top-level `script_path`, and `winlog.event_data.ScriptName` with safe conditions
+    - correct `ScriptName` mapping typo in PowerShell-specific stage (`json.event..winlog` -> `json.event.winlog`)
+
 ## [1.0.2] - 2026-11-16
 
 ### Added
@@ -22,14 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-05-27
 
-### Added
+### Fixed
 
-- Parse PowerShell event hashes from `hashes.*` into ECS `file.hash.*` fields (`md5`, `sha1`, `sha256`) for Winlogbeat events
-- Add dedicated `file.name` extraction (basename) from script/file paths (`Path`, `script_path`, `ScriptName`) to improve analysis when full paths are randomized
-- Add a dedicated test case for this behavior in `Beats/winlogbeat/tests/powershell_path_and_hashes.json`
+- Fix parsing of existing ECS fields:
+  - `file.hash.*`: parse PowerShell event hashes from `hashes.*` into ECS fields (`md5`, `sha1`, `sha256`)
 
 ## [1.0.0] - 2026-05-26
 
 ### Removed
 
-- Remove unused field `event.origin`
+- Remove unused ECS fields:
+  - `event.origin`
