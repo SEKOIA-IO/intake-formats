@@ -9,4 +9,4 @@ Sekoia.io over HTTPS.
 
 ## Intakes
 
-- AUBE Core anomalies
+- AUBE
