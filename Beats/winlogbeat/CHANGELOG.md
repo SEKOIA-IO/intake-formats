@@ -20,25 +20,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extend parsing of existing ECS fields:
   - `destination.ip`: duplicate `winlog.event_data.DestAddress` when it is a valid IP for Security event 5156
-  - `destination.port`: map from `winlog.event_data.DestPort` for Security event 5156
-  - `file.directory`: derive from a single selected source with `Path` > `script_path` > `ScriptName` precedence
-  - `file.drive_letter`: derive from a single selected source with `Path` > `script_path` > `ScriptName` precedence
-  - `file.extension`: derive from a single selected source with `Path` > `script_path` > `ScriptName` precedence
-  - `file.name`: derive basename from a single selected source with `Path` > `script_path` > `ScriptName` precedence
-  - `file.path`: select one non-empty source with `Path` > `script_path` > `ScriptName` precedence before populating file metadata
-  - `network.direction`: derive from `winlog.event_data.Direction` (`%%14592`/`%%14593`) for Security event 5156
+  - `destination.port`: map numeric `winlog.event_data.DestPort` for Security event 5156
+  - `network.direction`: map `winlog.event_data.Direction` (`%%14592`/`%%14593`) to `ingress` and `egress` for Security event 5156
   - `network.transport`: map from `winlog.event_data.Protocol` to known transport names for Security event 5156
-  - `process.name`: derive basename from `winlog.event_data.Application` for Security event 5156
+  - `process.name`: map basename from `winlog.event_data.Application` for Security event 5156
   - `source.ip`: duplicate `winlog.event_data.SourceAddress` when it is a valid IP for Security event 5156
-  - `source.port`: map from `winlog.event_data.SourcePort` for Security event 5156
+  - `source.port`: map numeric `winlog.event_data.SourcePort` for Security event 5156
 
 ### Fixed
 
-- Fix parsing of existing ECS fields:
-  - `file.name`:
-    - make basename extraction robust for PowerShell events by handling `winlog.event_data.Path`, top-level `script_path`, and `winlog.event_data.ScriptName` with safe conditions
-    - correct `ScriptName` mapping typo in PowerShell-specific stage (`json.event..winlog` -> `json.event.winlog`)
+- Fix existing ECS fields:
   - `file.directory`: keep backslash separators when deriving directory from `winlog.event_data.ScriptName` in the PowerShell 4103 stage
+  - `file.drive_letter`: clear carried values from raw `file.*` input before deriving from the selected path source
+  - `file.extension`: clear carried values from raw `file.*` input before deriving from the selected path source
+  - `file.name`: map basename from the selected source and fix the `json.event..winlog` typo in the PowerShell 4103 stage
+  - `file.path`: select one non-empty source with `Path` > `script_path` > `ScriptName` precedence for PowerShell events
+- Ignore empty-string and `-` placeholder values globally (`ignored_values`) to reduce placeholder-driven mapping artifacts
 - Reduce verbose fallback outputs in smart descriptions to prevent noise
 
 ## [1.0.1] - 2026-05-27
