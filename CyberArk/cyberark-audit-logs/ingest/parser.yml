@@ -19,6 +19,7 @@ pipeline:
   - name: set_common_fields
   - name: set_itdr_custom_data_fields_nested
   - name: set_itdr_custom_data_fields_flat
+  - name: set_itdr_custom_data_derived_fields
   - name: set_specific_fields
   - name: set_leef_fields
 
@@ -125,72 +126,26 @@ stages:
           cyberark.audit.status: "{{(parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first}}"
         filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | length > 0)}}"
 
-      - set:
-          event.outcome: "success"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | lower) in ('success', 'succeeded', 'completed', 'resolved', 'closed', 'done', 'ok'))}}"
-
-      - set:
-          event.outcome: "failure"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | lower) in ('failure', 'failed', 'error', 'denied', 'rejected', 'blocked'))}}"
-
-      - set:
-          event.outcome: "unknown"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | length > 0) and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | lower) not in ('success', 'succeeded', 'completed', 'resolved', 'closed', 'done', 'ok', 'failure', 'failed', 'error', 'denied', 'rejected', 'blocked'))}}"
-
-      - set:
-          event.severity: "21"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | lower) == 'low')}}"
-
-      - set:
-          event.severity: "47"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | lower) == 'medium')}}"
-
-      - set:
-          event.severity: "73"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | lower) == 'high')}}"
-
-      - set:
-          event.severity: "99"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | lower) == 'critical')}}"
-
   set_itdr_custom_data_fields_flat:
     actions:
       # Fallback to flat keys only when nested values are missing (legacy format).
       - set:
           event.url: "{{parsed_event.message.customData.Alert_link}}"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Alert_link') | map(attribute='value') | first) | default('', true) | length == 0) and parsed_event.message.customData.Alert_link | default('', true) | length > 0}}"
+        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and final.event.url is not defined and parsed_event.message.customData.Alert_link | default('', true) | length > 0}}"
 
       - set:
           cyberark.audit.status: "{{parsed_event.message.customData.Status}}"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | length == 0) and parsed_event.message.customData.Status | default('', true) | length > 0}}"
+        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and final.cyberark.audit.status is not defined and parsed_event.message.customData.Status | default('', true) | length > 0}}"
 
-      - set:
-          event.outcome: "success"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | length == 0) and (parsed_event.message.customData.Status | default('', true) | lower) in ('success', 'succeeded', 'completed', 'resolved', 'closed', 'done', 'ok')}}"
-
-      - set:
-          event.outcome: "failure"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | length == 0) and (parsed_event.message.customData.Status | default('', true) | lower) in ('failure', 'failed', 'error', 'denied', 'rejected', 'blocked')}}"
-
+  set_itdr_custom_data_derived_fields:
+    actions:
       - set:
           event.outcome: "unknown"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Status') | map(attribute='value') | first) | default('', true) | length == 0) and parsed_event.message.customData.Status | default('', true) | length > 0 and (parsed_event.message.customData.Status | lower) not in ('success', 'succeeded', 'completed', 'resolved', 'closed', 'done', 'ok', 'failure', 'failed', 'error', 'denied', 'rejected', 'blocked')}}"
+        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001')}}"
 
       - set:
-          event.severity: "21"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | length == 0) and (parsed_event.message.customData.Severity | default('', true) | lower) == 'low'}}"
-
-      - set:
-          event.severity: "47"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | length == 0) and (parsed_event.message.customData.Severity | default('', true) | lower) == 'medium'}}"
-
-      - set:
-          event.severity: "73"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | length == 0) and (parsed_event.message.customData.Severity | default('', true) | lower) == 'high'}}"
-
-      - set:
-          event.severity: "99"
-        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and (((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default('', true) | length == 0) and (parsed_event.message.customData.Severity | default('', true) | lower) == 'critical'}}"
+          event.severity: "{{{'low': 21, 'medium': 47, 'high': 73, 'critical': 99}[((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default(parsed_event.message.customData.Severity, true) | default('', true) | lower]}}"
+        filter: "{{parsed_event.message.applicationCode == 'ITDR' and (parsed_event.message.action in ('New alert created',) or parsed_event.message.auditCode == 'ITDR0001') and ((((parsed_event.message.customData.get('nested_items') or []) | selectattr('name', 'equalto', 'Severity') | map(attribute='value') | first) | default(parsed_event.message.customData.Severity, true) | default('', true) | lower) in ('low', 'medium', 'high', 'critical'))}}"
 
   set_specific_fields:
     actions:
