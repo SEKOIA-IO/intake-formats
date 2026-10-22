@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - make basename extraction robust for PowerShell events by handling `winlog.event_data.Path`, top-level `script_path`, and `winlog.event_data.ScriptName` with safe conditions
     - correct `ScriptName` mapping typo in PowerShell-specific stage (`json.event..winlog` -> `json.event.winlog`)
   - `file.directory`: keep backslash separators when deriving directory from `winlog.event_data.ScriptName` in the PowerShell 4103 stage
+- Reduce verbose fallback outputs in smart descriptions to prevent noise
 
 ## [1.0.1] - 2026-05-27
 
