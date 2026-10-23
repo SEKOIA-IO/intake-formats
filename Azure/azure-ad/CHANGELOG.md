@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `host.domain`: derive domain when host name is FQDN-like
   - `host.name`: map explicit host name from device display name
   - `network.type`: infer IPv4 or IPv6 from parsed source IP candidates
-  - `related.user`: aggregate and deduplicate user identifiers seen in the event
+  - `related.user`: populate user identifiers from normalized user identity context
   - `source.address`: set explicit source address alongside source IP
   - `source.geo.country_iso_code`: map country code from location country
 - Parse new custom fields:
@@ -35,4 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix parsing of existing ECS fields:
+  - `host.os.name`: preserve top-level operating system mapping when display name is absent
+  - `source.geo.location`: guard mapping when `location` and `geoCoordinates` are not structured objects
   - `source.ip`: prevent missing source IP on risk events that could cause incorrect cross-tenant alert grouping

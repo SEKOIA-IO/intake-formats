@@ -50,17 +50,19 @@ stages:
           host.hostname: "{{parsed_event.message.properties.deviceDetail.displayName}}"
           host.id: "{{parsed_event.message.properties.deviceDetail.deviceId}}"
           host.name: "{{parsed_event.message.properties.deviceDetail.displayName}}"
-          host.os.name: "{{parsed_event.message.deviceDetail.operatingSystem or parsed_event.message.properties.deviceDetail.operatingSystem}}"
+          host.os.name: "{{parsed_event.message.properties.deviceDetail.operatingSystem}}"
           host.os.type: "{{parsed_event.message.properties.deviceDetail.operatingSystem}}"
         filter: "{{parsed_event.message.get('properties', {}).get('deviceDetail') != null}}"
       - set:
           host.hostname: "{{parsed_event.message.deviceDetail.displayName}}"
           host.name: "{{parsed_event.message.deviceDetail.displayName}}"
-          host.os.name: "{{parsed_event.message.deviceDetail.operatingSystem}}"
         filter: "{{parsed_event.message.deviceDetail != null and parsed_event.message.deviceDetail.displayName != null and parsed_event.message.get('properties', {}).get('deviceDetail') == null}}"
       - set:
-          host.domain: "{{final.host.name}}"
+          host.domain: "{{final.host.name.split('.')[1:] | join('.')}}"
         filter: "{{final.host.name != null and '.' in final.host.name}}"
+      - set:
+          host.os.name: "{{parsed_event.message.deviceDetail.operatingSystem}}"
+        filter: "{{parsed_event.message.deviceDetail != null and parsed_event.message.deviceDetail.operatingSystem != null}}"
 
   set_ecs_network_fields:
     actions:
@@ -92,29 +94,25 @@ stages:
     actions:
       - set:
           related.ip: >
-            [
             {%- set seen = namespace(values=[]) -%}
             {%- for candidate in [parsed_event.message.ipAddress, parsed_event.message.properties.ipAddress, parsed_event.message.callerIpAddress] -%}
               {%- if candidate is string and candidate | is_ipaddress and candidate not in seen.values -%}
                 {%- set seen.values = seen.values + [candidate] -%}
-                "{{candidate}}",
               {%- endif -%}
             {%- endfor -%}
-            ]
+            {{ seen.values | to_json }}
         filter: "{{parsed_event.message.ipAddress | is_ipaddress or parsed_event.message.properties.ipAddress | is_ipaddress or parsed_event.message.callerIpAddress | is_ipaddress}}"
 
       - set:
           related.user: >
-            [
             {%- set seen = namespace(values=[]) -%}
-            {%- for candidate in [parsed_event.message.properties.userId, parsed_event.message.userId, parsed_event.message.properties.userPrincipalName, parsed_event.message.userPrincipalName, parsed_event.message.identity] -%}
+            {%- for candidate in [final.user.id, final.user.email, final.azuread.identity] -%}
               {%- if candidate is string and candidate | length > 0 and candidate not in seen.values -%}
                 {%- set seen.values = seen.values + [candidate] -%}
-                "{{candidate}}",
               {%- endif -%}
             {%- endfor -%}
-            ]
-        filter: "{{parsed_event.message.get('properties', {}).get('userId') != null or parsed_event.message.userId != null or parsed_event.message.get('properties', {}).get('userPrincipalName') != null or parsed_event.message.userPrincipalName != null or parsed_event.message.identity != null}}"
+            {{ seen.values | to_json }}
+        filter: "{{final.user.id != null or final.user.email != null or final.azuread.identity != null}}"
 
   set_ecs_source_fields:
     actions:
@@ -134,11 +132,11 @@ stages:
           source.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
           source.geo.country_iso_code: "{{parsed_event.message.properties.location.countryOrRegion}}"
           source.geo.region_name: "{{parsed_event.message.properties.location.state or parsed_event.message.properties.__UDI_RequiredFields_RegionScope}}"
-        filter: "{{parsed_event.message.get('properties', {}).get('location') != null}}"
+        filter: "{{parsed_event.message.get('properties', {}).get('location') is mapping}}"
 
       - set:
           source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
-        filter: "{{parsed_event.message.get('properties', {}).get('location', {}).get('geoCoordinates', {}) | length > 0 }}"
+        filter: "{{parsed_event.message.get('properties', {}).get('location') is mapping and parsed_event.message.properties.location.get('geoCoordinates') is mapping and parsed_event.message.properties.location.geoCoordinates | length > 0 }}"
 
       - set:
           source.geo.name: "{{ parsed_event.message.properties.location}}"
@@ -261,7 +259,7 @@ stages:
           action.name: "{{parsed_event.message.operationName}}"
           event.action: "{{parsed_event.message.operationName}}"
           user.id: "{{ parsed_event.message.userId or parsed_event.message.properties.userId}}"
-          user.name: "{{ parsed_event.message.userPrincipalName}}"
+          user.name: "{{parsed_event.message.userPrincipalName or parsed_event.message.identity or parsed_event.message.properties.userPrincipalName}}"
           user_agent.original: "{{ parsed_event.message.userAgent}}"
           log.level: "{{parsed_event.message.Level}}"
           http.request.method: "{{parsed_event.message.properties.requestMethod}}"
