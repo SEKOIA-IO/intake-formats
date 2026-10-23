@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix parsing of existing ECS fields:
+  - `event.reason`: set an explicit metric summary to prevent smart-description fallback to raw message payload
   - `host.os.name`: preserve top-level operating system mapping when display name is absent
   - `source.geo.location`: guard mapping when `location` and `geoCoordinates` are not structured objects
   - `source.ip`: prevent missing source IP on risk events that could cause incorrect cross-tenant alert grouping
