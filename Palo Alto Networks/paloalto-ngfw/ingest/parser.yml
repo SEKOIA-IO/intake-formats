@@ -577,10 +577,10 @@ pipeline:
           - ClusterName
         delimiter: ","
 
-  # DECRYPTION CONFIG
+  # CONFIG CSV
   # https://docs.paloaltonetworks.com/pan-os/10-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/config-log-fields
   - name: parsed_event
-    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
+    filter: "{{parsed_dsv.message.Type == 'CONFIG' and original.message.split(',') | length == 29}}"
     external:
       name: dsv.parse-dsv
       properties:
@@ -592,8 +592,8 @@ pipeline:
           - DeviceSN
           - Type
           - Subtype
+          - ConfigVersion
           - GenerateTime
-          - FutureUse
           - SourceHostname
           - VirtualSystemName
           - Action
@@ -615,7 +615,55 @@ pipeline:
           - AuditComment
           - FutureUse
           - HighResTimestamp
+          - XPath
         delimiter: ","
+
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'CONFIG' and original.message.split(',') | length == 27}}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - FutureUse
+          - ReceiveTime
+          - DeviceSN
+          - Type
+          - Subtype
+          - ConfigVersion
+          - GenerateTime
+          - SourceHostname
+          - VirtualSystemName
+          - Action
+          - SourceUser
+          - Client
+          - Result
+          - ConfigurationPath
+          - SequenceNumber
+          - ActionFlags
+          - DGHierarchyLevel1
+          - DGHierarchyLevel2
+          - DGHierarchyLevel3
+          - DGHierarchyLevel4
+          - VirtualSystemName
+          - DeviceName
+          - DeviceGroup
+          - AuditComment
+          - FutureUse
+          - HighResTimestamp
+          - XPath
+        delimiter: ","
+
+  - name: parsed_config_target
+    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.XPath}}"
+        pattern: >-
+          ^/config/mgt-config/users/entry\[@name=['"](?P<target_name>[^'"]+)['"]\](?:/.*)?$
 
   # AUTH CSV
   # https://docs.paloaltonetworks.com/pan-os/10-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/authentication-log-fields
@@ -822,6 +870,8 @@ pipeline:
         pattern: "%{IP:range_1}-%{IP:range_2}|%{GREEDYDATA:geoname}"
 
   - name: set_extracted_fields
+  - name: set_json_packet_counts
+    filter: "{{parsed_event.message.LogType == 'TRAFFIC'}}"
   - name: set_panos_audit_fields
     filter: '{{parsed_event.message.Type in ["audit", "AUDIT"]}}'
   - name: set_finalize_user_name
@@ -833,8 +883,46 @@ pipeline:
   - name: set_action_outcome
   - name: set_event_outcome
   - name: set_csv_severity
+  - name: set_config_fields
+    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
 
 stages:
+  set_json_packet_counts:
+    actions:
+      - set:
+          source.packets: "{{parsed_event.message.PacketsSent}}"
+        filter: "{{final.source.get('packets') == None and parsed_event.message.PacketsSent != None and (parsed_event.message.PacketsSent is number or parsed_event.message.PacketsSent.isdigit())}}"
+      - set:
+          destination.packets: "{{parsed_event.message.PacketsReceived}}"
+        filter: "{{final.destination.get('packets') == None and parsed_event.message.PacketsReceived != None and (parsed_event.message.PacketsReceived is number or parsed_event.message.PacketsReceived.isdigit())}}"
+
+  set_config_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          observer.name: "{{parsed_event.message.DeviceName}}"
+      - set:
+          event.sequence: "{{parsed_event.message.SequenceNumber | int}}"
+        filter: "{{parsed_event.message.SequenceNumber != None and parsed_event.message.SequenceNumber.isdigit()}}"
+      - set:
+          event.outcome: "success"
+          action.outcome: "success"
+        filter: "{{parsed_event.message.Result == 'Succeeded'}}"
+      - set:
+          event.outcome: "failure"
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Result == 'Failed'}}"
+      - set:
+          event.outcome: "failure"
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Result == 'Unauthorized'}}"
+      - set:
+          user.target.name: "{{parsed_config_target.message.target_name}}"
+          event.category: ["configuration", "iam"]
+          event.type: ["change", "user"]
+        filter: "{{parsed_config_target.message.get('target_name') != None}}"
+
   set_csv_severity:
     actions:
       - set:
@@ -871,6 +959,9 @@ stages:
           action.outcome: "success"
         filter: "{{parsed_event.message.get('Action') != None}}"
       - set:
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Status == 'Unauthorized' or parsed_event.message.PanOSEventStatus == 'Unauthorized' or parsed_event.message.EventStatus == 'Unauthorized' or parsed_event.message.Result == 'Unauthorized'}}"
+      - set:
           action.outcome: "{{parsed_event.message.Status}}"
         filter: "{{parsed_event.message.Status in ['success','failure', 'unknown']}}"
       - set:
@@ -905,6 +996,9 @@ stages:
       - set:
           event.outcome: "failure"
         filter: "{{'Invalid' in parsed_event.message.msg}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.Status == 'Unauthorized' or parsed_event.message.PanOSEventStatus == 'Unauthorized' or parsed_event.message.EventStatus == 'Unauthorized' or parsed_event.message.Result == 'Unauthorized'}}"
 
   set_extracted_fields:
     actions:
@@ -1061,7 +1155,7 @@ stages:
       - set:
           url.original: "https://{{parsed_event.message.URL or parsed_event.message.FileName or parsed_event.message.URLFilename}}"
           destination.domain: '{{final.url.original.split("://")[1].split("/")[0].split(":")[0]}}'
-        filter: "{{final.action.type == 'url' and (parsed_event.message.URL != None or parsed_event.message.FileName != None or parsed_event.message.URLFilename != None)}}"
+        filter: "{{final.action.type == 'url' and (parsed_event.message.URL not in [None, ''] or parsed_event.message.FileName not in [None, ''] or parsed_event.message.URLFilename not in [None, ''])}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIPv4}}"
