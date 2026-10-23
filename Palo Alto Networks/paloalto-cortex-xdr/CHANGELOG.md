@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-10-02
+
+### Added
+
+- Add support for Cortex XDR v5 issue payloads (`issue_*`/`status` fields) in alerts parsing
+- Map issue exclusion status (`is_excluded`) to `paloalto.cortex.xdr.alert.is_whitelisted`
+
 ## 2026-08-12
 
 ### Added
