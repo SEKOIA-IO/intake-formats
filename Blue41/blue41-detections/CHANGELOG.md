@@ -10,3 +10,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add the Blue41 Detections and Audit format for detections and platform audit events delivered through HTTPS push.
+- Add one built-in detection rule per Blue41 severity.
