@@ -1,0 +1,119 @@
+name: aube
+ignored_values: [None, ""]
+
+# One input event = one AUBE Portal event (Sekoia event schema v1): a unit period
+# that AUBE Core flagged as singular and an analyst confirmed as an anomaly in
+# AUBE Portal (confirmed_anomaly), the withdrawal of that confirmation
+# (confirmed_anomaly_withdrawn, same event_uid), or a connectivity test sent
+# from the portal (test).
+pipeline:
+  - name: parsed
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_common_fields
+  - name: set_confirmed_fields
+    filter: "{{parsed.message.event_type == 'confirmed_anomaly'}}"
+  - name: set_withdrawn_fields
+    filter: "{{parsed.message.event_type == 'confirmed_anomaly_withdrawn'}}"
+  - name: set_test_fields
+    filter: "{{parsed.message.event_type == 'test'}}"
+  - name: set_top_event
+    filter: "{{parsed.message.top_events | length > 0}}"
+
+stages:
+  set_common_fields:
+    actions:
+      - set:
+          event.start: "{{parsed.message.period.start}}"
+          event.end: "{{parsed.message.period.end}}"
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+          event.dataset: "{{parsed.message.event_type}}"
+          event.action: "{{parsed.message.event_type}}"
+          event.url: "{{parsed.message.period.url}}"
+          event.reference: "{{parsed.message.report.url}}"
+          event.risk_score: "{{parsed.message.score.value}}"
+          event.reason: "Singular activity on {{parsed.message.server.source_host}} during unit period {{parsed.message.period.label}}"
+
+          observer.vendor: "AUBE Security"
+          observer.product: "AUBE Core"
+          observer.version: "{{parsed.message.versions.core}}"
+
+          host.name: "{{parsed.message.server.source_host}}"
+          host.os.type: "{{parsed.message.server.type}}"
+
+          aube.schema_version: "{{parsed.message.schema_version}}"
+          # Sekoia sets event.id itself (one id per received event); the
+          # period's stable id lives here, shared by a confirmation and its withdrawal.
+          aube.event_uid: "{{parsed.message.event_uid}}"
+          aube.portal.version: "{{parsed.message.versions.portal}}"
+          aube.report.id: "{{parsed.message.report.id}}"
+          aube.job_run.id: "{{parsed.message.report.job_run_id}}"
+          aube.group: "{{parsed.message.group}}"
+          aube.server.name: "{{parsed.message.server.name}}"
+          aube.period.id: "{{parsed.message.period.id}}"
+          aube.period.label: "{{parsed.message.period.label}}"
+          aube.period.length_hours: "{{parsed.message.period.length_hours}}"
+          aube.score.rank: "{{parsed.message.score.rank}}"
+          aube.score.periods_flagged: "{{parsed.message.score.periods_flagged}}"
+          aube.score.selection_ratio: "{{parsed.message.score.selection_ratio}}"
+          aube.event_counts.irregular: "{{parsed.message.event_counts.irregular}}"
+          aube.event_counts.total: "{{parsed.message.event_counts.total}}"
+          aube.severity: "{{parsed.message.severity}}"
+          aube.evaluation.status: "{{parsed.message.evaluation.status}}"
+          aube.evaluation.classification: "{{parsed.message.evaluation.classification}}"
+          aube.evaluation.reviewed_by: "{{parsed.message.evaluation.reviewed_by}}"
+          aube.evaluation.reviewed_at: "{{parsed.message.evaluation.reviewed_at}}"
+          aube.evaluation.previous_status: "{{parsed.message.evaluation.previous_status}}"
+          aube.evaluation.history_id: "{{parsed.message.evaluation.history_id}}"
+          aube.redaction: "{{parsed.message.redaction}}"
+
+      # AUBE severity (highest CS.txt level among the period's events) ->
+      # ECS numeric severity.
+      - translate:
+        dictionary:
+          "critical": "100"
+          "high": "75"
+          "medium": "50"
+          "low": "25"
+          "info": "10"
+          "none": "0"
+        mapping:
+          parsed.message.severity: event.severity
+
+  # An analyst-confirmed anomaly is the alert; its time is the confirmation,
+  # so a late confirmation of an old period still alerts. The period itself
+  # is in event.start / event.end.
+  set_confirmed_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed.message.evaluation.reviewed_at or parsed.message.period.end or parsed.message.report.created_at}}"
+          event.kind: "alert"
+
+  # The analyst moved the period out of Confirmed; its time is that change.
+  set_withdrawn_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed.message.evaluation.reviewed_at or parsed.message.report.created_at}}"
+          event.kind: "event"
+
+  set_test_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed.message.report.created_at}}"
+          event.kind: "event"
+
+  # The most singular command of the period becomes the headline user and
+  # process, so rules and the Events page can pivot on them.
+  set_top_event:
+    actions:
+      - set:
+          user.name: "{{parsed.message.top_events[0].user}}"
+          related.user: "{{parsed.message.users}}"
+          process.name: "{{parsed.message.top_events[0].executable | basename}}"
+          process.command_line: "{{parsed.message.top_events[0].command_line}}"
+          aube.top_events: "{{parsed.message.top_events | to_json}}"
