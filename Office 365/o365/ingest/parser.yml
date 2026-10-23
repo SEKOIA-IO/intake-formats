@@ -616,17 +616,66 @@ stages:
           office365.exchange.mailbox_owner.upn: "{{json_event.message.MailboxOwnerUPN}}"
           office365.exchange.client_info_string: "{{json_event.message.ClientInfoString}}"
           office365.exchange.operation_count: "{{json_event.message.OperationCount}}"
+          office365.exchange.folder.ids: >
+            {%- set folder_ids = [] -%}
+            {%- for folder in json_event.message.Folders -%}
+              {%- set folder_id = folder.get("Id") -%}
+              {%- if folder_id -%}
+                {%- set _ = folder_ids.append(folder_id) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if folder_ids | length > 0 -%}{{ folder_ids }}{%- endif -%}
+          office365.exchange.email.ids: >
+            {%- set item_ids = [] -%}
+            {%- for folder in json_event.message.Folders -%}
+              {%- for item in folder["FolderItems"] -%}
+                {%- set item_id = item.get("Id") -%}
+                {%- if item_id -%}
+                  {%- set _ = item_ids.append(item_id) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {%- if item_ids | length > 0 -%}{{ item_ids }}{%- endif -%}
+          office365.exchange.email.internet_message_ids: >
+            {%- set internet_message_ids = [] -%}
+            {%- for folder in json_event.message.Folders -%}
+              {%- for item in folder["FolderItems"] -%}
+                {%- set internet_message_id = item.get("InternetMessageId") -%}
+                {%- if internet_message_id -%}
+                  {%- if internet_message_id.startswith("<") and internet_message_id.endswith(">") -%}
+                    {%- set internet_message_id = internet_message_id[1:-1] -%}
+                  {%- endif -%}
+                  {%- set _ = internet_message_ids.append(internet_message_id) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {%- if internet_message_ids | length > 0 -%}{{ internet_message_ids }}{%- endif -%}
+          office365.exchange.email.sizes: >
+            {%- set sizes = [] -%}
+            {%- for folder in json_event.message.Folders -%}
+              {%- for item in folder["FolderItems"] -%}
+                {%- set size = item.get("SizeInBytes") -%}
+                {%- if size != None -%}
+                  {%- set _ = sizes.append(size) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {%- if sizes | length > 0 -%}{{ sizes }}{%- endif -%}
           office365.exchange.email.subjects: >
             {%- set subjects = [] -%}
             {%- for folder in json_event.message.Folders -%}
               {%- for item in folder["FolderItems"] -%}
                 {%- set subj = item.get("Subject") -%}
                 {%- if subj -%}
-                  {%- set subjects = subjects.append(subj) -%}
+                  {%- set _ = subjects.append(subj) -%}
                 {%- endif -%}
               {%- endfor -%}
             {%- endfor -%}
             {%- if subjects | length > 0 -%}{{ subjects }}{%- endif -%}
+
+      - set:
+          office365.exchange.originating_server: "{{json_event.message.OriginatingServer.strip()}}"
+        filter: '{{json_event.message.get("OriginatingServer") not in [None, "", "<null>"]}}'
 
       - translate:
         dictionary:
