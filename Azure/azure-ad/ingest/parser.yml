@@ -36,16 +36,132 @@ pipeline:
     filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
   - name: read_message_properties
     filter: "{{ parsed_event.message.properties != null }}"
-  - name: read_message_properties_location_geoCoordinates
-    filter: "{{ parsed_event.message.properties != null and parsed_event.message.properties.location != null }}"
+  - name: set_ecs_host_fields
+  - name: set_ecs_network_fields
+  - name: set_ecs_related_fields
+  - name: set_ecs_source_fields
   - name: read_device_details
     filter: "{{ parsed_event.message.deviceDetail != null }}"
 
 stages:
+  set_ecs_host_fields:
+    actions:
+      - set:
+          host.hostname: "{{parsed_event.message.properties.deviceDetail.displayName}}"
+          host.id: "{{parsed_event.message.properties.deviceDetail.deviceId}}"
+          host.name: "{{parsed_event.message.properties.deviceDetail.displayName}}"
+          host.os.name: "{{parsed_event.message.deviceDetail.operatingSystem or parsed_event.message.properties.deviceDetail.operatingSystem}}"
+          host.os.type: "{{parsed_event.message.properties.deviceDetail.operatingSystem}}"
+        filter: "{{parsed_event.message.get('properties', {}).get('deviceDetail') != null}}"
+      - set:
+          host.hostname: "{{parsed_event.message.deviceDetail.displayName}}"
+          host.name: "{{parsed_event.message.deviceDetail.displayName}}"
+          host.os.name: "{{parsed_event.message.deviceDetail.operatingSystem}}"
+        filter: "{{parsed_event.message.deviceDetail != null and parsed_event.message.deviceDetail.displayName != null and parsed_event.message.get('properties', {}).get('deviceDetail') == null}}"
+      - set:
+          host.domain: "{{final.host.name}}"
+        filter: "{{final.host.name != null and '.' in final.host.name}}"
+
+  set_ecs_network_fields:
+    actions:
+      - set:
+          network.type: "ipv4"
+        filter: "{{parsed_event.message.ipAddress | is_ipaddress and ':' not in parsed_event.message.ipAddress}}"
+
+      - set:
+          network.type: "ipv6"
+        filter: "{{parsed_event.message.ipAddress | is_ipaddress and ':' in parsed_event.message.ipAddress}}"
+
+      - set:
+          network.type: "ipv4"
+        filter: "{{parsed_event.message.properties.ipAddress | is_ipaddress and ':' not in parsed_event.message.properties.ipAddress}}"
+
+      - set:
+          network.type: "ipv6"
+        filter: "{{parsed_event.message.properties.ipAddress | is_ipaddress and ':' in parsed_event.message.properties.ipAddress}}"
+
+      - set:
+          network.type: "ipv4"
+        filter: "{{parsed_event.message.callerIpAddress | is_ipaddress and ':' not in parsed_event.message.callerIpAddress}}"
+
+      - set:
+          network.type: "ipv6"
+        filter: "{{parsed_event.message.callerIpAddress | is_ipaddress and ':' in parsed_event.message.callerIpAddress}}"
+
+  set_ecs_related_fields:
+    actions:
+      - set:
+          related.ip: >
+            [
+            {%- set seen = namespace(values=[]) -%}
+            {%- for candidate in [parsed_event.message.ipAddress, parsed_event.message.properties.ipAddress, parsed_event.message.callerIpAddress] -%}
+              {%- if candidate is string and candidate | is_ipaddress and candidate not in seen.values -%}
+                {%- set seen.values = seen.values + [candidate] -%}
+                "{{candidate}}",
+              {%- endif -%}
+            {%- endfor -%}
+            ]
+        filter: "{{parsed_event.message.ipAddress | is_ipaddress or parsed_event.message.properties.ipAddress | is_ipaddress or parsed_event.message.callerIpAddress | is_ipaddress}}"
+
+      - set:
+          related.user: >
+            [
+            {%- set seen = namespace(values=[]) -%}
+            {%- for candidate in [parsed_event.message.properties.userId, parsed_event.message.userId, parsed_event.message.properties.userPrincipalName, parsed_event.message.userPrincipalName, parsed_event.message.identity] -%}
+              {%- if candidate is string and candidate | length > 0 and candidate not in seen.values -%}
+                {%- set seen.values = seen.values + [candidate] -%}
+                "{{candidate}}",
+              {%- endif -%}
+            {%- endfor -%}
+            ]
+        filter: "{{parsed_event.message.get('properties', {}).get('userId') != null or parsed_event.message.userId != null or parsed_event.message.get('properties', {}).get('userPrincipalName') != null or parsed_event.message.userPrincipalName != null or parsed_event.message.identity != null}}"
+
+  set_ecs_source_fields:
+    actions:
+      - set:
+          source.address: "{{parsed_event.message.ipAddress}}"
+        filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
+
+      - set:
+          source.address: "{{parsed_event.message.properties.ipAddress}}"
+        filter: "{{parsed_event.message.properties.ipAddress | is_ipaddress}}"
+
+      - set:
+          source.address: "{{parsed_event.message.callerIpAddress}}"
+        filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
+
+      - set:
+          source.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
+          source.geo.country_iso_code: "{{parsed_event.message.properties.location.countryOrRegion}}"
+          source.geo.region_name: "{{parsed_event.message.properties.location.state or parsed_event.message.properties.__UDI_RequiredFields_RegionScope}}"
+        filter: "{{parsed_event.message.get('properties', {}).get('location') != null}}"
+
+      - set:
+          source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
+        filter: "{{parsed_event.message.get('properties', {}).get('location', {}).get('geoCoordinates', {}) | length > 0 }}"
+
+      - set:
+          source.geo.name: "{{ parsed_event.message.properties.location}}"
+        filter: "{{ parsed_event.message.get('properties', {}).get('location') != null and parsed_event.message.properties.location is string}}"
+
+      # source.ip priority 3 (fallback): use top-level ipAddress when present
+      - set:
+          source.ip: "{{parsed_event.message.ipAddress}}"
+        filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
+
+      # source.ip priority 2 (fallback): use properties.ipAddress when present
+      - set:
+          source.ip: "{{parsed_event.message.properties.ipAddress}}"
+        filter: "{{parsed_event.message.properties.ipAddress | is_ipaddress}}"
+
+      # source.ip priority 1 (primary mapping): use callerIpAddress when it is a valid IP
+      - set:
+          source.ip: "{{parsed_event.message.callerIpAddress}}"
+        filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
+
   read_device_details:
     actions:
       - set:
-          host.os.name: "{{ parsed_event.message.deviceDetail.operatingSystem }}"
           user_agent.name: "{{ parsed_event.message.deviceDetail.browser }}"
 
   read_message_properties:
@@ -55,9 +171,6 @@ stages:
           device.id: "{{parsed_event.message.properties.C_DeviceId}}"
           event.reason: "{{ parsed_event.message.properties.riskType }}"
           error.code: "{{parsed_event.message.properties.status.errorCode}}"
-          host.id: "{{parsed_event.message.properties.deviceDetail.deviceId}}"
-          host.hostname: "{{parsed_event.message.properties.deviceDetail.displayName}}"
-          host.os.type: "{{parsed_event.message.properties.deviceDetail.operatingSystem}}"
           error.message: "{{parsed_event.message.properties.status.additionalDetails or parsed_event.message.properties.status.failureReason}}"
           user.full_name: "{{ parsed_event.message.properties.userDisplayName }}"
           user.email: "{{ parsed_event.message.properties.userPrincipalName }}"
@@ -94,6 +207,7 @@ stages:
           azuread.properties.userType: "{{parsed_event.message.properties.userType}}"
           azuread.properties.tokenIssuerType: "{{parsed_event.message.properties.tokenIssuerType}}"
           azuread.properties.incomingTokenType: "{{parsed_event.message.properties.incomingTokenType}}"
+          azuread.properties.ipAddress: "{{parsed_event.message.properties.ipAddress}}"
           azuread.properties.resourceId: "{{parsed_event.message.properties.resourceId}}"
           azuread.properties.servicePrincipalName: "{{parsed_event.message.properties.servicePrincipalName}}"
           azuread.properties.servicePrincipalId: "{{parsed_event.message.properties.servicePrincipalId}}"
@@ -137,20 +251,6 @@ stages:
             {%- for item in parsed_event.message.properties.authenticationProcessingDetails -%}
               {%- if item.key == 'Oauth Scope Info' -%}{{ item.value }}{%- endif -%}
             {%- endfor -%}
-
-  read_message_properties_location_geoCoordinates:
-    actions:
-      - set:
-          source.geo.name: "{{ parsed_event.message.properties.location}}"
-        filter: "{{ parsed_event.message.properties.location != null and parsed_event.message.properties.location is string}}"
-
-      - set:
-          source.geo.city_name: "{{ parsed_event.message.properties.location.city}}"
-          source.geo.region_name: "{{ parsed_event.message.properties.location.state or parsed_event.message.properties.__UDI_RequiredFields_RegionScope}}"
-
-      - set:
-          source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
-        filter: "{{ parsed_event.message.properties.location.geoCoordinates | length > 0 }}"
 
   azuread:
     actions:
@@ -231,10 +331,6 @@ stages:
             {%- endfor -%}
 
       - set:
-          source.ip: "{{parsed_event.message.ipAddress}}"
-        filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
-
-      - set:
           azuread.resourceId: "{{parsed_event.message.resourceId}}"
           azuread.operationName: "{{parsed_event.message.operationName}}"
           azuread.operationVersion: "{{parsed_event.message.operationVersion}}"
@@ -265,10 +361,6 @@ stages:
       - set:
           action.target: "user"
         filter: "{{parsed_event.message.userId != null}}"
-
-      - set:
-          source.ip: "{{parsed_event.message.callerIpAddress}}"
-        filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
 
       - set:
           azuread.callerIpAddress: "{{parsed_event.message.callerIpAddress}}"
