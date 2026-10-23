@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extend parsing of existing ECS fields:
   - `related.ip`: aggregate and deduplicate all valid source IP values seen in the event
   - `source.ip`: add a fallback to map `properties.ipAddress` when `callerIpAddress` is missing or invalid
+  - `user.name`: prioritize nested `properties.userPrincipalName` before display identity fallback
 - Split ECS mappings into dedicated parser stages sorted by ECS category:
   - `set_ecs_host_fields`
   - `set_ecs_network_fields`
