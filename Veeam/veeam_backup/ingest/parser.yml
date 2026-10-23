@@ -1,10 +1,22 @@
 name: veeam_backup
 pipeline:
+  - name: json_event
+    filter: "{{original.message.startswith('{')}}"
+    external:
+      name: json.parse-json
+  - name: parsed_transport_wrapper
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json_event.message.message if original.message.startswith('{') else original.message}}"
+        output_field: transport
+        pattern: "^(?:<%{NONNEGINT:priority}>%{NONNEGINT:version} %{TIMESTAMP_ISO8601:syslog_timestamp} %{HOSTNAME:syslog_hostname} %{DATA:syslog_application} - - )?(?:\\[origin %{GREEDYDATA:origin_block}\\] )?\\[%{GREEDYDATA:kv_payload}\\]$"
   - name: parsed_event
     external:
       name: kv.parse-kv
       properties:
-        input_field: "{{original.message[1:-1]}}"
+        input_field: "{{parsed_transport_wrapper.transport.kv_payload}}"
         value_sep: "="
   - name: parsed_date
     external:
@@ -69,8 +81,10 @@ stages:
               ["info"]
             {%- endif -%}
           observer.name: "{{parsed_event.message.ServerName}}"
+          observer.hostname: "{{parsed_event.message.VbrHostName}}"
           observer.product: "Veeam Backup & Replication"
           observer.vendor: "Veeam"
+          observer.version: "{{parsed_event.message.VbrVersion}}"
           user.domain: "{{parsed_user.user.domain}}"
           user.name: "{{parsed_user.user.name}}"
           veeam.credentials.id: "{{parsed_event.message.CredentialsId}}"
