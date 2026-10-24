@@ -36,6 +36,8 @@ pipeline:
     filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
   - name: read_message_properties
     filter: "{{ parsed_event.message.properties != null }}"
+  - name: read_service_principal_modified_properties
+    filter: "{{ parsed_event.message.properties != null and parsed_event.message.properties.targetResources != null and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list | length > 0 }}"
   - name: read_message_properties_location_geoCoordinates
     filter: "{{ parsed_event.message.properties != null and parsed_event.message.properties.location != null }}"
   - name: read_device_details
@@ -118,7 +120,7 @@ stages:
 
       - set:
           event.type: ["connection"]
-        filter: '{{ parsed_event.message.properties.activity == "signin" }}'
+        filter: '{{ parsed_event.message.properties.activity == "signin" and parsed_event.message.category != "UserRiskEvents" }}'
       - set:
           event.reason: "{{parsed_event.message.properties.status.failureReason}}"
         filter: "{{ parsed_event.message.properties.status != null }}"
@@ -128,6 +130,7 @@ stages:
           "SignInLogs": ["authentication"]
           "NonInteractiveUserSignInLogs": ["authentication"]
           "MicrosoftServicePrincipalSignInLogs": ["authentication"]
+          "UserRiskEvents": ["authentication"]
         mapping:
           parsed_event.message.category: event.category
         fallback: ["iam"]
@@ -151,6 +154,107 @@ stages:
       - set:
           source.geo.location: '{ "lon": "{{parsed_event.message.properties.location.geoCoordinates.longitude}}","lat": "{{parsed_event.message.properties.location.geoCoordinates.latitude}}" }'
         filter: "{{ parsed_event.message.properties.location.geoCoordinates | length > 0 }}"
+
+  read_service_principal_modified_properties:
+    actions:
+      - set:
+          azuread.properties.targetServicePrincipals: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            [
+            {%- for target in servicePrincipals -%}
+              {{ (target.displayName or target.id or '') | tojson }}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]
+          azuread.properties.targetServicePrincipalDisplayNames: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            [
+            {%- for target in servicePrincipals -%}
+              {{ (target.displayName or '') | tojson }}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]
+          azuread.properties.targetServicePrincipalIds: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            [
+            {%- for target in servicePrincipals -%}
+              {{ (target.id or '') | tojson }}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]
+        filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list | length > 1}}"
+
+      - set:
+          azuread.properties.targetServicePrincipalDisplayName: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {{ servicePrincipal.displayName }}
+          azuread.properties.targetServicePrincipalAppIdNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'ServicePrincipal.AppId' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleAssignmentCreatedDateTimeNewValue:
+            >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'AppRoleAssignment.CreatedDateTime' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleAssignmentLastModifiedDateTimeNewValue:
+            >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'AppRoleAssignment.LastModifiedDateTime' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleNewDisplayValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'AppRole.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleDisplayNameNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'AppRole.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleIdNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'AppRole.Id' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalAppRoleValueNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'AppRole.Value' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalDisplayNameNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'ServicePrincipal.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalNameNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'ServicePrincipal.Name' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalNamesNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'TargetId.ServicePrincipalNames' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+          azuread.properties.targetServicePrincipalObjectIdNewValue: >
+            {%- set servicePrincipals = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list -%}
+            {%- set servicePrincipal = (servicePrincipals | selectattr('modifiedProperties') | list | first) or (servicePrincipals | first) -%}
+            {%- for prop in servicePrincipal.modifiedProperties or [] -%}
+              {%- if prop.displayName == 'ServicePrincipal.ObjectID' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | list | length > 0}}"
 
   azuread:
     actions:
@@ -221,13 +325,6 @@ stages:
             {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | map(attribute = 'modifiedProperties') | list | first -%}
             {%- for prop in properties -%}
               {%- if prop.displayName == 'Group.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
-            {%- endfor -%}
-
-      - set:
-          azuread.properties.targetServicePrincipalAppRoleNewDisplayValue: >
-            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'ServicePrincipal') | map(attribute = 'modifiedProperties') | list | first -%}
-            {%- for prop in properties -%}
-              {%- if prop.displayName == 'AppRole.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
             {%- endfor -%}
 
       - set:
@@ -382,10 +479,6 @@ stages:
           azuread.properties.targetDevicePrincipalName: "{{parsed_event.message.properties.targetResources[0].devicePrincipalName}}"
           azuread.properties.targetDeviceDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
         filter: '{{ parsed_event.message.properties.targetResources|length == 1 and parsed_event.message.properties.targetResources[0].type == "Device"}}'
-      - set:
-          azuread.properties.targetServicePrincipalDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
-        filter: '{{ parsed_event.message.properties.targetResources|length > 0 and parsed_event.message.properties.targetResources[0].type == "ServicePrincipal"}}'
-
   log_type_authentication:
     actions:
       - set:
