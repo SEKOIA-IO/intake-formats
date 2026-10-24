@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2026-07-29
 
+### Added
+
+- Parse new custom fields from sign-in logs:
+  - `azure.entraid.properties.authenticationRequirement`, `azure.entraid.properties.authenticationDetails`
+  - `azure.entraid.properties.uniqueTokenIdentifier`, `azure.entraid.properties.crossTenantAccessType`
+  - `azure.entraid.properties.flaggedForReview`, `azure.entraid.properties.isTenantRestricted`, `azure.entraid.properties.riskEventTypes_v2`
+  - `azure.entraid.properties.network_location.network_type` and `azure.entraid.properties.network_location.network_names` from `networkLocationDetails`
+- Parse the Microsoft Entra Agent ID identity type into `azure.entraid.properties.initiatedBy.agentType` (audit logs)
+
 ### Fixed
 
 - Create a dedicated parser stage `set_actor_target_user_fields` to separate actor identity (`user.*`) from impacted target user identity (`user.target.*`) in `UserManagement` events
