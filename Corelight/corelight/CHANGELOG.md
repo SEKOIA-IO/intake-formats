@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse new ECS fields:
   - every log type: `observer.hostname`
   - `conn` and `conn_long`: `destination.as.number`, `destination.as.organization.name`, `destination.geo.city_name`, `destination.geo.country_iso_code`, `destination.geo.country_name`, `destination.mac`, `destination.packets`, `network.iana_number`, `source.as.number`, `source.as.organization.name`, `source.geo.city_name`, `source.geo.country_name`, `source.mac`, `source.packets`
-  - `dns`: `dns.header_flags`, `dns.id`, `dns.question.class`, `event.outcome`, `network.protocol`, `network.transport`
+  - `dns`: `dns.answers.ttl`, `dns.header_flags`, `dns.id`, `dns.question.class`, `event.outcome`, `network.protocol`, `network.transport`
   - `http`: `destination.domain`, `http.request.mime_type`, `http.request.referrer`, `http.response.mime_type`, `http.version`, `network.transport`, `source.user.name`
   - `ssl`: `destination.domain`, `event.outcome`, `network.transport`, `tls.client.issuer`, `tls.client.subject`, `tls.next_protocol`, `tls.resumed`, `tls.server.issuer`, `tls.server.subject`
   - `files`: `destination.ip`, `event.duration`, `file.name`, `network.protocol`, `source.ip`
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ldap`: `event.action`, `event.category`, `event.outcome`, `event.type`, `network.protocol`
   - `ldap_search`: `event.action`, `event.type`, `network.protocol`
   - `dce_rpc`: `event.action`, `event.type`, `network.protocol`
-  - `smtp`: `email.cc.address`, `email.from.address`, `email.message_id`, `email.origination_timestamp`, `email.reply_to.address`, `email.sender.address`, `email.subject`, `email.to.address`, `event.category`, `event.type`, `network.protocol`, `tls.established`, `user_agent.original`
+  - `smtp`: `email.cc.address`, `email.from.address`, `email.message_id`, `email.reply_to.address`, `email.sender.address`, `email.subject`, `email.to.address`, `event.category`, `event.type`, `network.protocol`, `tls.established`, `user_agent.original`
   - `smtp_links`: `event.category`, `event.type`, `network.protocol`, `url.domain`, `url.original`
   - `smb_files`: `event.action`, `event.category`, `event.type`, `file.accessed`, `file.created`, `file.ctime`, `file.directory`, `file.mtime`, `file.name`, `file.size`, `network.protocol`, `network.transport`
   - `smb_mapping`: `event.type`, `network.protocol`, `network.transport`

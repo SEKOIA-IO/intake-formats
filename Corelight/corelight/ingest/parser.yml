@@ -22,17 +22,6 @@ pipeline:
         format: null
         timezone: UTC
 
-  # The Date: header of a mail, verbatim (RFC 5322).
-  - name: parsed_smtp_date
-    filter: '{{json_event.message.get("_path") == "smtp" and json_event.message.get("date") != None}}'
-    external:
-      name: date.parse
-      properties:
-        input_field: '{{json_event.message.get("date")}}'
-        output_field: datetime
-        format: null
-        timezone: UTC
-
   # ---- routing per Corelight log type (Zeek "_path") ----
   - name: set_common_fields
   # conn_long.log has the same schema as conn.log: it is the periodic report
@@ -341,7 +330,7 @@ stages:
       - set:
           url.domain: '{{json_event.message.get("host")}}'
           destination.domain: '{{json_event.message.get("host")}}'
-        filter: '{{json_event.message.get("host") != None}}'
+        filter: '{{json_event.message.get("host") != None and "]" not in json_event.message.get("host")}}'
       - set:
           url.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
           destination.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
@@ -785,6 +774,11 @@ stages:
           user_agent.original: '{{json_event.message.get("user_agent")}}'
           corelight.smtp.rcptto: '{{json_event.message.get("rcptto")}}'
           tls.established: '{{json_event.message.get("tls")}}'
+          # The Date: header is kept as the sender wrote it rather than mapped
+          # onto email.origination_timestamp: date.parse rejects the whole event
+          # on a header it cannot read ("-", a trailing "(UTC)" comment, an
+          # impossible day), and malformed headers are common in unsolicited mail.
+          corelight.smtp.date: '{{json_event.message.get("date")}}'
           corelight.smtp.helo: '{{json_event.message.get("helo")}}'
           corelight.smtp.last_reply: '{{json_event.message.get("last_reply")}}'
           corelight.smtp.trans_depth: '{{json_event.message.get("trans_depth")}}'
@@ -801,9 +795,6 @@ stages:
       - set:
           event.category: ["email"]
           event.type: ["info"]
-      - set:
-          email.origination_timestamp: "{{parsed_smtp_date.datetime}}"
-        filter: '{{json_event.message.get("date") != None}}'
 
   # ----------------------------------------------------------------
   # smtp_links.log (one event per URL found in a message body)
