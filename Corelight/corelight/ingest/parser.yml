@@ -6,7 +6,9 @@ pipeline:
       properties:
         # Part of the exports wrap the event in a one-element JSON array. The
         # brackets are stripped before parsing so that the rest of the pipeline
-        # always sees an object.
+        # always sees an object. An array holding several events is not valid
+        # JSON once stripped, so such a payload is rejected as a whole: the
+        # sensor must export one event per record.
         input_field: '{{ original.message | trim | trim("[]") }}'
         output_field: message
 
@@ -16,6 +18,17 @@ pipeline:
       properties:
         # Corelight Zeek logs carry the event time in "ts"; the export adds "_write_ts".
         input_field: '{{json_event.message.get("ts") or json_event.message.get("_write_ts")}}'
+        output_field: datetime
+        format: null
+        timezone: UTC
+
+  # The Date: header of a mail, verbatim (RFC 5322).
+  - name: parsed_smtp_date
+    filter: '{{json_event.message.get("_path") == "smtp" and json_event.message.get("date") != None}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: '{{json_event.message.get("date")}}'
         output_field: datetime
         format: null
         timezone: UTC
@@ -261,7 +274,6 @@ stages:
           corelight.dns.rcode: '{{json_event.message.get("rcode")}}'
           corelight.dns.rejected: '{{json_event.message.get("rejected")}}'
           corelight.dns.z: '{{json_event.message.get("Z")}}'
-          corelight.dns.ttls: '{{json_event.message.get("TTLs")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       # ECS models the DNS header bits as a list of the flags that are set.
       - set:
@@ -273,11 +285,14 @@ stages:
                 {% if json_event.message.get("RA") %}"RA",{% endif %}
             ]
         filter: '{{json_event.message.get("AA") or json_event.message.get("TC") or json_event.message.get("RD") or json_event.message.get("RA")}}'
+      # Zeek reports the answers and their TTLs as two parallel lists; ECS
+      # holds each TTL next to the answer it belongs to.
       - set:
           dns.answers: >
             [
+                {% set ttls = json_event.message.get("TTLs") or [] %}
                 {% for item in json_event.message.get("answers") %}
-                {"data": "{{item}}"},
+                {"data": {{item | tojson}}{% if loop.index0 < ttls | length %}, "ttl": {{ttls[loop.index0] | int}}{% endif %}},
                 {% endfor %}
             ]
         filter: '{{json_event.message.get("answers") != None}}'
@@ -330,7 +345,9 @@ stages:
       - set:
           url.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
           destination.domain: '{{json_event.message.get("dest_host").split(":")[0]}}'
-        filter: '{{json_event.message.get("host") == None and json_event.message.get("dest_host") != None}}'
+        filter: '{{json_event.message.get("host") == None and json_event.message.get("dest_host") != None and "]" not in json_event.message.get("dest_host")}}'
+      # A bracketed IPv6 literal ("[2001:db8::1]:8080") names no domain: the
+      # address is already in destination.ip, so no domain is set from it.
       # Zeek reports the MIME types of the bodies as sets, one entry per file
       # carried; ECS holds a single type per direction.
       - set:
@@ -493,7 +510,7 @@ stages:
           threat.indicator.type: '{{json_event.message.get("seen.indicator_type")}}'
           corelight.intel.where: '{{json_event.message.get("seen.where")}}'
           corelight.intel.node: '{{json_event.message.get("seen.node")}}'
-          corelight.intel.sources: '{{json_event.message.get("sources")}}'
+          threat.indicator.provider: '{{json_event.message.get("sources")}}'
           # The intel item categories the indicator matched.
           corelight.intel.matched: '{{json_event.message.get("matched")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
@@ -575,12 +592,15 @@ stages:
         filter: '{{json_event.message.get("direction") != None}}'
       # auth_success is only present once the SSH authentication has been observed;
       # the log is also written for sessions where Zeek could not determine it.
+      # ECS pairs the authentication category with the start of a logon attempt.
       - set:
           event.category: ["network", "authentication"]
+          event.type: ["connection", "protocol", "start"]
           event.outcome: "success"
         filter: '{{json_event.message.get("auth_success") == True}}'
       - set:
           event.category: ["network", "authentication"]
+          event.type: ["connection", "protocol", "start"]
           event.outcome: "failure"
         filter: '{{json_event.message.get("auth_success") == False}}'
       # remote_location.* geolocates the endpoint outside the monitored network;
@@ -616,12 +636,13 @@ stages:
           corelight.kerberos.from: '{{json_event.message.get("from")}}'
           corelight.kerberos.auth_ticket: '{{json_event.message.get("auth_ticket")}}'
           corelight.kerberos.new_ticket: '{{json_event.message.get("new_ticket")}}'
-          corelight.kerberos.client_cert_subject: '{{json_event.message.get("client_cert_subject")}}'
-          corelight.kerberos.server_cert_subject: '{{json_event.message.get("server_cert_subject")}}'
+          # PKINIT: the certificates the client and the KDC authenticated with.
+          tls.client.x509.subject.distinguished_name: '{{json_event.message.get("client_cert_subject")}}'
+          tls.server.x509.subject.distinguished_name: '{{json_event.message.get("server_cert_subject")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.category: ["network", "authentication"]
-          event.type: ["connection", "protocol"]
+          event.type: ["connection", "protocol", "start"]
       # Zeek reports the principal as "name/realm"; ECS keeps the two apart.
       - set:
           source.user.name: '{{json_event.message.get("client").split("/")[0]}}'
@@ -637,10 +658,10 @@ stages:
           event.outcome: "failure"
         filter: '{{json_event.message.get("success") == False}}'
       - set:
-          corelight.kerberos.error_message: '{{json_event.message.get("error_msg")}}'
+          error.message: '{{json_event.message.get("error_msg")}}'
         filter: '{{json_event.message.get("error_msg") != None}}'
       - set:
-          corelight.kerberos.error_code: '{{json_event.message.get("error_code")}}'
+          error.code: '{{json_event.message.get("error_code")}}'
         filter: '{{json_event.message.get("error_code") != None}}'
 
   # ----------------------------------------------------------------
@@ -654,13 +675,20 @@ stages:
           source.user.domain: '{{json_event.message.get("domainname")}}'
           source.domain: '{{json_event.message.get("hostname")}}'
           network.transport: "tcp"
-          destination.domain: '{{json_event.message.get("server_nb_computer_name")}}'
-          corelight.ntlm.server_dns_computer_name: '{{json_event.message.get("server_dns_computer_name")}}'
+          corelight.ntlm.server_nb_computer_name: '{{json_event.message.get("server_nb_computer_name")}}'
           corelight.ntlm.server_tree_name: '{{json_event.message.get("server_tree_name")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.category: ["network", "authentication"]
-          event.type: ["connection", "protocol"]
+          event.type: ["connection", "protocol", "start"]
+      # The server announces both its DNS and its NetBIOS name; the FQDN is the
+      # one that matches destination.domain elsewhere, NetBIOS the fallback.
+      - set:
+          destination.domain: '{{json_event.message.get("server_dns_computer_name")}}'
+        filter: '{{json_event.message.get("server_dns_computer_name") != None}}'
+      - set:
+          destination.domain: '{{json_event.message.get("server_nb_computer_name")}}'
+        filter: '{{json_event.message.get("server_dns_computer_name") == None and json_event.message.get("server_nb_computer_name") != None}}'
       - set:
           event.outcome: "success"
         filter: '{{json_event.message.get("success") == True}}'
@@ -689,6 +717,7 @@ stages:
       # are directory operations.
       - set:
           event.category: ["network", "authentication"]
+          event.type: ["connection", "protocol", "start"]
         filter: '{{json_event.message.get("opcode") != None and "bind" in json_event.message.get("opcode")}}'
       - set:
           event.outcome: "success"
@@ -756,9 +785,6 @@ stages:
           user_agent.original: '{{json_event.message.get("user_agent")}}'
           corelight.smtp.rcptto: '{{json_event.message.get("rcptto")}}'
           tls.established: '{{json_event.message.get("tls")}}'
-          # Zeek emits the Date header verbatim (RFC 5322), not an ISO timestamp,
-          # so it is kept as text rather than mapped onto a date field.
-          corelight.smtp.date: '{{json_event.message.get("date")}}'
           corelight.smtp.helo: '{{json_event.message.get("helo")}}'
           corelight.smtp.last_reply: '{{json_event.message.get("last_reply")}}'
           corelight.smtp.trans_depth: '{{json_event.message.get("trans_depth")}}'
@@ -775,6 +801,9 @@ stages:
       - set:
           event.category: ["email"]
           event.type: ["info"]
+      - set:
+          email.origination_timestamp: "{{parsed_smtp_date.datetime}}"
+        filter: '{{json_event.message.get("date") != None}}'
 
   # ----------------------------------------------------------------
   # smtp_links.log (one event per URL found in a message body)
@@ -850,8 +879,9 @@ stages:
 
   # ----------------------------------------------------------------
   # ftp.log
-  # Note: Zeek also logs the plaintext password. It is deliberately not
-  # mapped, to keep credentials out of the parsed event.
+  # Note: Zeek also logs the plaintext password. It is not mapped onto any
+  # field, so it cannot be searched or aggregated; it does remain in the raw
+  # event kept in `message`.
   # ----------------------------------------------------------------
   set_ftp_fields:
     actions:
@@ -886,44 +916,47 @@ stages:
   # ----------------------------------------------------------------
   # x509.log
   # Note: this log carries no connection tuple; it is joined to ssl.log
-  # through the certificate fingerprint.
+  # through the certificate fingerprint. The certificate is the file the
+  # log describes, so it is mapped onto file.x509 next to file.hash.
   # ----------------------------------------------------------------
   set_x509_fields:
     actions:
       - set:
-          x509.version_number: '{{json_event.message.get("certificate.version")}}'
-          x509.serial_number: '{{json_event.message.get("certificate.serial")}}'
-          x509.subject.distinguished_name: '{{json_event.message.get("certificate.subject")}}'
-          x509.issuer.distinguished_name: '{{json_event.message.get("certificate.issuer")}}'
-          x509.not_before: '{{json_event.message.get("certificate.not_valid_before")}}'
-          x509.not_after: '{{json_event.message.get("certificate.not_valid_after")}}'
-          x509.public_key_algorithm: '{{json_event.message.get("certificate.key_alg")}}'
-          x509.public_key_size: '{{json_event.message.get("certificate.key_length")}}'
-          x509.public_key_exponent: '{{json_event.message.get("certificate.exponent")}}'
-          x509.signature_algorithm: '{{json_event.message.get("certificate.sig_alg")}}'
-          x509.alternative_names: '{{json_event.message.get("san.dns")}}'
-          corelight.x509.san_email: '{{json_event.message.get("san.email")}}'
-          corelight.x509.san_ip: '{{json_event.message.get("san.ip")}}'
-          corelight.x509.san_uri: '{{json_event.message.get("san.uri")}}'
-          corelight.x509.basic_constraints_path_length: '{{json_event.message.get("basic_constraints.path_length")}}'
+          file.x509.version_number: '{{json_event.message.get("certificate.version")}}'
+          file.x509.serial_number: '{{json_event.message.get("certificate.serial")}}'
+          file.x509.subject.distinguished_name: '{{json_event.message.get("certificate.subject")}}'
+          file.x509.issuer.distinguished_name: '{{json_event.message.get("certificate.issuer")}}'
+          file.x509.not_before: '{{json_event.message.get("certificate.not_valid_before")}}'
+          file.x509.not_after: '{{json_event.message.get("certificate.not_valid_after")}}'
+          file.x509.public_key_algorithm: '{{json_event.message.get("certificate.key_alg")}}'
+          file.x509.public_key_size: '{{json_event.message.get("certificate.key_length")}}'
+          file.x509.public_key_exponent: '{{json_event.message.get("certificate.exponent")}}'
+          file.x509.public_key_curve: '{{json_event.message.get("certificate.curve")}}'
+          file.x509.signature_algorithm: '{{json_event.message.get("certificate.sig_alg")}}'
           file.hash.sha256: '{{json_event.message.get("fingerprint")}}'
           corelight.x509.key_type: '{{json_event.message.get("certificate.key_type")}}'
-          corelight.x509.curve: '{{json_event.message.get("certificate.curve")}}'
           corelight.x509.basic_constraints_ca: '{{json_event.message.get("basic_constraints.ca")}}'
+          corelight.x509.basic_constraints_path_length: '{{json_event.message.get("basic_constraints.path_length")}}'
           corelight.x509.client_cert: '{{json_event.message.get("client_cert")}}'
           corelight.x509.host_cert: '{{json_event.message.get("host_cert")}}'
       - set:
+          event.category: ["file"]
           event.type: ["info"]
+      # Zeek splits the subject alternative names by kind; ECS holds them in a
+      # single list.
+      - set:
+          file.x509.alternative_names: '{{(json_event.message.get("san.dns") or []) + (json_event.message.get("san.ip") or []) + (json_event.message.get("san.email") or []) + (json_event.message.get("san.uri") or [])}}'
+        filter: '{{((json_event.message.get("san.dns") or []) + (json_event.message.get("san.ip") or []) + (json_event.message.get("san.email") or []) + (json_event.message.get("san.uri") or [])) | length > 0}}'
 
   # ----------------------------------------------------------------
   # pe.log (portable executable metadata)
-  # Note: Zeek exposes none of the fields ECS defines under file.pe
-  # (imphash, company, product), so everything stays namespaced.
+  # Note: the machine type is the one header field ECS defines under file.pe;
+  # the rest of the PE header Zeek reports stays namespaced.
   # ----------------------------------------------------------------
   set_pe_fields:
     actions:
       - set:
-          corelight.pe.machine: '{{json_event.message.get("machine")}}'
+          file.pe.architecture: '{{json_event.message.get("machine")}}'
           corelight.pe.compile_ts: '{{json_event.message.get("compile_ts")}}'
           corelight.pe.os: '{{json_event.message.get("os")}}'
           corelight.pe.subsystem: '{{json_event.message.get("subsystem")}}'
@@ -1192,8 +1225,9 @@ stages:
           destination.ip: '{{json_event.message.get("resp_h")}}'
           tls.client.server_name: '{{json_event.message.get("sni")}}'
           corelight.encrypted_dns.match: '{{json_event.message.get("match")}}'
-          corelight.encrypted_dns.cert_cn: '{{json_event.message.get("cert.cn")}}'
-          corelight.encrypted_dns.cert_sans: '{{json_event.message.get("cert.sans")}}'
+          # The certificate the resolver presented.
+          tls.server.x509.subject.common_name: '{{json_event.message.get("cert.cn")}}'
+          tls.server.x509.alternative_names: '{{json_event.message.get("cert.sans")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
           event.category: ["network", "intrusion_detection"]
@@ -1201,8 +1235,6 @@ stages:
 
   # ----------------------------------------------------------------
   # software.log
-  # Note: Zeek reports the version as separate components. They are kept
-  # as such rather than recomposed into a single version string.
   # ----------------------------------------------------------------
   set_software_fields:
     actions:
@@ -1213,13 +1245,13 @@ stages:
           host.ip: '{{json_event.message.get("host_header")}}'
           corelight.software.host: '{{json_event.message.get("host_header")}}'
           corelight.software.port: '{{json_event.message.get("host_p")}}'
-          corelight.software.version.major: '{{json_event.message.get("version.major")}}'
-          corelight.software.version.minor: '{{json_event.message.get("version.minor")}}'
-          corelight.software.version.minor2: '{{json_event.message.get("version.minor2")}}'
-          corelight.software.version.minor3: '{{json_event.message.get("version.minor3")}}'
-          corelight.software.version.addl: '{{json_event.message.get("version.addl")}}'
       - set:
           event.type: ["info"]
+      # Zeek reports the version as numbered components; ECS holds the dotted
+      # string. The free-form suffix (version.addl) stays in unparsed_version.
+      - set:
+          package.version: '{{[json_event.message.get("version.major"), json_event.message.get("version.minor"), json_event.message.get("version.minor2"), json_event.message.get("version.minor3")] | select("ne", None) | join(".")}}'
+        filter: '{{json_event.message.get("version.major") != None}}'
       - set:
           url.original: '{{json_event.message.get("url")}}'
         filter: '{{json_event.message.get("url") != None}}'
@@ -1430,9 +1462,9 @@ stages:
           destination.port: '{{json_event.message.get("port")}}'
           network.transport: '{{json_event.message.get("protocol")}}'
           file.hash.sha1: '{{json_event.message.get("hash")}}'
-          x509.subject.distinguished_name: '{{json_event.message.get("subject")}}'
-          x509.issuer.distinguished_name: '{{json_event.message.get("issuer_subject")}}'
-          x509.serial_number: '{{json_event.message.get("serial")}}'
+          file.x509.subject.distinguished_name: '{{json_event.message.get("subject")}}'
+          file.x509.issuer.distinguished_name: '{{json_event.message.get("issuer_subject")}}'
+          file.x509.serial_number: '{{json_event.message.get("serial")}}'
           corelight.known.num_conns: '{{json_event.message.get("num_conns")}}'
           corelight.known.num_instances: '{{json_event.message.get("num_instances")}}'
           corelight.known.annotations: '{{json_event.message.get("annotations")}}'
@@ -1724,7 +1756,7 @@ stages:
           network.transport: '{{json_event.message.get("proto")}}'
           corelight.analyzer.kind: '{{json_event.message.get("analyzer_kind")}}'
           corelight.analyzer.name: '{{json_event.message.get("analyzer_name")}}'
-          corelight.analyzer.failure_reason: '{{json_event.message.get("failure_reason")}}'
+          error.message: '{{json_event.message.get("failure_reason")}}'
           corelight.analyzer.failure_data: '{{json_event.message.get("failure_data")}}'
           corelight.uid: '{{json_event.message.get("uid")}}'
       - set:
