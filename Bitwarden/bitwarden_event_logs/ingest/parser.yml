@@ -7,12 +7,20 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  # HEC wraps the event; public API events are also accepted at the root.
+  - name: event_payload
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{(parsed_event.message.event if parsed_event.message.event is mapping else parsed_event.message) | to_json}}"
+        output_field: message
+
   - name: parsed_date
-    filter: "{{parsed_event.message.date != null}}"
+    filter: '{{event_payload.message.date not in [none, ""]}}'
     external:
       name: date.parse
       properties:
-        input_field: "{{parsed_event.message.date}}"
+        input_field: "{{event_payload.message.date}}"
         output_field: timestamp
 
   - name: set_common_fields
@@ -39,110 +47,155 @@ stages:
         filter: "{{parsed_date.timestamp != null}}"
 
       - set:
-          event.code: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) | string}}"
+          event.code: "{{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) | string}}"
         filter: >-
-          {{(parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) is not none}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | string).isdigit()}}
 
       - set:
-          event.reason: "{{parsed_event.message.message}}"
-        filter: "{{parsed_event.message.message != null}}"
+          event.reason: "{{event_payload.message.message}}"
+        filter: '{{event_payload.message.message not in [none, ""]}}'
 
       - set:
-          user.id: "{{parsed_event.message.actingUserId}}"
-        filter: "{{parsed_event.message.actingUserId != null}}"
+          user.id: "{{event_payload.message.actingUserId}}"
+        filter: '{{event_payload.message.actingUserId not in [none, ""]}}'
 
       - set:
-          user.name: "{{parsed_event.message.actingUserName}}"
-        filter: "{{parsed_event.message.actingUserName != null}}"
+          user.name: "{{event_payload.message.actingUserName}}"
+          user.full_name: "{{event_payload.message.actingUserName}}"
+        filter: '{{event_payload.message.actingUserName not in [none, ""]}}'
 
       - set:
-          user.email: "{{parsed_event.message.actingUserEmail}}"
-        filter: "{{parsed_event.message.actingUserEmail != null}}"
+          user.email: "{{event_payload.message.actingUserEmail}}"
+        filter: '{{event_payload.message.actingUserEmail not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.acting_user.type: "{{parsed_event.message.actingUserType}}"
-        filter: "{{parsed_event.message.actingUserType != null}}"
+          bitwarden.password_manager.acting_user.type: "{{event_payload.message.actingUserType}}"
+        filter: '{{event_payload.message.actingUserType not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.member.id: "{{parsed_event.message.memberId}}"
-        filter: "{{parsed_event.message.memberId != null}}"
+          bitwarden.password_manager.organization_user.id: "{{event_payload.message.organizationUserId}}"
+        filter: '{{event_payload.message.organizationUserId not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.organization_user.id: "{{parsed_event.message.organizationUserId}}"
-        filter: "{{parsed_event.message.organizationUserId != null}}"
+          user.target.id: "{{event_payload.message.userId}}"
+        filter: '{{event_payload.message.userId not in [none, ""]}}'
 
       - set:
-          user.target.id: "{{parsed_event.message.userId}}"
-          user.target.name: "{{parsed_event.message.userName}}"
-          user.target.email: "{{parsed_event.message.userEmail}}"
-          bitwarden.password_manager.user.type: "{{parsed_event.message.userType}}"
-        filter: "{{parsed_event.message.userId != null or parsed_event.message.userName != null or parsed_event.message.userEmail != null or parsed_event.message.userType != null}}"
+          user.target.name: "{{event_payload.message.userName}}"
+        filter: '{{event_payload.message.userName not in [none, ""]}}'
 
       - set:
-          source.ip: "{{parsed_event.message.ipAddress}}"
-          source.address: "{{parsed_event.message.ipAddress}}"
-        filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
+          user.target.email: "{{event_payload.message.userEmail}}"
+        filter: '{{event_payload.message.userEmail not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.device.type_id: "{{parsed_event.message.device}}"
-        filter: "{{parsed_event.message.device != null}}"
+          bitwarden.password_manager.user.type: "{{event_payload.message.userType}}"
+        filter: '{{event_payload.message.userType not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.device.type_id: "{{parsed_event.message.deviceTypeId}}"
-        filter: "{{parsed_event.message.deviceTypeId != null}}"
+          user.target.id: "{{event_payload.message.memberId}}"
+        filter: '{{event_payload.message.memberId not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.device.type_name: "{{parsed_event.message.deviceType}}"
-        filter: "{{parsed_event.message.deviceType != null}}"
+          source.ip: "{{event_payload.message.ipAddress}}"
+          source.address: "{{event_payload.message.ipAddress}}"
+        filter: "{{event_payload.message.ipAddress | is_ipaddress}}"
 
       - set:
-          bitwarden.password_manager.item.id: "{{parsed_event.message.itemId}}"
-        filter: "{{parsed_event.message.itemId != null}}"
+          bitwarden.password_manager.device.type_id: "{{event_payload.message.device}}"
+        filter: '{{event_payload.message.device not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.item.id: "{{parsed_event.message.cipherId}}"
-        filter: >-
-          {{parsed_event.message.cipherId != null and ((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) >= 1100 and ((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) <= 1118}}
+          bitwarden.password_manager.device.type_id: "{{event_payload.message.deviceTypeId}}"
+        filter: '{{event_payload.message.deviceTypeId not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.collection.id: "{{parsed_event.message.collectionId}}"
-        filter: "{{parsed_event.message.collectionId != null}}"
+          bitwarden.password_manager.device.type_name: "{{event_payload.message.deviceType}}"
+        filter: '{{event_payload.message.deviceType not in [none, ""]}}'
 
       - set:
-          group.id: "{{parsed_event.message.groupId}}"
-        filter: "{{parsed_event.message.groupId != null}}"
+          bitwarden.password_manager.item.id: "{{event_payload.message.itemId}}"
+        filter: '{{event_payload.message.itemId not in [none, ""]}}'
 
       - set:
-          group.name: "{{parsed_event.message.groupName}}"
-        filter: "{{parsed_event.message.groupName != null}}"
+          bitwarden.password_manager.collection.id: "{{event_payload.message.collectionId}}"
+        filter: '{{event_payload.message.collectionId not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.policy.id: "{{parsed_event.message.policyId}}"
-        filter: "{{parsed_event.message.policyId != null}}"
+          group.id: "{{event_payload.message.groupId}}"
+        filter: '{{event_payload.message.groupId not in [none, ""]}}'
 
       - set:
-          organization.id: "{{parsed_event.message.organizationId}}"
-        filter: "{{parsed_event.message.organizationId != null}}"
+          group.name: "{{event_payload.message.groupName}}"
+        filter: '{{event_payload.message.groupName not in [none, ""]}}'
 
       - set:
-          organization.name: "{{parsed_event.message.organizationName}}"
-        filter: "{{parsed_event.message.organizationName != null}}"
+          bitwarden.password_manager.policy.id: "{{event_payload.message.policyId}}"
+        filter: '{{event_payload.message.policyId not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.domain.name: "{{parsed_event.message.domainName}}"
-        filter: "{{parsed_event.message.domainName != null}}"
+          organization.id: "{{event_payload.message.organizationId}}"
+        filter: '{{event_payload.message.organizationId not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.secret.id: "{{parsed_event.message.secretId}}"
-        filter: "{{parsed_event.message.secretId != null}}"
+          organization.name: "{{event_payload.message.organizationName}}"
+        filter: '{{event_payload.message.organizationName not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.project.id: "{{parsed_event.message.projectId}}"
-        filter: "{{parsed_event.message.projectId != null}}"
+          bitwarden.password_manager.domain.name: "{{event_payload.message.domainName}}"
+        filter: '{{event_payload.message.domainName not in [none, ""]}}'
 
       - set:
-          bitwarden.password_manager.service_account.id: "{{parsed_event.message.serviceAccountId}}"
-        filter: "{{parsed_event.message.serviceAccountId != null}}"
+          bitwarden.password_manager.secret.id: "{{event_payload.message.secretId}}"
+        filter: '{{event_payload.message.secretId not in [none, ""]}}'
+
+      - set:
+          bitwarden.password_manager.project.id: "{{event_payload.message.projectId}}"
+        filter: '{{event_payload.message.projectId not in [none, ""]}}'
+
+      - set:
+          bitwarden.password_manager.service_account.id: "{{event_payload.message.serviceAccountId}}"
+        filter: '{{event_payload.message.serviceAccountId not in [none, ""]}}'
+
+      - set:
+          user.name: "{{((event_payload.message.get('enrichment_details') or {}).get('actingUser') or {}).get('name')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''actingUser'') or {}).get(''name'') not in [none, ""]}}'
+
+      - set:
+          user.full_name: "{{((event_payload.message.get('enrichment_details') or {}).get('actingUser') or {}).get('name')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''actingUser'') or {}).get(''name'') not in [none, ""]}}'
+
+      - set:
+          user.email: "{{((event_payload.message.get('enrichment_details') or {}).get('actingUser') or {}).get('email')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''actingUser'') or {}).get(''email'') not in [none, ""]}}'
+
+      - set:
+          bitwarden.password_manager.acting_user.type: "{{((event_payload.message.get('enrichment_details') or {}).get('actingUser') or {}).get('type')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''actingUser'') or {}).get(''type'') not in [none, ""]}}'
+
+      - set:
+          user.target.name: "{{((event_payload.message.get('enrichment_details') or {}).get('member') or {}).get('name')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''member'') or {}).get(''name'') not in [none, ""]}}'
+
+      - set:
+          user.target.email: "{{((event_payload.message.get('enrichment_details') or {}).get('member') or {}).get('email')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''member'') or {}).get(''email'') not in [none, ""]}}'
+
+      - set:
+          bitwarden.password_manager.user.type: "{{((event_payload.message.get('enrichment_details') or {}).get('member') or {}).get('type')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''member'') or {}).get(''type'') not in [none, ""]}}'
+
+      - set:
+          group.name: "{{((event_payload.message.get('enrichment_details') or {}).get('group') or {}).get('name')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''group'') or {}).get(''name'') not in [none, ""]}}'
+
+      - set:
+          organization.name: "{{((event_payload.message.get('enrichment_details') or {}).get('organization') or {}).get('name')}}"
+        filter: '{{((event_payload.message.get(''enrichment_details'') or {}).get(''organization'') or {}).get(''name'') not in [none, ""]}}'
+
+      - set:
+          bitwarden.password_manager.device.type_name: "{{event_payload.message.deviceName}}"
+        filter: '{{event_payload.message.deviceName not in [none, ""]}}'
 
   set_action_from_type:
     actions:
@@ -171,15 +224,15 @@ stages:
               1107: 'cipher_viewed',
               1108: 'cipher_viewed_password',
               1109: 'cipher_viewed_hidden_field',
-              1110: 'cipher_viewed_totp',
+              1110: 'cipher_viewed_card_code',
               1111: 'cipher_copied_password',
               1112: 'cipher_copied_hidden_field',
-              1113: 'cipher_copied_totp',
+              1113: 'cipher_copied_card_code',
               1114: 'cipher_autofilled',
               1115: 'cipher_sent_to_trash',
               1116: 'cipher_restored',
               1117: 'cipher_viewed_card_number',
-              1118: 'cipher_viewed_card_security_code',
+              1118: 'cipher_viewed_totp_seed',
               1300: 'collection_created',
               1301: 'collection_edited',
               1302: 'collection_deleted',
@@ -205,9 +258,9 @@ stages:
               1516: 'organization_user_left',
               1517: 'organization_user_automatically_confirmed',
               1518: 'organization_user_self_revoked',
-              1519: 'organization_user_account_recovery_two_step_initiated',
-              1520: 'organization_user_account_recovery_admin_reset',
-              1521: 'organization_user_account_recovery_password_set',
+              1519: 'organization_user_two_step_reset_by_admin',
+              1520: 'organization_user_revoked_two_step_non_compliance',
+              1521: 'organization_user_revoked_single_org_non_compliance',
               1522: 'organization_vault_banner_clicked',
               1523: 'organization_staged_user_added',
               1524: 'organization_member_accepted_invite_link',
@@ -222,6 +275,25 @@ stages:
               1607: 'organization_disabled_key_connector',
               1608: 'organization_families_sponsorships_synced',
               1609: 'organization_collection_management_setting_modified',
+              1610: 'Organization_CollectionManagement_LimitCollectionCreationEnabled',
+              1611: 'Organization_CollectionManagement_LimitCollectionCreationDisabled',
+              1612: 'Organization_CollectionManagement_LimitCollectionDeletionEnabled',
+              1613: 'Organization_CollectionManagement_LimitCollectionDeletionDisabled',
+              1614: 'Organization_CollectionManagement_LimitItemDeletionEnabled',
+              1615: 'Organization_CollectionManagement_LimitItemDeletionDisabled',
+              1616: 'Organization_CollectionManagement_AllowAdminAccessToAllCollectionItemsEnabled',
+              1617: 'Organization_CollectionManagement_AllowAdminAccessToAllCollectionItemsDisabled',
+              1618: 'Organization_ItemOrganization_Accepted',
+              1619: 'Organization_ItemOrganization_Declined',
+              1620: 'Organization_AutoConfirmEnabled_Admin',
+              1621: 'Organization_AutoConfirmDisabled_Admin',
+              1622: 'Organization_AutoConfirmEnabled_Portal',
+              1623: 'Organization_AutoConfirmDisabled_Portal',
+              1624: 'Organization_InviteLinkCreated',
+              1625: 'Organization_InviteLinkDomainsEdited',
+              1626: 'Organization_InviteLinkDeleted',
+              1627: 'Organization_InviteLinkClientCopied',
+              1628: 'Organization_InviteLinkRefreshed',
               1700: 'policy_modified',
               2000: 'domain_added',
               2001: 'domain_removed',
@@ -255,87 +327,97 @@ stages:
               2510: 'send_text_accessed',
               2511: 'send_file_accessed'
             } -%}
-            {%- set raw_type = parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId') -%}
-            {%- if raw_type is none -%}
+            {%- set raw_type = event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId') -%}
+            {%- if not (raw_type | string).isdigit() -%}
             bitwarden_event_unknown
             {%- else -%}
             {%- set event_type = raw_type | int -%}
             {{ action_map.get(event_type, 'bitwarden_event_' ~ (event_type | string)) }}
             {%- endif -%}
 
+      - set:
+          event.action: "{{event_payload.message.typeName}}"
+        filter: '{{event_payload.message.typeName not in [none, ""]}}'
+
   set_taxonomy_and_product:
     actions:
+      - set:
+          event.category: ["file"]
+          event.type: ["info"]
+        filter: >-
+          {{1100 <= ((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) < 1200 or 2500 <= ((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) <= 2511}}
+
+      - set:
+          event.type: ["change"]
+        filter: >-
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1101, 1105, 1106, 1116, 2506, 2507]}}
+
       - set:
           event.category: ["authentication"]
           event.type: ["start"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1000, 1004, 1005, 1006, 1010]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1000, 1004, 1005, 1006, 1010]}}
 
       - set:
           event.category: ["iam"]
           event.type: ["change"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1001, 1002, 1003, 1008, 1009, 1011]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1001, 1002, 1003, 1008, 1009, 1011]}}
 
       - set:
           event.category: ["file"]
           event.type: ["info"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1007, 1602, 1603]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1007, 1602, 1603]}}
 
       - set:
           event.type: ["deletion"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1102, 1115, 1302, 1402, 1503, 1515, 1516, 1601, 2103, 2104, 2203, 2305, 2508, 2509]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1102, 1104, 1115, 1302, 1402, 1503, 1515, 1516, 1601, 2103, 2104, 2203, 2305, 2508, 2509]}}
 
       - set:
           event.type: ["creation"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1100, 1103, 1300, 1400, 1500, 1523, 2101, 2201, 2304, 2500, 2501, 2502, 2503, 2504, 2505]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1100, 1103, 1300, 1400, 1500, 1523, 2101, 2201, 2304, 2500, 2501, 2502, 2503, 2504, 2505]}}
 
       - set:
           event.category: ["iam"]
           event.type: ["group", "creation"]
-        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) == 1400}}"
+        filter: "{{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) == 1400}}"
 
       - set:
           event.category: ["iam"]
           event.type: ["group", "change"]
-        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) == 1401}}"
+        filter: "{{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) == 1401}}"
 
       - set:
           event.category: ["iam"]
           event.type: ["group", "deletion"]
-        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) == 1402}}"
+        filter: "{{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) == 1402}}"
 
       - set:
           event.category: ["iam"]
           event.type: ["user", "creation"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1500, 1523, 1524]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1500, 1523, 1524]}}
 
       - set:
           event.category: ["iam"]
           event.type: ["user", "change"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1501, 1502, 1504, 1505, 1506, 1507, 1508, 1509, 1510, 1511, 1512, 1513, 1514, 1517, 1518, 1519, 1520, 1521, 1525]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1501, 1502, 1504, 1505, 1506, 1507, 1508, 1509, 1510, 1511, 1512, 1513, 1514, 1517, 1518, 1519, 1520, 1521, 1525]}}
 
       - set:
           event.category: ["iam"]
           event.type: ["user", "deletion"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1503, 1515, 1516]}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1503, 1515, 1516]}}
 
       - set:
           event.category: ["configuration"]
           event.type: ["change"]
         filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1600, 1604, 1605, 1606, 1607, 1608, 1609, 1700, 2000, 2001, 2002, 2003]}}
-
-      - set:
-          observer.product: Secrets Manager
-        filter: >-
-          {{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) >= 2100 and ((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) <= 2305}}
+          {{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1600, 1604, 1605, 1606, 1607, 1608, 1609, 1610, 1611, 1612, 1613, 1614, 1615, 1616, 1617, 1618, 1619, 1620, 1621, 1622, 1623, 1624, 1625, 1626, 1627, 1628, 1700, 2000, 2001, 2002, 2003]}}
 
   set_outcome:
     actions:
@@ -344,4 +426,4 @@ stages:
 
       - set:
           event.outcome: failure
-        filter: "{{((parsed_event.message.get('type') if parsed_event.message.get('type') is not none else parsed_event.message.get('typeId')) | int) in [1005, 1006, 2003]}}"
+        filter: "{{((event_payload.message.get('type') if event_payload.message.get('type') not in [none, ''] else event_payload.message.get('typeId')) | int) in [1005, 1006, 2003]}}"
