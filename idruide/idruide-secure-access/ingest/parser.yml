@@ -1,0 +1,292 @@
+name: idruide-secure-access
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: parsed_time
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.time}}"
+        output_field: datetime
+    filter: "{{parsed_event.message.get('time') != None}}"
+
+  - name: common
+  - name: device
+    filter: "{{parsed_event.message.get('device') != None}}"
+  - name: compliance_finding
+    filter: "{{parsed_event.message.class_uid == 2003}}"
+  - name: device_compliance
+    filter: "{{parsed_event.message.class_uid == 5019}}"
+  - name: entity_management
+    filter: "{{parsed_event.message.class_uid == 3004}}"
+  - name: device_inventory
+    filter: "{{parsed_event.message.class_uid == 5001}}"
+  - name: os_patch
+    filter: "{{parsed_event.message.class_uid == 5004}}"
+  - name: vulnerability
+    filter: "{{parsed_event.message.class_uid == 2002}}"
+  - name: software
+    filter: "{{parsed_event.message.class_uid == 5020}}"
+  - name: application_lifecycle
+    filter: "{{parsed_event.message.class_uid == 6002}}"
+  - name: remediation
+    filter: "{{parsed_event.message.class_uid == 7001}}"
+  - name: user_inventory
+    filter: "{{parsed_event.message.class_uid == 5003}}"
+
+stages:
+  common:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_time.datetime}}"
+          idruide.event.id: "{{parsed_event.message.metadata.uid}}"
+          event.code: "{{parsed_event.message.type_uid}}"
+          event.severity: "{{parsed_event.message.severity_id}}"
+          observer.vendor: "idruide"
+          observer.product: "{{parsed_event.message.metadata.product.name}}"
+          organization.id: "{{parsed_event.message.metadata.tenant_uid}}"
+          idruide.feature: "{{parsed_event.message.metadata.product.feature.name}}"
+
+  device:
+    actions:
+      - set:
+          host.id: "{{parsed_event.message.device.uid}}"
+          host.name: "{{parsed_event.message.device.name}}"
+          host.hostname: "{{parsed_event.message.device.hostname}}"
+          host.os.full: "{{parsed_event.message.device.os.name}}"
+          host.os.version: "{{parsed_event.message.device.os.version}}"
+          host.os.kernel: "{{parsed_event.message.device.os.kernel_release}}"
+          device.id: "{{parsed_event.message.unmapped.deviceId}}"
+          idruide.device.serial_number: "{{parsed_event.message.device.hw_info.serial_number}}"
+          device.manufacturer: "{{parsed_event.message.device.vendor_name}}"
+          device.model.name: "{{parsed_event.message.device.model}}"
+          user.name: "{{parsed_event.message.device.owner.name}}"
+          user.email: "{{parsed_event.message.device.owner.email_addr}}"
+      - set:
+          host.os.type: "windows"
+          host.os.family: "windows"
+        filter: "{{parsed_event.message.device.os.type_id == 100}}"
+      - set:
+          host.os.type: "linux"
+          host.os.family: "linux"
+        filter: "{{parsed_event.message.device.os.type_id == 200}}"
+      - set:
+          host.os.type: "android"
+          host.os.family: "android"
+        filter: "{{parsed_event.message.device.os.type_id == 201}}"
+      - set:
+          host.os.type: "macos"
+          host.os.family: "macos"
+        filter: "{{parsed_event.message.device.os.type_id == 300}}"
+      - set:
+          host.os.type: "ios"
+          host.os.family: "ios"
+        filter: "{{parsed_event.message.device.os.type_id in [301, 302]}}"
+
+  compliance_finding:
+    actions:
+      - set:
+          event.dataset: "compliance.finding"
+          event.category: ["configuration"]
+          event.reason: "{{parsed_event.message.message}}"
+          rule.id: "{{parsed_event.message.compliance.control}}"
+          rule.name: "{{parsed_event.message.finding_info.title}}"
+          rule.ruleset: "{{parsed_event.message.compliance.standards | join(', ')}}"
+          idruide.finding.id: "{{parsed_event.message.finding_info.uid}}"
+          idruide.finding.observed: "{{parsed_event.message.finding_info.desc}}"
+          idruide.compliance.status: "{{parsed_event.message.compliance.status}}"
+          idruide.compliance.requirements: "{{parsed_event.message.compliance.requirements}}"
+          idruide.remediation.description: "{{parsed_event.message.remediation.desc}}"
+      - set:
+          event.kind: "alert"
+          event.type: ["info"]
+          event.action: "raised"
+        filter: "{{parsed_event.message.activity_id == 1}}"
+      - set:
+          event.kind: "alert"
+          event.type: ["change"]
+          event.action: "updated"
+        filter: "{{parsed_event.message.activity_id == 2}}"
+      - set:
+          event.kind: "event"
+          event.type: ["end"]
+          event.action: "resolved"
+        filter: "{{parsed_event.message.activity_id == 3}}"
+      - set:
+          idruide.finding.resolution: "suppressed"
+        filter: "{{parsed_event.message.status_id == 3}}"
+
+  device_compliance:
+    actions:
+      - set:
+          event.dataset: "device.compliance"
+          event.kind: "event"
+          event.category: ["configuration"]
+          event.type: ["change"]
+          event.action: "compliance-changed"
+          event.reason: "{{parsed_event.message.message}}"
+          idruide.compliance.failing_controls: "{{parsed_event.message.unmapped.failingControls}}"
+      - set:
+          idruide.compliance.state: "compliant"
+        filter: "{{parsed_event.message.security_level_id == 1}}"
+      - set:
+          idruide.compliance.state: "non-compliant"
+        filter: "{{parsed_event.message.security_level_id == 2}}"
+
+  entity_management:
+    actions:
+      - set:
+          event.kind: "event"
+          event.category: ["configuration"]
+          user.id: "{{parsed_event.message.actor.user.uid}}"
+          user.name: "{{parsed_event.message.actor.user.name}}"
+          user.full_name: "{{parsed_event.message.actor.user.full_name}}"
+          service.name: "{{parsed_event.message.actor.application.name}}"
+          http.response.status_code: "{{parsed_event.message.status_code | int}}"
+          idruide.entity.type: "{{parsed_event.message.entity.type}}"
+          idruide.entity.id: "{{parsed_event.message.entity.uid}}"
+          idruide.entity.name: "{{parsed_event.message.entity.name}}"
+      - set:
+          event.dataset: "platform.audit"
+        filter: "{{parsed_event.message.metadata.product.feature.name == 'Platform audit'}}"
+      - set:
+          event.dataset: "secure_access.audit"
+          event.reason: "{{parsed_event.message.message}}"
+        filter: "{{parsed_event.message.metadata.product.feature.name != 'Platform audit'}}"
+      - set:
+          event.type: ["creation"]
+          event.action: "created"
+        filter: "{{parsed_event.message.activity_id == 1}}"
+      - set:
+          event.type: ["change"]
+          event.action: "updated"
+        filter: "{{parsed_event.message.activity_id == 3}}"
+      - set:
+          event.type: ["deletion"]
+          event.action: "deleted"
+        filter: "{{parsed_event.message.activity_id == 4}}"
+      - set:
+          event.type: ["change"]
+          event.action: "{{ {'Cancel': 'cancelled'}.get(parsed_event.message.activity_name, parsed_event.message.activity_name | lower) }}"
+        filter: "{{parsed_event.message.activity_id == 99}}"
+      - set:
+          event.outcome: "success"
+        filter: "{{parsed_event.message.status_id == 1}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.status_id == 2}}"
+
+  device_inventory:
+    actions:
+      - set:
+          event.dataset: "device.inventory"
+          event.kind: "state"
+          event.category: ["host"]
+          event.type: ["info"]
+          event.action: "inventoried"
+
+  os_patch:
+    actions:
+      - set:
+          event.dataset: "device.os_patch"
+          event.kind: "state"
+          event.category: ["host"]
+          event.type: ["info"]
+          event.action: "inventoried"
+          idruide.os_patch.pending_count: "{{parsed_event.message.unmapped.pendingUpdates}}"
+          idruide.os_patch.pending: "{{parsed_event.message.kb_article_list | selectattr('install_state_id', 'equalto', 2) | map(attribute='title') | list | default(None, true)}}"
+
+  vulnerability:
+    actions:
+      - set:
+          event.dataset: "device.vulnerability"
+          event.category: ["vulnerability"]
+          event.reason: "{{parsed_event.message.message}}"
+          vulnerability.id: "{{parsed_event.message.vulnerabilities | map(attribute='cve.uid') | list | default(None, true)}}"
+          vulnerability.enumeration: "CVE"
+          idruide.vulnerability.fixed_by: "{{parsed_event.message.unmapped.fixedBy}}"
+          idruide.finding.id: "{{parsed_event.message.finding_info.uid}}"
+      - set:
+          event.kind: "alert"
+          event.type: ["info"]
+          event.action: "raised"
+        filter: "{{parsed_event.message.activity_id == 1}}"
+      - set:
+          event.kind: "alert"
+          event.type: ["change"]
+          event.action: "updated"
+        filter: "{{parsed_event.message.activity_id == 2}}"
+      - set:
+          event.kind: "event"
+          event.type: ["end"]
+          event.action: "resolved"
+        filter: "{{parsed_event.message.activity_id == 3}}"
+
+  software:
+    actions:
+      - set:
+          event.dataset: "device.software"
+          event.kind: "state"
+          event.category: ["package"]
+          event.type: ["info"]
+          event.action: "inventoried"
+          idruide.software.names: "{{parsed_event.message.sbom.software_components | map(attribute='name') | list | default(None, true)}}"
+          idruide.software.count: "{{parsed_event.message.sbom.software_components | length}}"
+
+  application_lifecycle:
+    actions:
+      - set:
+          event.dataset: "application.lifecycle"
+          event.kind: "event"
+          event.category: ["package"]
+          package.name: "{{parsed_event.message.application.uid}}"
+          package.description: "{{parsed_event.message.application.name}}"
+          package.version: "{{parsed_event.message.application.version}}"
+          idruide.application.previous_version: "{{parsed_event.message.unmapped.previousVersion}}"
+      - set:
+          event.type: ["installation"]
+          event.action: "installed"
+        filter: "{{parsed_event.message.activity_id == 1}}"
+      - set:
+          event.type: ["deletion"]
+          event.action: "removed"
+        filter: "{{parsed_event.message.activity_id == 2}}"
+      - set:
+          event.type: ["change"]
+          event.action: "updated"
+        filter: "{{parsed_event.message.activity_id == 8}}"
+
+  remediation:
+    actions:
+      - set:
+          event.dataset: "device.remediation"
+          event.kind: "event"
+          event.category: ["host"]
+          event.type: ["change"]
+          event.action: "{{parsed_event.message.unmapped.action}}"
+          idruide.command.id: "{{parsed_event.message.command_uid}}"
+          idruide.command.status: "{{parsed_event.message.unmapped.status}}"
+      - set:
+          event.outcome: "success"
+        filter: "{{parsed_event.message.status_id == 1}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.status_id in [2, 6]}}"
+
+  user_inventory:
+    actions:
+      - set:
+          event.dataset: "user.inventory"
+          event.kind: "state"
+          event.category: ["iam"]
+          event.type: ["user", "info"]
+          event.action: "inventoried"
+          user.id: "{{parsed_event.message.user.uid}}"
+          user.name: "{{parsed_event.message.user.name}}"
+          user.email: "{{parsed_event.message.user.email_addr}}"
+          user.full_name: "{{parsed_event.message.user.full_name}}"
