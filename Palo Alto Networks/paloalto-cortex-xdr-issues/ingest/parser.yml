@@ -8,7 +8,7 @@ pipeline:
     external:
       name: date.parse
       properties:
-        input_field: "{{json_event.message.source_insert_ts}}"
+        input_field: "{{json_event.message.modification_time}}"
         output_field: datetime
 
   - name: set_issue_fields
@@ -19,59 +19,15 @@ stages:
     actions:
       - set:
           "@timestamp": "{{parsed_timestamp.datetime}}"
-          event.ingested: "{{json_event.message.source_insert_ts | to_rfc3339}}"
           event.kind: alert
           event.category: ["intrusion_detection"]
           event.type: ["info"]
           event.dataset: issue
           event.provider: "Palo Alto Cortex XDR Issues API"
-          event.action: "{{json_event.message.issue_action_status_readable}}"
-          event.reason: "{{json_event.message.issue_description}}"
           log.level: "{{json_event.message.severity}}"
           observer.vendor: "Palo Alto"
           observer.product: "Palo Alto Cortex XDR"
-          agent.name: "{{json_event.message.agent_hostname}}"
-          host.id: "{{json_event.message.agent_id}}"
-          host.name: "{{json_event.message.agent_hostname}}"
-          host.ip: "{{json_event.message.agent_ip_addresses}}"
           paloalto.cortex.xdr.issue.id: "{{json_event.message.issue_id}}"
-          paloalto.cortex.xdr.issue.name: "{{json_event.message.issue_name}}"
+          paloalto.cortex.xdr.issue.modification_time: "{{json_event.message.modification_time}}"
           paloalto.cortex.xdr.issue.severity: "{{json_event.message.severity}}"
-          paloalto.cortex.xdr.issue.status: "{{json_event.message.status}}"
-          paloalto.cortex.xdr.issue.category: "{{json_event.message.issue_category}}"
-          paloalto.cortex.xdr.issue.action_status: "{{json_event.message.issue_action_status_readable}}"
-          paloalto.cortex.xdr.issue.description: "{{json_event.message.issue_description}}"
-          paloalto.cortex.xdr.issue.case_ids: "{{json_event.message.case_ids}}"
           paloalto.cortex.xdr.issue.is_excluded: "{{json_event.message.is_excluded}}"
-
-      - set:
-          threat.technique: >
-            {%- set technique_ids = [] -%}
-            {%- set technique_names = [] -%}
-            {%- for technique in json_event.message.mitre_technique_id_and_name or [] -%}
-              {%- if technique is string and " - " in technique -%}
-                {%- set parts = technique.split(" - ", 1) -%}
-                {%- set _ = technique_ids.append(parts[0]) -%}
-                {%- set _ = technique_names.append(parts[1]) -%}
-              {%- elif technique is string and technique|length > 0 -%}
-                {%- set _ = technique_ids.append(technique) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{ {"name": technique_names, "id": technique_ids} }}
-        filter: "{{json_event.message.mitre_technique_id_and_name != None and json_event.message.mitre_technique_id_and_name | length > 0}}"
-
-      - set:
-          threat.tactic: >
-            {%- set tactic_ids = [] -%}
-            {%- set tactic_names = [] -%}
-            {%- for tactic in json_event.message.mitre_tactic_id_and_name or [] -%}
-              {%- if tactic is string and " - " in tactic -%}
-                {%- set parts = tactic.split(" - ", 1) -%}
-                {%- set _ = tactic_ids.append(parts[0]) -%}
-                {%- set _ = tactic_names.append(parts[1]) -%}
-              {%- elif tactic is string and tactic|length > 0 -%}
-                {%- set _ = tactic_ids.append(tactic) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{ {"name": tactic_names, "id": tactic_ids} }}
-        filter: "{{json_event.message.mitre_tactic_id_and_name != None and json_event.message.mitre_tactic_id_and_name | length > 0}}"
