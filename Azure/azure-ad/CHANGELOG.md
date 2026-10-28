@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-28
+
+### Changed
+
+- Map additionalDetails ipaddr to source.ip when no other IP field is available (PIM audit logs).
+
+### Fixed
+
+- Keep UserRiskEvents with signin activity categorized as iam/info instead of iam/connection.
+
 ## [1.0.0] - 2026-10-23
 
 ### Added
