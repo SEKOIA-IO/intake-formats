@@ -161,6 +161,17 @@ stages:
           source.ip: "{{parsed_event.message.callerIpAddress}}"
         filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
 
+      - set:
+          source.ip: >
+            {%- for item in parsed_event.message.properties.additionalDetails -%}
+              {%- if item.key == 'ipaddr' -%}{{ item.value }}{%- endif -%}
+            {%- endfor -%}
+        filter: >-
+          {{ (final.source == null or final.source.ip == null) and
+             (parsed_event.message.properties.additionalDetails | default([], true)
+               | selectattr('key', 'equalto', 'ipaddr') | map(attribute='value')
+               | first | default('', true) | is_ipaddress) }}
+
   read_device_details:
     actions:
       - set:
@@ -234,7 +245,7 @@ stages:
 
       - set:
           event.type: ["connection"]
-        filter: '{{ parsed_event.message.properties.activity == "signin" }}'
+        filter: '{{ parsed_event.message.properties.activity == "signin" and parsed_event.message.category != "UserRiskEvents" }}'
       - set:
           event.reason: "{{parsed_event.message.properties.status.failureReason}}"
         filter: "{{ parsed_event.message.properties.status != null }}"
@@ -375,22 +386,6 @@ stages:
       - set:
           azuread.callerIpAddress: "{{parsed_event.message.callerIpAddress}}"
         filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
-
-      - set:
-          source.ip: >-
-            {%- set values -%}
-            {%- for item in parsed_event.message.properties.additionalDetails -%}
-              {%- if (item.key == 'ipaddr' or item.key == 'ippaddr') and (item.value | is_ipaddress) -%}
-                {{ item.value }}|||
-              {%- endif -%}
-            {%- endfor -%}
-            {%- endset -%}
-            {{ (values | default('')).split('|||')[0] if (values | default('')) != '' else None }}
-        filter: "{{parsed_event.message.properties.additionalDetails != null and not (parsed_event.message.ipAddress | is_ipaddress) and not (parsed_event.message.callerIpAddress | is_ipaddress)}}"
-
-      - delete:
-          - source.ip
-        filter: "{{final.source.ip == ''}}"
 
       - set:
           azuread.properties.appId: >
