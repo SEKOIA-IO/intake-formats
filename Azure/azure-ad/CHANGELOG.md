@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-24
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `source.ip`: map `additionalDetails` ipaddr when no other IP field is available (PIM audit logs)
+
+### Fixed
+
+- Keep `UserRiskEvents` with signin activity categorized as iam/info instead of iam/connection
+
 ## [1.0.2] - 2026-11-12
 
 ### Fixed
