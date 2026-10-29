@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New Bitwarden Event Logs intake format for events pushed by the Bitwarden HEC event integrations
-- Support for all the HEC template versions, the documented variant and events without envelope
+- Support for all the Bitwarden HEC template versions, including the serialized event message of the first templates
 - Event action from the HEC `typeName`, with a fallback on the Bitwarden EventType enum names
 - Event taxonomy and outcome for authentication, vault, collection, group, member, organization, policy, domain, Secrets Manager, Send and PAM events
 - ECS mappings for the acting user, target member, organization, group and source IP

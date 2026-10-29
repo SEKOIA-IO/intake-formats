@@ -24,10 +24,7 @@ Stored templates are not migrated, so all the template versions are supported:
 - before 2026-01-23: serialized event message in a string `Event` (or `event`)
   field, with PascalCase keys and numeric enums
 
-The variant shown in the vendor and specification documentation (Splunk HEC
-envelope with `time`, `host`, `sourcetype`, integer `type`, `null` values and a
-flat `actingUserEmail`) and an event object sent without envelope are also
-accepted. Empty template values are ignored and device enum names are
-normalized to their display names. The target user is taken from `memberId`,
-except for self actions (such as logins) where it equals `actingUserId`, and
-for service account member events (2300/2301) where it is a membership id.
+Empty template values are ignored and device enum names are normalized to
+their display names. The target user is taken from `memberId`, except for
+self actions (such as logins) where it equals `actingUserId`, and for service
+account member events (2300/2301) where it is a membership id.

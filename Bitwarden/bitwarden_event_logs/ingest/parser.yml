@@ -24,7 +24,7 @@ pipeline:
 
   # Normalize the event once: EventType code, action, taxonomy, outcome, identifiers and
   # the optional enrichment (`enrichment_details` or the flat fields of older templates).
-  # Enums from bitwarden/server: EventType, DeviceType, OrganizationUserType, EventSystemUser.
+  # Enums from bitwarden/server: EventType, DeviceType, EventSystemUser.
   - name: event_info
     external:
       name: json.parse-json
@@ -48,7 +48,7 @@ pipeline:
             "projectId": legacy.get("ProjectId"), "serviceAccountId": legacy.get("ServiceAccountId")
           } -%}
           {%- else -%}
-          {%- set e = m -%}
+          {%- set e = {} -%}
           {%- endif -%}
           {%- set actions = {
                 1000: "User_LoggedIn",
@@ -222,7 +222,6 @@ pipeline:
                 2612: "Pam_Rotation_Succeeded",
                 2613: "Pam_Rotation_Failed"
           } -%}
-          {%- set roles = {"0": "Owner", "1": "Admin", "2": "User", "4": "Custom"} -%}
           {%- set devices = {
             "0": "Android", "1": "iOS", "2": "Chrome Extension", "3": "Firefox Extension",
             "4": "Opera Extension", "5": "Edge Extension", "6": "Windows", "7": "macOS",
@@ -317,8 +316,8 @@ pipeline:
           {%- set device = e.device | string if (e.device | string).isdigit() else none -%}
           {%- set device_label = e.deviceName or e.deviceType or (e.device if e.device is string and not device else none) -%}
           {%- set system_user = e.systemUser | string if (e.systemUser | string).isdigit() else none -%}
-          {%- set actor_type = (actor.type or e.actingUserType) | string -%}
-          {%- set member_type = (member.type or e.userType) | string -%}
+          {%- set actor_type = actor.type or e.actingUserType -%}
+          {%- set member_type = member.type or e.userType -%}
           {#- memberId is rendered from #UserId#: the user affected by the event. It equals
               actingUserId for self actions (logins...), and holds an OrganizationUserId for
               ServiceAccount_UserAdded/UserRemoved (2300/2301). -#}
@@ -339,11 +338,11 @@ pipeline:
             "user_id": e.actingUserId or none,
             "user_full_name": actor.name or e.actingUserName or none,
             "user_email": actor.email or e.actingUserEmail or none,
-            "user_roles": [roles.get(actor_type, actor_type)] if actor_type not in ["", "None"] else none,
+            "user_roles": [actor_type] if actor_type else none,
             "target_id": e.memberId if has_target else none,
             "target_full_name": (member.name or e.userName or none) if has_target else none,
             "target_email": (member.email or e.userEmail or none) if has_target else none,
-            "target_roles": [roles.get(member_type, member_type)] if has_target and member_type not in ["", "None"] else none,
+            "target_roles": [member_type] if has_target and member_type else none,
             "organization_user_id": e.organizationUserId or (e.memberId if member_is_org_user else none) or none,
             "organization_id": e.organizationId or none,
             "organization_name": org.name or none,
@@ -389,7 +388,6 @@ stages:
           event.type: "{{event_info.message.type}}"
           event.outcome: "{{event_info.message.outcome}}"
           "@timestamp": "{{parsed_date.timestamp}}"
-          observer.hostname: "{{parsed_event.message.host}}"
           bitwarden.password_manager.device.type_id: "{{event_info.message.device_id}}"
           bitwarden.password_manager.device.type_name: "{{event_info.message.device_name}}"
           bitwarden.password_manager.system_user.id: "{{event_info.message.system_user_id}}"
