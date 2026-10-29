@@ -12,9 +12,8 @@ import yaml
 
 # Overridable for environments that can't reach app.sekoia.io: the same endpoint is
 # served at https://api.sekoia.io/v1/ingest/formats/validate.
-VALIDATION_URL = os.environ.get(
-    "SEKOIA_VALIDATION_URL",
-    "https://app.sekoia.io/api/v1/ingest/formats/validate",
+VALIDATION_URL = (
+    os.environ.get("SEKOIA_VALIDATION_URL") or "https://app.sekoia.io/api/v1/ingest/formats/validate"
 )
 INTAKES_PATH = os.path.dirname(os.path.dirname(__file__))
 

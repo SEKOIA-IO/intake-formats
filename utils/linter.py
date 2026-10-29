@@ -122,6 +122,11 @@ if __name__ == "__main__":
     if args.changes:
         modules, formats = find_changed_modules_and_formats()
 
+        # Without any changed format, the manager would load every format
+        if not modules and not formats:
+            print("No changes detected")
+            exit()
+
     else:
         modules, formats = args.module, args.format
 

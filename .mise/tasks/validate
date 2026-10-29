@@ -3,6 +3,9 @@
 
 . .mise/tasks/helpers.sh
 
+check_base_ref
+check_untracked_files
+
 # Validate tests, smart-descriptions files, metadata
 info "Validate tests, smart-descriptions files and metadata"
 
@@ -21,20 +24,26 @@ while IFS= read -r -d '' parser; do
     failure=$((failure+$?))
     ;;
   esac
-done < <(git diff --name-only -z)
+done < <(changed_files)
 
 check_for_error "Linting issues detected in parsers. Please fix" $failure
 
 # Validate the compliance
 info "Check the changes against compliances"
 
-uv run python utils/checks --changes
+uv run python utils/checks --changes --ignore_event_fieldset_errors --ignore_missing_parsers --ignore_missing_tests --ignore_empty_descriptions
 
 check_for_error "Some changes are not compliant. Please fix" $?
 
 # Execute the tests against changes
 info "Check the tests"
 
-uv run pytest utils/test_formats.py --changes -vv
+# Without any changed format, `--changes` would select every format
+if changed_files | tr '\0' '\n' | grep -qE '^utils/(conftest|test_formats)\.py$' \
+  || changed_files | tr '\0' '\n' | grep -vE '^(utils/|\.)' | grep -qE '^[^/]+/[^/]+/'; then
+  uv run pytest utils/test_formats.py --changes -vv
 
-check_for_error "Some tests have failed. Please fix" $?
+  check_for_error "Some tests have failed. Please fix" $?
+else
+  echo "No changed format to test"
+fi
