@@ -20,7 +20,7 @@ BASE_REF="origin/develop"
 
 function check_base_ref() {
 	if ! git rev-parse --verify -q "$BASE_REF" >/dev/null; then
-		echo -e "\e[31m$BASE_REF not found. Please run 'git fetch origin develop'\e[0m";
+		echo -e "\e[31m$BASE_REF not found. Please run 'git fetch origin develop:refs/remotes/origin/develop'\e[0m";
 		exit 1
 	fi
 }
@@ -28,7 +28,7 @@ function check_base_ref() {
 # Untracked files are invisible to `git diff`, so the formats they belong to would be skipped
 function check_untracked_files() {
 	local untracked
-	untracked=$(git ls-files --others --exclude-standard | grep -vE '^(utils/|\.)' | grep -E '^[^/]+/[^/]+/')
+	untracked=$(git ls-files --others --exclude-standard | grep -vE '^(doc/|utils/|\.)' | grep -E '^[^/]+/[^/]+/')
 	if [ -n "$untracked" ]; then
 		echo -e "\e[31mUntracked files are ignored by the checks. Please run 'git add -N <file>' on:\e[0m";
 		echo "$untracked"
@@ -39,4 +39,10 @@ function check_untracked_files() {
 # NUL-separated list of the files changed against $BASE_REF, deleted files excluded
 function changed_files() {
 	git diff --name-only -z --diff-filter=d "$BASE_REF"
+}
+
+# Newline-separated list of the paths changed against $BASE_REF, deleted files included,
+# as selected by the `--changes` option of the utils/ tools
+function changed_paths() {
+	git diff --name-only "$BASE_REF"
 }
