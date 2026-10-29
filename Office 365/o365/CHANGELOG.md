@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-10-20
+
+### Added
+
+- Parse new custom fields:
+    - `office365.exchange.save_to_sent_items`: parse `SaveToSentItems` from Exchange `Send`/`SendAs` events
+
 ## [1.0.4] - 2026-08-10
 
 ### Added
