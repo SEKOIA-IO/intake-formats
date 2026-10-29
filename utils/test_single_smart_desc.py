@@ -10,7 +10,8 @@ import sys
 from pathlib import Path
 from show_smart_descriptions import SmartDescriptionManager
 
-def test_single_file(test_file_path: str):
+
+def run_single_file(test_file_path: str):
     """Test smart description for a single test file"""
 
     # Resolve paths
@@ -119,4 +120,4 @@ if __name__ == "__main__":
         print('  poetry run python test_single_smart_desc.py "Ping Identity/pingfederate/tests/heartbeat.json"')
         sys.exit(1)
 
-    test_single_file(sys.argv[1])
+    run_single_file(sys.argv[1])
