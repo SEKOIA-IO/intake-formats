@@ -65,7 +65,7 @@ The command updates both `input.message` and `expected.message` in place for eac
 
 ## Validate the format
 
-To validate the format, you can use the command `mise run validate` to check that all tests are passing and that the format is well defined. Only the formats changed against `origin/develop` are checked; new files must be tracked by git (`git add -N <file>`) to be taken into account.
+To validate the format, you can use the command `mise run validate` to check that all tests are passing and that the format is well defined. Only the formats changed against `origin/develop` are checked; new files must be tracked by git (`git add -N <file>`) to be taken into account, and the command warns about untracked ones.
 
 ```shell
 $ mise run validate

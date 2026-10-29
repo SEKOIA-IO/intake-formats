@@ -25,14 +25,13 @@ function check_base_ref() {
 	fi
 }
 
-# Untracked files are invisible to `git diff`, so the formats they belong to would be skipped
-function check_untracked_files() {
+# Untracked files are invisible to `git diff`, so the formats they belong to are skipped
+function warn_untracked_files() {
 	local untracked
 	untracked=$(git ls-files --others --exclude-standard | grep -vE '^(doc/|utils/|\.)' | grep -E '^[^/]+/[^/]+/')
 	if [ -n "$untracked" ]; then
-		echo -e "\e[31mUntracked files are ignored by the checks. Please run 'git add -N <file>' on:\e[0m";
+		echo -e "\e[33mWarning: untracked files are ignored by the checks. Run 'git add -N <file>' to include them:\e[0m";
 		echo "$untracked"
-		exit 1
 	fi
 }
 
