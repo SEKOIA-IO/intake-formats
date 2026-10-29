@@ -72,7 +72,7 @@ class TestAnonymizationValidator:
             ("localhost", True),  # Domain is accepted
             ("hostname.local", True),  # Domain is accepted
             ("acme.net", True),  # Domain is accepted
-            ("api.chat.org", True),  # Domain is accepted
+            ("api.example.org", True),  # Domain is accepted
             ("lambda.amazonaws.com", True),
             ("connect.amazonaws.com", True),
             ("aws.internal", True),
@@ -140,7 +140,7 @@ class TestAnonymizationValidator:
             ("http://example.com/path", True),
             ("https://sub.test.local/page?query=1", True),
             ("https://example.cloud", True),
-            ("https://api.chat.org/v1/events", True),
+            ("https://api.example.org/v1/events", True),
             ("https://graph.microsoft.com/v1.0/users/john.doe@company.com/photo/$value", True),
             ("https://example.of.address/12345", True),
             ("http://acme.com/nuxeo/ui/", True),
