@@ -213,7 +213,17 @@ pipeline:
             "0": "Unknown", "1": "SCIM", "2": "DomainVerification", "3": "PublicApi",
             "4": "TwoFactorDisabled", "5": "BitwardenPortal", "6": "Pam"
           } -%}
-          {%- set c = (e.type | int) if (e.type | string).isdigit() else none -%}
+          {%- set codes = [] -%}
+          {%- if (e.type | string).isdigit() -%}
+          {%- set _ = codes.append(e.type | int) -%}
+          {%- elif e.type -%}
+          {#- 2026-01-23 template: `type` is the EventType name -#}
+          {%- for code, name in actions.items() if name == e.type -%}
+          {%- set _ = codes.append(code) -%}
+          {%- endfor -%}
+          {%- endif -%}
+          {%- set c = codes[0] if codes else none -%}
+          {%- set type_name = e.type if e.type is string and not (e.type | string).isdigit() and e.type else none -%}
           {%- set tax = none -%}
           {%- if c == none -%}
           {%- elif c in [1000, 1004, 1005, 1006, 1010] -%}
@@ -257,7 +267,7 @@ pipeline:
           {%- elif 2603 <= c and c <= 2613 -%}
           {%- set tax = ["iam", ["change"]] -%}
           {%- endif -%}
-          {%- if c not in actions -%}
+          {%- if c == none or c not in actions -%}
           {%- set outcome = "unknown" -%}
           {%- elif c in [1005, 1006, 2003, 2602, 2608, 2613] -%}
           {%- set outcome = "failure" -%}
@@ -269,18 +279,20 @@ pipeline:
           {%- set member = ed.member if ed.member is mapping else {} -%}
           {%- set group = ed.group if ed.group is mapping else {} -%}
           {%- set org = ed.organization if ed.organization is mapping else {} -%}
+          {#- `device` is the DeviceType id, or its name in the 2026-01-23 template -#}
           {%- set device = e.device | string if (e.device | string).isdigit() else none -%}
+          {%- set device_label = e.device if e.device is string and not device else none -%}
           {%- set system_user = e.systemUser | string if (e.systemUser | string).isdigit() else none -%}
-          {%- set actor_type = (actor.type if actor.type not in [none, ""] else e.actingUserType) | string -%}
-          {%- set member_type = (member.type if member.type not in [none, ""] else e.userType) | string -%}
+          {%- set actor_type = (actor.type or e.actingUserType) | string -%}
+          {%- set member_type = (member.type or e.userType) | string -%}
           {{ {
             "code": (c | string) if c != none else none,
-            "action": e.typeName or actions.get(c, "Unknown_EventType" ~ (("_" ~ c) if c != none else "")),
+            "action": e.typeName or type_name or actions.get(c, "Unknown_EventType" ~ (("_" ~ c) if c != none else "")),
             "category": [tax[0]] if tax else none,
             "type": tax[1] if tax else none,
             "outcome": outcome,
             "device_id": (device | int) if device else none,
-            "device_name": e.deviceName or devices.get(device) or e.deviceType or none,
+            "device_name": e.deviceName or e.deviceType or device_label or devices.get(device) or none,
             "system_user_id": (system_user | int) if system_user else none,
             "system_user_name": system_users.get(system_user),
             "user_full_name": actor.name or e.actingUserName or none,
@@ -331,12 +343,16 @@ stages:
           user.name: "{{event_info.message.user_email}}"
           user.full_name: "{{event_info.message.user_full_name}}"
           user.roles: "{{event_info.message.user_roles}}"
-          # memberId is rendered from #UserId#: the user affected by the event
+
+      # memberId is rendered from #UserId#: the user affected by the event.
+      # It equals actingUserId for self actions (e.g. logins): no target then.
+      - set:
           user.target.id: "{{parsed_event.message.event.memberId}}"
           user.target.email: "{{event_info.message.target_email}}"
           user.target.name: "{{event_info.message.target_email}}"
           user.target.full_name: "{{event_info.message.target_full_name}}"
           user.target.roles: "{{event_info.message.target_roles}}"
+        filter: "{{parsed_event.message.event.memberId != parsed_event.message.event.actingUserId}}"
 
   set_object_fields:
     actions:
