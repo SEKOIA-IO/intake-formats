@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-10-29
+
+### Changed
+
+- Extend parsing of existing custom fields:
+  - `action.properties.MachineGroup`: extend mapping from raw field `MachineGroup` to all the event types when provided
+
 ## [1.0.11] - 2026-10-13
 
 ### Fixed
