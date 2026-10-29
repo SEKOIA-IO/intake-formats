@@ -1,8 +1,8 @@
 name: bitwarden_event_logs
 pipeline:
-  # Bitwarden Generic HEC integration: an envelope whose `event` object is rendered from
-  # the official HEC template (bitwarden/clients hec-template.ts). Template placeholders
-  # are always strings and empty ("") when the value is null.
+  # Bitwarden HEC event integrations: one JSON object per event, rendered from the HEC
+  # template stored with the integration configuration (bitwarden/clients hec-template.ts).
+  # Template placeholders are always strings and empty ("") when the value is null.
   - name: parsed_event
     external:
       name: json.parse-json
@@ -10,23 +10,46 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
-  - name: parsed_date
-    filter: "{{parsed_event.message.event.date not in [none, '']}}"
+  # Templates before 2026-01-23: the event is the serialized EventMessage in a string
+  # (`Event` or `event`), with PascalCase keys and numeric enums.
+  - name: legacy_event
     external:
-      name: date.parse
+      name: json.parse-json
       properties:
-        input_field: "{{parsed_event.message.event.date}}"
-        output_field: timestamp
+        input_field: >-
+          {%- set m = parsed_event.message if parsed_event.message is mapping else {} -%}
+          {%- set raw = m.Event or m.event -%}
+          {{ raw if raw is string and raw.startswith("{") else "{}" }}
+        output_field: message
 
-  # Normalize the event once: EventType code, action, taxonomy, outcome and the
-  # optional enrichment (template `enrichment_details` or flat `actingUserEmail`).
+  # Normalize the event once: EventType code, action, taxonomy, outcome, identifiers and
+  # the optional enrichment (`enrichment_details` or the flat fields of older templates).
   # Enums from bitwarden/server: EventType, DeviceType, OrganizationUserType, EventSystemUser.
   - name: event_info
     external:
       name: json.parse-json
       properties:
         input_field: >-
-          {%- set e = parsed_event.message.event -%}
+          {%- set m = parsed_event.message if parsed_event.message is mapping else {} -%}
+          {%- set legacy = legacy_event.message if legacy_event.message is mapping else {} -%}
+          {%- if m.event is mapping -%}
+          {%- set e = m.event -%}
+          {%- elif legacy -%}
+          {%- set e = {
+            "type": legacy.get("Type"), "date": legacy.get("Date"), "memberId": legacy.get("UserId"),
+            "organizationId": legacy.get("OrganizationId"), "providerId": legacy.get("ProviderId"),
+            "itemId": legacy.get("CipherId"), "collectionId": legacy.get("CollectionId"),
+            "groupId": legacy.get("GroupId"), "policyId": legacy.get("PolicyId"),
+            "organizationUserId": legacy.get("OrganizationUserId"), "providerUserId": legacy.get("ProviderUserId"),
+            "providerOrganizationId": legacy.get("ProviderOrganizationId"), "actingUserId": legacy.get("ActingUserId"),
+            "installationId": legacy.get("InstallationId"), "device": legacy.get("DeviceType"),
+            "ipAddress": legacy.get("IpAddress"), "systemUser": legacy.get("SystemUser"),
+            "domainName": legacy.get("DomainName"), "secretId": legacy.get("SecretId"),
+            "projectId": legacy.get("ProjectId"), "serviceAccountId": legacy.get("ServiceAccountId")
+          } -%}
+          {%- else -%}
+          {%- set e = m -%}
+          {%- endif -%}
           {%- set actions = {
                 1000: "User_LoggedIn",
                 1001: "User_ChangedPassword",
@@ -199,7 +222,7 @@ pipeline:
                 2612: "Pam_Rotation_Succeeded",
                 2613: "Pam_Rotation_Failed"
           } -%}
-          {%- set roles = {"0": "Owner", "1": "Admin", "2": "User", "3": "Manager", "4": "Custom"} -%}
+          {%- set roles = {"0": "Owner", "1": "Admin", "2": "User", "4": "Custom"} -%}
           {%- set devices = {
             "0": "Android", "1": "iOS", "2": "Chrome Extension", "3": "Firefox Extension",
             "4": "Opera Extension", "5": "Edge Extension", "6": "Windows", "7": "macOS",
@@ -208,6 +231,17 @@ pipeline:
             "17": "Safari", "18": "Vivaldi", "19": "Vivaldi Extension", "20": "Safari Extension",
             "21": "SDK", "22": "Server", "23": "Windows CLI", "24": "MacOs CLI", "25": "Linux CLI",
             "26": "DuckDuckGo", "27": "DuckDuckGo Extension"
+          } -%}
+          {%- set device_names = {
+            "ChromeExtension": "Chrome Extension", "FirefoxExtension": "Firefox Extension",
+            "OperaExtension": "Opera Extension", "EdgeExtension": "Edge Extension",
+            "WindowsDesktop": "Windows", "MacOsDesktop": "macOS", "LinuxDesktop": "Linux",
+            "ChromeBrowser": "Chrome", "FirefoxBrowser": "Firefox", "OperaBrowser": "Opera",
+            "EdgeBrowser": "Edge", "IEBrowser": "Internet Explorer", "UnknownBrowser": "Unknown Browser",
+            "AndroidAmazon": "Android", "SafariBrowser": "Safari", "VivaldiBrowser": "Vivaldi",
+            "VivaldiExtension": "Vivaldi Extension", "SafariExtension": "Safari Extension",
+            "WindowsCLI": "Windows CLI", "MacOsCLI": "MacOs CLI", "LinuxCLI": "Linux CLI",
+            "DuckDuckGoBrowser": "DuckDuckGo", "DuckDuckGoExtension": "DuckDuckGo Extension"
           } -%}
           {%- set system_users = {
             "0": "Unknown", "1": "SCIM", "2": "DomainVerification", "3": "PublicApi",
@@ -226,7 +260,7 @@ pipeline:
           {%- set type_name = e.type if e.type is string and not (e.type | string).isdigit() and e.type else none -%}
           {%- set tax = none -%}
           {%- if c == none -%}
-          {%- elif c in [1000, 1004, 1005, 1006, 1010] -%}
+          {%- elif c in [1000, 1005, 1006, 1010] -%}
           {%- set tax = ["authentication", ["start"]] -%}
           {%- elif c in [1007, 1602, 1603, 1903, 2100, 2200, 2510, 2511] or (1107 <= c and c <= 1114) or (1117 <= c and c <= 1133) -%}
           {%- set tax = ["file", ["info"]] -%}
@@ -281,30 +315,61 @@ pipeline:
           {%- set org = ed.organization if ed.organization is mapping else {} -%}
           {#- `device` is the DeviceType id, or its name in the 2026-01-23 template -#}
           {%- set device = e.device | string if (e.device | string).isdigit() else none -%}
-          {%- set device_label = e.device if e.device is string and not device else none -%}
+          {%- set device_label = e.deviceName or e.deviceType or (e.device if e.device is string and not device else none) -%}
           {%- set system_user = e.systemUser | string if (e.systemUser | string).isdigit() else none -%}
           {%- set actor_type = (actor.type or e.actingUserType) | string -%}
           {%- set member_type = (member.type or e.userType) | string -%}
+          {#- memberId is rendered from #UserId#: the user affected by the event. It equals
+              actingUserId for self actions (logins...), and holds an OrganizationUserId for
+              ServiceAccount_UserAdded/UserRemoved (2300/2301). -#}
+          {%- set member_is_org_user = c in [2300, 2301] -%}
+          {%- set has_target = e.memberId and e.memberId != e.actingUserId and not member_is_org_user -%}
           {{ {
             "code": (c | string) if c != none else none,
             "action": e.typeName or type_name or actions.get(c, "Unknown_EventType" ~ (("_" ~ c) if c != none else "")),
             "category": [tax[0]] if tax else none,
             "type": tax[1] if tax else none,
             "outcome": outcome,
+            "date": e.date or none,
+            "ip": e.ipAddress or none,
             "device_id": (device | int) if device else none,
-            "device_name": e.deviceName or e.deviceType or device_label or devices.get(device) or none,
+            "device_name": device_names.get(device_label, device_label) if device_label else devices.get(device),
             "system_user_id": (system_user | int) if system_user else none,
             "system_user_name": system_users.get(system_user),
+            "user_id": e.actingUserId or none,
             "user_full_name": actor.name or e.actingUserName or none,
             "user_email": actor.email or e.actingUserEmail or none,
             "user_roles": [roles.get(actor_type, actor_type)] if actor_type not in ["", "None"] else none,
-            "target_full_name": member.name or e.userName or none,
-            "target_email": member.email or e.userEmail or none,
-            "target_roles": [roles.get(member_type, member_type)] if member_type not in ["", "None"] else none,
+            "target_id": e.memberId if has_target else none,
+            "target_full_name": (member.name or e.userName or none) if has_target else none,
+            "target_email": (member.email or e.userEmail or none) if has_target else none,
+            "target_roles": [roles.get(member_type, member_type)] if has_target and member_type not in ["", "None"] else none,
+            "organization_user_id": e.organizationUserId or (e.memberId if member_is_org_user else none) or none,
+            "organization_id": e.organizationId or none,
+            "organization_name": org.name or none,
+            "group_id": e.groupId or none,
             "group_name": group.name or e.groupName or none,
-            "organization_name": org.name or e.organizationName or none
+            "item_id": e.itemId or none,
+            "collection_id": e.collectionId or none,
+            "policy_id": e.policyId or none,
+            "installation_id": e.installationId or none,
+            "provider_id": e.providerId or none,
+            "provider_user_id": e.providerUserId or none,
+            "provider_organization_id": e.providerOrganizationId or none,
+            "domain_name": e.domainName or none,
+            "secret_id": e.secretId or none,
+            "project_id": e.projectId or none,
+            "service_account_id": e.serviceAccountId or none
           } | to_json }}
         output_field: message
+
+  - name: parsed_date
+    filter: "{{event_info.message.date != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{event_info.message.date}}"
+        output_field: timestamp
 
   - name: set_event_fields
   - name: set_user_fields
@@ -331,45 +396,40 @@ stages:
           bitwarden.password_manager.system_user.name: "{{event_info.message.system_user_name}}"
 
       - set:
-          source.ip: "{{parsed_event.message.event.ipAddress}}"
-        filter: "{{parsed_event.message.event.ipAddress | is_ipaddress}}"
+          source.ip: "{{event_info.message.ip}}"
+        filter: "{{event_info.message.ip | is_ipaddress}}"
 
   set_user_fields:
     actions:
       # Bitwarden accounts log in with their email address: it is the login name.
       - set:
-          user.id: "{{parsed_event.message.event.actingUserId}}"
+          user.id: "{{event_info.message.user_id}}"
           user.email: "{{event_info.message.user_email}}"
           user.name: "{{event_info.message.user_email}}"
           user.full_name: "{{event_info.message.user_full_name}}"
           user.roles: "{{event_info.message.user_roles}}"
-
-      # memberId is rendered from #UserId#: the user affected by the event.
-      # It equals actingUserId for self actions (e.g. logins): no target then.
-      - set:
-          user.target.id: "{{parsed_event.message.event.memberId}}"
+          user.target.id: "{{event_info.message.target_id}}"
           user.target.email: "{{event_info.message.target_email}}"
           user.target.name: "{{event_info.message.target_email}}"
           user.target.full_name: "{{event_info.message.target_full_name}}"
           user.target.roles: "{{event_info.message.target_roles}}"
-        filter: "{{parsed_event.message.event.memberId != parsed_event.message.event.actingUserId}}"
 
   set_object_fields:
     actions:
       - set:
-          organization.id: "{{parsed_event.message.event.organizationId}}"
+          organization.id: "{{event_info.message.organization_id}}"
           organization.name: "{{event_info.message.organization_name}}"
-          group.id: "{{parsed_event.message.event.groupId}}"
+          group.id: "{{event_info.message.group_id}}"
           group.name: "{{event_info.message.group_name}}"
-          bitwarden.password_manager.organization_user.id: "{{parsed_event.message.event.organizationUserId}}"
-          bitwarden.password_manager.item.id: "{{parsed_event.message.event.itemId}}"
-          bitwarden.password_manager.collection.id: "{{parsed_event.message.event.collectionId}}"
-          bitwarden.password_manager.policy.id: "{{parsed_event.message.event.policyId}}"
-          bitwarden.password_manager.installation.id: "{{parsed_event.message.event.installationId}}"
-          bitwarden.password_manager.provider.id: "{{parsed_event.message.event.providerId}}"
-          bitwarden.password_manager.provider_user.id: "{{parsed_event.message.event.providerUserId}}"
-          bitwarden.password_manager.provider_organization.id: "{{parsed_event.message.event.providerOrganizationId}}"
-          bitwarden.password_manager.domain.name: "{{parsed_event.message.event.domainName}}"
-          bitwarden.password_manager.secret.id: "{{parsed_event.message.event.secretId}}"
-          bitwarden.password_manager.project.id: "{{parsed_event.message.event.projectId}}"
-          bitwarden.password_manager.service_account.id: "{{parsed_event.message.event.serviceAccountId}}"
+          bitwarden.password_manager.organization_user.id: "{{event_info.message.organization_user_id}}"
+          bitwarden.password_manager.item.id: "{{event_info.message.item_id}}"
+          bitwarden.password_manager.collection.id: "{{event_info.message.collection_id}}"
+          bitwarden.password_manager.policy.id: "{{event_info.message.policy_id}}"
+          bitwarden.password_manager.installation.id: "{{event_info.message.installation_id}}"
+          bitwarden.password_manager.provider.id: "{{event_info.message.provider_id}}"
+          bitwarden.password_manager.provider_user.id: "{{event_info.message.provider_user_id}}"
+          bitwarden.password_manager.provider_organization.id: "{{event_info.message.provider_organization_id}}"
+          bitwarden.password_manager.domain.name: "{{event_info.message.domain_name}}"
+          bitwarden.password_manager.secret.id: "{{event_info.message.secret_id}}"
+          bitwarden.password_manager.project.id: "{{event_info.message.project_id}}"
+          bitwarden.password_manager.service_account.id: "{{event_info.message.service_account_id}}"
