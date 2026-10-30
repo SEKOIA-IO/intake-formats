@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-10-30
+
+### Added
+
+- Parse powershell script hashes from `details_powershell.hashes` in alerts:
+  - `harfanglab.process.powershell.hashes.md5`
+  - `harfanglab.process.powershell.hashes.sha1`
+  - `harfanglab.process.powershell.hashes.sha256`
+
 ## [1.3.5] - 2026-08-17
 
 ### Fixed
