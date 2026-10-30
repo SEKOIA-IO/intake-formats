@@ -4,6 +4,16 @@ pipeline:
     external:
       name: cef.parse-cef
 
+  - name: parsed_windows_event
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: parsed_event.message.msg
+        output_field: message
+        pattern: '.*AUDIT_(?<audit_result>SUCCESS|FAILURE)\((?<event_id>\d+)\)(?:.*(?:Sub Status|Error Code|Failure Code):\s*(?<failure_code>0x[0-9A-Fa-f]+))?.*'
+    filter: "{{parsed_event.message.msg and 'WinEvtLog' in parsed_event.message.msg}}"
+
   - name: set_ecs_categorization_fields
   - name: set_cef_header_fields
   - name: set_cef_extension_fields
@@ -16,12 +26,6 @@ stages:
       - set:
           event.category: ["intrusion_detection"]
 
-      - set:
-          event.category: ["authentication"]
-          event.type: ["start"]
-          event.outcome: "success"
-        filter: "{{parsed_event.message.Name.endswith('Signed In')}}"
-
       - translate:
         dictionary:
           "blocked": ["denied"]
@@ -30,6 +34,22 @@ stages:
         mapping:
           parsed_event.message.act: event.type
         fallback: ["info"]
+
+      - set:
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: "{{parsed_event.message.Name.endswith('Signed In')}}"
+
+      # Windows audit events relayed by Log Inspection
+      - set:
+          event.code: "{{parsed_windows_event.message.event_id}}"
+
+      - set:
+          event.category: ["authentication", "intrusion_detection"]
+          event.type: ["start"]
+          event.outcome: "failure"
+        filter: "{{parsed_windows_event.message.audit_result == 'FAILURE' and parsed_windows_event.message.event_id in ['4625', '4771', '4776']}}"
 
   set_cloud_one_custom_fields:
     actions:
@@ -54,6 +74,10 @@ stages:
           process.command_line: "{{parsed_event.message.TrendMicroDsCommandLine}}"
           file.path: "{{parsed_event.message.filePath}}"
           host.name: "{{parsed_event.message.dvchost}}"
+
+      - set:
+          trendmicro.WindowsFailureCode: "{{parsed_windows_event.message.failure_code | lower}}"
+        filter: "{{parsed_windows_event.message.failure_code != None}}"
 
       - set:
           host.ip: "{{parsed_event.message.dvc}}"
