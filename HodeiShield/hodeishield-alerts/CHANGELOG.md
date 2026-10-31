@@ -19,3 +19,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Categorize the `cve_critical` alerts as vulnerabilities, like `cve`.
+- Keep alerts whose `created_at` is missing, null or not a date: they are normalized without `@timestamp` from `created_at`, so the reception time applies.

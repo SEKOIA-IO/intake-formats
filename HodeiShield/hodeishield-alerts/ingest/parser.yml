@@ -10,6 +10,8 @@ pipeline:
       properties:
         input_field: "{{json_event.message.created_at}}"
         output_field: datetime
+    # An alert with no created_at, a null one or one that is not a date string skips this stage.
+    filter: "{{json_event.message.get('created_at') is string and json_event.message.created_at.split('-')[0].isdigit()}}"
 
   - name: set_fields
 
@@ -17,7 +19,6 @@ stages:
   set_fields:
     actions:
       - set:
-          "@timestamp": "{{parsed_created_at.datetime}}"
           event.kind: "alert"
           event.dataset: "hodeishield.alerts"
           hodeishield.alert.id: "{{json_event.message.id}}"
@@ -29,6 +30,11 @@ stages:
           hodeishield.alert.type: "{{json_event.message.type}}"
           hodeishield.alert.status: "{{json_event.message.status}}"
           hodeishield.alert.vendor_id: "{{json_event.message.vendor_id}}"
+
+      # Without a parsed created_at, @timestamp is left unset and the platform reception time applies.
+      - set:
+          "@timestamp": "{{parsed_created_at.datetime}}"
+        filter: "{{parsed_created_at.datetime != None}}"
 
       # A status change is the alert plus event_type and previous_status, added by the connector. It is dated
       # at the change (updated_at), not at the creation of the alert.
