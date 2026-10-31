@@ -1,0 +1,109 @@
+name: hodeishield-alerts
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_created_at
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.created_at}}"
+        output_field: datetime
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_created_at.datetime}}"
+          event.kind: "alert"
+          event.dataset: "hodeishield.alerts"
+          hodeishield.alert.id: "{{json_event.message.id}}"
+          observer.vendor: "HodeiShield"
+          observer.product: "HodeiShield"
+          message: "{{json_event.message.title}}"
+          rule.name: "{{json_event.message.title}}"
+          rule.category: "{{json_event.message.type}}"
+          hodeishield.alert.type: "{{json_event.message.type}}"
+          hodeishield.alert.status: "{{json_event.message.status}}"
+          hodeishield.alert.vendor_id: "{{json_event.message.vendor_id}}"
+
+      # A status change is the alert plus event_type and previous_status, added by the connector. It is dated
+      # at the change (updated_at), not at the creation of the alert.
+      - set:
+          # updated_at is RFC 3339 UTC from the API; not run through date.parse because older events lack it.
+          "@timestamp": "{{json_event.message.updated_at}}"
+          event.action: "alert-status-changed"
+        filter: "{{json_event.message.get('event_type') == 'status_change'}}"
+
+      - set:
+          hodeishield.alert.previous_status: "{{json_event.message.previous_status}}"
+        filter: "{{json_event.message.get('previous_status') is not none}}"
+
+      # The HTTPS push adds a stable delivery identifier to the alert, constant across retries of the same alert.
+      - set:
+          hodeishield.event_id: "{{json_event.message.event_id}}"
+        filter: "{{json_event.message.get('event_id') is not none}}"
+
+      - set:
+          hodeishield.alert.updated_at: "{{json_event.message.updated_at}}"
+        filter: "{{json_event.message.get('updated_at') is not none}}"
+
+      # Alerts about a known vulnerability are categorized as such, the others as threats.
+      # The only event type allowed with the threat category is indicator.
+      - set:
+          event.category: ["vulnerability"]
+          event.type: ["info"]
+        filter: "{{json_event.message.get('type') == 'cve'}}"
+
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: "{{json_event.message.get('type') != 'cve'}}"
+
+      # Severity scale: info=10, low=25, medium=50, high=75, critical=100.
+      - set:
+          event.severity: "10"
+        filter: "{{json_event.message.get('severity') == 'info'}}"
+
+      - set:
+          event.severity: "25"
+        filter: "{{json_event.message.get('severity') == 'low'}}"
+
+      - set:
+          event.severity: "50"
+        filter: "{{json_event.message.get('severity') == 'medium'}}"
+
+      - set:
+          event.severity: "75"
+        filter: "{{json_event.message.get('severity') == 'high'}}"
+
+      - set:
+          event.severity: "100"
+        filter: "{{json_event.message.get('severity') == 'critical'}}"
+
+      - set:
+          rule.description: "{{json_event.message.description}}"
+        filter: "{{json_event.message.get('description') is not none}}"
+
+      - set:
+          url.original: "{{json_event.message.source_url}}"
+        filter: "{{json_event.message.get('source_url') is not none}}"
+
+      - set:
+          hodeishield.alert.economic_impact: "{{json_event.message.economic_impact}}"
+        filter: "{{json_event.message.get('economic_impact') is not none}}"
+
+      - set:
+          hodeishield.alert.acknowledged_at: "{{json_event.message.acknowledged_at}}"
+        filter: "{{json_event.message.get('acknowledged_at') is not none}}"
+
+      - set:
+          hodeishield.alert.resolved_at: "{{json_event.message.resolved_at}}"
+        filter: "{{json_event.message.get('resolved_at') is not none}}"
+
+      - set:
+          hodeishield.alert.resolution_reason: "{{json_event.message.resolution_reason}}"
+        filter: "{{json_event.message.get('resolution_reason') is not none}}"
