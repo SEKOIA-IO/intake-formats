@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-10-30
+
+### Fixed
+
+- Split `TargetUserName` in UPN format (`user@domain`) into `user.target.name` and `user.target.domain`
+
 ## [1.0.4] - 2026-10-20
 
 ### Changed
