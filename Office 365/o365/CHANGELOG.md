@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Do not populate `user.target.name` when `TargetUserOrGroupType` is `SecurityGroup` either, since the value is a group, such as the group SharePoint creates for a sharing link (`SLinkClaim.*`), rather than a person
+
 ## [1.0.5] - 2026-10-20
 
 ### Added
