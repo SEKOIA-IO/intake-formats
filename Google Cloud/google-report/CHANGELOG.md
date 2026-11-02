@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Meet: map the organizer to `google.report.meet.organizer_email` instead of `user.email`, which left the participant in the other `user` fields
+
 ## 2023-03-14 - 1.17.3
 
 ### Change
