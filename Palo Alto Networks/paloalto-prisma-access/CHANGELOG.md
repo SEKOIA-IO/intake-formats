@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-03
+
+### Fixed
+
+- Fix GlobalProtect events in the JSON format:
+  - `event.outcome` and `action.outcome`: parse `EventStatus`
+  - `action.name`: parse `EventIDValue`
+  - `event.reason`: parse `ConnectionError` before `Description`
+
 ## 2024-10-08
 
 ### Added
