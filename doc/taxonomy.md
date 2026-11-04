@@ -15,6 +15,11 @@ The taxonomy of [structured events](structured_events.md) is based on the [ECS](
 - Error code and error message must land in `error.code` and `error.message`
 - `email.to.address`, `email.from.address` and `email.cc.address` are arrays
 - As documented in the ECS specification, [`host.hostname`](https://www.elastic.co/guide/en/ecs/current/ecs-host.html#field-host-hostname) must contain the hostname as return by the command **hostname** on the host. [`host.name`](https://www.elastic.co/guide/en/ecs/current/ecs-host.html#field-host-name) is more permissive.
+- Do not set [`related.*`](https://www.elastic.co/guide/en/ecs/current/ecs-related.html) fields (`related.hosts`, `related.ip`, `related.user`, `related.hash`) in parsers. They are computed by the ingestion pipeline after parsing, which replaces the whole `related` object as soon as one of them can be derived from the event: a value set by the parser is silently dropped on some events and kept on others. Set the source fields instead:
+  - `related.hosts`: `host.hostname`, `observer.hostname`, `client.domain`, `server.domain`, `source.domain`, `destination.domain`, `url.domain`, `dns.question.name`, `dns.answer.name`
+  - `related.ip`: `host.ip`, `observer.ip`, `client.ip`, `server.ip`, `source.ip`, `destination.ip` (and their `nat.ip`), `dns.resolved_ip`
+  - `related.user`: `user.name`, `user.target.name`, `client.user.name`, `server.user.name`, `source.user.name`, `destination.user.name`, `host.user.name`, `file.owner`
+  - `related.hash`: the `*.hash.*` fields (`file.hash.*`, `process.hash.*`, `process.parent.hash.*`, `dll.hash.*`, `tls.client.hash.*`, `tls.server.hash.*`)
 
 ## Custom Taxomony
 
