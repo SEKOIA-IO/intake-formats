@@ -31,12 +31,23 @@ pipeline:
         item_sep: \r\n
 
   - name: parsed_message_request_client_info
-    filter: "{{((json.event.RequestClientInfo or '').strip() or parsed_message_kv.result.RequestClientInfo) != null}}"
+    filter: "{{(json.event.RequestClientInfo or '').strip() not in ['', '-']}}"
     external:
       name: kv.parse-kv
       properties:
         raise_errors: false
-        input_field: "{{(json.event.RequestClientInfo or '').strip() or parsed_message_kv.result.RequestClientInfo}}"
+        input_field: "{{json.event.RequestClientInfo.strip()}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: \n\t
+
+  - name: parsed_message_request_client_info_fallback
+    filter: "{{((json.event.RequestClientInfo or '').strip() in ['', '-'] or (parsed_message_request_client_info.result.Process or '').strip() in ['', '-']) and json.event.Message != null and '<?xml' not in json.event.Message and (parsed_message_kv.result.RequestClientInfo or '').strip() not in ['', '-']}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_message_kv.result.RequestClientInfo}}"
         output_field: result
         value_sep: ":"
         item_sep: \n\t
@@ -112,10 +123,12 @@ pipeline:
         raise_errors: false
         input_field: "{{json.event.ClientAddress}}"
         output_field: event
-        pattern: "^0200%{HEX_PORT:port}%{HEX_BYTE:a}%{HEX_BYTE:b}%{HEX_BYTE:c}%{HEX_BYTE:d}0000000000000000$"
+        pattern: "^0200%{HEX_PORT:port}%{NONZERO_IPV4:address}0000000000000000$"
         custom_patterns:
           HEX_PORT: "[0-9A-Fa-f]{4}"
           HEX_BYTE: "[0-9A-Fa-f]{2}"
+          NONZERO_HEX_BYTE: "(?:[1-9A-Fa-f][0-9A-Fa-f]|0[1-9A-Fa-f])"
+          NONZERO_IPV4: "(?:%{NONZERO_HEX_BYTE}%{HEX_BYTE}{3}|00%{NONZERO_HEX_BYTE}%{HEX_BYTE}{2}|0000%{NONZERO_HEX_BYTE}%{HEX_BYTE}|000000%{NONZERO_HEX_BYTE})"
 
   - name: smb_client_address
     description: "Try the EventData address when the top-level SMB address cannot be decoded"
@@ -126,10 +139,12 @@ pipeline:
         raise_errors: false
         input_field: "{{json.event.get('EventData.ClientAddress')}}"
         output_field: event
-        pattern: "^0200%{HEX_PORT:port}%{HEX_BYTE:a}%{HEX_BYTE:b}%{HEX_BYTE:c}%{HEX_BYTE:d}0000000000000000$"
+        pattern: "^0200%{HEX_PORT:port}%{NONZERO_IPV4:address}0000000000000000$"
         custom_patterns:
           HEX_PORT: "[0-9A-Fa-f]{4}"
           HEX_BYTE: "[0-9A-Fa-f]{2}"
+          NONZERO_HEX_BYTE: "(?:[1-9A-Fa-f][0-9A-Fa-f]|0[1-9A-Fa-f])"
+          NONZERO_IPV4: "(?:%{NONZERO_HEX_BYTE}%{HEX_BYTE}{3}|00%{NONZERO_HEX_BYTE}%{HEX_BYTE}{2}|0000%{NONZERO_HEX_BYTE}%{HEX_BYTE}|000000%{NONZERO_HEX_BYTE})"
 
   - name: source_ip_client_address
     filter: "{{parsed_message_kv.result.get('Client Address') != None}}"
@@ -399,7 +414,12 @@ stages:
         filter: "{{final.event.type != null}}"
 
       - set:
-          process.name: "{{parsed_message_request_client_info.result.Process}}"
+          process.name: "{{parsed_message_request_client_info.result.Process.strip()}}"
+        filter: "{{(parsed_message_request_client_info.result.Process or '').strip() not in ['', '-']}}"
+
+      - set:
+          process.name: "{{parsed_message_request_client_info_fallback.result.Process.strip()}}"
+        filter: "{{((json.event.RequestClientInfo or '').strip() in ['', '-'] or (parsed_message_request_client_info.result.Process or '').strip() in ['', '-']) and json.event.Message != null and '<?xml' not in json.event.Message and (parsed_message_kv.result.RequestClientInfo or '').strip() not in ['', '-'] and (parsed_message_request_client_info_fallback.result.Process or '').strip() not in ['', '-']}}"
 
       - set:
           process.name: "{{final.process.executable | basename}}"
@@ -505,9 +525,21 @@ stages:
             {%- set properties = json.event.copy() -%}
             {%- set _ = properties.pop('Task', none) -%}
             {%- set _ = properties.pop('UserAccountControl', none) -%}
+            {%- set _ = properties.pop('Accesses', none) -%}
             {{ properties }}
 
-          action.properties.Accesses: "{{(json.event.AccessListResolved or '').strip() or ((json.event.Accesses or json.event.AccessList or '').strip() if '%%' not in (json.event.Accesses or json.event.AccessList or '') else '') or (network_object.event.Accesses or '').replace('#NEWLINE#', '\\r\\n').replace('#NEWLINE2#', '\\n') or (json.event.Accesses or json.event.AccessList or '').strip()}}"
+          action.properties.Accesses: >-
+            {%- set resolved = (json.event.AccessListResolved or '').strip() -%}
+            {%- set accesses = (json.event.Accesses or '').strip() -%}
+            {%- set access_list = (json.event.AccessList or '').strip() -%}
+            {%- set message_accesses = (network_object.event.Accesses or '').replace('#NEWLINE#', '\r\n').replace('#NEWLINE2#', '\n') if json.event.Message != null and 'Accesses' in json.event.Message else '' -%}
+            {{ (resolved if resolved not in ['', '-'] and '%%' not in resolved else '')
+               or (accesses if accesses not in ['', '-'] and '%%' not in accesses else '')
+               or (access_list if access_list not in ['', '-'] and '%%' not in access_list else '')
+               or (message_accesses if message_accesses.strip() not in ['', '-'] else '')
+               or (resolved if resolved not in ['', '-'] else '')
+               or (accesses if accesses not in ['', '-'] else '')
+               or (access_list if access_list not in ['', '-'] else none) }}
 
           action.properties.Attributes: "{{json.event.Attributes}}"
           action.properties.Requester: "{{json.event.Requester}}"
@@ -748,11 +780,11 @@ stages:
 
       - set:
           process.pid: "{{json.event.ProcessId}}"
-        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [4625, 4663] and json.event.ProcessID == null and json.event.ProcessId != null and not (json.event.ProcessId | string).lower().startswith('0x')}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and (json.event.EventID | int) in [4625, 4663] and json.event.ProcessID == null and json.event.ProcessId != null and not (json.event.ProcessId | string).lower().startswith('0x')}}"
 
       - set:
           process.pid: "{{json.event.ProcessId | int(base=16)}}"
-        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [4625, 4663] and json.event.ProcessID == null and json.event.ProcessId != null and (json.event.ProcessId | string).lower().startswith('0x')}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and (json.event.EventID | int) in [4625, 4663] and json.event.ProcessID == null and json.event.ProcessId != null and (json.event.ProcessId | string).lower().startswith('0x')}}"
 
       - set:
           process.pid: "{{parsed_message_kv.result.ProcessId}}"
@@ -1418,18 +1450,25 @@ stages:
           error.code: "{{json.event.TranslatedStatus}}"
 
       - set:
-          source.ip: '{{(json.event.ClientName or "").lstrip("\\")}}'
-        filter: '{{(json.event.ClientName or "").lstrip("\\") | is_ipaddress}}'
+          source.ip: '{{(json.event.ClientName or "").strip().lstrip("\\").strip()}}'
+        filter: '{{(json.event.ClientName or "").strip().lstrip("\\").strip() | is_ipaddress}}'
 
       - set:
-          source.ip: '{{(json.event.get("EventData.ClientName") or "").lstrip("\\")}}'
-        filter: '{{not ((json.event.ClientName or "").lstrip("\\") | is_ipaddress) and (json.event.get("EventData.ClientName") or "").lstrip("\\") | is_ipaddress}}'
+          source.ip: '{{(json.event.get("EventData.ClientName") or "").strip().lstrip("\\").strip()}}'
+        filter: '{{not ((json.event.ClientName or "").strip().lstrip("\\").strip() | is_ipaddress) and ((json.event.get("EventData.ClientName") or "").strip().lstrip("\\").strip() | is_ipaddress)}}'
 
       - set:
-          source.domain: '{{(json.event.ClientName or json.event.get("EventData.ClientName") or "").lstrip("\\")}}'
-        filter: '{{(json.event.ClientName or json.event.get("EventData.ClientName") or "") not in [null, "", "-"] and not ((json.event.ClientName or "").lstrip("\\") | is_ipaddress) and not ((json.event.get("EventData.ClientName") or "").lstrip("\\") | is_ipaddress)}}'
+          source.domain: >-
+            {%- set primary = (json.event.ClientName or '').strip().lstrip('\\').strip() -%}
+            {%- set fallback = (json.event.get('EventData.ClientName') or '').strip().lstrip('\\').strip() -%}
+            {{ primary if primary not in ['', '-'] else fallback }}
+        filter: >-
+          {%- set primary = (json.event.ClientName or '').strip().lstrip('\\').strip() -%}
+          {%- set fallback = (json.event.get('EventData.ClientName') or '').strip().lstrip('\\').strip() -%}
+          {%- set selected = primary if primary not in ['', '-'] else fallback -%}
+          {{ selected not in ['', '-'] and not (selected | is_ipaddress) }}
 
       - set:
-          source.ip: "{{smb_client_address.event.a | int(base=16)}}.{{smb_client_address.event.b | int(base=16)}}.{{smb_client_address.event.c | int(base=16)}}.{{smb_client_address.event.d | int(base=16)}}"
+          source.ip: "{{smb_client_address.event.address[0:2] | int(base=16)}}.{{smb_client_address.event.address[2:4] | int(base=16)}}.{{smb_client_address.event.address[4:6] | int(base=16)}}.{{smb_client_address.event.address[6:8] | int(base=16)}}"
           source.port: "{{smb_client_address.event.port | int(base=16)}}"
         filter: "{{smb_client_address.event.port != null}}"
