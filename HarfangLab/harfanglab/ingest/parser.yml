@@ -75,6 +75,9 @@ pipeline:
   - name: network_info
     filter: "{{json_event.message.log_type == 'network' or json_event.message.alert_subtype == 'network'}}"
 
+  - name: network_protocol_info
+    filter: "{{json_event.message.log_type == 'network' or json_event.message.alert_subtype == 'network'}}"
+
   - name: process_info
     filter: "{{json_event.message.log_type == 'process'}}"
 
@@ -371,6 +374,40 @@ stages:
       - set:
           event.kind: "alert"
         filter: "{{ json_event.message.log_type == 'alert'}}"
+
+  network_protocol_info:
+    actions:
+      - set:
+          network.protocol: "{{json_event.message.outgoing_protocol.name | lower}}"
+        filter: "{{json_event.message.outgoing_protocol.name not in [None, '']}}"
+
+      - set:
+          tls.client.server_name: "{{json_event.message.outgoing_protocol.tls.client_hello_sni}}"
+          tls.client.ja3: "{{json_event.message.outgoing_protocol.tls.ja3_fingerprint}}"
+        filter: "{{json_event.message.outgoing_protocol.tls != None}}"
+
+      - set:
+          harfanglab.harfanglab.outgoing_protocol.tls.client_hello_alpn: "{{json_event.message.outgoing_protocol.tls.client_hello_alpn}}"
+        filter: "{{json_event.message.outgoing_protocol.tls.client_hello_alpn != None and json_event.message.outgoing_protocol.tls.client_hello_alpn | length > 0}}"
+
+      - translate:
+        dictionary:
+          TLSv1: "1.0"
+          TLSv1.0: "1.0"
+          TLSv1.1: "1.1"
+          TLSv1.2: "1.2"
+          TLSv1.3: "1.3"
+        mapping:
+          json_event.message.outgoing_protocol.tls.tls_version: tls.version
+
+      - set:
+          tls.version_protocol: "tls"
+        filter: "{{json_event.message.outgoing_protocol.tls.tls_version in ['TLSv1', 'TLSv1.0', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3']}}"
+
+      - set:
+          destination.domain: "{{json_event.message.outgoing_protocol.tls.client_hello_sni}}"
+          tls.server.ja3s: "{{json_event.message.incoming_protocol.tls.ja3s_fingerprint}}"
+        filter: "{{json_event.message.direction == 'out'}}"
 
   process_info:
     actions:
