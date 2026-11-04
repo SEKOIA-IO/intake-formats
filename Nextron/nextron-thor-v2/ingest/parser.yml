@@ -35,7 +35,7 @@ pipeline:
   - name: set_rule_fields
     filter: '{{parsed_event.message.get("reasons") != none and parsed_event.message.get("reasons") | length > 0}}'
   - name: set_file_object_fields
-    filter: '{{parsed_event.message.get("module") in ["Filescan", "SHIMCache", "ScheduledTasks"] and parsed_event.message.get("file") != none}}'
+    filter: '{{parsed_event.message.get("module") in ["Filescan", "SHIMCache", "ScheduledTasks"] and parsed_event.message.get("file") is mapping}}'
   - name: set_file_path_fields
   - name: set_files0_fields
     filter: '{{parsed_event.message.get("module") in ["AtJobs", "Autoruns", "Lnk", "WMIStartup"] and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
@@ -370,7 +370,7 @@ stages:
       - set:
           file.path: "{{parsed_event.message.file}}"
           file.name: "{{parsed_event.message.file.split('\\\\')[-1].split('/')[-1]}}"
-        filter: '{{parsed_event.message.get("module") in ["LogScan", "EVTX", "ETL", "MFT", "Timestomp", "Amcache", "WER"] and parsed_event.message.get("file") != none}}'
+        filter: '{{parsed_event.message.get("module") in ["LogScan", "EVTX", "ETL", "MFT", "Timestomp", "Amcache", "WER"] and parsed_event.message.get("file") is string}}'
 
       # LogScan: log_* timestamps belong to the scanned log file
       - set:
@@ -605,7 +605,7 @@ stages:
           file.pe.product: "{{parsed_event.message.image.get('product', '')}}"
           file.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
-        filter: '{{parsed_event.message.get("image") != none}}'
+        filter: '{{parsed_event.message.get("image") is mapping}}'
       - set:
           file.name: "{{parsed_event.message.image.path.split('\\\\')[-1].split('/')[-1]}}"
         filter: '{{parsed_event.message.get("image") is mapping and parsed_event.message.image.get("path") not in [none, ""]}}'
@@ -946,7 +946,7 @@ stages:
   # ----------------------------------------------------- cron (Linux/Unix) ---
   # Cron emits three shapes: a `file` OBJECT (regularly executed file), a `file`
   # STRING (crontab path) with a schedule/command, and a crontab environment
-  # variable. The `file` type differs per shape, so each is gated by message.
+  # variable. Each shape is recognized by the type of `file`.
   set_cron_fields:
     actions:
       # "File regularly executed by cron": file is an object -> file.*
@@ -964,26 +964,20 @@ stages:
           file.group: "{{parsed_event.message.file.get('group', '')}}"
           thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
-        filter: '{{parsed_event.message.get("message") == "File regularly executed by cron"}}'
+        filter: '{{parsed_event.message.get("file") is mapping}}'
       - set:
           file.mode: "{% set q = parsed_event.message.file.permissions %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
-        filter: '{{parsed_event.message.get("message") == "File regularly executed by cron" and parsed_event.message.file.get("permissions") is string and parsed_event.message.file.permissions | length == 10}}'
+        filter: '{{parsed_event.message.get("file") is mapping and parsed_event.message.file.get("permissions") is string and parsed_event.message.file.permissions | length == 10}}'
 
-      # "Crontab entry": file is a string (the crontab), plus a schedule/command
+      # "Crontab entry" / "Crontab environment setting": file is the crontab path
       - set:
           file.path: "{{parsed_event.message.file}}"
           file.name: "{{parsed_event.message.file.split('/')[-1]}}"
           thor.schedule: "{{parsed_event.message.schedule}}"
           thor.command: "{{parsed_event.message.command}}"
-        filter: '{{parsed_event.message.get("message") == "Crontab entry"}}'
-
-      # "Crontab environment setting": crontab path + a VAR=value pair
-      - set:
-          file.path: "{{parsed_event.message.file}}"
-          file.name: "{{parsed_event.message.file.split('/')[-1]}}"
           thor.var: "{{parsed_event.message.variable}}"
           thor.value: "{{parsed_event.message.value}}"
-        filter: '{{parsed_event.message.get("message") == "Crontab environment setting"}}'
+        filter: '{{parsed_event.message.get("file") is string}}'
 
   # ------------------------------------------------------ hosts file entries ---
   # /etc/hosts (or Windows hosts): entry = hostname, ip = mapped address.
