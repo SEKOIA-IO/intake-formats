@@ -100,7 +100,6 @@ stages:
           event.reason: "{{parsed_event.message.reason}}"
           thor.scan_id: "{{parsed_event.message.scanid}}"
           thor.log_version: "{{parsed_event.message.log_version}}"
-          thor.entry: "{{parsed_event.message.entry}}"
           observer.vendor: "Nextron Systems"
           observer.product: "THOR"
 
@@ -277,6 +276,14 @@ stages:
       - set:
           thor.signature_tags: "{{parsed_event.message.reasons[0].signature.tags}}"
         filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags") not in [none, []]}}'
+
+      # MITRE ATT&CK technique tags ("ATTACK.T1059", "attack.t1059.001")
+      - set:
+          threat.technique.id: '[{% for t in parsed_event.message.reasons[0].signature.tags if t.upper().startswith("ATTACK.T") and not t.upper().startswith("ATTACK.TA") %}"{{t[7:].upper()}}"{% if not loop.last %},{% endif %}{% endfor %}]'
+        filter: '{{"ATTACK.T" in (parsed_event.message.reasons[0].get("signature", {}).get("tags") or []) | map("upper") | join(",") | replace("ATTACK.TA", "")}}'
+      - set:
+          threat.framework: "MITRE ATT&CK"
+        filter: '{{"ATTACK.T" in (parsed_event.message.reasons[0].get("signature", {}).get("tags") or []) | map("upper") | join(",") | replace("ATTACK.TA", "")}}'
 
       # Recover the description from the composite reason name (part after the
       # first " / ") when the signature carries none — the plain YARA/Sigma case.
@@ -665,10 +672,15 @@ stages:
           registry.key: '{{parsed_event.message.location.split("\\")[1:] | join("\\")}}'
         filter: '{{parsed_event.message.get("location") != none and parsed_event.message.location.split("\\")[0] in ["HKCU", "CURRENT_USER", "HKEY_CURRENT_USER"]}}'
 
-      # Autoruns entry is a run-key value NAME -> registry.value
+      # Autoruns entry is a run-key value NAME -> registry.value; the value data
+      # is the launched command line
       - set:
           registry.value: "{{parsed_event.message.entry}}"
-        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") != none}}'
+          registry.path: '{{parsed_event.message.location}}\{{parsed_event.message.entry}}'
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and parsed_event.message.get("location") not in [none, ""]}}'
+      - set:
+          registry.data.strings: '{{[[parsed_event.message.get("command", ""), parsed_event.message.get("arguments", "")] | select | join(" ")]}}'
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and parsed_event.message.get("command") not in [none, ""]}}'
 
   # ------------------------------------------------------- registry checks ---
   set_registry_fields:
@@ -685,6 +697,13 @@ stages:
       - set:
           registry.key: "{{parsed_event.message.key}}"
         filter: '{{parsed_event.message.get("key") != none and parsed_event.message.key.split("\\")[0] not in ["HKLM", "HKCU", "HKU", "HKCR", "HKEY_LOCAL_MACHINE", "HKEY_CURRENT_USER"]}}'
+
+      - set:
+          registry.path: '{{parsed_event.message.key}}\{{parsed_event.message.name}}'
+        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.get("name") not in [none, ""]}}'
+      - set:
+          registry.path: "{{parsed_event.message.key}}"
+        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.get("name") in [none, ""]}}'
 
   # -------------------------------------------- execution-evidence stores ---
   set_shimcache_amcache_fields:
@@ -727,10 +746,6 @@ stages:
       - set:
           dns.resolved_ip: '["{{parsed_event.message.ip}}"]'
         filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
-
-      # the DNS cache entry is fully represented in dns.question.name
-      - delete:
-          - thor.entry
 
   # --------------------------- flat signature triple (older representation) ---
   set_flat_signature_fields:
@@ -862,8 +877,8 @@ stages:
 
       # UserDir "Recently modified profile": profile directory timestamps
       - set:
-          file.created: "{{parsed_event.message.created}}"
-          file.mtime: "{{parsed_event.message.modified}}"
+          thor.userdir.created: "{{parsed_event.message.created}}"
+          thor.userdir.modified: "{{parsed_event.message.modified}}"
         filter: '{{parsed_event.message.get("module") == "UserDir"}}'
 
   # --------------------------------------- scanner lifecycle / platform ---
@@ -876,11 +891,21 @@ stages:
           host.os.kernel: "{{parsed_event.message.kernel_version}}"
           host.architecture: "{{parsed_event.message.arch}}"
           thor.build_number: "{{parsed_event.message.build_number}}"
-          thor.kernel_name: "{{parsed_event.message.kernel_name}}"
           thor.type: "{{parsed_event.message.type}}"
           thor.proc: "{{parsed_event.message.proc}}"
           thor.installed_on: "{{parsed_event.message.installed_on}}"
         filter: '{{parsed_event.message.get("module") == "Startup" and parsed_event.message.get("arch") != none}}'
+
+      - set:
+          host.os.type: "linux"
+        filter: '{{parsed_event.message.get("module") == "Startup" and (parsed_event.message.get("kernel_name") or "") | lower == "linux"}}'
+      - set:
+          host.os.type: "macos"
+        filter: '{{parsed_event.message.get("module") == "Startup" and (parsed_event.message.get("kernel_name") or "") | lower == "darwin"}}'
+      - set:
+          host.os.type: "windows"
+          host.os.family: "windows"
+        filter: '{{parsed_event.message.get("module") == "Startup" and parsed_event.message.get("arch") != none and (parsed_event.message.get("name") or "").startswith("Windows")}}'
 
       - set:
           event.start: "{{parsed_event.message.start_time}}"
