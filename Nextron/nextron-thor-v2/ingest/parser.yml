@@ -489,7 +489,9 @@ stages:
           thor.process_user_domain: '{{parsed_event.message.owner.split("\\")[0]}}'
         filter: '{{parsed_event.message.get("owner") not in [none, ""] and "\\" in parsed_event.message.owner}}'
 
-      # image object -> the process executable (hashes/PE are Sekoia additions)
+      # image object -> the process executable (hashes/PE are Sekoia additions).
+      # On Linux, THOR may report the working directory as `image` (empty path,
+      # type DIRECTORY): it does not describe the executable and is skipped.
       - set:
           process.executable: "{{parsed_event.message.image.get('path', '')}}"
           process.hash.md5: "{{parsed_event.message.image.get('md5', '')}}"
@@ -509,7 +511,20 @@ stages:
           thor.image.type: "{{parsed_event.message.image.get('type', '')}}"
           thor.image.size: "{{parsed_event.message.image.get('size', '')}}"
           thor.image.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
-        filter: '{{parsed_event.message.get("image") != none}}'
+        filter: '{{parsed_event.message.get("image") is mapping and parsed_event.message.image.get("type") != "DIRECTORY"}}'
+
+      # No usable image path: the executable is the first resolved file
+      - set:
+          process.executable: "{{parsed_event.message.files[0].get('path', '')}}"
+          process.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          process.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          process.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+          process.pe.imphash: "{{parsed_event.message.files[0].get('imphash', '')}}"
+          process.pe.company: "{{parsed_event.message.files[0].get('company', '')}}"
+          process.pe.description: "{{parsed_event.message.files[0].get('desc', '')}}"
+          process.pe.product: "{{parsed_event.message.files[0].get('product', '')}}"
+          process.pe.original_file_name: "{{parsed_event.message.files[0].get('original_name', '')}}"
+        filter: '{{(parsed_event.message.get("image") is not mapping or parsed_event.message.image.get("path") in [none, ""]) and parsed_event.message.get("files") != none and parsed_event.message.files | length > 0}}'
 
       # PE-Sieve counters (ProcessIntegrity) — THOR names kept verbatim (Elastic parity)
       - set:
