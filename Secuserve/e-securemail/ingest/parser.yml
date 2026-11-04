@@ -1,0 +1,147 @@
+name: secuserve-e-securemail
+ignored_values: [""]
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: set_ecs_fields
+  - name: set_delivery
+    filter: '{{parsed_event.message.get("delivery_status") != None}}'
+  - name: set_attachments
+    filter: '{{parsed_event.message.get("message_parts", []) != []}}'
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          # "network" is what makes allowed/denied valid event types alongside email
+          event.category: ["email", "network"]
+          event.dataset: "secuserve.mail"
+          event.module: "e-securemail"
+          observer.vendor: "SECUSERVE"
+          observer.product: "e-securemail"
+          observer.type: "email-gateway"
+          network.protocol: "smtp"
+          network.transport: "tcp"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.stamp_filter | to_rfc3339}}"
+          email.origination_timestamp: "{{parsed_event.message.stamp_queued | to_rfc3339}}"
+          email.local_id: '{{parsed_event.message.message_id | trim("<>")}}'
+          email.subject: "{{parsed_event.message.subject}}"
+          event.action: "{{parsed_event.message.action}}"
+          event.reason: "{{parsed_event.message.verdict}}"
+          event.risk_score: "{{parsed_event.message.antispam_score}}"
+          secuserve.verdict: "{{parsed_event.message.verdict}}"
+          secuserve.helo_name: "{{parsed_event.message.helo_name}}"
+          secuserve.message_size: "{{parsed_event.message.message_size}}"
+          secuserve.filter.info: "{{parsed_event.message.filter_info}}"
+
+      # message_id carries the internal Secumail-id, except when the RFC 5322
+      # Message-ID header could be collected
+      - set:
+          email.message_id: '{{parsed_event.message.message_id | trim("<>")}}'
+        filter: '{{"@" in parsed_event.message.get("message_id", "")}}'
+
+      - set:
+          email.from.address: '["{{parsed_event.message.header_from}}"]'
+        filter: '{{parsed_event.message.get("header_from") != None}}'
+
+      - set:
+          email.sender.address: '["{{parsed_event.message.sender}}"]'
+        filter: '{{parsed_event.message.get("sender") != None}}'
+
+      - set:
+          email.to.address: '["{{parsed_event.message.recipient}}"]'
+        filter: '{{parsed_event.message.get("recipient") != None}}'
+
+      - set:
+          source.ip: "{{parsed_event.message.client_ip}}"
+        filter: '{{parsed_event.message.get("client_ip", "") | is_ipaddress}}'
+
+      - set:
+          source.domain: "{{parsed_event.message.client_name}}"
+        filter: '{{parsed_event.message.get("client_name") != None}}'
+
+      - set:
+          source.geo.country_iso_code: "{{parsed_event.message.client_country}}"
+        filter: '{{parsed_event.message.get("client_country") != None}}'
+
+      # filter_info lists the triggered rules as "RULE=score"
+      - set:
+          secuserve.filter.rules: >
+            [
+              {% for rule in parsed_event.message.filter_info.split(",") %}
+              {{rule.split("=")[0] | trim | tojson}},
+              {% endfor %}
+            ]
+        filter: '{{parsed_event.message.get("filter_info") != None}}'
+
+      - translate:
+        dictionary:
+          "pass": ["allowed"]
+          "blocked": ["denied"]
+          "rejected": ["denied"]
+          "bounced": ["denied"]
+        mapping:
+          parsed_event.message.action: event.type
+        fallback: ["info"]
+
+  set_delivery:
+    actions:
+      - set:
+          secuserve.delivery.status: "{{parsed_event.message.delivery_status}}"
+          secuserve.delivery.info: "{{parsed_event.message.delivery_info}}"
+
+      - set:
+          email.delivery_timestamp: "{{parsed_event.message.stamp_delivery | to_rfc3339}}"
+        filter: '{{parsed_event.message.get("stamp_delivery") != None}}'
+
+      - set:
+          destination.ip: "{{parsed_event.message.delivery_to_ip}}"
+        filter: '{{parsed_event.message.get("delivery_to_ip", "") | is_ipaddress}}'
+
+      - set:
+          destination.domain: "{{parsed_event.message.delivery_to_name}}"
+        filter: '{{parsed_event.message.get("delivery_to_name") != None}}'
+
+      - set:
+          error.message: "{{parsed_event.message.delivery_info}}"
+        filter: '{{parsed_event.message.delivery_status in ["bounced", "rejected", "disconnected"]}}'
+
+      - translate:
+        dictionary:
+          "sent": "success"
+          "bounced": "failure"
+          "rejected": "failure"
+          "disconnected": "failure"
+          "deferred": "unknown"
+          "quarantine": "unknown"
+        mapping:
+          parsed_event.message.delivery_status: event.outcome
+        fallback: "unknown"
+
+  set_attachments:
+    actions:
+      - set:
+          email.attachments: >
+            [
+              {% for part in parsed_event.message.message_parts %}
+              {
+                "file": {
+                  {% if part.name %}"name": {{part.name | tojson}},{% endif %}
+                  {% if part.content_type %}"mime_type": {{part.content_type | tojson}},{% endif %}
+                  {% if part.size %}"size": {{part.size}},{% endif %}
+                  {% if part.sha1 %}"hash": {"sha1": {{part.sha1 | tojson}}},{% endif %}
+                }
+              },
+              {% endfor %}
+            ]
+
+      - set:
+          secuserve.qrcode: "true"
+        filter: '{{parsed_event.message.message_parts | selectattr("qrcode") | list | length > 0}}'
