@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-10-26 - 1.1.0
+## 2026-11-03 - 1.1.0
 
 ### Added
 
@@ -15,36 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse new ECS fields:
   - every log type: `observer.hostname`
   - `conn` and `conn_long`: `destination.as.number`, `destination.as.organization.name`, `destination.geo.city_name`, `destination.geo.country_iso_code`, `destination.geo.country_name`, `destination.mac`, `destination.packets`, `network.iana_number`, `source.as.number`, `source.as.organization.name`, `source.geo.city_name`, `source.geo.country_name`, `source.mac`, `source.packets`
-  - `dns`: `dns.answers.ttl`, `dns.header_flags`, `dns.id`, `dns.question.class`, `event.outcome`, `network.protocol`, `network.transport`
-  - `http`: `destination.domain`, `http.request.mime_type`, `http.request.referrer`, `http.response.mime_type`, `http.version`, `network.transport`, `source.user.name`
-  - `ssl`: `destination.domain`, `event.outcome`, `network.transport`, `tls.client.issuer`, `tls.client.subject`, `tls.next_protocol`, `tls.resumed`, `tls.server.issuer`, `tls.server.subject`
+  - `dns`: `dns.answers.ttl`, `dns.header_flags`, `dns.id`, `dns.question.class`, `network.protocol`, `network.transport`
+  - `http`: `destination.domain`, `http.request.body.content`, `http.request.mime_type`, `http.request.referrer`, `http.response.mime_type`, `http.version`, `network.protocol`, `network.transport`, `source.user.name`, `url.port`
+  - `ssl`: `destination.domain`, `network.protocol`, `network.transport`, `tls.client.hash.sha256`, `tls.client.issuer`, `tls.client.subject`, `tls.next_protocol`, `tls.resumed`, `tls.server.hash.sha256`, `tls.server.issuer`, `tls.server.subject`
   - `files`: `destination.ip`, `event.duration`, `file.name`, `network.protocol`, `source.ip`
   - `suricata_corelight`: `rule.version`
   - `intel`: `threat.indicator.provider`
   - `notice`: `destination.ip`, `destination.port`, `event.severity`, `file.mime_type`, `network.transport`, `source.ip`
   - `ssh`: `destination.geo.city_name`, `destination.geo.country_iso_code`, `destination.geo.region_name`, `event.category`, `event.outcome`, `event.type`, `network.direction`, `network.protocol`, `network.transport`, `source.geo.city_name`, `source.geo.country_iso_code`, `source.geo.region_name`
-  - `kerberos`: `error.code`, `error.message`, `event.action`, `event.category`, `event.outcome`, `event.type`, `network.protocol`, `source.user.domain`, `source.user.name`, `tls.client.x509.subject.distinguished_name`, `tls.server.x509.subject.distinguished_name`
-  - `ntlm`: `destination.domain`, `event.category`, `event.outcome`, `event.type`, `network.protocol`, `network.transport`, `source.domain`, `source.user.domain`, `source.user.name`
-  - `ldap`: `event.action`, `event.category`, `event.outcome`, `event.type`, `network.protocol`
-  - `ldap_search`: `event.action`, `event.type`, `network.protocol`
+  - `kerberos`: `error.code`, `error.message`, `event.action`, `event.category`, `event.outcome`, `event.type`, `network.protocol`, `source.user.domain`, `source.user.name`, `tls.client.x509.subject.distinguished_name`, `tls.server.x509.subject.distinguished_name`, `user.domain`, `user.name`
+  - `ntlm`: `destination.domain`, `event.category`, `event.outcome`, `event.type`, `network.protocol`, `network.transport`, `source.domain`, `source.user.domain`, `source.user.name`, `user.domain`, `user.name`
+  - `ldap`: `error.message`, `event.action`, `event.category`, `event.outcome`, `event.type`, `network.protocol`, `source.user.domain`, `source.user.name`, `user.domain`, `user.name`
+  - `ldap_search`: `error.message`, `event.action`, `event.type`, `network.protocol`
   - `dce_rpc`: `event.action`, `event.type`, `network.protocol`
   - `smtp`: `email.cc.address`, `email.from.address`, `email.message_id`, `email.reply_to.address`, `email.sender.address`, `email.subject`, `email.to.address`, `event.category`, `event.type`, `network.protocol`, `tls.established`, `user_agent.original`
   - `smtp_links`: `event.category`, `event.type`, `network.protocol`, `url.domain`, `url.original`
-  - `smb_files`: `event.action`, `event.category`, `event.type`, `file.accessed`, `file.created`, `file.ctime`, `file.directory`, `file.mtime`, `file.name`, `file.size`, `network.protocol`, `network.transport`
+  - `smb_files`: `event.action`, `event.category`, `event.type`, `file.accessed`, `file.created`, `file.ctime`, `file.directory`, `file.mtime`, `file.name`, `file.path`, `file.size`, `network.protocol`, `network.transport`
   - `smb_mapping`: `event.type`, `network.protocol`, `network.transport`
   - `ftp`: `event.action`, `event.outcome`, `event.type`, `file.directory`, `file.mime_type`, `file.size`, `network.protocol`, `source.user.name`
   - `x509`: `event.category`, `event.type`, `file.hash.sha256`, `file.x509.alternative_names`, `file.x509.issuer.distinguished_name`, `file.x509.not_after`, `file.x509.not_before`, `file.x509.public_key_algorithm`, `file.x509.public_key_curve`, `file.x509.public_key_exponent`, `file.x509.public_key_size`, `file.x509.serial_number`, `file.x509.signature_algorithm`, `file.x509.subject.distinguished_name`, `file.x509.version_number`
-  - `pe`: `event.category`, `event.type`, `file.pe.architecture`
+  - `pe`: `event.category`, `event.type`, `file.pe.architecture`, `file.pe.sections.name`
   - `dhcp`: `destination.ip`, `event.duration`, `event.type`, `host.hostname`, `network.protocol`, `network.transport`, `source.ip`, `source.mac`
   - `rdp`: `event.outcome`, `event.type`, `network.protocol`, `tls.established`
-  - `quic`: `event.type`, `network.protocol`, `network.transport`, `tls.client.server_name`, `user_agent.original`
+  - `quic`: `event.type`, `network.protocol`, `network.transport`, `tls.client.server_name`, `tls.next_protocol`, `user_agent.original`
   - `ntp`: `event.type`, `network.protocol`, `network.transport`
   - `snmp`: `event.duration`, `event.type`, `network.protocol`, `network.transport`
   - `mysql`: `event.action`, `event.outcome`, `event.type`, `network.protocol`
-  - `tunnel`: `event.type`
+  - `tunnel`: `event.action`, `event.type`
   - `ipsec`: `event.type`, `network.protocol`, `network.transport`
   - `ocsp`: `event.category`, `event.type`
-  - `encrypted_dns`: `destination.ip`, `event.category`, `event.type`, `network.protocol`, `tls.client.server_name`, `tls.server.x509.alternative_names`, `tls.server.x509.subject.common_name`
+  - `encrypted_dns`: `destination.ip`, `event.category`, `event.kind`, `event.type`, `network.protocol`, `tls.client.server_name`, `tls.server.x509.alternative_names`, `tls.server.x509.subject.common_name`
   - `software`: `event.type`, `host.ip`, `package.name`, `package.version`, `url.original`
   - `known_users`: `destination.ip`, `event.duration`, `event.type`, `host.ip`, `network.protocol`, `user.name`
   - `weird`: `event.action`, `event.type`
@@ -73,6 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `conn`: `source.bytes` / `destination.bytes` now hold `orig_ip_bytes` / `resp_ip_bytes`, the bytes seen on the wire, headers included, measured like `source.packets` and reported by Zeek on every connection, including the ones that carry no payload; an export that leaves them out reports no `source.bytes` / `destination.bytes`. The payload counts `orig_bytes` / `resp_bytes` they held in 1.0.0 move to `corelight.conn.orig_bytes` / `corelight.conn.resp_bytes`
+- `http`: `url.domain` no longer carries the port of the `Host:` header; the port is in `url.port`
+- `http`: `url.path` is no longer set on a `CONNECT` request, whose URI is the target `host:port` rather than a path
+- `dns` and `ssl`: set `event.outcome`. On `dns` it is the response code (`NOERROR` is a success). On `ssl` it is whether the session was established; whether the certificate chain validated stays in `corelight.ssl.validation_status`
+- Every log type: `related.hosts` now contains the sensor name, since `observer.hostname` feeds it
 - `http` and `ssl`: `destination.domain` is now set from the `Host:` header and from the SNI, so the platform derives `destination.address` from that domain instead of the destination IP
 - `intel`: the intelligence sources move from `corelight.intel.sources` to `threat.indicator.provider`
 - `notice`: keep the raw event in the top-level `message` field; the notice text is exposed as `corelight.notice.message`
@@ -83,7 +88,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Parse the events wrapped in a one-element JSON array (`[{...}]`); an array holding several events is still rejected as a whole
-- `conn`: report the volume of a connection that carries no payload, from `orig_ip_bytes` / `resp_ip_bytes` when Zeek omits `orig_bytes` / `resp_bytes`
 - `dns`: keep `dns.answers` when an answer contains double quotes, as TXT records do
 
 ## 2026-06-17 - 1.0.0
