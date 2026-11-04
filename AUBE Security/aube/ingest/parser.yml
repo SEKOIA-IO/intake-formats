@@ -15,6 +15,10 @@ pipeline:
         output_field: message
 
   - name: set_common_fields
+  - name: set_host_hostname
+    filter: "{{not (parsed.message.server.source_host | is_ipaddress)}}"
+  - name: set_host_ip
+    filter: "{{parsed.message.server.source_host | is_ipaddress}}"
   - name: set_confirmed_fields
     filter: "{{parsed.message.event_type == 'confirmed_anomaly'}}"
   - name: set_withdrawn_fields
@@ -23,6 +27,10 @@ pipeline:
     filter: "{{parsed.message.event_type == 'test'}}"
   - name: set_top_event
     filter: "{{parsed.message.top_events | length > 0}}"
+  - name: set_top_event_executable_path
+    filter: '{{parsed.message.top_events | length > 0 and parsed.message.top_events[0].executable and ("/" in parsed.message.top_events[0].executable or "\\" in parsed.message.top_events[0].executable)}}'
+  - name: set_top_event_domain_user
+    filter: '{{parsed.message.top_events | length > 0 and parsed.message.top_events[0].user and "\\" in parsed.message.top_events[0].user}}'
 
 stages:
   set_common_fields:
@@ -32,17 +40,18 @@ stages:
           event.end: "{{parsed.message.period.end}}"
           event.category: ["intrusion_detection"]
           event.type: ["info"]
-          event.dataset: "{{parsed.message.event_type}}"
+          event.dataset: "aube.anomalies"
           event.action: "{{parsed.message.event_type}}"
           event.url: "{{parsed.message.period.url}}"
           event.reference: "{{parsed.message.report.url}}"
           event.risk_score: "{{parsed.message.score.value}}"
-          event.reason: "Singular activity on {{parsed.message.server.source_host}} during unit period {{parsed.message.period.label}}"
 
           observer.vendor: "AUBE Security"
           observer.product: "AUBE"
           observer.version: "{{parsed.message.versions.core}}"
 
+          # The server's Source host in AUBE Portal: the name (or address) its
+          # logs arrive under. aube.server.name is the operator's label for it.
           host.name: "{{parsed.message.server.source_host}}"
           host.os.type: "{{parsed.message.server.type}}"
 
@@ -52,6 +61,7 @@ stages:
           aube.event_uid: "{{parsed.message.event_uid}}"
           aube.portal.version: "{{parsed.message.versions.portal}}"
           aube.report.id: "{{parsed.message.report.id}}"
+          aube.report.created_at: "{{parsed.message.report.created_at}}"
           aube.job_run.id: "{{parsed.message.report.job_run_id}}"
           aube.group: "{{parsed.message.group}}"
           aube.server.name: "{{parsed.message.server.name}}"
@@ -64,6 +74,9 @@ stages:
           aube.event_counts.irregular: "{{parsed.message.event_counts.irregular}}"
           aube.event_counts.total: "{{parsed.message.event_counts.total}}"
           aube.severity: "{{parsed.message.severity}}"
+          # Every user active in the period (related.user is computed by
+          # Sekoia's pipeline from user.name, so the parser leaves it alone).
+          aube.users: "{{parsed.message.users}}"
           aube.evaluation.status: "{{parsed.message.evaluation.status}}"
           aube.evaluation.classification: "{{parsed.message.evaluation.classification}}"
           aube.evaluation.reviewed_by: "{{parsed.message.evaluation.reviewed_by}}"
@@ -73,7 +86,8 @@ stages:
           aube.redaction: "{{parsed.message.redaction}}"
 
       # AUBE severity (highest CS.txt level among the period's events) ->
-      # ECS numeric severity.
+      # ECS numeric severity. "none" maps like "info", which the Low rule
+      # already shares.
       - translate:
         dictionary:
           "critical": "100"
@@ -81,9 +95,19 @@ stages:
           "medium": "50"
           "low": "25"
           "info": "10"
-          "none": "0"
+          "none": "10"
         mapping:
           parsed.message.severity: event.severity
+
+  set_host_hostname:
+    actions:
+      - set:
+          host.hostname: "{{parsed.message.server.source_host}}"
+
+  set_host_ip:
+    actions:
+      - set:
+          host.ip: ["{{parsed.message.server.source_host}}"]
 
   # An analyst-confirmed anomaly is the alert; its time is the confirmation,
   # so a late confirmation of an old period still alerts. The period itself
@@ -93,13 +117,16 @@ stages:
       - set:
           "@timestamp": "{{parsed.message.evaluation.reviewed_at or parsed.message.period.end or parsed.message.report.created_at}}"
           event.kind: "alert"
+          event.reason: "Singular activity on {{parsed.message.server.source_host}} during unit period {{parsed.message.period.label}}"
 
-  # The analyst moved the period out of Confirmed; its time is that change.
+  # The analyst withdrew the confirmation (reopened the period, then set it
+  # to Ignore, Accepted or Approved); its time is that change.
   set_withdrawn_fields:
     actions:
       - set:
           "@timestamp": "{{parsed.message.evaluation.reviewed_at or parsed.message.report.created_at}}"
           event.kind: "event"
+          event.reason: "Singular activity on {{parsed.message.server.source_host}} during unit period {{parsed.message.period.label}}"
 
   set_test_fields:
     actions:
@@ -108,12 +135,27 @@ stages:
           event.kind: "event"
 
   # The most singular command of the period becomes the headline user and
-  # process, so rules and the Events page can pivot on them.
+  # process, so rules and the Events page can pivot on them; the top
+  # commands' values are kept as typed arrays.
   set_top_event:
     actions:
       - set:
+          event.category: ["intrusion_detection", "process"]
           user.name: "{{parsed.message.top_events[0].user}}"
-          related.user: "{{parsed.message.users}}"
           process.name: "{{parsed.message.top_events[0].executable | basename}}"
           process.command_line: "{{parsed.message.top_events[0].command_line}}"
-          aube.top_events: "{{parsed.message.top_events | to_json}}"
+          process.start: "{{parsed.message.top_events[0].time}}"
+          aube.top_events.command_line: "{{parsed.message.top_events | map(attribute='command_line') | reject('none') | list}}"
+          aube.top_events.executable: "{{parsed.message.top_events | map(attribute='executable') | reject('none') | list}}"
+
+  set_top_event_executable_path:
+    actions:
+      - set:
+          process.executable: "{{parsed.message.top_events[0].executable}}"
+
+  # A Windows DOMAIN\user: the domain and the bare user name.
+  set_top_event_domain_user:
+    actions:
+      - set:
+          user.domain: '{{parsed.message.top_events[0].user.split("\\") | first}}'
+          user.name: '{{parsed.message.top_events[0].user.split("\\") | last}}'
