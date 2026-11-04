@@ -14,7 +14,7 @@ pipeline:
             ([0-9])%{HOUR}:%{MINUTE}(?::%{SECOND})([0-9])
           HAPROXYURL: "(?:%{URIPROTO:url_scheme}://)?(?:%{USER:url_username}(?::[^@]*)?@)?(?:%{URIHOST:url_domain})?%{DATA:url_path}"
           TLS_PROTOCOL: "TLS"
-          HAPROXYHTTPBASE: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE} %{NOTSPACE}/(%{DATA})? %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT:http_response_status_code} %{NOTSPACE:http_response_bytes} %{DATA:http_request_cookie} %{DATA:http_response_cookie} %{NOTSPACE} %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT}/%{INT} (\{%{DATA:captured_request_headers}\})?( )?(\{%{DATA:captured_response_headers}\})?( )?"%{HAPROXYHTTPBASE_REQUEST}"( %{TLS_PROTOCOL:tls_protocol}v%{NUMBER:tls_version})?%{GREEDYDATA}'
+          HAPROXYHTTPBASE: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE} %{NOTSPACE}/(%{DATA})? %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT:http_response_status_code} %{NOTSPACE:http_response_bytes} %{DATA:http_request_cookie} %{DATA:http_response_cookie} %{NOTSPACE} %{INT}/%{INT}/%{INT}/%{INT}/%{NOTSPACE} %{INT}/%{INT} (\{%{DATA:captured_request_headers}\})?( )?(\{%{DATA:captured_response_headers}\})?( )?"%{HAPROXYHTTPBASE_REQUEST}"( %{TLS_PROTOCOL:tls_protocol}v%{NUMBER:tls_version})?%{GREEDYDATA:extra_key_values}'
           HAPROXYHTTPBASE_REQUEST: "(<BADREQ>||(%{WORD:http_request_method} %{HAPROXYURL:url_original}( HTTP/%{NUMBER:http_version})?))?"
           HAPROXYERROR: '%{IP:source_ip}:%{INT:source_port} \[%{HAPROXYDATE}\] %{NOTSPACE}: %{GREEDYDATA:error_msg}'
           HAPROXYCONNECT: 'Connect from %{IP:source_ip}:%{INT:source_port} to %{IP:destination_ip}:%{INT:destination_port} \(%{DATA:frontend}\)'
@@ -28,6 +28,61 @@ pipeline:
 
   - name: json_main_stage
     filter: "{{grok.message.json_msg | length > 0}}"
+
+  - name: parsed_haproxy_client_ip
+    filter: '{{grok.message.HAPROXYHTTPBASE | length > 0 and grok.message.extra_key_values != null and "client.ip=" in grok.message.extra_key_values}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok.message.extra_key_values}}"
+        output_field: message
+        pattern: "%{DATA}client.ip=%{IP:client_ip}(\\s|$)%{GREEDYDATA}"
+
+  - name: parsed_haproxy_url_domain
+    filter: '{{grok.message.HAPROXYHTTPBASE | length > 0 and grok.message.extra_key_values != null and "url.domain=" in grok.message.extra_key_values}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok.message.extra_key_values}}"
+        output_field: message
+        pattern: '%{DATA}url.domain="?%{HOSTNAME:url_domain}"?(\\s|$)%{GREEDYDATA}'
+
+  - name: parsed_haproxy_request_referrer
+    filter: '{{grok.message.HAPROXYHTTPBASE | length > 0 and grok.message.extra_key_values != null and "http.request.referrer=" in grok.message.extra_key_values}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok.message.extra_key_values}}"
+        output_field: message
+        pattern: '%{DATA}http.request.referrer="(?<http_request_referrer>[^"]*)"(\\s|$)%{GREEDYDATA}'
+
+  - name: parsed_haproxy_request_bytes
+    filter: '{{grok.message.HAPROXYHTTPBASE | length > 0 and grok.message.extra_key_values != null and "http.request.bytes=" in grok.message.extra_key_values}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok.message.extra_key_values}}"
+        output_field: message
+        pattern: "%{DATA}http.request.bytes=%{INT:http_request_bytes}(\\s|$)%{GREEDYDATA}"
+
+  - name: parsed_haproxy_user_agent
+    filter: '{{grok.message.HAPROXYHTTPBASE | length > 0 and grok.message.extra_key_values != null and "user_agent.original=" in grok.message.extra_key_values}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok.message.extra_key_values}}"
+        output_field: message
+        pattern: '%{DATA}user_agent.original="(?<user_agent_original>[^"]*)"(\\s|$)%{GREEDYDATA}'
+
+  - name: parsed_haproxy_response_body_bytes
+    filter: '{{grok.message.HAPROXYHTTPBASE | length > 0 and grok.message.extra_key_values != null and "http.response.body.bytes=" in grok.message.extra_key_values}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok.message.extra_key_values}}"
+        output_field: message
+        pattern: '%{DATA}http.response.body.bytes="?%{INT:http_response_body_bytes}"?(\\s|$)%{GREEDYDATA}'
+
   - name: grok_main_stage
     filter: "{{grok.message.HAPROXYHTTPBASE | length > 0}}"
   - name: grok_error_stage
@@ -60,6 +115,31 @@ stages:
           url.original: "{{grok.message.url_original}}"
           tls.version_protocol: "{{grok.message.tls_protocol}}"
           tls.version: "{{grok.message.tls_version}}"
+
+      - set:
+          source.address: "{{parsed_haproxy_client_ip.message.client_ip}}"
+          source.ip: "{{parsed_haproxy_client_ip.message.client_ip}}"
+        filter: "{{parsed_haproxy_client_ip.message != null and parsed_haproxy_client_ip.message.client_ip != null and parsed_haproxy_client_ip.message.client_ip | is_ipaddress}}"
+
+      - set:
+          destination.domain: "{{parsed_haproxy_url_domain.message.url_domain}}"
+        filter: "{{parsed_haproxy_url_domain.message != null and parsed_haproxy_url_domain.message.url_domain != null and parsed_haproxy_url_domain.message.url_domain | length > 0}}"
+
+      - set:
+          http.request.referrer: "{{parsed_haproxy_request_referrer.message.http_request_referrer}}"
+        filter: "{{parsed_haproxy_request_referrer.message != null and parsed_haproxy_request_referrer.message.http_request_referrer != null and parsed_haproxy_request_referrer.message.http_request_referrer | length > 0}}"
+
+      - set:
+          http.request.bytes: "{{parsed_haproxy_request_bytes.message.http_request_bytes}}"
+        filter: "{{parsed_haproxy_request_bytes.message != null and parsed_haproxy_request_bytes.message.http_request_bytes != null and parsed_haproxy_request_bytes.message.http_request_bytes | re_match('^[0-9]+$')}}"
+
+      - set:
+          user_agent.original: "{{parsed_haproxy_user_agent.message.user_agent_original}}"
+        filter: "{{parsed_haproxy_user_agent.message != null and parsed_haproxy_user_agent.message.user_agent_original != null and parsed_haproxy_user_agent.message.user_agent_original | length > 0}}"
+
+      - set:
+          http.response.body.bytes: "{{parsed_haproxy_response_body_bytes.message.http_response_body_bytes}}"
+        filter: "{{parsed_haproxy_response_body_bytes.message != null and parsed_haproxy_response_body_bytes.message.http_response_body_bytes != null and parsed_haproxy_response_body_bytes.message.http_response_body_bytes | re_match('^[0-9]+$')}}"
 
   json_main_stage:
     actions:
