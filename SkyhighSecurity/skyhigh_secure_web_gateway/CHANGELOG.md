@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Handle wrapped JSON payloads in `message` to avoid `parse_date_mcafee` failures when parsing McAfee/Skyhigh access logs
+
 ## 2023-08-29 - 1.0.1
 
 ### Fixed
