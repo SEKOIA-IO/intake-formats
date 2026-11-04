@@ -10,7 +10,9 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "^(?:<\\d+>\\S+\\s+\\S+\\s+%{NOTSPACE:syslog_appname}:\\s+)?%{WORD:level}\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{GREEDYDATA:kv_part}$"
+        pattern: "^(?:<\\d+>\\S+\\s+\\S+\\s+%{NOTSPACE:syslog_appname}:\\s+)?%{WORD:level}\\s+%{NUTANIX_API_TIMESTAMP:timestamp}\\s+%{GREEDYDATA:kv_part}$"
+        custom_patterns:
+          NUTANIX_API_TIMESTAMP: "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3,6}Z?"
 
   - name: parse_api_kv
     filter: >
@@ -24,15 +26,53 @@ pipeline:
         item_sep: "\\|\\|"
         raise_errors: false
 
+  - name: parse_api_fields_fallback
+    filter: >
+      {{'||' in (original.message) and
+      'httpMethod=' in (original.message) and
+      'restEndpoint=' in (original.message)}}
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^(?:<\\d+>\\S+\\s+\\S+\\s+%{NOTSPACE:syslog_appname}:\\s+)?%{WORD:level}\\s+%{NUTANIX_API_TIMESTAMP:timestamp}\\s+clientType=%{DATA:clientType}\\|\\|userName=%{DATA:userName}\\|\\|NutanixApiVersion=%{DATA:NutanixApiVersion}\\|\\|httpMethod=%{DATA:httpMethod}\\|\\|restEndpoint=%{DATA:restEndpoint}\\|\\|entityUuid=%{DATA:entityUuid}\\|\\|queryParams=%{DATA:queryParams}\\|\\|payload=%{GREEDYDATA:payload}$"
+        custom_patterns:
+          NUTANIX_API_TIMESTAMP: "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3,6}Z?"
+
   - name: parse_api_date
     filter: >
-      {{(parse_api_header.message.timestamp) != ''}}
+      {{(parse_api_header.message.timestamp | length) > 0}}
     external:
       name: date.parse
       properties:
-        input_field: "{{parse_api_header.message.timestamp}}"
+        input_field: "{{(parse_api_header.message.timestamp or '').replace('Z', '')}}"
         output_field: datetime
         format: "%Y-%m-%d %H:%M:%S,%f"
+
+  - name: parse_glog_header
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+        pattern: "^(?:<\\d+>\\S+\\s+\\S+\\s+%{NOTSPACE:syslog_appname}:\\s+)?%{GLOG_LEVEL:glog_level}%{GLOG_DATE:glog_date}\\s+%{TIME:glog_time}Z\\s+%{INT:pid}\\s+%{DATA:file_name}:%{INT:file_line}]\\s+%{GREEDYDATA:glog_message}$"
+        custom_patterns:
+          GLOG_LEVEL: "[IWEF]"
+          GLOG_DATE: "\\d{8}"
+
+  - name: parse_glog_date
+    filter: >
+      {{(parse_glog_header.message.glog_level | length) > 0 and
+      (parse_glog_header.message.glog_date | length) == 8 and
+      (parse_glog_header.message.glog_time | length) > 0 and
+      (parse_glog_header.message.file_line | length) > 0}}
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parse_glog_header.message.glog_date}} {{parse_glog_header.message.glog_time}}Z"
+        output_field: datetime
+        format: "%Y%m%d %H:%M:%S.%fZ"
 
   - name: parse_audit_json
     filter: >
@@ -121,6 +161,8 @@ pipeline:
     filter: "{{ parse_api_date.datetime | length > 0 }}"
   - name: set_audit_fields
     filter: "{{ parse_audit_json.message | length > 0 }}"
+  - name: set_glog_fields
+    filter: "{{ parse_glog_date.datetime | length > 0 }}"
   - name: set_flow_fields
     filter: "{{ parse_network_header.message.rule_name | length > 0 and 'policy' not in parse_network_header.message.rule_name | lower }}"
   - name: set_security_policy_hit_fields
@@ -144,16 +186,38 @@ stages:
           log.syslog.appname: "{{parse_api_header.message.syslog_appname}}"
           event.category: ["network"]
           event.type: ["connection"]
-          event.action: "{{parse_api_kv.message.httpMethod | lower}}"
+          event.action: "{{(parse_api_kv.message.httpMethod or parse_api_fields_fallback.message.httpMethod) | lower}}"
           event.dataset: "api_audit"
-          user.id: "{{parse_api_kv.message.userName}}"
-          http.request.method: "{{parse_api_kv.message.httpMethod}}"
-          url.path: "{{parse_api_kv.message.restEndpoint}}"
-          url.query: "{{parse_api_kv.message.queryParams}}"
-          http.request.body.content: "{{parse_api_kv.message.payload}}"
-          entity.id: "{{parse_api_kv.message.entityUuid}}"
-          nutanix.prism.api_version: "{{parse_api_kv.message.NutanixApiVersion}}"
-          nutanix.prism.client_type: "{{parse_api_kv.message.clientType}}"
+          user.id: "{{parse_api_kv.message.userName or parse_api_fields_fallback.message.userName}}"
+          http.request.method: "{{parse_api_kv.message.httpMethod or parse_api_fields_fallback.message.httpMethod}}"
+          url.path: "{{parse_api_kv.message.restEndpoint or parse_api_fields_fallback.message.restEndpoint}}"
+          url.query: "{{parse_api_kv.message.queryParams or parse_api_fields_fallback.message.queryParams}}"
+          http.request.body.content: "{{parse_api_kv.message.payload or parse_api_fields_fallback.message.payload}}"
+          entity.id: "{{parse_api_kv.message.entityUuid or parse_api_fields_fallback.message.entityUuid}}"
+          nutanix.prism.api_version: "{{parse_api_kv.message.NutanixApiVersion or parse_api_fields_fallback.message.NutanixApiVersion}}"
+          nutanix.prism.client_type: "{{parse_api_kv.message.clientType or parse_api_fields_fallback.message.clientType}}"
+
+  set_glog_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parse_glog_date.datetime}}"
+          event.category: ["process"]
+          event.type: ["info"]
+          event.dataset: "internal_glog"
+          event.reason: "{{parse_glog_header.message.glog_message}}"
+          process.pid: "{{parse_glog_header.message.pid}}"
+          log.origin.file.name: "{{parse_glog_header.message.file_name}}"
+          log.origin.file.line: "{{parse_glog_header.message.file_line}}"
+          log.syslog.appname: "{{parse_glog_header.message.syslog_appname}}"
+
+      - translate:
+        dictionary:
+          I: info
+          W: warning
+          E: error
+          F: critical
+        mapping:
+          parse_glog_header.message.glog_level: log.level
 
   set_audit_fields:
     actions:
