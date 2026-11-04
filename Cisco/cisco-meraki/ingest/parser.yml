@@ -7,7 +7,7 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
         pattern: >-
-          ^%{NUMBER:timestamp}\s%{WORD:device_hostname}\s%{WORD:log_type}\s%{DATA:kv_part}(\spattern:\s(%{NUMBER:action}|%{DATA:action})?\s%{GREEDYDATA:rule_name}|\srequest:\s%{WORD:http_method}\s%{NOTSPACE:url})?$
+          ^%{NUMBER:timestamp}\s%{NOTSPACE:device_hostname}\s%{WORD:log_type}\s%{DATA:kv_part}(\spattern:\s(%{NUMBER:action}|%{DATA:action})?\s%{GREEDYDATA:rule_name}|\srequest:\s%{WORD:http_method}\s%{NOTSPACE:url})?$
   - name: parsed_date
     external:
       name: date.parse
@@ -40,6 +40,39 @@ pipeline:
         input_field: "{{kv_part_message.message.dst}}"
         output_field: message
         pattern: "^%{IP:dst_ip}:%{NUMBER:dst_port}$"
+  - name: grok_security_event
+    filter: '{{grok_header.message.log_type == "security_event"}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{grok_header.message.kv_part}}"
+        output_field: message
+        pattern: ^%{WORD:log_subtype}(\s%{DATA:kv_part})?(\smessage:\s%{GREEDYDATA:rule_name})?$
+  - name: kv_security_event
+    filter: "{{grok_security_event.message.kv_part != null}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{grok_security_event.message.kv_part}}"
+        output_field: message
+        value_sep: "="
+        item_sep: \s
+  - name: grok_src_ip_security_event
+    filter: "{{kv_security_event.message.src != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{kv_security_event.message.src}}"
+        output_field: message
+        pattern: "^%{IP:src_ip}:%{NUMBER:src_port}$"
+  - name: grok_dst_ip_security_event
+    filter: "{{kv_security_event.message.dst != null}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{kv_security_event.message.dst}}"
+        output_field: message
+        pattern: "^%{IP:dst_ip}:%{NUMBER:dst_port}$"
   - name: set_common
   - name: set_source_nat_ip_flow
     filter: '{{kv_part_message.message.get("translated_src_ip") != None}}'
@@ -47,6 +80,12 @@ pipeline:
     filter: '{{kv_part_message.message.get("translated_dst_ip") != None}}'
   - name: set_urls
     filter: '{{grok_header.message.log_type == "urls"}}'
+  - name: set_security_event
+    filter: '{{grok_header.message.log_type == "security_event"}}'
+  - name: set_ids_alerted
+    filter: '{{grok_security_event.message.log_subtype == "ids_alerted"}}'
+  - name: set_security_filtering_file_scanned
+    filter: '{{grok_security_event.message.log_subtype == "security_filtering_file_scanned"}}'
   - name: grok_flows
     filter: '{{grok_header.message.log_type in ["flows", "firewall", "vpn_firewall", "cellular_firewall", "bridge_anyconnect_client_vpn_firewall"]}}'
     external:
@@ -208,6 +247,54 @@ stages:
           url.original: "{{grok_header.message.url}}"
           http.request.method: "{{grok_header.message.http_method}}"
           user_agent.original: "{{kv_part_message.message.agent}}"
+  set_security_event:
+    actions:
+      - set:
+          cisco_meraki.event_subtype: "{{grok_security_event.message.log_subtype}}"
+      - set:
+          source.ip: "{{grok_src_ip_security_event.message.src_ip}}"
+          source.port: "{{grok_src_ip_security_event.message.src_port}}"
+        filter: "{{grok_src_ip_security_event.message.src_ip | is_ipaddress}}"
+      - set:
+          destination.ip: "{{grok_dst_ip_security_event.message.dst_ip}}"
+          destination.port: "{{grok_dst_ip_security_event.message.dst_port}}"
+        filter: "{{grok_dst_ip_security_event.message.dst_ip | is_ipaddress}}"
+  set_ids_alerted:
+    actions:
+      - set:
+          event.category: ["network", "intrusion_detection"]
+          rule.id: "{{kv_security_event.message.signature}}"
+          rule.name: "{{grok_security_event.message.rule_name}}"
+          event.severity: "{{kv_security_event.message.priority}}"
+          source.mac: "{{kv_security_event.message.shost}}"
+          destination.mac: "{{kv_security_event.message.dhost}}"
+          network.direction: "{{kv_security_event.message.direction}}"
+          action.outcome: "{{kv_security_event.message.decision}}"
+          cisco_meraki.ids.action: "{{kv_security_event.message.action}}"
+      - dictionary:
+          blocked: ["denied"]
+          allowed: ["allowed"]
+        fallback: ["info"]
+        mapping:
+          kv_security_event.message.decision: event.type
+  set_security_filtering_file_scanned:
+    actions:
+      - set:
+          url.original: "{{kv_security_event.message.url}}"
+          source.mac: "{{kv_security_event.message.mac}}"
+          file.hash.sha256: "{{kv_security_event.message.sha256}}"
+          threat.software.name: "{{kv_security_event.message.name}}"
+          cisco_meraki.file.disposition: "{{kv_security_event.message.disposition}}"
+          action.outcome: "{{kv_security_event.message.action}}"
+      - set:
+          event.category: ["network", "malware"]
+        filter: '{{kv_security_event.message.disposition == "malicious"}}'
+      - dictionary:
+          block: ["denied"]
+          allow: ["allowed"]
+        fallback: ["info"]
+        mapping:
+          kv_security_event.message.action: event.type
   set_flows:
     actions:
       - set:
