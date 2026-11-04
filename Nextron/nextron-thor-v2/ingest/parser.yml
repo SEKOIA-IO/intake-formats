@@ -18,6 +18,7 @@ pipeline:
         input_field: "{{parsed_event.message.installed_on}}"
         output_field: date
         format: "%m/%d/%Y"
+        timezone: UTC
 
   # Startup "Running as user: DOMAIN\user" -> user.name (older builds without run_as_user)
   - name: grok_user
@@ -102,7 +103,6 @@ stages:
           thor.entry: "{{parsed_event.message.entry}}"
           observer.vendor: "Nextron Systems"
           observer.product: "THOR"
-          observer.type: "ids"
 
       # THOR level -> numeric severity (Sekoia addition; Elastic does not set it).
       - set:
@@ -273,7 +273,10 @@ stages:
           rule.ruleset: '{{parsed_event.message.reasons[0].get("sigtype", "")}}'
           thor.reason_count: "{{parsed_event.message.reasons | length}}"
           thor.rule_date: '{{parsed_event.message.reasons[0].get("signature", {}).get("ruledate", "")}}'
-          thor.signature_tags: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags", []) | join(", ")}}'
+
+      - set:
+          thor.signature_tags: "{{parsed_event.message.reasons[0].signature.tags}}"
+        filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags") not in [none, []]}}'
 
       # Recover the description from the composite reason name (part after the
       # first " / ") when the signature carries none — the plain YARA/Sigma case.
