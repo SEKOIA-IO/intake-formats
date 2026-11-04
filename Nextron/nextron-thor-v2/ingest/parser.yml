@@ -40,8 +40,6 @@ pipeline:
     filter: '{{parsed_event.message.get("module") in ["AtJobs", "Autoruns", "Lnk", "WMIStartup"] and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
   - name: set_mft_merge_fields
     filter: '{{parsed_event.message.get("module") == "MFT" and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
-  - name: set_referenced_file_hashes
-    filter: '{{parsed_event.message.get("module") in ["LogScan", "EVTX", "ETL", "Eventlog"] and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
   - name: set_eventlog_fields
     filter: '{{parsed_event.message.get("module") in ["Eventlog", "EVTX", "ETL"]}}'
   - name: set_process_fields
@@ -106,7 +104,6 @@ stages:
           observer.vendor: "Nextron Systems"
           observer.product: "THOR"
           observer.type: "ids"
-          related.hosts: '["{{parsed_event.message.hostname}}"]'
 
       # THOR level -> numeric severity (Sekoia addition; Elastic does not set it).
       # event.severity is a number field: translate cannot target it (it only
@@ -133,14 +130,17 @@ stages:
       # THOR user field -> user.name (Elastic parity: unconditional rename)
       - set:
           user.name: "{{parsed_event.message.user}}"
-          related.user: '["{{parsed_event.message.user}}"]'
         filter: '{{parsed_event.message.get("user") not in [none, ""]}}'
 
       # Startup "Running as user:" grok (older builds); run_as_user covers newer ones
       - set:
           user.name: "{{grok_user.user.name}}"
-          related.user: '["{{grok_user.user.name}}"]'
         filter: '{{grok_user.user is not none and grok_user.user.get("name") is not none}}'
+
+      # Service/task principal (ServiceCheck, Startup on newer builds)
+      - set:
+          user.name: "{{parsed_event.message.run_as_user}}"
+        filter: '{{parsed_event.message.get("run_as_user") not in [none, ""]}}'
 
       # scan errors recorded while fetching events (Eventlog module Info lines)
       - set:
@@ -328,7 +328,6 @@ stages:
           thor.file.permissions: "{{parsed_event.message.file.get('permissions', '')}}"
           thor.file.internal_name: "{{parsed_event.message.file.get('internal_name', '')}}"
           thor.file.legal_copyright: "{{parsed_event.message.file.get('legal_copyright', '')}}"
-          related.hash: '["{{parsed_event.message.file.get(''md5'', '''')}}", "{{parsed_event.message.file.get(''sha1'', '''')}}", "{{parsed_event.message.file.get(''sha256'', '''')}}", "{{parsed_event.message.file.get(''imphash'', '''')}}"]'
 
       - set:
           file.name: "{{parsed_event.message.file.get('path', '').split('\\\\')[-1].split('/')[-1]}}"
@@ -401,7 +400,6 @@ stages:
           file.name: "{{parsed_event.message.image_name}}"
           file.hash.md5: "{{parsed_event.message.md5}}"
           file.hash.sha256: "{{parsed_event.message.sha256}}"
-          related.hash: '["{{parsed_event.message.md5}}", "{{parsed_event.message.sha256}}"]'
         filter: '{{parsed_event.message.get("module") == "Autoruns"}}'
 
   # ------------------------- files[0] -> file.* promotion (resolved subject) ---
@@ -424,7 +422,6 @@ stages:
           file.pe.product: "{{parsed_event.message.files[0].get('product', '')}}"
           file.pe.original_file_name: "{{parsed_event.message.files[0].get('original_name', '')}}"
           thor.file.type: "{{parsed_event.message.files[0].get('type', '')}}"
-          related.hash: '["{{parsed_event.message.files[0].get(''md5'', '''')}}", "{{parsed_event.message.files[0].get(''sha1'', '''')}}", "{{parsed_event.message.files[0].get(''sha256'', '''')}}", "{{parsed_event.message.files[0].get(''imphash'', '''')}}"]'
 
       - set:
           file.name: "{{parsed_event.message.files[0].get('path', '').split('\\\\')[-1].split('/')[-1]}}"
@@ -453,14 +450,7 @@ stages:
           file.owner: "{{parsed_event.message.files[0].get('owner', '')}}"
           file.size: "{{parsed_event.message.files[0].get('size', '')}}"
           thor.file.type: "{{parsed_event.message.files[0].get('type', '')}}"
-          related.hash: '["{{parsed_event.message.files[0].get(''md5'', '''')}}", "{{parsed_event.message.files[0].get(''sha1'', '''')}}", "{{parsed_event.message.files[0].get(''sha256'', '''')}}"]'
         filter: '{{parsed_event.message.files[0].get("path") == parsed_event.message.get("file")}}'
-
-  # ---------------- referenced binaries inside matched log lines (v1: [0]) ---
-  set_referenced_file_hashes:
-    actions:
-      - set:
-          related.hash: '["{{parsed_event.message.files[0].get(''md5'', '''')}}", "{{parsed_event.message.files[0].get(''sha1'', '''')}}", "{{parsed_event.message.files[0].get(''sha256'', '''')}}"]'
 
   # ------------------------------------------- embedded eventlog metadata ---
   set_eventlog_fields:
@@ -472,9 +462,17 @@ stages:
           thor.event_time: "{{parsed_event.message.event_time}}"
           thor.event_level: "{{parsed_event.message.event_level}}"
 
+      # Eventlog: a single binary referenced by the matched record -> file.*
+      # (EVTX/ETL keep file.* for the log file itself)
       - set:
-          related.hosts: '["{{parsed_event.message.hostname}}", "{{parsed_event.message.event_computer}}"]'
-        filter: '{{parsed_event.message.get("event_computer") != none}}'
+          file.path: "{{parsed_event.message.files[0].get('path', '')}}"
+          file.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("files") != none and parsed_event.message.files | length == 1}}'
+      - set:
+          file.name: "{{parsed_event.message.files[0].path.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("files") != none and parsed_event.message.files | length == 1 and parsed_event.message.files[0].get("path") not in [none, ""]}}'
 
       # Info progress lines: "Analyzing eventlog <channel>"
       - set:
@@ -502,7 +500,6 @@ stages:
       # owner "DOMAIN\user" -> process.user.* (effective user; ECS 9.4 reuse)
       - set:
           process.user.name: '{{parsed_event.message.owner.split("\\")[-1]}}'
-          related.user: '["{{parsed_event.message.owner.split("\\")[-1]}}"]'
         filter: '{{parsed_event.message.get("owner") not in [none, ""]}}'
       # Sekoia's ECS exposes process.user.name but not the process.user.domain
       # reuse, so the owner's domain part goes to a vendor field.
@@ -530,7 +527,6 @@ stages:
           thor.image.type: "{{parsed_event.message.image.get('type', '')}}"
           thor.image.size: "{{parsed_event.message.image.get('size', '')}}"
           thor.image.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
-          related.hash: '["{{parsed_event.message.image.get(''md5'', '''')}}", "{{parsed_event.message.image.get(''sha1'', '''')}}", "{{parsed_event.message.image.get(''sha256'', '''')}}"]'
         filter: '{{parsed_event.message.get("image") != none}}'
 
       # PE-Sieve counters (ProcessIntegrity) — THOR names kept verbatim (Elastic parity)
@@ -570,16 +566,6 @@ stages:
           destination.port: "{{parsed_event.message.rport}}"
         filter: '{{parsed_event.message.get("rport") not in [none, "", "*"]}}'
 
-      - set:
-          related.ip: '["{{parsed_event.message.ip}}", "{{parsed_event.message.rip}}"]'
-        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"] and parsed_event.message.get("rip") not in [none, "", "*"]}}'
-      - set:
-          related.ip: '["{{parsed_event.message.ip}}"]'
-        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"] and parsed_event.message.get("rip") in [none, "", "*"]}}'
-      - set:
-          related.ip: '["{{parsed_event.message.rip}}"]'
-        filter: '{{parsed_event.message.get("rip") not in [none, "", "*"] and parsed_event.message.get("ip") in [none, "", "*"]}}'
-
   # ------------------------------------------------------ Windows services ---
   set_service_fields:
     actions:
@@ -610,7 +596,6 @@ stages:
           file.pe.product: "{{parsed_event.message.image.get('product', '')}}"
           file.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
-          related.hash: '["{{parsed_event.message.image.get(''md5'', '''')}}", "{{parsed_event.message.image.get(''sha1'', '''')}}", "{{parsed_event.message.image.get(''sha256'', '''')}}", "{{parsed_event.message.image.get(''imphash'', '''')}}"]'
         filter: '{{parsed_event.message.get("image") != none}}'
 
       # Linux systemd services (log_version v2.x): flat unit/executable layout,
@@ -633,7 +618,6 @@ stages:
           file.owner: "{{parsed_event.message.exe_owner}}"
           file.group: "{{parsed_event.message.exe_group}}"
           thor.file.type: "{{parsed_event.message.exe_magic}}"
-          related.hash: '["{{parsed_event.message.sha1}}"]'
         filter: '{{parsed_event.message.get("executable") not in [none, ""]}}'
 
   # ------------------------------------------------------- scheduled tasks ---
@@ -715,7 +699,6 @@ stages:
           file.pe.description: "{{parsed_event.message.description}}"
           thor.first_run: "{{parsed_event.message.first_run}}"
           thor.element: "{{parsed_event.message.element}}"
-          related.hash: '["{{parsed_event.message.sha1}}"]'
         filter: '{{parsed_event.message.get("module") == "Amcache"}}'
 
       - set:
@@ -729,11 +712,9 @@ stages:
     actions:
       - set:
           dns.question.name: "{{parsed_event.message.entry}}"
-          related.hosts: '["{{parsed_event.message.hostname}}", "{{parsed_event.message.entry}}"]'
 
       - set:
           dns.resolved_ip: '["{{parsed_event.message.ip}}"]'
-          related.ip: '["{{parsed_event.message.ip}}"]'
         filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
 
       # the DNS cache entry is fully represented in dns.question.name
@@ -777,11 +758,7 @@ stages:
           package.name: "{{parsed_event.message.hotfix_id}}"
           package.reference: "{{parsed_event.message.caption}}"
           package.installed: "{{parsed_hotfix_date.date}}"
-          thor.installed_by: "{{parsed_event.message.installed_by}}"
-
-      - set:
-          related.user: '["{{parsed_event.message.installed_by}}"]'
-        filter: '{{parsed_event.message.get("installed_by") not in [none, ""]}}'
+          user.name: "{{parsed_event.message.installed_by}}"
 
   # ---------------------------------------------------- shares / env vars ---
   set_share_env_fields:
@@ -807,10 +784,13 @@ stages:
           thor.error: "{{parsed_event.message.error}}"
           thor.fault_in_module: "{{parsed_event.message.fault_in_module}}"
 
-      # crashed application object: hashes only (raw event keeps the rest)
+      # crashed application object -> the crashing process executable
       - set:
-          related.hash: '["{{parsed_event.message.app.get(''md5'', '''')}}", "{{parsed_event.message.app.get(''sha1'', '''')}}", "{{parsed_event.message.app.get(''sha256'', '''')}}"]'
-        filter: '{{parsed_event.message.get("app") != none}}'
+          process.executable: "{{parsed_event.message.app.get('path', '')}}"
+          process.hash.md5: "{{parsed_event.message.app.get('md5', '')}}"
+          process.hash.sha1: "{{parsed_event.message.app.get('sha1', '')}}"
+          process.hash.sha256: "{{parsed_event.message.app.get('sha256', '')}}"
+        filter: '{{parsed_event.message.get("app") is mapping}}'
 
   # --------------------------------------------------------- LNK / dumps ---
   set_lnk_dump_fields:
@@ -944,7 +924,6 @@ stages:
           thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
           thor.file.permissions: "{{parsed_event.message.file.get('permissions', '')}}"
-          related.hash: '["{{parsed_event.message.file.get(''md5'', '''')}}", "{{parsed_event.message.file.get(''sha1'', '''')}}", "{{parsed_event.message.file.get(''sha256'', '''')}}"]'
         filter: '{{parsed_event.message.get("message") == "File regularly executed by cron"}}'
 
       # "Crontab entry": file is a string (the crontab), plus a schedule/command
@@ -968,7 +947,9 @@ stages:
   set_hosts_fields:
     actions:
       - set:
-          related.ip: '["{{parsed_event.message.ip}}"]'
+          dns.question.name: "{{parsed_event.message.entry}}"
+      - set:
+          dns.resolved_ip: '["{{parsed_event.message.ip}}"]'
         filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
 
   # ----------------------- generic flat fields, coercions, duration, users ---
@@ -978,22 +959,8 @@ stages:
           thor.scanned_elements: "{{parsed_event.message.scanned_elements}}"
           thor.entries: "{{parsed_event.message.entries}}"
           thor.duration: "{{parsed_event.message.duration}}"
-          thor.run_as_user: "{{parsed_event.message.run_as_user}}"
           thor.exe_owner: "{{parsed_event.message.exe_owner}}"
           thor.unit_owner: "{{parsed_event.message.unit_owner}}"
-
-      # A service/task can carry run_as_user, exe_owner and unit_owner at once,
-      # so combine them into one related.user array instead of letting each
-      # overwrite the previous (empty slots are dropped by ignored_values).
-      # `owner` never co-occurs with that triple; it is set separately and only
-      # for non-process modules (process modules populate related.user in
-      # set_process_fields).
-      - set:
-          related.user: '["{{parsed_event.message.get("run_as_user", "")}}", "{{parsed_event.message.get("exe_owner", "")}}", "{{parsed_event.message.get("unit_owner", "")}}"]'
-        filter: '{{parsed_event.message.get("run_as_user") not in [none, ""] or parsed_event.message.get("exe_owner") not in [none, ""] or parsed_event.message.get("unit_owner") not in [none, ""]}}'
-      - set:
-          related.user: '["{{parsed_event.message.owner}}"]'
-        filter: '{{parsed_event.message.get("owner") not in [none, ""] and parsed_event.message.get("module") not in ["ProcessCheck", "ProcessIntegrity", "ProcessConnections"]}}'
 
       # boolean coercions (flat fields; THOR emits true/false or yes/no).
       # All share one dictionary -> a single translate with multiple mappings.
