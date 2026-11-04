@@ -7,27 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-04
+
+### Added
+
+- Parse new ECS fields:
+  - `error.code`: map from certificate request denial dispositions (4888) and translated SMB authentication errors (551)
+- Parse new custom fields:
+  - `action.properties.AccountExpires`
+  - `action.properties.AuthenticationLevel`
+  - `action.properties.AuthenticationService`
+  - `action.properties.CertificateTemplate`
+  - `action.properties.ConnectionGUID`
+  - `action.properties.DCOMorRPC`
+  - `action.properties.LogonHours`
+  - `action.properties.RequestClientInfo`
+  - `action.properties.RequestId`
+  - `action.properties.SPN`
+  - `action.properties.SPNValidationPolicy`
+  - `action.properties.SessionGUID`
+  - `action.properties.SessionId`
+  - `action.properties.SubjectAlternativeName`
+  - `action.properties.SubjectKeyIdentifier`
+
+### Changed
+
+- Prioritize usable dedicated JSON fields over extraction from `Message`, retaining `Message` as a fallback for historical formats when the corresponding JSON data is unavailable or unusable
+- Extend parsing of existing ECS fields:
+  - `event.reason`: map from dedicated failure reasons, prioritizing populated `FailureReasonResolved` over `Description` for Security-Auditing event 4625 and retaining historical message fallbacks
+  - `process.name`: map from dedicated `RequestClientInfo` before extraction from `Message`
+  - `process.pid`: map from decimal or hexadecimal `ProcessId` for Security-Auditing events 4625 and 4663 when `ProcessID` is absent
+  - `source.domain`: map from SMB event 551 client names
+  - `source.ip`: map from SMB event 551 client data, preferring valid `ClientAddress`, `EventData.ClientAddress`, `ClientName` and `EventData.ClientName` in that order before historical message extraction
+  - `source.port`: map from validated IPv4 socket addresses in SMB event 551
+  - `user.target.id`: map from `TargetSid` for events 4720 and 4738 when `TargetUserSid` is absent
+- Extend parsing of existing custom fields:
+  - `action.properties.Accesses`: map from dedicated resolved or readable access lists, retaining historical message fallbacks before unresolved resource codes
+  - `action.properties.PasswordLastSet`: map from resolved JSON values when available
+  - `action.properties.UserAccountControl`: map from resolved or readable JSON values, retaining the normalized list type and historical message fallbacks, and ignoring empty entries and `"-"` placeholders
+
+### Fixed
+
+- Fix existing custom fields:
+  - `action.properties.Task`: prefer numeric `TaskValue` over textual `Task`, preventing conversion errors from discarding other event properties
+
 ## [1.0.4] - 2026-10-20
 
 ### Changed
 
 - Extend parsing of existing custom fields:
-  - `action.properties.Path` from PowerShell event message payloads when top-level `Path` is absent or empty
+  - `action.properties.Path`: map from PowerShell event message payloads when top-level `Path` is absent or empty
 
 ## [1.0.3] - 2026-09-30
 
 ### Added
 
 - Parse new custom fields:
-  - `action.properties.DnsHostName` for computer account change events
-  - `action.properties.PasswordLastSet` for account-management events
+  - `action.properties.DnsHostName`: map for computer account change events
+  - `action.properties.PasswordLastSet`: map for account-management events
 
 ## [1.0.2] - 2026-09-10
 
 ### Added
 
 - Parse new custom fields:
-  - `action.properties.ImpersonationLevel` for Windows 4624 events (`An account was successfully logged on`)
+  - `action.properties.ImpersonationLevel`: map for Windows 4624 events (`An account was successfully logged on`)
 
 ## [1.0.1] - 2024-02-29
 
