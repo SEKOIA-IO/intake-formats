@@ -98,7 +98,6 @@ stages:
           event.risk_score: "{{parsed_event.message.score}}"
           event.reason: "{{parsed_event.message.reason}}"
           thor.scan_id: "{{parsed_event.message.scanid}}"
-          thor.score: "{{parsed_event.message.score}}"
           thor.log_version: "{{parsed_event.message.log_version}}"
           thor.entry: "{{parsed_event.message.entry}}"
           observer.vendor: "Nextron Systems"
@@ -322,7 +321,6 @@ stages:
           file.pe.original_file_name: "{{parsed_event.message.file.get('original_name', '')}}"
           thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
-          thor.file.permissions: "{{parsed_event.message.file.get('permissions', '')}}"
           thor.file.internal_name: "{{parsed_event.message.file.get('internal_name', '')}}"
           thor.file.legal_copyright: "{{parsed_event.message.file.get('legal_copyright', '')}}"
 
@@ -333,6 +331,11 @@ stages:
       - set:
           file.extension: "{{parsed_event.message.file.get('ext', '').replace('.', '')}}"
         filter: '{{parsed_event.message.file.get("ext") != none}}'
+
+      # Unix permissions string ("-rwxr-xr-x") -> octal file.mode ("0755")
+      - set:
+          file.mode: "{% set q = parsed_event.message.file.permissions %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
+        filter: '{{parsed_event.message.file.get("permissions") is string and parsed_event.message.file.permissions | length == 10}}'
 
       # THOR emits exists as "yes"/"no" (or "true"/"false")
       - set:
@@ -568,7 +571,7 @@ stages:
     actions:
       - set:
           registry.key: "{{parsed_event.message.key}}"
-          thor.service_name: "{{parsed_event.message.service_name}}"
+          service.name: "{{parsed_event.message.service_name}}"
           thor.key_name: "{{parsed_event.message.key_name}}"
           thor.image.path: "{{parsed_event.message.image_path}}"
           thor.start_type: "{{parsed_event.message.start_type}}"
@@ -594,16 +597,18 @@ stages:
           file.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
         filter: '{{parsed_event.message.get("image") != none}}'
+      - set:
+          file.name: "{{parsed_event.message.image.path.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("image") is mapping and parsed_event.message.image.get("path") not in [none, ""]}}'
 
       # Linux systemd services (log_version v2.x): flat unit/executable layout,
       # not the Windows service_name/registry/ImagePath model above.
       - set:
-          thor.service_name: "{{parsed_event.message.unit}}"
+          service.name: "{{parsed_event.message.unit}}"
           thor.unit_path: "{{parsed_event.message.unit_path}}"
           thor.command: "{{parsed_event.message.command}}"
           thor.unit_group: "{{parsed_event.message.unit_group}}"
           thor.unit_mode: "{{parsed_event.message.unit_mode}}"
-          thor.exe_mode: "{{parsed_event.message.exe_mode}}"
           thor.run_as_group: "{{parsed_event.message.run_as_group}}"
         filter: '{{parsed_event.message.get("unit") != none}}'
 
@@ -616,6 +621,9 @@ stages:
           file.group: "{{parsed_event.message.exe_group}}"
           thor.file.type: "{{parsed_event.message.exe_magic}}"
         filter: '{{parsed_event.message.get("executable") not in [none, ""]}}'
+      - set:
+          file.mode: "{% set q = parsed_event.message.exe_mode %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
+        filter: '{{parsed_event.message.get("exe_mode") is string and parsed_event.message.exe_mode | length == 10}}'
 
   # ------------------------------------------------------- scheduled tasks ---
   set_task_fields:
@@ -680,12 +688,16 @@ stages:
   set_shimcache_amcache_fields:
     actions:
       # SHIMCache: 'hive' holds a hive-relative key -> registry.key
-      # (deliberate divergence: Elastic puts it in registry.path)
+      # (deliberate divergence: Elastic puts it in registry.path); the cached
+      # executable and its last-modified timestamp -> file.*
       - set:
           registry.key: "{{parsed_event.message.hive}}"
-          thor.timestamp: "{{parsed_event.message.timestamp}}"
-          thor.path: "{{parsed_event.message.path}}"
+          file.path: "{{parsed_event.message.path}}"
+          file.mtime: "{{parsed_event.message.timestamp}}"
         filter: '{{parsed_event.message.get("module") == "SHIMCache"}}'
+      - set:
+          file.name: "{{parsed_event.message.path.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache" and parsed_event.message.get("path") not in [none, ""]}}'
 
       # Amcache store-entry attributes
       - set:
@@ -722,10 +734,11 @@ stages:
   set_flat_signature_fields:
     actions:
       - set:
-          thor.signature: "{{parsed_event.message.signature}}"
-          thor.description: "{{parsed_event.message.desc}}"
-          thor.sigtype: "{{parsed_event.message.sigtype}}"
+          rule.name: "{{parsed_event.message.signature}}"
+          rule.id: "{{parsed_event.message.signature}}"
+          rule.description: "{{parsed_event.message.desc}}"
           event.reason: "{{parsed_event.message.desc}}"
+          thor.sigtype: "{{parsed_event.message.sigtype}}"
 
   # --------------------------------------------------------- firewall rules ---
   # 'rule'/'rule_name' = the INSPECTED firewall rule (not a detection rule);
@@ -816,8 +829,12 @@ stages:
           thor.MFT_FILE_NAME_accessed: "{{parsed_event.message.MFT_FILE_NAME_accessed}}"
           thor.MFT_FILE_NAME_changed: "{{parsed_event.message.MFT_FILE_NAME_changed}}"
           thor.MFT_FILE_NAME_created: "{{parsed_event.message.MFT_FILE_NAME_created}}"
-          thor.directory: "{{parsed_event.message.directory}}"
-          thor.drive: "{{parsed_event.message.drive}}"
+          file.directory: "{{parsed_event.message.directory}}"
+
+      # drive "C:" -> ECS drive letter "C"
+      - set:
+          file.drive_letter: '{{parsed_event.message.drive.replace(":", "").replace("\\", "") | upper}}'
+        filter: '{{parsed_event.message.get("drive") not in [none, ""]}}'
 
   # ------------------------------------- user inventory (Linux/macOS/Win) ---
   set_users_fields:
@@ -838,7 +855,7 @@ stages:
       - set:
           thor.home: "{{parsed_event.message.home}}"
           thor.shell: "{{parsed_event.message.shell}}"
-          thor.group_id: "{{parsed_event.message.groupid}}"
+          user.group.id: "{{parsed_event.message.groupid}}"
         filter: '{{parsed_event.message.get("module") == "Users"}}'
 
       # UserDir "Recently modified profile": profile directory timestamps
@@ -920,8 +937,10 @@ stages:
           file.group: "{{parsed_event.message.file.get('group', '')}}"
           thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
           thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
-          thor.file.permissions: "{{parsed_event.message.file.get('permissions', '')}}"
         filter: '{{parsed_event.message.get("message") == "File regularly executed by cron"}}'
+      - set:
+          file.mode: "{% set q = parsed_event.message.file.permissions %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
+        filter: '{{parsed_event.message.get("message") == "File regularly executed by cron" and parsed_event.message.file.get("permissions") is string and parsed_event.message.file.permissions | length == 10}}'
 
       # "Crontab entry": file is a string (the crontab), plus a schedule/command
       - set:
@@ -956,7 +975,6 @@ stages:
           thor.scanned_elements: "{{parsed_event.message.scanned_elements}}"
           thor.entries: "{{parsed_event.message.entries}}"
           thor.duration: "{{parsed_event.message.duration}}"
-          thor.exe_owner: "{{parsed_event.message.exe_owner}}"
           thor.unit_owner: "{{parsed_event.message.unit_owner}}"
 
       # boolean flags (THOR emits true/false or yes/no)
