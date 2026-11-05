@@ -8,6 +8,15 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  - name: parse_public_ip
+    filter: "{{parsed_event.message.get('data', {}).get('public_ip') != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.data.public_ip}}"
+        output_field: message
+        pattern: '^\[?%{IP:public_ip}\]?:%{INT:public_port}$'
+
   - name: set_ecs_fields
   - name: set_category_and_type
 
@@ -62,9 +71,9 @@ stages:
         filter: "{{parsed_event.message.data.private_ip | is_ipaddress}}"
 
       - set:
-          source.nat.ip: "{{parsed_event.message.data.public_ip.split(':')[0]}}"
-          source.nat.port: "{{parsed_event.message.data.public_ip.split(':')[1]}}"
-        filter: "{{parsed_event.message.data.public_ip.split(':')[0] | is_ipaddress}}"
+          source.nat.ip: "{{parse_public_ip.message.public_ip}}"
+          source.nat.port: "{{parse_public_ip.message.public_port}}"
+        filter: "{{parse_public_ip.message.public_ip | is_ipaddress}}"
 
   set_category_and_type:
     actions:

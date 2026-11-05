@@ -76,25 +76,20 @@ pipeline:
         format: "timestamp"
 
   - name: parse_network_header
-    filter: >
-      {{(' SRC=' in (original.message))
-      and (' DST=' in (original.message)) and
-      (' PROTO=' in (original.message)) and
-      (' SPORT=' in (original.message)) and
-      (' DPORT=' in (original.message)) and
-      (' ACTION=' in (original.message)) and
-      (' ORIG:' in (original.message)) and
-      (' REPLY:' in (original.message))}}
     external:
       name: grok.match
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "^%{WORD:level}:%{YEAR:net_year}/%{MONTHNUM:net_month}/%{MONTHDAY:net_day} %{TIME:net_time}\\s+\\[%{DATA:rule_uuid}\\]\\s+%{DATA:rule_name}\\s+\\[%{DATA:session_state}\\]\\s+%{GREEDYDATA:kv_part}$"
+        pattern: "%{PATTERN_1}|%{IPTABLES}"
+        custom_patterns:
+          PATTERN_1: "^%{WORD:level}:%{YEAR:net_year}/%{MONTHNUM:net_month}/%{MONTHDAY:net_day} %{TIME:net_time}\\s+\\[%{DATA:rule_uuid}\\]\\s+%{DATA:rule_name}\\s+\\[%{DATA:session_state}\\]\\s+%{GREEDYDATA:kv_part}$"
+
+          IPTABLES: '\[%{DATA}\] %{IPTABLES_REASON:reason}: %{GREEDYDATA:kv_part}'
+          IPTABLES_REASON: "IPTables Packet %{DATA:action}"
 
   - name: parse_network_date
-    filter: >
-      {{(parse_network_header.message.net_year) != ''}}
+    filter: "{{parse_network_header.message.net_year | length > 0}}"
     external:
       name: date.parse
       properties:
@@ -103,8 +98,7 @@ pipeline:
         format: "%Y/%m/%d %H:%M:%S"
 
   - name: parse_network_kv
-    filter: >
-      {{(parse_network_header.message.kv_part) != ''}}
+    filter: "{{parse_network_header.message.kv_part | length > 0}}"
     external:
       name: kv.parse-kv
       properties:
@@ -114,31 +108,25 @@ pipeline:
         item_sep: \s
         raise_errors: false
 
+  - name: parse_mac
+    filter: "{{parse_network_kv.message.MAC | length > 0}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parse_network_kv.message.MAC}}"
+        pattern: "%{MAC:src_mac}:%{MAC:dst_mac}:%{DATA}"
+
   - name: set_common
   - name: set_api_audit_fields
-    filter: >
-      {{(parse_api_date.datetime) != ''}}
+    filter: "{{ parse_api_date.datetime | length > 0 }}"
   - name: set_audit_fields
-    filter: >
-      {{(parse_audit_json.message | length) > 0}}
+    filter: "{{ parse_audit_json.message | length > 0 }}"
   - name: set_flow_fields
-    filter: >
-      {{(parse_network_header.message.rule_name) != '' and
-      (parse_network_kv.message) != {} and
-      (parse_network_date.datetime) != '' and not
-      ((parse_network_header.message.rule_name | lower).endswith('-policy')
-      or (parse_network_header.message.rule_name |
-      lower).startswith('policy-') or (' policy ' in (' ' ~
-      (parse_network_header.message.rule_name | lower) ~ ' ')))}}
+    filter: "{{ parse_network_header.message.rule_name | length > 0 and 'policy' not in parse_network_header.message.rule_name | lower }}"
   - name: set_security_policy_hit_fields
-    filter: >
-      {{(parse_network_header.message.rule_name) != '' and
-      (parse_network_kv.message) != {} and
-      (parse_network_date.datetime) != '' and
-      ((parse_network_header.message.rule_name | lower).endswith('-policy')
-      or (parse_network_header.message.rule_name |
-      lower).startswith('policy-') or (' policy ' in (' ' ~
-      (parse_network_header.message.rule_name | lower) ~ ' ')))}}
+    filter: "{{ parse_network_header.message.rule_name | length > 0 and 'policy' in parse_network_header.message.rule_name | lower }}"
+  - name: set_iptables_events
+    filter: "{{ parse_network_header.message.IPTABLES | length > 0}}"
 
 stages:
   set_common:
@@ -259,3 +247,36 @@ stages:
         mapping:
           parse_network_header.message.session_state: event.type
         filter: "{{(parse_network_header.message.session_state) != ''}}"
+
+  set_iptables_events:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.type: ["info"]
+          event.reason: "{{parse_network_header.message.reason}}"
+          event.action: "{{parse_network_header.message.action | lower}}"
+
+          network.transport: "{{parse_network_kv.message.PROTO | lower}}"
+          network.bytes: "{{parse_network_kv.message.LEN}}"
+
+          source.port: "{{parse_network_kv.message.SPT}}"
+          destination.port: "{{parse_network_kv.message.DPT}}"
+
+          source.mac: "{{parse_mac.message.src_mac | to_mac_address}}"
+          destination.mac: "{{parse_mac.message.dst_mac | to_mac_address}}"
+
+      - set:
+          source.ip: "{{parse_network_kv.message.SRC}}"
+        filter: "{{(parse_network_kv.message.SRC) != '' and (parse_network_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          source.domain: "{{parse_network_kv.message.SRC}}"
+        filter: "{{(parse_network_kv.message.SRC) != '' and not (parse_network_kv.message.SRC | is_ipaddress)}}"
+
+      - set:
+          destination.ip: "{{parse_network_kv.message.DST}}"
+        filter: "{{(parse_network_kv.message.DST) != '' and (parse_network_kv.message.DST | is_ipaddress)}}"
+
+      - set:
+          destination.domain: "{{parse_network_kv.message.DST}}"
+        filter: "{{(parse_network_kv.message.DST) != '' and not (parse_network_kv.message.DST | is_ipaddress)}}"
