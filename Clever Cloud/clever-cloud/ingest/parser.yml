@@ -56,11 +56,11 @@ pipeline:
   - name: ecs_log_mapping
   - name: ecs_cloud_mapping
   - name: ecs_process_mapping
-  - name: ecs_http_mapping
-  - name: ecs_url_mapping
   - name: ecs_network_mapping
   - name: ecs_source_mapping
   - name: ecs_destination_mapping
+  - name: ecs_http_mapping
+  - name: ecs_url_mapping
   - name: ecs_user_mapping
   - name: ecs_user_agent_mapping
   - name: ecs_email_mapping
@@ -114,38 +114,6 @@ stages:
     actions:
       - set:
           process.pid: "{{parsed_header.message.pid}}"
-  ecs_http_mapping:
-    actions:
-      - set:
-          http.request.method: "{{parsed_header.message.http.request.method}}"
-          http.response.status_code: "{{parsed_header.message.http.response.statusCode}}"
-        filter: "{{parsed_header.message.http is defined}}"
-      - set:
-          http.request.method: "{{parsed_event.message.http_method or parsed_event.message.method}}"
-          http.response.status_code: >-
-            {{parsed_event.message.response_status_code or
-            parsed_event.message.status_code or parsed_event.message.http_code}}
-          http.request.id: "{{parsed_event.message.request_id}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
-  ecs_url_mapping:
-    actions:
-      - set:
-          url.path: "{{parsed_header.message.http.request.path}}"
-          url.domain: "{{parsed_header.message.http.request.host}}"
-          url.scheme: "{{parsed_header.message.http.request.scheme}}"
-        filter: "{{parsed_header.message.http is defined}}"
-      - set:
-          url.original: "{{parsed_event.message.url}}"
-          url.path: "{{parsed_event.message.url_path or parsed_event.message.path}}"
-          url.domain: "{{parsed_event.message.url_domain}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
-      - set:
-          url.scheme: "{{parsed_event.message.http_scheme|lower}}"
-        filter: >-
-          {{parsed_event.message is defined and parsed_event.message != None and
-          parsed_event.message.http_scheme != None}}
-      - set:
-          url.full: "{{final.url.scheme}}://{{final.url.domain + final.url.path}}"
   ecs_network_mapping:
     actions:
       - set:
@@ -195,6 +163,49 @@ stages:
           destination.port: "{{parsed_event.message.destination_port}}"
           destination.bytes: "{{parsed_event.message.destination_bytes}}"
         filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
+  ecs_http_mapping:
+    actions:
+      - set:
+          http.request.method: "{{parsed_header.message.http.request.method}}"
+          http.response.status_code: "{{parsed_header.message.http.response.statusCode}}"
+        filter: "{{parsed_header.message.http is defined}}"
+      - set:
+          http.request.method: "{{parsed_event.message.http_method or parsed_event.message.method}}"
+          http.response.status_code: >-
+            {{parsed_event.message.response_status_code or
+            parsed_event.message.status_code or parsed_event.message.http_code}}
+          http.request.id: "{{parsed_event.message.request_id}}"
+        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
+  ecs_url_mapping:
+    actions:
+      - set:
+          url.path: "{{parsed_header.message.http.request.path}}"
+          url.domain: "{{parsed_header.message.http.request.host}}"
+          url.scheme: "{{parsed_header.message.http.request.scheme}}"
+        filter: "{{parsed_header.message.http is defined}}"
+      - set:
+          url.original: "{{parsed_event.message.url}}"
+          url.path: "{{parsed_event.message.url_path or parsed_event.message.path}}"
+          url.domain: "{{parsed_event.message.url_domain}}"
+        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
+      - set:
+          url.scheme: "{{parsed_event.message.http_scheme|lower}}"
+        filter: >-
+          {{parsed_event.message is defined and parsed_event.message != None and
+          parsed_event.message.http_scheme != None}}
+      - set:
+          url.full: >-
+            {{final.url.scheme}}://{{final.url.domain + ":"+
+            final.destination.port|string + final.url.path}}
+        filter: >-
+          {{final.url.scheme is defined and final.url.domain is defined and
+          final.url.path is defined and final.destination.port is defined }}
+        name: set
+      - set:
+          url.full: '{{final.url.scheme}}://{{final.url.domain + final.url.path}}'
+        filter: >-
+          {{final.url.full is not defined and final.url.scheme is defined and
+          final.url.domain is defined and final.url.path is defined }}
   ecs_user_mapping:
     actions:
       - set:
