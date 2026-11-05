@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-05
+
+### Added
+
+- Parse new ECS fields:
+  - `destination.domain`: map firewall `hostname` when the target is a domain name (port stripped), complementing `destination.ip` for IP targets
+  - `event.duration`: map access `timeTaken` converted from seconds to nanoseconds
+  - `event.module`: set `azure.waf` on firewall logs, aligned with Azure Front Door
+  - `network.transport`: set `tcp` on access logs served over HTTP/1.x or HTTP/2
+  - `rule.category`: map firewall `ruleGroup` (for example `REQUEST-942-APPLICATION-ATTACK-SQLI`)
+  - `rule.description`: map firewall `message` (leading and trailing spaces trimmed)
+  - `url.full`: build access URL from `sslEnabled`, `originalHost` and `originalRequestUriWithArgs`
+  - `url.scheme`: derive `https` or `http` from access `sslEnabled`
+- Parse new custom fields:
+  - `azure.application_gateway.details.data`: map firewall `details.data` (request data that matched the WAF rule)
+  - `azure.application_gateway.ja4_fingerprint`: map access `ja4Fingerprint`
+  - `azure.application_gateway.paranoia_level`: map OWASP CRS `paranoiaLevel` from firewall logs
+  - `azure.application_gateway.waf_mode`: map `WAFMode` (`Prevention`/`Detection`) from access logs
+  - `azure.application_gateway.waf_policy.id`: map firewall `policyId` and access `WAFPolicyID`
+  - `azure.application_gateway.waf_policy.scope`: map firewall `policyScope`
+  - `azure.application_gateway.waf_policy.scope_name`: map firewall `policyScopeName`
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `destination.port`: map the port of firewall `hostname` when the target is a domain name with an explicit port
+
 ## [1.0.0] - 2026-10-22
 
 ### Added
