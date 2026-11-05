@@ -198,7 +198,7 @@ stages:
   event:
     actions:
       - set:
-          event.kind: "{{json_load.message.event.kind}}"
+          event.kind: "{{json_load.message.event.kind or 'event'}}"
           event.module: "{{json_load.message.event.module}}"
           event.dataset: "{{json_load.message.event.dataset}}"
           event.category: "{{json_load.message.event.category}}"
@@ -826,8 +826,11 @@ stages:
           gatewatcher.history.name: "{{json_load.message.history.name}}"
           gatewatcher.history.type: "{{json_load.message.history.type}}"
           gatewatcher.history.method: "{{json_load.message.history.method}}"
-          gatewatcher.history.content: "{{json_load.message.history.content}}"
           gatewatcher.history.endpoint: "{{json_load.message.history.endpoint}}"
+      # content may be a scalar or a JSON object: always store it as a string
+      - set:
+          gatewatcher.history.content: "{{json_load.message.history.content | tojson if json_load.message.history.content is mapping or json_load.message.history.content is sequence and json_load.message.history.content is not string else json_load.message.history.content | string}}"
+        filter: "{{json_load.message.history.content is defined and json_load.message.history.content is not none}}"
   hl7:
     actions:
       - set:
@@ -961,7 +964,8 @@ stages:
       - set:
           threat.indicator.marking.tlp: >-
             {%- set tlp = json_load.message.ioc.tlp | string | upper | replace("TLP:", "") | trim -%}
-            {{ tlp if tlp in ["WHITE", "CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"] else "" }}
+            {%- set tlp = "CLEAR" if tlp == "WHITE" else tlp -%}
+            {{ tlp if tlp in ["CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"] else "" }}
         filter: "{{json_load.message.ioc.tlp is string}}"
   rule:
     actions:
