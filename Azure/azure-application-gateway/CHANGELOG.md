@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extend parsing of existing ECS fields:
   - `destination.port`: map the port of firewall `hostname` when the target is a domain name with an explicit port
 
+### Fixed
+
+- Fix parsing of existing ECS fields:
+  - `destination.ip`: map IPv6 literals from firewall `hostname`, bracketed (e.g. `[2001:db8::1]:443`) or not, which were previously not mapped
+  - `destination.port`: map the port of bracketed IPv6 literals from firewall `hostname`
+  - `url.domain`: stop mapping a truncated IPv6 fragment (e.g. `[2001`) from firewall `hostname`, and keep IPv6 literals from access `originalHost`/`host` whole, with their brackets as required by ECS
+
 ## [1.0.0] - 2026-10-22
 
 ### Added
