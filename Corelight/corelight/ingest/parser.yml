@@ -62,6 +62,8 @@ pipeline:
     filter: '{{json_event.message.get("_path") == "smtp"}}'
   - name: set_smtp_links_fields
     filter: '{{json_event.message.get("_path") == "smtp_links"}}'
+  - name: set_smb_files_path
+    filter: '{{json_event.message.get("_path") == "smb_files" and json_event.message.get("name") is string and json_event.message.get("name").strip("\\") != ""}}'
   - name: set_smb_files_fields
     filter: '{{json_event.message.get("_path") == "smb_files"}}'
   - name: set_smb_mapping_fields
@@ -882,6 +884,15 @@ stages:
   # ----------------------------------------------------------------
   # smb_files.log
   # ----------------------------------------------------------------
+  # `object_path` is the share and `name` the path of the file inside it,
+  # which may hold sub-directories ("20230329\PowerShell_transcript...txt")
+  # or start with a separator ("\srvsvc"). ECS file.path is the full path;
+  # set_smb_files_fields derives file.name and file.directory from it.
+  set_smb_files_path:
+    actions:
+      - set:
+          file.path: '{{((json_event.message.get("object_path") or "").rstrip("\\") ~ "\\" ~ json_event.message.get("name").lstrip("\\")) if json_event.message.get("object_path") else json_event.message.get("name")}}'
+
   set_smb_files_fields:
     actions:
       - set:
@@ -900,19 +911,14 @@ stages:
       - set:
           event.category: ["file"]
           event.type: ["info"]
-      # `object_path` is the share and `name` the path of the file inside it,
-      # which may hold sub-directories ("20230329\PowerShell_transcript...txt")
-      # or start with a separator ("\srvsvc"). ECS file.path is the full path,
-      # file.name the last component and file.directory everything before it.
+      # file.name is the last component of file.path, file.directory
+      # everything before it.
       - set:
-          file.path: '{{((json_event.message.get("object_path") or "").rstrip("\\") ~ "\\" ~ json_event.message.get("name").lstrip("\\")) if json_event.message.get("object_path") else json_event.message.get("name")}}'
-        filter: '{{json_event.message.get("name") is string and json_event.message.get("name").strip("\\") != ""}}'
+          file.name: '{{set_smb_files_path.file.path.rsplit("\\", 1)[-1]}}'
+        filter: '{{(set_smb_files_path.file.path or "") != ""}}'
       - set:
-          file.name: '{{set_smb_files_fields.file.path.rsplit("\\", 1)[-1]}}'
-        filter: '{{(set_smb_files_fields.file.path or "") != ""}}'
-      - set:
-          file.directory: '{{set_smb_files_fields.file.path.rsplit("\\", 1)[0]}}'
-        filter: '{{"\\" in (set_smb_files_fields.file.path or "")}}'
+          file.directory: '{{set_smb_files_path.file.path.rsplit("\\", 1)[0]}}'
+        filter: '{{"\\" in (set_smb_files_path.file.path or "")}}'
       - set:
           file.directory: '{{json_event.message.get("object_path")}}'
         filter: '{{json_event.message.get("object_path") != None and not (json_event.message.get("name") is string and json_event.message.get("name").strip("\\") != "")}}'
