@@ -94,11 +94,31 @@ stages:
           event.type: ["access", "connection"]
         filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.httpStatus == null}}"
 
+      # Access-specific request context
+      - set:
+          url.scheme: "{{'https' if json_event.message.properties.sslEnabled == 'on' else 'http'}}"
+          url.full: "{{('https' if json_event.message.properties.sslEnabled == 'on' else 'http') ~ '://' ~ json_event.message.properties.originalHost ~ json_event.message.properties.originalRequestUriWithArgs}}"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.sslEnabled in ['on', 'off'] and json_event.message.properties.originalHost and json_event.message.properties.originalRequestUriWithArgs and json_event.message.properties.originalRequestUriWithArgs.startswith('/')}}"
+
+      - set:
+          network.transport: "tcp"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.httpVersion != null and (json_event.message.properties.httpVersion.startswith('HTTP/1') or json_event.message.properties.httpVersion.startswith('HTTP/2'))}}"
+
+      - set:
+          event.duration: "{{((json_event.message.properties.timeTaken | float) * 1000000000) | round | int}}"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayAccess' and json_event.message.properties.timeTaken != null}}"
+
       # Firewall-specific ECS classification
       - set:
           event.category: ["network", "intrusion_detection"]
+          event.module: "azure.waf"
           event.type: ["access", "connection"]
+          rule.category: "{{json_event.message.properties.ruleGroup}}"
         filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall'}}"
+
+      - set:
+          rule.description: "{{json_event.message.properties.message | trim}}"
+        filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and json_event.message.properties.message != null}}"
 
       - set:
           event.outcome: "failure"
@@ -142,11 +162,14 @@ stages:
         filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and json_event.message.properties.hostname != null and ':' not in json_event.message.properties.hostname and (json_event.message.properties.hostname | is_ipaddress)}}"
 
       - set:
+          destination.domain: "{{json_event.message.properties.hostname.split(':')[0]}}"
+          destination.port: "{{json_event.message.properties.hostname.split(':')[1]}}"
           url.domain: "{{json_event.message.properties.hostname.split(':')[0]}}"
           url.port: "{{json_event.message.properties.hostname.split(':')[1]}}"
         filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and json_event.message.properties.hostname != null and ':' in json_event.message.properties.hostname and not (json_event.message.properties.hostname.split(':')[0] | is_ipaddress)}}"
 
       - set:
+          destination.domain: "{{json_event.message.properties.hostname}}"
           url.domain: "{{json_event.message.properties.hostname}}"
         filter: "{{json_event.message.operationName == 'ApplicationGatewayFirewall' and json_event.message.properties.hostname != null and ':' not in json_event.message.properties.hostname and not (json_event.message.properties.hostname | is_ipaddress)}}"
 
@@ -161,14 +184,21 @@ stages:
   set_custom_fields:
     actions:
       - set:
+          azure.application_gateway.details.data: "{{json_event.message.properties.details.data}}"
           azure.application_gateway.details.message: "{{json_event.message.properties.details.message}}"
           azure.application_gateway.error_info: "{{json_event.message.properties.error_info}}"
+          azure.application_gateway.ja4_fingerprint: "{{json_event.message.properties.ja4Fingerprint}}"
           azure.application_gateway.message: "{{json_event.message.properties.message}}"
+          azure.application_gateway.paranoia_level: "{{json_event.message.properties.paranoiaLevel}}"
           azure.application_gateway.routing_rule: "{{json_event.message.ruleName}}"
           azure.application_gateway.serverStatus: "{{json_event.message.properties.serverStatus}}"
           azure.application_gateway.sslClientVerify: "{{json_event.message.properties.sslClientVerify}}"
           azure.application_gateway.listener: "{{json_event.message.listenerName}}"
           azure.application_gateway.transactionId: "{{json_event.message.properties.transactionId}}"
+          azure.application_gateway.waf_mode: "{{json_event.message.properties.WAFMode}}"
+          azure.application_gateway.waf_policy.id: "{{json_event.message.properties.policyId or json_event.message.properties.WAFPolicyID}}"
+          azure.application_gateway.waf_policy.scope: "{{json_event.message.properties.policyScope}}"
+          azure.application_gateway.waf_policy.scope_name: "{{json_event.message.properties.policyScopeName}}"
 
       - set:
           azure.application_gateway.metric.average: "{{json_event.message.average}}"
