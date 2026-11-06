@@ -1,0 +1,1050 @@
+name: nextron-thor-v2
+ignored_values: [""]
+
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  # HotfixCheck installed_on arrives as M/D/YYYY -> ISO for package.installed
+  - name: parsed_hotfix_date
+    filter: '{{parsed_event.message.get("module") == "HotfixCheck" and parsed_event.message.get("installed_on") not in [none, ""]}}'
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.installed_on}}"
+        output_field: date
+        format: "%m/%d/%Y"
+        timezone: UTC
+
+  # Startup "Running as user: DOMAIN\user" -> user.name (older builds without run_as_user)
+  - name: grok_user
+    filter: '{{parsed_event.message.get("message") != none and parsed_event.message.message.startswith("Running as user:")}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_event.message.message}}"
+        output_field: user
+        pattern: "Running as user: %{GREEDYDATA:name}"
+
+  - name: set_common_fields
+  - name: set_taxonomy
+  - name: set_rule_fields
+    filter: '{{parsed_event.message.get("reasons") != none and parsed_event.message.get("reasons") | length > 0}}'
+  - name: set_file_object_fields
+    filter: '{{parsed_event.message.get("module") in ["Filescan", "SHIMCache", "ScheduledTasks"] and parsed_event.message.get("file") is mapping}}'
+  - name: set_file_path_fields
+  - name: set_files0_fields
+    filter: '{{parsed_event.message.get("module") in ["AtJobs", "Autoruns", "Lnk", "WMIStartup"] and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
+  - name: set_mft_merge_fields
+    filter: '{{parsed_event.message.get("module") == "MFT" and parsed_event.message.get("files") != none and parsed_event.message.get("files") | length > 0}}'
+  - name: set_eventlog_fields
+    filter: '{{parsed_event.message.get("module") in ["Eventlog", "EVTX", "ETL"]}}'
+  - name: set_process_fields
+    filter: '{{parsed_event.message.get("module") in ["ProcessCheck", "ProcessIntegrity", "ProcessConnections"]}}'
+  - name: set_network_fields
+    filter: '{{parsed_event.message.get("module") == "ProcessConnections"}}'
+  - name: set_service_fields
+    filter: '{{parsed_event.message.get("module") == "ServiceCheck"}}'
+  - name: set_task_fields
+    filter: '{{parsed_event.message.get("module") in ["ScheduledTasks", "AtJobs"]}}'
+  - name: set_autoruns_fields
+    filter: '{{parsed_event.message.get("module") in ["Autoruns", "WMIStartup"]}}'
+  - name: set_registry_fields
+    filter: '{{parsed_event.message.get("module") == "RegistryChecks"}}'
+  - name: set_shimcache_amcache_fields
+    filter: '{{parsed_event.message.get("module") in ["SHIMCache", "Amcache"]}}'
+  - name: set_dns_fields
+    filter: '{{parsed_event.message.get("module") == "DNSCache"}}'
+  - name: set_flat_signature_fields
+    filter: '{{parsed_event.message.get("module") in ["DNSCache", "ProcessConnections", "Firewall"]}}'
+  - name: set_firewall_fields
+    filter: '{{parsed_event.message.get("module") == "Firewall"}}'
+  - name: set_wmi_fields
+    filter: '{{parsed_event.message.get("module") == "WMIPersistence"}}'
+  - name: set_hotfix_fields
+    filter: '{{parsed_event.message.get("module") == "HotfixCheck"}}'
+  - name: set_share_env_fields
+    filter: '{{parsed_event.message.get("module") in ["NetworkShares", "EnvCheck"]}}'
+  - name: set_wer_fields
+    filter: '{{parsed_event.message.get("module") == "WER"}}'
+  - name: set_lnk_dump_fields
+    filter: '{{parsed_event.message.get("module") in ["Lnk", "DumpScan"]}}'
+  - name: set_timestomp_fields
+    filter: '{{parsed_event.message.get("module") == "Timestomp"}}'
+  - name: set_users_fields
+    filter: '{{parsed_event.message.get("module") in ["Users", "UserDir", "LoggedIn"]}}'
+  - name: set_platform_fields
+    filter: '{{parsed_event.message.get("module") in ["Startup", "Init", "Report", "Yara", "Sigma"]}}'
+  - name: set_cron_fields
+    filter: '{{parsed_event.message.get("module") == "Cron"}}'
+  - name: set_hosts_fields
+    filter: '{{parsed_event.message.get("module") == "Hosts"}}'
+  - name: set_generic_fields
+
+stages:
+  # ---------------------------------------------------------------- common ---
+  set_common_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_event.message.time}}"
+          host.name: "{{parsed_event.message.hostname}}"
+          log.level: "{{parsed_event.message.level}}"
+          event.module: "{{parsed_event.message.module}}"
+          message: "{{parsed_event.message.message}}"
+          event.risk_score: "{{parsed_event.message.score}}"
+          event.reason: "{{parsed_event.message.reason}}"
+          nextron.thor.scan_id: "{{parsed_event.message.scanid}}"
+          nextron.thor.log_version: "{{parsed_event.message.log_version}}"
+          observer.vendor: "Nextron Systems"
+          observer.product: "THOR"
+
+      # THOR level -> numeric severity (Sekoia addition; Elastic does not set it).
+      - set:
+          event.severity: "1"
+        filter: '{{parsed_event.message.level in ["Debug", "Info"]}}'
+      - set:
+          event.severity: "2"
+        filter: '{{parsed_event.message.level == "Notice"}}'
+      - set:
+          event.severity: "3"
+        filter: '{{parsed_event.message.level in ["Warning", "Error"]}}'
+      - set:
+          event.severity: "4"
+        filter: '{{parsed_event.message.level == "Alert"}}'
+
+      # Alert semantics: exact Elastic-integration behavior (level Alert only)
+      - set:
+          event.kind: "alert"
+        filter: '{{parsed_event.message.level == "Alert"}}'
+
+      # THOR user field -> user.name (Elastic parity: unconditional rename)
+      - set:
+          user.name: "{{parsed_event.message.user}}"
+        filter: '{{parsed_event.message.get("user") not in [none, ""]}}'
+
+      # Startup "Running as user:" grok (older builds); run_as_user covers newer ones
+      - set:
+          user.name: "{{grok_user.user.name}}"
+        filter: '{{grok_user.user is not none and grok_user.user.get("name") is not none}}'
+
+      # Service/task principal (ServiceCheck, Startup on newer builds)
+      - set:
+          user.name: "{{parsed_event.message.run_as_user}}"
+        filter: '{{parsed_event.message.get("run_as_user") not in [none, ""]}}'
+
+      # scan errors recorded while fetching events (Eventlog module Info lines)
+      - set:
+          error.message: "{{parsed_event.message.error}}"
+        filter: '{{parsed_event.message.get("error") != none and parsed_event.message.module != "WER"}}'
+
+  # ------------------------------------------------------------- taxonomy ---
+  # Base table = official Elastic categorize.yml, verbatim. Modules absent from
+  # the Elastic table (EVTX, ETL, ThorDB, Cron -> configuration; MFT, Lnk,
+  # DumpScan -> file; ProcessIntegrity -> process) follow the same logic.
+  # intrusion_detection is APPENDED on alerts (agreed Sekoia addition).
+  set_taxonomy:
+    actions:
+      - set:
+          event.type: ["info"]
+          event.category: ["configuration"]
+
+      # registry family (Elastic: type=access)
+      - set:
+          event.category: ["registry"]
+          event.type: ["access"]
+        filter: '{{parsed_event.message.module in ["Amcache", "RegistryChecks", "RegistryHive", "SHIMCache"]}}'
+      - set:
+          event.category: ["registry", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["Amcache", "RegistryChecks", "RegistryHive", "SHIMCache"] and parsed_event.message.level == "Alert"}}'
+
+      # configuration family: default above; alert variant
+      - set:
+          event.category: ["configuration", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["AtJobs", "Autoruns", "Cron", "EnvCheck", "EtwWatcher", "Eventlog", "EVTX", "ETL", "Events", "HotfixCheck", "Init", "Report", "Rootkit", "ScheduledTasks", "ServiceCheck", "Sigma", "Startup", "ThorDB", "WER", "WMIPersistence", "WMIStartup", "Yara"] and parsed_event.message.level == "Alert"}}'
+
+      # network family
+      - set:
+          event.category: ["network"]
+        filter: '{{parsed_event.message.module in ["DNSCache", "Firewall", "NetworkShares"]}}'
+      - set:
+          event.category: ["network", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["DNSCache", "Firewall", "NetworkShares"] and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["network", "session"]
+        filter: '{{parsed_event.message.module == "NetworkSessions"}}'
+      - set:
+          event.category: ["network", "session", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "NetworkSessions" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["session", "iam"]
+        filter: '{{parsed_event.message.module == "LSASessions"}}'
+      - set:
+          event.category: ["session", "iam", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "LSASessions" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["iam"]
+        filter: '{{parsed_event.message.module == "LoggedIn"}}'
+      - set:
+          event.category: ["iam", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "LoggedIn" and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["iam"]
+          event.type: ["info", "user"]
+        filter: '{{parsed_event.message.module in ["UserDir", "Users"]}}'
+      - set:
+          event.category: ["iam", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["UserDir", "Users"] and parsed_event.message.level == "Alert"}}'
+
+      # file family
+      - set:
+          event.category: ["file"]
+        filter: '{{parsed_event.message.module in ["Filescan", "LogScan", "Timestomp", "MFT", "Lnk", "DumpScan"]}}'
+      - set:
+          event.category: ["file", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["Filescan", "LogScan", "Timestomp", "MFT", "Lnk", "DumpScan"] and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["host"]
+        filter: '{{parsed_event.message.module == "Hosts"}}'
+      - set:
+          event.category: ["host", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "Hosts" and parsed_event.message.level == "Alert"}}'
+
+      # process family
+      - set:
+          event.category: ["process"]
+        filter: '{{parsed_event.message.module in ["Mutex", "Pipes", "ProcessCheck", "ProcessIntegrity"]}}'
+      - set:
+          event.category: ["process", "intrusion_detection"]
+        filter: '{{parsed_event.message.module in ["Mutex", "Pipes", "ProcessCheck", "ProcessIntegrity"] and parsed_event.message.level == "Alert"}}'
+
+      - set:
+          event.category: ["process", "network"]
+          event.type: ["info", "connection"]
+        filter: '{{parsed_event.message.module == "ProcessConnections"}}'
+      - set:
+          event.category: ["process", "network", "intrusion_detection"]
+        filter: '{{parsed_event.message.module == "ProcessConnections" and parsed_event.message.level == "Alert"}}'
+
+      # "Malware file found" -> append malware (Elastic parity)
+      - set:
+          event.category: ["file", "malware"]
+        filter: '{{parsed_event.message.message == "Malware file found" and parsed_event.message.level != "Alert"}}'
+      - set:
+          event.category: ["file", "malware", "intrusion_detection"]
+        filter: '{{parsed_event.message.message == "Malware file found" and parsed_event.message.level == "Alert"}}'
+
+  # ------------------------------------------------- detection rule fields ---
+  # rule.name and rule.id both = signature.rulename (the bare rule identifier).
+  # rule.description = signature.description, recovered from the composite reason
+  # name ("<label> <rulename> / <description>", e.g. "YARA rule
+  # HKTL_Meterpreter_inMemory / Detects Meterpreter in-memory") for plain YARA/
+  # Sigma where signature.description is empty. For Sigma the rule.name is later
+  # overridden by the engine's rule title, while rule.id keeps the rulename.
+  set_rule_fields:
+    actions:
+      - set:
+          rule.name: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename", "")}}'
+          rule.id: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename", "")}}'
+          rule.uuid: '{{parsed_event.message.reasons[0].get("signature", {}).get("id", "")}}'
+          rule.reference: '{{parsed_event.message.reasons[0].get("signature", {}).get("ref", "")}}'
+          rule.description: '{{parsed_event.message.reasons[0].get("signature", {}).get("description", "")}}'
+          rule.author: '{{parsed_event.message.reasons[0].get("signature", {}).get("author", "")}}'
+          rule.category: '{{parsed_event.message.reasons[0].get("sigclass", "")}}'
+          rule.ruleset: '{{parsed_event.message.reasons[0].get("sigtype", "")}}'
+          nextron.thor.reason_count: "{{parsed_event.message.reasons | length}}"
+          nextron.thor.rule_date: '{{parsed_event.message.reasons[0].get("signature", {}).get("ruledate", "")}}'
+
+      - set:
+          nextron.thor.signature_tags: "{{parsed_event.message.reasons[0].signature.tags}}"
+        filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags") not in [none, []]}}'
+
+      # MITRE ATT&CK technique tags ("ATTACK.T1059", "attack.t1059.001")
+      - set:
+          threat.technique.id: '[{% for t in parsed_event.message.reasons[0].signature.tags if t.upper().startswith("ATTACK.T") and not t.upper().startswith("ATTACK.TA") %}"{{t[7:].upper()}}"{% if not loop.last %},{% endif %}{% endfor %}]'
+        filter: '{{"ATTACK.T" in (parsed_event.message.reasons[0].get("signature", {}).get("tags") or []) | map("upper") | join(",") | replace("ATTACK.TA", "")}}'
+      - set:
+          threat.framework: "MITRE ATT&CK"
+        filter: '{{"ATTACK.T" in (parsed_event.message.reasons[0].get("signature", {}).get("tags") or []) | map("upper") | join(",") | replace("ATTACK.TA", "")}}'
+
+      # Recover the description from the composite reason name (part after the
+      # first " / ") when the signature carries none — the plain YARA/Sigma case.
+      - set:
+          rule.description: '{{parsed_event.message.reasons[0].get("name", "").split(" / ")[1:] | join(" / ")}}'
+        filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("description") in [none, ""] and " / " in parsed_event.message.reasons[0].get("name", "")}}'
+
+      # Reasons without a signature rulename (heuristics/IOCs) keep the human
+      # readable composite name rather than an empty rule.name.
+      - set:
+          rule.name: '{{parsed_event.message.reasons[0].get("name", "")}}'
+        filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("rulename") in [none, ""]}}'
+
+      # matched[0].data = the actual bytes/string that triggered the top match
+      - set:
+          nextron.thor.matched: '{{parsed_event.message.reasons[0].get("matched", [{}])[0].get("data", "")}}'
+        filter: '{{parsed_event.message.reasons[0].get("matched") != none and parsed_event.message.reasons[0].get("matched") | length > 0}}'
+
+      # Sigma-engine matches expose the rule title in a dedicated field; it wins.
+      # (NOT for Firewall, where "rule" is the inspected firewall rule)
+      - set:
+          rule.name: "{{parsed_event.message.rule}}"
+        filter: '{{parsed_event.message.get("rule") != none and parsed_event.message.module in ["Eventlog", "LogScan", "EVTX"]}}'
+
+  # ----------------------------------------- file entity: object variants ---
+  set_file_object_fields:
+    actions:
+      - set:
+          file.path: "{{parsed_event.message.file.get('path', '')}}"
+          file.size: "{{parsed_event.message.file.get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.file.get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.file.get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.file.get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.file.get('imphash', '')}}"
+          file.created: "{{parsed_event.message.file.get('created', '')}}"
+          file.mtime: "{{parsed_event.message.file.get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.file.get('accessed', '')}}"
+          file.ctime: "{{parsed_event.message.file.get('changed', '')}}"
+          file.owner: "{{parsed_event.message.file.get('owner', '')}}"
+          file.group: "{{parsed_event.message.file.get('group', '')}}"
+          file.pe.company: "{{parsed_event.message.file.get('company', '')}}"
+          file.pe.description: "{{parsed_event.message.file.get('desc', '')}}"
+          file.pe.product: "{{parsed_event.message.file.get('product', '')}}"
+          file.pe.original_file_name: "{{parsed_event.message.file.get('original_name', '')}}"
+          nextron.thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
+          nextron.thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
+          nextron.thor.file.internal_name: "{{parsed_event.message.file.get('internal_name', '')}}"
+          nextron.thor.file.legal_copyright: "{{parsed_event.message.file.get('legal_copyright', '')}}"
+
+      - set:
+          file.name: "{{parsed_event.message.file.get('path', '').split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.file.get("path") not in [none, ""]}}'
+
+      - set:
+          file.extension: "{{parsed_event.message.file.get('ext', '').replace('.', '')}}"
+        filter: '{{parsed_event.message.file.get("ext") != none}}'
+
+      # Unix permissions string ("-rwxr-xr-x") -> octal file.mode ("0755")
+      - set:
+          file.mode: "{% set q = parsed_event.message.file.permissions %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
+        filter: '{{parsed_event.message.file.get("permissions") is string and parsed_event.message.file.permissions | length == 10}}'
+
+      # THOR emits exists as "yes"/"no" (or "true"/"false")
+      - set:
+          nextron.thor.file.exists: "{{(parsed_event.message.file.exists | string | lower) in ['yes', 'true']}}"
+        filter: '{{(parsed_event.message.file.get("exists") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+      # Filescan: containing archive (secondary entity)
+      - set:
+          nextron.thor.archive.path: "{{parsed_event.message.archive.get('path', '')}}"
+          nextron.thor.archive.type: "{{parsed_event.message.archive.get('type', '')}}"
+          nextron.thor.archive.size: "{{parsed_event.message.archive.get('size', '')}}"
+          nextron.thor.archive.md5: "{{parsed_event.message.archive.get('md5', '')}}"
+          nextron.thor.archive.sha1: "{{parsed_event.message.archive.get('sha1', '')}}"
+          nextron.thor.archive.sha256: "{{parsed_event.message.archive.get('sha256', '')}}"
+          nextron.thor.archive.first_bytes: "{{parsed_event.message.archive.get('firstbytes', '')}}"
+        filter: '{{parsed_event.message.get("archive") != none}}'
+
+  # ----------------------------------------- file entity: string variants ---
+  set_file_path_fields:
+    actions:
+      # Elastic parity: `file` as string -> file.path (LogScan/EVTX/ETL/MFT/
+      # Timestomp/Amcache/WER)
+      - set:
+          file.path: "{{parsed_event.message.file}}"
+          file.name: "{{parsed_event.message.file.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") in ["LogScan", "EVTX", "ETL", "MFT", "Timestomp", "Amcache", "WER"] and parsed_event.message.get("file") is string}}'
+
+      # LogScan: log_* timestamps belong to the scanned log file
+      - set:
+          file.created: "{{parsed_event.message.log_created}}"
+          file.mtime: "{{parsed_event.message.log_modified}}"
+          file.accessed: "{{parsed_event.message.log_accessed}}"
+          nextron.thor.logscan.entry: "{{parsed_event.message.entry}}"
+        filter: '{{parsed_event.message.get("module") == "LogScan"}}'
+
+      # MFT: $SI timestamps; USN journal records carry the change entry
+      - set:
+          file.created: "{{parsed_event.message.created}}"
+          file.mtime: "{{parsed_event.message.modified}}"
+          file.accessed: "{{parsed_event.message.accessed}}"
+          file.name: "{{parsed_event.message.filename}}"
+          file.directory: "{{parsed_event.message.folder}}"
+          nextron.thor.mft.flags: "{{parsed_event.message.flags}}"
+          nextron.thor.mft.usn_entry: "{{parsed_event.message.entry}}"
+          nextron.thor.mft.usn_time: "{{parsed_event.message.event_time}}"
+        filter: '{{parsed_event.message.get("module") == "MFT"}}'
+      - set:
+          nextron.thor.mft.deleted: "{{(parsed_event.message.deleted | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "MFT" and (parsed_event.message.get("deleted") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+      # AtJobs: the job/task XML file is the subject
+      - set:
+          file.path: "{{parsed_event.message.job}}"
+          file.name: "{{parsed_event.message.job.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "AtJobs" and parsed_event.message.get("job") != none}}'
+
+      # Autoruns: resolved autostart binary
+      - set:
+          file.path: "{{parsed_event.message.image_path}}"
+          file.name: "{{parsed_event.message.image_name}}"
+          file.hash.md5: "{{parsed_event.message.md5}}"
+          file.hash.sha256: "{{parsed_event.message.sha256}}"
+        filter: '{{parsed_event.message.get("module") == "Autoruns"}}'
+
+  # ------------------------- files[0] -> file.* promotion (resolved subject) ---
+  set_files0_fields:
+    actions:
+      - set:
+          file.path: "{{parsed_event.message.files[0].get('path', '')}}"
+          file.size: "{{parsed_event.message.files[0].get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.files[0].get('imphash', '')}}"
+          file.created: "{{parsed_event.message.files[0].get('created', '')}}"
+          file.mtime: "{{parsed_event.message.files[0].get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.files[0].get('accessed', '')}}"
+          file.ctime: "{{parsed_event.message.files[0].get('changed', '')}}"
+          file.owner: "{{parsed_event.message.files[0].get('owner', '')}}"
+          file.pe.company: "{{parsed_event.message.files[0].get('company', '')}}"
+          file.pe.description: "{{parsed_event.message.files[0].get('desc', '')}}"
+          file.pe.product: "{{parsed_event.message.files[0].get('product', '')}}"
+          file.pe.original_file_name: "{{parsed_event.message.files[0].get('original_name', '')}}"
+          nextron.thor.file.type: "{{parsed_event.message.files[0].get('type', '')}}"
+
+      - set:
+          file.name: "{{parsed_event.message.files[0].get('path', '').split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.files[0].get("path") not in [none, ""] and parsed_event.message.get("module") != "Autoruns"}}'
+
+      - set:
+          nextron.thor.file.exists: "{{(parsed_event.message.files[0].exists | string | lower) in ['yes', 'true']}}"
+        filter: '{{(parsed_event.message.files[0].get("exists") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+  # MFT: merge files[0] metadata only when it resolves the same path
+  set_mft_merge_fields:
+    actions:
+      - set:
+          file.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.files[0].get('imphash', '')}}"
+          file.owner: "{{parsed_event.message.files[0].get('owner', '')}}"
+          file.size: "{{parsed_event.message.files[0].get('size', '')}}"
+          nextron.thor.file.type: "{{parsed_event.message.files[0].get('type', '')}}"
+        filter: '{{parsed_event.message.files[0].get("path") == parsed_event.message.get("file")}}'
+
+  # ------------------------------------------- embedded eventlog metadata ---
+  set_eventlog_fields:
+    actions:
+      - set:
+          event.code: "{{parsed_event.message.event_id}}"
+          nextron.thor.eventlog.channel: "{{parsed_event.message.event_channel}}"
+          nextron.thor.eventlog.computer: "{{parsed_event.message.event_computer}}"
+          nextron.thor.eventlog.time: "{{parsed_event.message.event_time}}"
+          nextron.thor.eventlog.level: "{{parsed_event.message.event_level}}"
+          nextron.thor.eventlog.entry: "{{parsed_event.message.entry}}"
+
+      # Eventlog: a single binary referenced by the matched record -> file.*
+      # (EVTX/ETL keep file.* for the log file itself)
+      - set:
+          file.path: "{{parsed_event.message.files[0].get('path', '')}}"
+          file.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("files") != none and parsed_event.message.files | length == 1}}'
+      - set:
+          file.name: "{{parsed_event.message.files[0].path.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("files") != none and parsed_event.message.files | length == 1 and parsed_event.message.files[0].get("path") not in [none, ""]}}'
+
+      # Info progress lines: "Analyzing eventlog" carries the channel as
+      # `name`; "Finished scanning Eventlog <channel>" the record count
+      - set:
+          nextron.thor.eventlog.channel: "{{parsed_event.message.name}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("name") != none}}'
+      - set:
+          nextron.thor.eventlog.scanned: "{{parsed_event.message.scanned}}"
+        filter: '{{parsed_event.message.get("module") == "Eventlog" and parsed_event.message.get("scanned") != none}}'
+
+  # ---------------------------------------------------- observed processes ---
+  set_process_fields:
+    actions:
+      - set:
+          process.pid: "{{parsed_event.message.pid}}"
+          process.parent.pid: "{{parsed_event.message.ppid}}"
+          process.name: "{{parsed_event.message.process_name}}"
+          process.command_line: "{{parsed_event.message.command}}"
+          process.parent.executable: "{{parsed_event.message.parent}}"
+          nextron.thor.process.session: "{{parsed_event.message.session}}"
+          nextron.thor.process.connection_count: "{{parsed_event.message.connection_count}}"
+          nextron.thor.process.listen_ports: "{{parsed_event.message.listen_ports}}"
+
+      - set:
+          process.start: "{{parsed_event.message.created}}"
+        filter: '{{parsed_event.message.get("created") not in [none, "1970-01-01T00:00:00Z", "0001-01-01T00:00:00Z"]}}'
+
+      # owner "DOMAIN\user" -> process.user.* (effective user; ECS 9.4 reuse)
+      - set:
+          process.user.name: '{{parsed_event.message.owner.split("\\")[-1]}}'
+        filter: '{{parsed_event.message.get("owner") not in [none, ""]}}'
+      # Sekoia's ECS exposes process.user.name but not the process.user.domain
+      # reuse, so the owner's domain part goes to a vendor field.
+      - set:
+          nextron.thor.process.user_domain: '{{parsed_event.message.owner.split("\\")[0]}}'
+        filter: '{{parsed_event.message.get("owner") not in [none, ""] and "\\" in parsed_event.message.owner}}'
+
+      # image object -> the process executable (hashes/PE are Sekoia additions).
+      # On Linux, THOR may report the working directory as `image` (empty path,
+      # type DIRECTORY): it does not describe the executable and is skipped.
+      - set:
+          process.executable: "{{parsed_event.message.image.get('path', '')}}"
+          process.hash.md5: "{{parsed_event.message.image.get('md5', '')}}"
+          process.hash.sha1: "{{parsed_event.message.image.get('sha1', '')}}"
+          process.hash.sha256: "{{parsed_event.message.image.get('sha256', '')}}"
+          process.pe.imphash: "{{parsed_event.message.image.get('imphash', '')}}"
+          process.pe.company: "{{parsed_event.message.image.get('company', '')}}"
+          process.pe.description: "{{parsed_event.message.image.get('desc', '')}}"
+          process.pe.product: "{{parsed_event.message.image.get('product', '')}}"
+          process.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
+          nextron.thor.process.image.created: "{{parsed_event.message.image.get('created', '')}}"
+          nextron.thor.process.image.modified: "{{parsed_event.message.image.get('modified', '')}}"
+          nextron.thor.process.image.accessed: "{{parsed_event.message.image.get('accessed', '')}}"
+          nextron.thor.process.image.owner: "{{parsed_event.message.image.get('owner', '')}}"
+          nextron.thor.process.image.permissions: "{{parsed_event.message.image.get('permissions', '')}}"
+          nextron.thor.process.image.type: "{{parsed_event.message.image.get('type', '')}}"
+          nextron.thor.process.image.size: "{{parsed_event.message.image.get('size', '')}}"
+          nextron.thor.process.image.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
+        filter: '{{parsed_event.message.get("image") is mapping and parsed_event.message.image.get("type") != "DIRECTORY"}}'
+
+      # No usable image path: the executable is the first resolved file
+      - set:
+          process.executable: "{{parsed_event.message.files[0].get('path', '')}}"
+          process.hash.md5: "{{parsed_event.message.files[0].get('md5', '')}}"
+          process.hash.sha1: "{{parsed_event.message.files[0].get('sha1', '')}}"
+          process.hash.sha256: "{{parsed_event.message.files[0].get('sha256', '')}}"
+          process.pe.imphash: "{{parsed_event.message.files[0].get('imphash', '')}}"
+          process.pe.company: "{{parsed_event.message.files[0].get('company', '')}}"
+          process.pe.description: "{{parsed_event.message.files[0].get('desc', '')}}"
+          process.pe.product: "{{parsed_event.message.files[0].get('product', '')}}"
+          process.pe.original_file_name: "{{parsed_event.message.files[0].get('original_name', '')}}"
+        filter: '{{(parsed_event.message.get("image") is not mapping or parsed_event.message.image.get("path") in [none, ""]) and parsed_event.message.get("files") != none and parsed_event.message.files | length > 0}}'
+
+      # PE-Sieve counters (ProcessIntegrity)
+      - set:
+          nextron.thor.pe_sieve.suspicious_sections: "{{parsed_event.message.Suspicious_sections}}"
+          nextron.thor.pe_sieve.replaced: "{{parsed_event.message.replaced}}"
+          nextron.thor.pe_sieve.hdr_mod: "{{parsed_event.message.hdr_mod}}"
+          nextron.thor.pe_sieve.iat_hooked: "{{parsed_event.message.iat_hooked}}"
+          nextron.thor.pe_sieve.implanted: "{{parsed_event.message.implanted}}"
+          nextron.thor.pe_sieve.patched: "{{parsed_event.message.patched}}"
+          nextron.thor.pe_sieve.unreachable_file: "{{parsed_event.message.unreachable_file}}"
+          nextron.thor.pe_sieve.other: "{{parsed_event.message.other}}"
+          nextron.thor.pe_sieve.skipped: "{{parsed_event.message.skipped}}"
+          nextron.thor.pe_sieve.reference: "{{parsed_event.message.reference}}"
+          nextron.thor.pe_sieve.reference_2: "{{parsed_event.message.reference_2}}"
+        filter: '{{parsed_event.message.get("module") == "ProcessIntegrity"}}'
+
+  # ------------------------------------------------ per-process connection ---
+  set_network_fields:
+    actions:
+      - set:
+          network.transport: "{{parsed_event.message.protocol | lower}}"
+        filter: '{{parsed_event.message.get("protocol") not in [none, ""]}}'
+
+      # "*" is a THOR wildcard placeholder, not a real address (Elastic parity)
+      - set:
+          source.ip: "{{parsed_event.message.ip}}"
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
+      - set:
+          source.port: "{{parsed_event.message.port}}"
+        filter: '{{parsed_event.message.get("port") not in [none, "", "*"]}}'
+      - set:
+          destination.ip: "{{parsed_event.message.rip}}"
+        filter: '{{parsed_event.message.get("rip") not in [none, "", "*"]}}'
+      - set:
+          destination.port: "{{parsed_event.message.rport}}"
+        filter: '{{parsed_event.message.get("rport") not in [none, "", "*"]}}'
+
+  # ------------------------------------------------------ Windows services ---
+  set_service_fields:
+    actions:
+      - set:
+          service.name: "{{parsed_event.message.key_name}}"
+          nextron.thor.service.display_name: "{{parsed_event.message.service_name}}"
+          nextron.thor.service.image_path: "{{parsed_event.message.image_path}}"
+          nextron.thor.service.start_type: "{{parsed_event.message.start_type}}"
+          nextron.thor.service.description: "{{parsed_event.message.description}}"
+          nextron.thor.service.modified: "{{parsed_event.message.modified}}"
+          nextron.thor.service.failure_command: "{{parsed_event.message.failure_command}}"
+
+      # Service registry key: THOR reports it relative to HKLM
+      # ("System\CurrentControlSet\Services\<name>"); split a hive prefix off
+      # when present so registry.key never contains the hive.
+      - set:
+          registry.hive: '{{ {"HKEY_LOCAL_MACHINE": "HKLM", "LOCAL_MACHINE": "HKLM"}.get(parsed_event.message.key.split("\\")[0], parsed_event.message.key.split("\\")[0]) }}'
+          registry.key: '{{parsed_event.message.key.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.key.split("\\")[0] in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE"]}}'
+      - set:
+          registry.hive: "HKLM"
+          registry.key: "{{parsed_event.message.key}}"
+        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.key.split("\\")[0] not in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE"]}}'
+      - set:
+          registry.path: '{{final.registry.hive}}\{{final.registry.key}}'
+        filter: '{{parsed_event.message.get("key") not in [none, ""]}}'
+
+      # service binary -> file.* (Sekoia addition; stays thor.image.* in Elastic)
+      - set:
+          file.path: "{{parsed_event.message.image.get('path', '')}}"
+          file.size: "{{parsed_event.message.image.get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.image.get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.image.get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.image.get('sha256', '')}}"
+          file.pe.imphash: "{{parsed_event.message.image.get('imphash', '')}}"
+          file.created: "{{parsed_event.message.image.get('created', '')}}"
+          file.mtime: "{{parsed_event.message.image.get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.image.get('accessed', '')}}"
+          file.owner: "{{parsed_event.message.image.get('owner', '')}}"
+          file.pe.company: "{{parsed_event.message.image.get('company', '')}}"
+          file.pe.description: "{{parsed_event.message.image.get('desc', '')}}"
+          file.pe.product: "{{parsed_event.message.image.get('product', '')}}"
+          file.pe.original_file_name: "{{parsed_event.message.image.get('original_name', '')}}"
+          nextron.thor.file.first_bytes: "{{parsed_event.message.image.get('firstbytes', '')}}"
+        filter: '{{parsed_event.message.get("image") is mapping}}'
+      - set:
+          file.name: "{{parsed_event.message.image.path.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("image") is mapping and parsed_event.message.image.get("path") not in [none, ""]}}'
+
+      # Linux systemd services (log_version v2.x): flat unit/executable layout,
+      # not the Windows service_name/registry/ImagePath model above.
+      - set:
+          service.name: "{{parsed_event.message.unit}}"
+          nextron.thor.service.unit_path: "{{parsed_event.message.unit_path}}"
+          nextron.thor.service.command: "{{parsed_event.message.command}}"
+          nextron.thor.service.unit_owner: "{{parsed_event.message.unit_owner}}"
+          nextron.thor.service.unit_group: "{{parsed_event.message.unit_group}}"
+          nextron.thor.service.unit_mode: "{{parsed_event.message.unit_mode}}"
+          user.group.name: "{{parsed_event.message.run_as_group}}"
+        filter: '{{parsed_event.message.get("unit") != none}}'
+
+      # systemd service binary -> file.* (executable + hash + magic + ownership)
+      - set:
+          file.path: "{{parsed_event.message.executable}}"
+          file.name: "{{parsed_event.message.executable.split('/')[-1]}}"
+          file.hash.sha1: "{{parsed_event.message.sha1}}"
+          file.owner: "{{parsed_event.message.exe_owner}}"
+          file.group: "{{parsed_event.message.exe_group}}"
+          nextron.thor.file.type: "{{parsed_event.message.exe_magic}}"
+        filter: '{{parsed_event.message.get("executable") not in [none, ""]}}'
+      - set:
+          file.mode: "{% set q = parsed_event.message.exe_mode %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
+        filter: '{{parsed_event.message.get("exe_mode") is string and parsed_event.message.exe_mode | length == 10}}'
+
+  # ------------------------------------------------------- scheduled tasks ---
+  set_task_fields:
+    actions:
+      - set:
+          nextron.thor.task.name: "{{parsed_event.message.name}}"
+          nextron.thor.task.path: "{{parsed_event.message.path}}"
+          nextron.thor.task.command: "{{parsed_event.message.command}}"
+          nextron.thor.task.last_run: "{{parsed_event.message.lastrun}}"
+          nextron.thor.task.next_run: "{{parsed_event.message.nextrun}}"
+          nextron.thor.task.run_level: "{{parsed_event.message.runlevel}}"
+          nextron.thor.task.logon_type: "{{parsed_event.message.logontype}}"
+
+      - set:
+          nextron.thor.task.enabled: "{{(parsed_event.message.enabled | string | lower) in ['yes', 'true']}}"
+        filter: '{{(parsed_event.message.get("enabled") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+      # AtJobs schedule time may be multi-valued ("t1, t2"); keep the first
+      - set:
+          nextron.thor.task.start: '{{parsed_event.message.start.split(",")[0] | trim}}'
+        filter: '{{parsed_event.message.get("start") not in [none, ""]}}'
+
+  # ------------------------------------------------------ autostart entries ---
+  set_autoruns_fields:
+    actions:
+      - set:
+          nextron.thor.autorun.location: "{{parsed_event.message.location}}"
+          nextron.thor.autorun.type: "{{parsed_event.message.type}}"
+          nextron.thor.autorun.caption: "{{parsed_event.message.caption}}"
+          nextron.thor.autorun.command: "{{parsed_event.message.command}}"
+          nextron.thor.autorun.arguments: "{{parsed_event.message.arguments}}"
+          nextron.thor.autorun.launch_string: "{{parsed_event.message.launch_string}}"
+
+      # registry-based autostarts: derive hive + key
+      - set:
+          registry.hive: "HKLM"
+          registry.key: '{{parsed_event.message.location.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("location") != none and parsed_event.message.location.split("\\")[0] in ["HKLM", "LOCAL_MACHINE", "HKEY_LOCAL_MACHINE"]}}'
+      - set:
+          registry.hive: "HKCU"
+          registry.key: '{{parsed_event.message.location.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("location") != none and parsed_event.message.location.split("\\")[0] in ["HKCU", "CURRENT_USER", "HKEY_CURRENT_USER"]}}'
+
+      # Autoruns entry is a run-key value NAME -> registry.value; the value data
+      # is the launched command line
+      - set:
+          registry.value: "{{parsed_event.message.entry}}"
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""]}}'
+      - set:
+          registry.path: '{{[final.registry.hive, final.registry.key, parsed_event.message.entry] | join("\\")}}'
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and final.get("registry", {}).get("hive") not in [none, ""]}}'
+      - set:
+          registry.data.strings: '{{[[parsed_event.message.get("command", ""), parsed_event.message.get("arguments", "")] | select | join(" ")]}}'
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and parsed_event.message.get("command") not in [none, ""]}}'
+
+  # ------------------------------------------------------- registry checks ---
+  set_registry_fields:
+    actions:
+      - set:
+          registry.value: "{{parsed_event.message.name}}"
+          nextron.thor.registry.string: "{{parsed_event.message.string}}"
+          nextron.thor.registry.modified: "{{parsed_event.message.modified}}"
+
+      # The checked key comes as `key`, or as `path` when THOR reports a
+      # missing key. The hive prefix is normalized to its short form
+      # (HKEY_LOCAL_MACHINE -> HKLM) and kept out of registry.key.
+      - set:
+          registry.hive: '{{ {"HKLM": "HKLM", "HKEY_LOCAL_MACHINE": "HKLM", "LOCAL_MACHINE": "HKLM", "HKCU": "HKCU", "HKEY_CURRENT_USER": "HKCU", "CURRENT_USER": "HKCU", "HKU": "HKU", "HKEY_USERS": "HKU", "HKCR": "HKCR", "HKEY_CLASSES_ROOT": "HKCR"}[(parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[0]] }}'
+          registry.key: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[1:] | join("\\")}}'
+        filter: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[0] in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE", "HKCU", "HKEY_CURRENT_USER", "CURRENT_USER", "HKU", "HKEY_USERS", "HKCR", "HKEY_CLASSES_ROOT"]}}'
+      - set:
+          registry.key: '{{parsed_event.message.get("key") or parsed_event.message.get("path")}}'
+        filter: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "") != "" and (parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[0] not in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE", "HKCU", "HKEY_CURRENT_USER", "CURRENT_USER", "HKU", "HKEY_USERS", "HKCR", "HKEY_CLASSES_ROOT"]}}'
+      - set:
+          registry.path: '{{[final.registry.get("hive"), final.registry.key, parsed_event.message.get("name")] | select | join("\\")}}'
+        filter: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "") != ""}}'
+
+      # registry value data
+      - set:
+          registry.data.strings: "{{[parsed_event.message.value | string]}}"
+        filter: '{{parsed_event.message.get("value") not in [none, ""]}}'
+
+  # -------------------------------------------- execution-evidence stores ---
+  set_shimcache_amcache_fields:
+    actions:
+      # SHIMCache: the cached executable is `entry` (file.* comes from the
+      # `file` object); `hive` is the AppCompatCache key relative to HKLM;
+      # `path` is where the cache was read from ("(Live)" or a hive file).
+      - set:
+          registry.hive: "HKLM"
+          registry.key: "{{parsed_event.message.hive}}"
+          registry.path: 'HKLM\{{parsed_event.message.hive}}'
+        filter: '{{parsed_event.message.get("module") == "SHIMCache" and parsed_event.message.get("hive") not in [none, ""]}}'
+      - set:
+          file.path: "{{parsed_event.message.entry}}"
+          file.name: "{{parsed_event.message.entry.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache" and parsed_event.message.get("entry") not in [none, ""]}}'
+      - set:
+          file.mtime: "{{parsed_event.message.timestamp}}"
+          nextron.thor.shimcache.source: "{{parsed_event.message.path}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache"}}'
+
+      - set:
+          nextron.thor.shimcache.exec_flag: "{{(parsed_event.message.exec_flag | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache" and (parsed_event.message.get("exec_flag") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+      # Amcache store-entry attributes
+      - set:
+          file.hash.sha1: "{{parsed_event.message.sha1}}"
+          file.size: "{{parsed_event.message.size}}"
+          file.pe.product: "{{parsed_event.message.product}}"
+          file.pe.company: "{{parsed_event.message.company}}"
+          file.pe.description: "{{parsed_event.message.description}}"
+          nextron.thor.amcache.first_run: "{{parsed_event.message.first_run}}"
+          nextron.thor.amcache.element: "{{parsed_event.message.element}}"
+        filter: '{{parsed_event.message.get("module") == "Amcache"}}'
+
+      - set:
+          file.created: "{{parsed_event.message.created}}"
+        filter: '{{parsed_event.message.get("module") == "Amcache" and parsed_event.message.get("created") not in [none, "0001-01-01T00:00:00Z", "1970-01-01T00:00:00Z"]}}'
+
+  # ------------------------------------------------------------- DNS cache ---
+  # Deliberate divergence: the cached/resolved IP is dns.resolved_ip, NOT
+  # source.ip (Elastic maps it to source.ip via its generic network gate).
+  set_dns_fields:
+    actions:
+      - set:
+          dns.question.name: "{{parsed_event.message.entry}}"
+
+      - set:
+          dns.resolved_ip: '["{{parsed_event.message.ip}}"]'
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
+
+  # --------------------------- flat signature triple (older representation) ---
+  set_flat_signature_fields:
+    actions:
+      - set:
+          rule.name: "{{parsed_event.message.signature}}"
+          rule.id: "{{parsed_event.message.signature}}"
+          rule.description: "{{parsed_event.message.desc}}"
+          event.reason: "{{parsed_event.message.desc}}"
+          nextron.thor.sigtype: "{{parsed_event.message.sigtype}}"
+
+  # --------------------------------------------------------- firewall rules ---
+  # 'rule'/'rule_name' = the INSPECTED firewall rule (not a detection rule);
+  # 'port' is a rule definition, not observed traffic -> vendor-side.
+  set_firewall_fields:
+    actions:
+      - set:
+          nextron.thor.firewall.rule_name: "{{parsed_event.message.rule_name}}"
+          nextron.thor.firewall.rule: "{{parsed_event.message.rule}}"
+          nextron.thor.firewall.port: "{{parsed_event.message.port}}"
+
+  # -------------------------------------------------------- WMI persistence ---
+  set_wmi_fields:
+    actions:
+      - set:
+          nextron.thor.wmi.key: "{{parsed_event.message.key}}"
+          nextron.thor.wmi.filter_type: "{{parsed_event.message.filtertype}}"
+          nextron.thor.wmi.event_filter_name: "{{parsed_event.message.eventfiltername}}"
+          nextron.thor.wmi.event_consumer_name: "{{parsed_event.message.eventconsumername}}"
+          nextron.thor.wmi.event_filter: "{{parsed_event.message.eventfilter}}"
+          nextron.thor.wmi.event_consumer: "{{parsed_event.message.eventconsumer}}"
+
+  # ---------------------------------------------------------------- hotfixes ---
+  set_hotfix_fields:
+    actions:
+      - set:
+          package.name: "{{parsed_event.message.hotfix_id}}"
+          package.reference: "{{parsed_event.message.caption}}"
+          package.installed: "{{parsed_hotfix_date.date}}"
+          user.name: "{{parsed_event.message.installed_by}}"
+
+  # ---------------------------------------------------- shares / env vars ---
+  set_share_env_fields:
+    actions:
+      - set:
+          nextron.thor.share.name: "{{parsed_event.message.share_name}}"
+          nextron.thor.share.path: "{{parsed_event.message.path}}"
+          nextron.thor.share.permissions: "{{parsed_event.message.share_perms}}"
+        filter: '{{parsed_event.message.get("module") == "NetworkShares"}}'
+
+      - set:
+          nextron.thor.env.variable: "{{parsed_event.message.var}}"
+          nextron.thor.env.value: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.get("module") == "EnvCheck"}}'
+
+  # ------------------------------------------------- WER crash diagnostics ---
+  set_wer_fields:
+    actions:
+      - set:
+          nextron.thor.wer.date: "{{parsed_event.message.date}}"
+          nextron.thor.wer.error: "{{parsed_event.message.error}}"
+          nextron.thor.wer.fault_in_module: "{{parsed_event.message.fault_in_module}}"
+
+      # crashed application: apppath is the full executable path; exe is
+      # THOR's file name, truncated to 16 characters for long names
+      - set:
+          process.executable: "{{parsed_event.message.apppath}}"
+          process.name: "{{parsed_event.message.apppath.split('\\\\')[-1]}}"
+        filter: '{{parsed_event.message.get("apppath") not in [none, ""]}}'
+      - set:
+          process.name: "{{parsed_event.message.exe}}"
+        filter: '{{parsed_event.message.get("apppath") in [none, ""] and parsed_event.message.get("exe") not in [none, ""]}}'
+
+  # --------------------------------------------------------- LNK / dumps ---
+  set_lnk_dump_fields:
+    actions:
+      - set:
+          file.path: "{{parsed_event.message.link_file}}"
+          file.name: "{{parsed_event.message.link_file.split('\\\\')[-1].split('/')[-1]}}"
+          nextron.thor.lnk.target: "{{parsed_event.message.target}}"
+        filter: '{{parsed_event.message.get("module") == "Lnk" and parsed_event.message.get("link_file") != none}}'
+
+      - set:
+          file.path: "{{parsed_event.message.target}}"
+          file.name: "{{parsed_event.message.target.split('\\\\')[-1].split('/')[-1]}}"
+          nextron.thor.dump.type: "{{parsed_event.message.type}}"
+        filter: '{{parsed_event.message.get("module") == "DumpScan" and parsed_event.message.get("target") != none}}'
+
+  # -------------------------------------------------------------- timestomp ---
+  set_timestomp_fields:
+    actions:
+      - set:
+          file.mtime: "{{parsed_event.message.modified}}"
+          file.accessed: "{{parsed_event.message.access}}"
+          file.ctime: "{{parsed_event.message.changed}}"
+          file.created: "{{parsed_event.message.created}}"
+          file.directory: "{{parsed_event.message.directory}}"
+          nextron.thor.timestomp.file_name_modified: "{{parsed_event.message.MFT_FILE_NAME_modified}}"
+          nextron.thor.timestomp.file_name_accessed: "{{parsed_event.message.MFT_FILE_NAME_accessed}}"
+          nextron.thor.timestomp.file_name_changed: "{{parsed_event.message.MFT_FILE_NAME_changed}}"
+          nextron.thor.timestomp.file_name_created: "{{parsed_event.message.MFT_FILE_NAME_created}}"
+          nextron.thor.timestomp.usn_change_time: "{{parsed_event.message.usnChangeTime}}"
+
+      # drive "C:" -> ECS drive letter "C"
+      - set:
+          file.drive_letter: '{{parsed_event.message.drive.replace(":", "").replace("\\", "") | upper}}'
+        filter: '{{parsed_event.message.get("drive") not in [none, ""]}}'
+
+  # ------------------------------------- user inventory (Linux/macOS/Win) ---
+  set_users_fields:
+    actions:
+      - set:
+          user.id: "{{parsed_event.message.userid}}"
+          user.domain: "{{parsed_event.message.domain}}"
+          nextron.thor.user.last_logon: "{{parsed_event.message.last_logon}}"
+          nextron.thor.user.num_logons: "{{parsed_event.message.num_logons}}"
+          nextron.thor.user.bad_password_count: "{{parsed_event.message.badpwcount}}"
+          nextron.thor.user.password_age: "{{parsed_event.message.pass_age}}"
+
+      # Users: full name; Linux/macOS home directory, login shell, primary group
+      - set:
+          user.full_name: "{{parsed_event.message.full_name}}"
+          user.group.id: "{{parsed_event.message.groupid}}"
+          nextron.thor.user.home: "{{parsed_event.message.home}}"
+          nextron.thor.user.shell: "{{parsed_event.message.shell}}"
+        filter: '{{parsed_event.message.get("module") == "Users"}}'
+
+      # Users: account flags
+      - set:
+          nextron.thor.user.is_admin: "{{(parsed_event.message.is_admin | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "Users" and (parsed_event.message.get("is_admin") | string | lower) in ["yes", "no", "true", "false"]}}'
+      - set:
+          nextron.thor.user.no_expire: "{{(parsed_event.message.no_expire | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "Users" and (parsed_event.message.get("no_expire") | string | lower) in ["yes", "no", "true", "false"]}}'
+      - set:
+          nextron.thor.user.active: "{{(parsed_event.message.active | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "Users" and (parsed_event.message.get("active") | string | lower) in ["yes", "no", "true", "false"]}}'
+      - set:
+          nextron.thor.user.locked: "{{(parsed_event.message.locked | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "Users" and (parsed_event.message.get("locked") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+      # UserDir "Recently modified profile": profile directory timestamps
+      - set:
+          nextron.thor.userdir.created: "{{parsed_event.message.created}}"
+          nextron.thor.userdir.modified: "{{parsed_event.message.modified}}"
+        filter: '{{parsed_event.message.get("module") == "UserDir"}}'
+
+  # --------------------------------------- scanner lifecycle / platform ---
+  set_platform_fields:
+    actions:
+      # Startup "Platform DeepEval"
+      - set:
+          host.os.full: "{{parsed_event.message.name}}"
+          host.os.version: "{{parsed_event.message.version}}"
+          host.os.kernel: "{{parsed_event.message.kernel_version}}"
+          host.architecture: "{{parsed_event.message.arch}}"
+          nextron.thor.platform.build_number: "{{parsed_event.message.build_number}}"
+          nextron.thor.platform.type: "{{parsed_event.message.type}}"
+          nextron.thor.platform.processor: "{{parsed_event.message.proc}}"
+          nextron.thor.platform.installed_on: "{{parsed_event.message.installed_on}}"
+        filter: '{{parsed_event.message.get("module") == "Startup" and parsed_event.message.get("arch") != none}}'
+
+      - set:
+          host.os.type: "linux"
+        filter: '{{parsed_event.message.get("module") == "Startup" and (parsed_event.message.get("kernel_name") or "") | lower == "linux"}}'
+      - set:
+          host.os.type: "macos"
+        filter: '{{parsed_event.message.get("module") == "Startup" and (parsed_event.message.get("kernel_name") or "") | lower == "darwin"}}'
+      - set:
+          host.os.type: "windows"
+          host.os.family: "windows"
+        filter: '{{parsed_event.message.get("module") == "Startup" and parsed_event.message.get("arch") != none and (parsed_event.message.get("name") or "").startswith("Windows")}}'
+
+      - set:
+          event.start: "{{parsed_event.message.start_time}}"
+        filter: '{{parsed_event.message.get("start_time") != none}}'
+      - set:
+          event.end: "{{parsed_event.message.end_time}}"
+        filter: '{{parsed_event.message.get("end_time") != none}}'
+
+      # Init: license attributes (license holder is NOT a host user)
+      - set:
+          nextron.thor.license.file: "{{parsed_event.message.license}}"
+          nextron.thor.license.owner: "{{parsed_event.message.owner}}"
+          nextron.thor.license.type: "{{parsed_event.message.type}}"
+          nextron.thor.license.starts: "{{parsed_event.message.starts}}"
+          nextron.thor.license.expires: "{{parsed_event.message.expires}}"
+          nextron.thor.license.scanner: "{{parsed_event.message.scanner}}"
+        filter: '{{parsed_event.message.get("module") == "Init" and parsed_event.message.get("license") != none}}'
+      - set:
+          nextron.thor.license.valid: "{{(parsed_event.message.valid | string | lower) in ['yes', 'true']}}"
+        filter: '{{parsed_event.message.get("module") == "Init" and parsed_event.message.get("license") != none and (parsed_event.message.get("valid") | string | lower) in ["yes", "no", "true", "false"]}}'
+
+      # Init/Yara: type of the compiled signature set ("IOC", "YARA")
+      - set:
+          nextron.thor.signature_set_type: "{{parsed_event.message.type}}"
+        filter: '{{parsed_event.message.get("module") in ["Init", "Yara"] and parsed_event.message.get("license") == none}}'
+
+      - set:
+          rule.name: "{{parsed_event.message.rule}}"
+        filter: '{{parsed_event.message.get("module") == "Sigma"}}'
+
+      - set:
+          nextron.thor.report.alerts: "{{parsed_event.message.alerts}}"
+          nextron.thor.report.warnings: "{{parsed_event.message.warnings}}"
+          nextron.thor.report.notices: "{{parsed_event.message.notices}}"
+          nextron.thor.report.errors: "{{parsed_event.message.errors}}"
+        filter: '{{parsed_event.message.get("module") == "Report"}}'
+
+  # ----------------------------------------------------- cron (Linux/Unix) ---
+  # Cron emits three shapes: a `file` OBJECT (regularly executed file), a `file`
+  # STRING (crontab path) with a schedule/command, and a crontab environment
+  # variable. Each shape is recognized by the type of `file`.
+  set_cron_fields:
+    actions:
+      # "File regularly executed by cron": file is an object -> file.*
+      - set:
+          file.path: "{{parsed_event.message.file.get('path', '')}}"
+          file.name: "{{parsed_event.message.file.get('path', '').split('/')[-1]}}"
+          file.size: "{{parsed_event.message.file.get('size', '')}}"
+          file.hash.md5: "{{parsed_event.message.file.get('md5', '')}}"
+          file.hash.sha1: "{{parsed_event.message.file.get('sha1', '')}}"
+          file.hash.sha256: "{{parsed_event.message.file.get('sha256', '')}}"
+          file.mtime: "{{parsed_event.message.file.get('modified', '')}}"
+          file.accessed: "{{parsed_event.message.file.get('accessed', '')}}"
+          file.ctime: "{{parsed_event.message.file.get('changed', '')}}"
+          file.owner: "{{parsed_event.message.file.get('owner', '')}}"
+          file.group: "{{parsed_event.message.file.get('group', '')}}"
+          nextron.thor.file.type: "{{parsed_event.message.file.get('type', '')}}"
+          nextron.thor.file.first_bytes: "{{parsed_event.message.file.get('firstbytes', '')}}"
+        filter: '{{parsed_event.message.get("file") is mapping}}'
+      - set:
+          file.mode: "{% set q = parsed_event.message.file.permissions %}{{ (4 if q[3] in 'sS' else 0) + (2 if q[6] in 'sS' else 0) + (1 if q[9] in 'tT' else 0) }}{{ (4 if q[1] == 'r' else 0) + (2 if q[2] == 'w' else 0) + (1 if q[3] in 'xs' else 0) }}{{ (4 if q[4] == 'r' else 0) + (2 if q[5] == 'w' else 0) + (1 if q[6] in 'xs' else 0) }}{{ (4 if q[7] == 'r' else 0) + (2 if q[8] == 'w' else 0) + (1 if q[9] in 'xt' else 0) }}"
+        filter: '{{parsed_event.message.get("file") is mapping and parsed_event.message.file.get("permissions") is string and parsed_event.message.file.permissions | length == 10}}'
+
+      # "Crontab entry" / "Crontab environment setting": file is the crontab path
+      - set:
+          file.path: "{{parsed_event.message.file}}"
+          file.name: "{{parsed_event.message.file.split('/')[-1]}}"
+          nextron.thor.cron.schedule: "{{parsed_event.message.schedule}}"
+          nextron.thor.cron.command: "{{parsed_event.message.command}}"
+          nextron.thor.cron.variable: "{{parsed_event.message.variable}}"
+          nextron.thor.cron.value: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.get("file") is string}}'
+
+  # ------------------------------------------------------ hosts file entries ---
+  # /etc/hosts (or Windows hosts): entry = hostname, ip = mapped address.
+  set_hosts_fields:
+    actions:
+      - set:
+          dns.question.name: "{{parsed_event.message.entry}}"
+      - set:
+          dns.resolved_ip: '["{{parsed_event.message.ip}}"]'
+        filter: '{{parsed_event.message.get("ip") not in [none, "", "*"]}}'
+
+  # ----------------------------------------- generic flat fields, booleans ---
+  set_generic_fields:
+    actions:
+      - set:
+          nextron.thor.scanned_elements: "{{parsed_event.message.scanned_elements}}"
+          nextron.thor.entries: "{{parsed_event.message.entries}}"
+          nextron.thor.duration: "{{parsed_event.message.duration}}"
+
+      # user.name may arrive as "DOMAIN\user" (Startup "Running as user",
+      # HotfixCheck installed_by): split the domain off into user.domain
+      - set:
+          user.domain: '{{final.user.name.split("\\")[0]}}'
+        filter: '{{"\\" in final.get("user", {}).get("name", "")}}'
+      - set:
+          user.name: '{{final.user.name.split("\\")[-1]}}'
+        filter: '{{"\\" in final.get("user", {}).get("name", "")}}'
