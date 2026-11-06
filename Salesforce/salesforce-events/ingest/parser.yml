@@ -13,7 +13,19 @@ pipeline:
       properties:
         input_field: "{{json_event.output.TIMESTAMP_DERIVED}}"
         output_field: datetime
-    filter: "{{json_event.output.TIMESTAMP_DERIVED != None}}"
+    filter: "{{json_event.output.TIMESTAMP_DERIVED != None and json_event.output.TIMESTAMP_DERIVED != ''}}"
+
+  # Compact YYYYMMDDHHMMSS[.fff]: date.parse would read it as epoch, so make it ISO first
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: >-
+          {{json_event.output.TIMESTAMP[:4] ~ '-' ~ json_event.output.TIMESTAMP[4:6] ~ '-' ~
+          json_event.output.TIMESTAMP[6:8] ~ 'T' ~ json_event.output.TIMESTAMP[8:10] ~ ':' ~
+          json_event.output.TIMESTAMP[10:12] ~ ':' ~ json_event.output.TIMESTAMP[12:] ~ 'Z'}}
+        output_field: datetime
+    filter: "{{not json_event.output.TIMESTAMP_DERIVED and json_event.output.TIMESTAMP is string and json_event.output.TIMESTAMP.split('.')[0] | length == 14 and json_event.output.TIMESTAMP.split('.')[0].isdigit()}}"
 
   - name: parsed_date
     external:
@@ -21,16 +33,7 @@ pipeline:
       properties:
         input_field: "{{json_event.output.TIMESTAMP}}"
         output_field: datetime
-    filter: "{{json_event.output.TIMESTAMP != None and json_event.output.EVENT_TYPE != 'ApiTotalUsage'}}"
-
-  - name: parsed_date
-    external:
-      name: date.parse
-      properties:
-        input_field: "{{json_event.output.TIMESTAMP}}"
-        output_field: datetime
-        format: "%y%m%d%H%M%S.%f"
-    filter: "{{json_event.output.TIMESTAMP != None and json_event.output.EVENT_TYPE == 'ApiTotalUsage'}}"
+    filter: "{{not json_event.output.TIMESTAMP_DERIVED and json_event.output.TIMESTAMP != None and json_event.output.TIMESTAMP != '' and not (json_event.output.TIMESTAMP is string and json_event.output.TIMESTAMP.split('.')[0] | length == 14 and json_event.output.TIMESTAMP.split('.')[0].isdigit())}}"
 
   - name: parsed_date
     external:
@@ -38,7 +41,7 @@ pipeline:
       properties:
         input_field: "{{json_event.output.LOGIN_TIME}}"
         output_field: datetime
-    filter: "{{json_event.output.LOGIN_TIME != None}}"
+    filter: "{{not json_event.output.TIMESTAMP_DERIVED and not json_event.output.TIMESTAMP and json_event.output.LOGIN_TIME != None and json_event.output.LOGIN_TIME != ''}}"
 
   - name: parsed_start_time
     external:
