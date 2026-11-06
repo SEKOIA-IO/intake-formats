@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.5] - 2026-11-04
+## [1.0.5] - 2026-11-06
 
 ### Added
 
@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix existing ECS fields by no longer populating them with the Windows `"-"` placeholder (raw values in `action.properties` are kept as-is):
+  - `dll.name`
+  - `event.reason`
+  - `process.executable`
+  - `process.name`
+  - `process.working_directory`
+  - `related.user`
+  - `rule.name`
+  - `user.domain`
+  - `user.name`
+  - `user.target.domain`
+  - `user.target.name`
 - Fix existing custom fields:
   - `action.properties.Task`: prefer numeric `TaskValue` over textual `Task`, preventing conversion errors from discarding other event properties
 
