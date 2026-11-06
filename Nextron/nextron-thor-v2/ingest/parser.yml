@@ -578,13 +578,27 @@ stages:
     actions:
       - set:
           service.name: "{{parsed_event.message.service_name}}"
-          registry.key: "{{parsed_event.message.key}}"
           nextron.thor.service.key_name: "{{parsed_event.message.key_name}}"
           nextron.thor.service.image_path: "{{parsed_event.message.image_path}}"
           nextron.thor.service.start_type: "{{parsed_event.message.start_type}}"
           nextron.thor.service.description: "{{parsed_event.message.description}}"
           nextron.thor.service.modified: "{{parsed_event.message.modified}}"
           nextron.thor.service.failure_command: "{{parsed_event.message.failure_command}}"
+
+      # Service registry key: THOR reports it relative to HKLM
+      # ("System\CurrentControlSet\Services\<name>"); split a hive prefix off
+      # when present so registry.key never contains the hive.
+      - set:
+          registry.hive: '{{ {"HKEY_LOCAL_MACHINE": "HKLM", "LOCAL_MACHINE": "HKLM"}.get(parsed_event.message.key.split("\\")[0], parsed_event.message.key.split("\\")[0]) }}'
+          registry.key: '{{parsed_event.message.key.split("\\")[1:] | join("\\")}}'
+        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.key.split("\\")[0] in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE"]}}'
+      - set:
+          registry.hive: "HKLM"
+          registry.key: "{{parsed_event.message.key}}"
+        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.key.split("\\")[0] not in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE"]}}'
+      - set:
+          registry.path: '{{final.registry.hive}}\{{final.registry.key}}'
+        filter: '{{parsed_event.message.get("key") not in [none, ""]}}'
 
       # service binary -> file.* (Sekoia addition; stays thor.image.* in Elastic)
       - set:
