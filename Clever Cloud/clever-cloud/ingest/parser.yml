@@ -1,0 +1,205 @@
+name: clever-cloud
+ignored_values: []
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: parsed_date
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.date}}"
+        output_field: timestamp
+        format: null
+        timezone: UTC
+  - name: ecs_observer_mapping
+  - name: ecs_event_mapping
+  - name: ecs_log_mapping
+  - name: ecs_cloud_mapping
+  - name: ecs_process_mapping
+  - name: ecs_network_mapping
+  - name: ecs_source_mapping
+  - name: ecs_destination_mapping
+  - name: ecs_http_mapping
+  - name: ecs_url_mapping
+  - name: custom_fields_mapping
+  - name: ecs_kind_categorization
+  - name: ecs_web_categorization
+    filter: >-
+      {{parsed_event.message.http is defined}}
+  - name: ecs_network_categorization
+    filter: >-
+      {{not parsed_event.message.http is defined and (parsed_event.message.source is defined or parsed_event.message.destination is defined)}}
+  - name: ecs_host_categorization
+    filter: "{{not final.event.category is defined}}"
+  - name: ecs_outcome_categorization
+    filter: '{{final.event.type != "info"}}'
+stages:
+  ecs_observer_mapping:
+    actions:
+      - set:
+          observer.type: cloud
+          observer.vendor: Clever Cloud
+  ecs_event_mapping:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.timestamp}}"
+      - set:
+          event.dataset: "Access Logs"
+        filter: '{{parsed_event.message.http is defined}}'
+      - set:
+          event.dataset: "Access Logs"
+        filter: '{{not parsed_event.message.http is defined and (parsed_event.message.source is defined or parsed_event.message.destination is defined)}}'
+      - set:
+          event.dataset: "Application Logs"
+        filter: '{{not parsed_event.message.http is defined and not parsed_event.message.source is defined and not parsed_event.message.destination is defined and parsed_event.message.message is defined}}'
+  ecs_log_mapping:
+    actions:
+      - set:
+          log.priority: "{{parsed_event.message.priority}}"
+          log.syslog.facility.name: "{{parsed_event.message.facility}}"
+          log.syslog.severity.name: "{{parsed_event.message.severity}}"
+  ecs_cloud_mapping:
+    actions:
+      - set:
+          cloud.region: "{{parsed_event.message.region}}"
+          cloud.instance.id: "{{parsed_event.message.instanceId}}"
+          cloud.service.name: "{{parsed_event.message.service}}"
+          cloud.availability_zone: "{{parsed_event.message.zone}}"
+  ecs_process_mapping:
+    actions:
+      - set:
+          process.pid: "{{parsed_event.message.pid}}"
+  ecs_network_mapping:
+    actions:
+      - set:
+          network.direction: inbound
+        filter: >-
+          {{parsed_event.message.http is defined or
+          parsed_event.message.source is defined or
+          parsed_event.message.destination is defined}}
+  ecs_source_mapping:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.source.ip}}"
+          source.port: "{{parsed_event.message.source.port}}"
+          source.geo.city_name: "{{parsed_event.message.source.city}}"
+          source.geo.location.lat: "{{parsed_event.message.source.geoLocation.latitude}}"
+          source.geo.location.lon: "{{parsed_event.message.source.geoLocation.longitude}}"
+          source.geo.country_iso_code: "{{parsed_event.message.source.countryCode}}"
+      - set:
+          source.bytes: "{{parsed_event.message.source.bytesOut}}"
+        filter: '{{final.network.direction == "outbound"}}'
+      - set:
+          source.bytes: "{{parsed_event.message.source.bytesIn}}"
+        filter: '{{final.network.direction == "inbound"}}'
+  ecs_destination_mapping:
+    actions:
+      - set:
+          destination.ip: "{{parsed_event.message.destination.ip}}"
+          destination.port: "{{parsed_event.message.destination.port}}"
+          destination.geo.city_name: "{{parsed_event.message.destination.city}}"
+          destination.geo.location.lat: "{{parsed_event.message.destination.geoLocation.latitude}}"
+          destination.geo.location.lon: "{{parsed_event.message.destination.geoLocation.longitude}}"
+          destination.geo.country_iso_code: "{{parsed_event.message.destination.countryCode}}"
+      - set:
+          destination.bytes: "{{parsed_event.message.source.bytesOut}}"
+        filter: '{{final.network.direction == "inbound"}}'
+      - set:
+          destination.bytes: "{{parsed_event.message.source.bytesIn}}"
+        filter: '{{final.network.direction == "outbound"}}'
+  ecs_http_mapping:
+    actions:
+      - set:
+          http.request.method: "{{parsed_event.message.http.request.method}}"
+          http.response.status_code: "{{parsed_event.message.http.response.statusCode}}"
+        filter: "{{parsed_event.message.http is defined}}"
+  ecs_url_mapping:
+    actions:
+      - set:
+          url.path: "{{parsed_event.message.http.request.path}}"
+          url.domain: "{{parsed_event.message.http.request.host}}"
+          url.scheme: "{{parsed_event.message.http.request.scheme}}"
+        filter: "{{parsed_event.message.http is defined}}"
+      - set:
+          url.full: >-
+            {{final.url.scheme}}://{{final.url.domain + ":"+
+            final.destination.port|string + final.url.path}}
+        filter: >-
+          {{final.url.scheme is defined and final.url.domain is defined and
+          final.url.path is defined and final.destination.port is defined }}
+        name: set
+      - set:
+          url.full: '{{final.url.scheme}}://{{final.url.domain + final.url.path}}'
+        filter: >-
+          {{final.url.full is not defined and final.url.scheme is defined and
+          final.url.domain is defined and final.url.path is defined }}
+  custom_fields_mapping:
+    actions:
+      - set:
+          clever_cloud.commit.id: "{{parsed_event.message.commitId}}"
+          clever_cloud.zone.name: "{{parsed_event.message.zone}}"
+          clever_cloud.request.id: "{{parsed_event.message.requestId}}"
+          clever_cloud.deployment.id: "{{parsed_event.message.deploymentId}}"
+          clever_cloud.application.id: "{{parsed_event.message.applicationId}}"
+          clever_cloud.application.log: "{{parsed_event.message.message}}"
+          clever_cloud.id: "{{parsed_event.message.id}}"
+  ecs_kind_categorization:
+    actions:
+      - set:
+          event.kind: event
+  ecs_web_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['web']}}"
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['access']}}"
+        filter: >-
+          {{'web' in final.event.category and not 'access' in final.event.type
+          and (final.http.response.status_code > 199 and
+          final.http.response.status_code < 400 )}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['error']}}"
+        filter: >-
+          {{'web' in final.event.category and not 'error' in final.event.type
+          and (final.http.response.status_code > 399 and
+          final.http.response.status_code < 600 )}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{'web' in final.event.category and not ('access' in
+          final.event.type           or 'error' in final.event.type)}}
+  ecs_network_categorization:
+    actions:
+      - set:
+          event.type: ['connection']
+          event.category: ['network']
+  ecs_host_categorization:
+    actions:
+      - set:
+          event.type: ['info']
+          event.category: ['host']
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{(final.http is defined and final.http.response is defined and
+          final.http.response.status_code  is defined and
+          final.http.response.status_code >= 400) or (final.clever_cloud is
+          defined and final.clever_cloud.action is defined and
+          final.clever_cloud.action.status is defined and
+          final.clever_cloud.action.status != 'success') or final.error is
+          defined or 'fail' in final.event.action}}
+      - set:
+          event.outcome: success
+        filter: >-
+          {{(final.http.response.status_code >= 200 and
+          final.http.response.status_code < 400) or ('success' in
+          final.clever_cloud.action.status)}}
+      - set:
+          event.outcome: unknown
+        filter: "{{not final.event.outcome is defined}}"
