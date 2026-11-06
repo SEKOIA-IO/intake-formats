@@ -734,17 +734,22 @@ stages:
   # -------------------------------------------- execution-evidence stores ---
   set_shimcache_amcache_fields:
     actions:
-      # SHIMCache: 'hive' holds a hive-relative key -> registry.key
-      # (deliberate divergence: Elastic puts it in registry.path); the cached
-      # executable and its last-modified timestamp -> file.*
+      # SHIMCache: the cached executable is `entry` (file.* comes from the
+      # `file` object); `hive` is the AppCompatCache key relative to HKLM;
+      # `path` is where the cache was read from ("(Live)" or a hive file).
       - set:
+          registry.hive: "HKLM"
           registry.key: "{{parsed_event.message.hive}}"
-          file.path: "{{parsed_event.message.path}}"
-          file.mtime: "{{parsed_event.message.timestamp}}"
-        filter: '{{parsed_event.message.get("module") == "SHIMCache"}}'
+          registry.path: 'HKLM\{{parsed_event.message.hive}}'
+        filter: '{{parsed_event.message.get("module") == "SHIMCache" and parsed_event.message.get("hive") not in [none, ""]}}'
       - set:
-          file.name: "{{parsed_event.message.path.split('\\\\')[-1].split('/')[-1]}}"
-        filter: '{{parsed_event.message.get("module") == "SHIMCache" and parsed_event.message.get("path") not in [none, ""]}}'
+          file.path: "{{parsed_event.message.entry}}"
+          file.name: "{{parsed_event.message.entry.split('\\\\')[-1].split('/')[-1]}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache" and parsed_event.message.get("entry") not in [none, ""]}}'
+      - set:
+          file.mtime: "{{parsed_event.message.timestamp}}"
+          nextron.thor.shimcache.source: "{{parsed_event.message.path}}"
+        filter: '{{parsed_event.message.get("module") == "SHIMCache"}}'
 
       - set:
           nextron.thor.shimcache.exec_flag: "{{(parsed_event.message.exec_flag | string | lower) in ['yes', 'true']}}"
