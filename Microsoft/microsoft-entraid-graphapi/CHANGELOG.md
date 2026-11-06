@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-06
+
+### Added
+
+- Parse new fields from sign-in events:
+  - `user.full_name` from `userDisplayName`
+  - `azure.entraid.properties.deviceDetail.isCompliant`, `isManaged` and `trustType` from `deviceDetail`
+  - `azuread.properties.deviceDetail.isCompliant`, `isManaged` and `trustType` for backward compatibility
+
+### Changed
+
+- Set `user_agent.original` from `userAgent`, falling back to `deviceDetail.browser`
+
 ## [1.1.0] - 2026-10-19
 
 ### Added
