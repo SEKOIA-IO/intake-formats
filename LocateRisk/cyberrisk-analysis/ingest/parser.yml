@@ -1,0 +1,129 @@
+name: cyberrisk-analysis
+ignored_values:
+  - ""
+pipeline:
+  - name: parsed_event
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: parsed_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{parsed_event.message.date}}"
+        output_field: datetime
+        format: null
+        timezone: UTC
+  - name: set_base_fields
+    description: ""
+    filter: "{{parsed_event.message.date != ''}}"
+    external: null
+  - name: set_cvss
+    description: ""
+    filter: "{{parsed_event.message.cvss != ''}}"
+    external: null
+  - name: set_false_positive
+    description: ""
+    filter: "{{parsed_event.message.falsepositive == '[fp]'}}"
+    external: null
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.reference: "{{parsed_event.message.link}}"
+          event.action: "{{parsed_event.message.type}}"
+          observer.vendor: LocateRisk
+          observer.type: scanner
+          event.type: ["info"]
+          event.risk_score: "{{parsed_event.message.risk | int}}"
+          locaterisk.cyberrisk_analysis.risks: "{{parsed_event.message.risks}}"
+          locaterisk.cyberrisk_analysis.score: "{{parsed_event.message.score | float}}"
+          observer.product: CyberRisk Analysis
+          vulnerability.id: "{{parsed_event.message.id}}"
+          locaterisk.cyberrisk_analysis.comment: "{{parsed_event.message.comment}}"
+          locaterisk.cyberrisk_analysis.contact: "{{parsed_event.message.contact}}"
+          locaterisk.cyberrisk_analysis.problem: "{{parsed_event.message.problem}}"
+          locaterisk.cyberrisk_analysis.measures: "{{parsed_event.message.measures}}"
+          vulnerability.description: "{{parsed_event.message.details}}"
+        filter: ""
+        name: set
+      - set:
+          host.ip: "{{parsed_event.message.ip}}"
+        filter: >-
+          {{parsed_event.message.ip != '' and parsed_event.message.ip |
+          is_ipaddress}}
+        name: set
+      - set:
+          locaterisk.cyberrisk_analysis.scan_date: "{{parsed_date.datetime}}"
+        filter: ""
+        name: set
+      - set:
+          locaterisk.cyberrisk_analysis.location: "{{parsed_event.message.location.split(', ')}}"
+        filter: "{{parsed_event.message.location != ''}}"
+        name: set
+      - set:
+          locaterisk.cyberrisk_analysis.epss: "{{parsed_event.message.epss | replace('%', '') | float / 100}}"
+        filter: "{{parsed_event.message.epss != ''}}"
+        name: set
+      - set:
+          locaterisk.cyberrisk_analysis.cves: |-
+            {{parsed_event.message.cves.split('
+            ')}}
+        filter: "{{parsed_event.message.cves != ''}}"
+        name: set
+      - set:
+          locaterisk.cyberrisk_analysis.tags: "{{parsed_event.message.tags.split(', ')}}"
+        filter: "{{parsed_event.message.tags != ''}}"
+        name: set
+      - fallback: ""
+        dictionary:
+          app: ["vulnerability"]
+          csv: ["vulnerability"]
+          dns: ["vulnerability", "network"]
+          ssl: ["vulnerability", "network"]
+          web: ["vulnerability", "web"]
+          ddos: ["vulnerability", "network"]
+          dsgvo: ["vulnerability"]
+          fonts: ["vulnerability"]
+          breach: ["vulnerability"]
+          import: ["vulnerability"]
+          nessus: ["vulnerability"]
+          qualys: ["vulnerability"]
+          network: ["vulnerability", "network"]
+          greenbone: ["vulnerability"]
+          infection: ["vulnerability", "threat"]
+          app_nested: ["vulnerability"]
+          enginsight: ["vulnerability"]
+          pingcastle: ["vulnerability"]
+          ssl_nested: ["vulnerability", "network"]
+          ddos_nested: ["vulnerability", "network"]
+          dsgvo_nested: ["vulnerability"]
+          fonts_nested: ["vulnerability"]
+          nessus_nested: ["vulnerability"]
+          qualys_nested: ["vulnerability"]
+          greenbone_nested: ["vulnerability"]
+          enginsight_nested: ["vulnerability"]
+          pingcastle_nested: ["vulnerability"]
+        mapping:
+          parsed_event.message.type: event.category
+        filter: ""
+        name: translate
+  set_cvss:
+    actions:
+      - set:
+          vulnerability.score.base: "{{parsed_event.message.cvss | float}}"
+        filter: ""
+        name: set
+  set_false_positive:
+    actions:
+      - set:
+          locaterisk.cyberrisk_analysis.false_positive: "true"
+        filter: ""
+        name: set

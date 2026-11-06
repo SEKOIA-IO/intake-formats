@@ -1,0 +1,87 @@
+name: zimperium-mtd
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  - name: set_ecs_fields
+
+stages:
+  set_ecs_fields:
+    actions:
+      - set:
+          observer.vendor: "Zimperium"
+          observer.product: "Mobile Threat Defense"
+          observer.type: "sensor"
+
+      - set:
+          event.category: ["intrusion_detection"]
+          event.type: ["info"]
+
+      - set:
+          "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
+          event.action: "{{parsed_event.message.generalInfo.actionTriggered}}"
+
+          device.id: "{{parsed_event.message.deviceId}}"
+          device.model.name: "{{parsed_event.message.device.model or parsed_event.message.device.os.model}}"
+
+          source.geo.city_name: "{{parsed_event.message.locationInfo.city}}"
+          source.geo.country_name: "{{parsed_event.message.locationInfo.country}}"
+          source.geo.location: "{{parsed_event.message.locationInfo.geoPoint}}"
+          source.mac: "{{parsed_event.message.generalInfo.bssid}}"
+
+          rule.id: "{{parsed_event.message.threatTypeId}}"
+          rule.name: "{{parsed_event.message.threatTypeName}}"
+
+          event.severity: "{{parsed_event.message.severity}}"
+
+          host.os.platform: "{{parsed_event.message.device.os.name}}"
+          host.os.version: "{{parsed_event.message.device.os.version}}"
+          host.os.type: "{{parsed_event.message.os}}"
+
+          group.name: "{{parsed_event.message.teamName}}"
+          group.id: "{{parsed_event.message.teamId}}"
+
+          organization.id: "{{parsed_event.message.accountId}}"
+
+          zimperium.mtd.group_id: "{{parsed_event.message.groupId}}"
+          zimperium.mtd.classification.id: "{{parsed_event.message.classification}}"
+          zimperium.mtd.classification.name: "{{parsed_event.message.classificationName}}"
+          zimperium.mtd.category_id: "{{parsed_event.message.categoryId}}"
+          zimperium.mtd.vector.id: "{{parsed_event.message.vector}}"
+          zimperium.mtd.vector.name: "{{parsed_event.message.vectorName}}"
+          zimperium.mtd.event_id: "{{parsed_event.message.id}}"
+
+      - set:
+          user.name: "{{parsed_event.message.deviceOwner}}"
+        filter: "{{'@' not in parsed_event.message.deviceOwner}}"
+
+      - set:
+          user.email: "{{parsed_event.message.deviceOwner}}"
+        filter: "{{'@' in parsed_event.message.deviceOwner}}"
+
+      - set:
+          source.ip: "{{parsed_event.message.generalInfo.deviceIp}}"
+        filter: "{{parsed_event.message.generalInfo.deviceIp | is_ipaddress}}"
+
+      - set:
+          source.nat.ip: "{{parsed_event.message.generalInfo.externalIp}}"
+        filter: "{{parsed_event.message.generalInfo.externalIp | is_ipaddress}}"
+
+      - set:
+          process.pid: "{{parsed_event.message.processList[0].processId}}"
+          process.parent.pid: "{{parsed_event.message.processList[0].parentProcessId}}"
+          process.name: "{{parsed_event.message.processList[0].processName}}"
+        filter: "{{parsed_event.message.processList | length == 1}}"
+
+      - set:
+          zimperium.mtd.processes: >
+            {%- set result = [] -%}
+            {%- for item in parsed_event.message.processList -%}
+              {%- set result = result.append({"pid": item.processId | int, "parent": {"pid": item.parentProcessId | int}, "name": item.processName}) -%}
+            {%- endfor -%}
+            {{ result }}
+        filter: "{{parsed_event.message.processList | length > 1}}"
