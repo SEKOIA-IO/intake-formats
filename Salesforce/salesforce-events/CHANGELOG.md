@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix existing ECS fields:
-  - `@timestamp`: prioritize `TIMESTAMP_DERIVED`, then `TIMESTAMP`, then `LOGIN_TIME`; skip malformed dates so a valid lower-priority source is still used; normalize compact Salesforce dates before parsing
+  - `@timestamp`: prioritize `TIMESTAMP_DERIVED`, then `TIMESTAMP`, then `LOGIN_TIME`; skip malformed or calendar-invalid dates so a valid lower-priority source is still used; normalize compact Salesforce dates before parsing
 
 ## 1.0.3 - 2026-08-03
 
