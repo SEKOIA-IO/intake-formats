@@ -31,7 +31,18 @@ pipeline:
         item_sep: \r\n
 
   - name: parsed_message_request_client_info
-    filter: "{{parsed_message_kv.result.RequestClientInfo != null}}"
+    filter: "{{(json.event.RequestClientInfo or '').strip() not in ['', '-']}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.RequestClientInfo.strip()}}"
+        output_field: result
+        value_sep: ":"
+        item_sep: \n\t
+
+  - name: parsed_message_request_client_info_fallback
+    filter: "{{((json.event.RequestClientInfo or '').strip() in ['', '-'] or (parsed_message_request_client_info.result.Process or '').strip() in ['', '-']) and json.event.Message != null and '<?xml' not in json.event.Message and (parsed_message_kv.result.RequestClientInfo or '').strip() not in ['', '-']}}"
     external:
       name: kv.parse-kv
       properties:
@@ -102,6 +113,38 @@ pipeline:
         input_field: "{{json.event.IpAddress}}"
         output_field: event
         pattern: "%{GREEDYDATA}%{IPV4:ip}%{GREEDYDATA}"
+
+  - name: smb_client_address
+    description: "Decode the IPv4 sockaddr supplied by SMB Server authentication events"
+    filter: "{{json.event.SourceName == 'Microsoft-Windows-SMBServer' and (json.event.EventID | int) == 551}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.ClientAddress}}"
+        output_field: event
+        pattern: "^0200%{HEX_PORT:port}%{NONZERO_IPV4:address}0000000000000000$"
+        custom_patterns:
+          HEX_PORT: "[0-9A-Fa-f]{4}"
+          HEX_BYTE: "[0-9A-Fa-f]{2}"
+          NONZERO_HEX_BYTE: "(?:[1-9A-Fa-f][0-9A-Fa-f]|0[1-9A-Fa-f])"
+          NONZERO_IPV4: "(?:%{NONZERO_HEX_BYTE}%{HEX_BYTE}{3}|00%{NONZERO_HEX_BYTE}%{HEX_BYTE}{2}|0000%{NONZERO_HEX_BYTE}%{HEX_BYTE}|000000%{NONZERO_HEX_BYTE})"
+
+  - name: smb_client_address
+    description: "Try the EventData address when the top-level SMB address cannot be decoded"
+    filter: "{{json.event.SourceName == 'Microsoft-Windows-SMBServer' and (json.event.EventID | int) == 551 and smb_client_address.event.port == null}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{json.event.get('EventData.ClientAddress')}}"
+        output_field: event
+        pattern: "^0200%{HEX_PORT:port}%{NONZERO_IPV4:address}0000000000000000$"
+        custom_patterns:
+          HEX_PORT: "[0-9A-Fa-f]{4}"
+          HEX_BYTE: "[0-9A-Fa-f]{2}"
+          NONZERO_HEX_BYTE: "(?:[1-9A-Fa-f][0-9A-Fa-f]|0[1-9A-Fa-f])"
+          NONZERO_IPV4: "(?:%{NONZERO_HEX_BYTE}%{HEX_BYTE}{3}|00%{NONZERO_HEX_BYTE}%{HEX_BYTE}{2}|0000%{NONZERO_HEX_BYTE}%{HEX_BYTE}|000000%{NONZERO_HEX_BYTE})"
 
   - name: source_ip_client_address
     filter: "{{parsed_message_kv.result.get('Client Address') != None}}"
@@ -236,6 +279,8 @@ pipeline:
   - name: set_user
   - name: process_ids
   - name: set_source_fields
+  - name: set_smb_authentication_fields
+    filter: "{{json.event.SourceName == 'Microsoft-Windows-SMBServer' and (json.event.EventID | int) == 551}}"
   - name: action_outcome
   - name: event_outcome
   - name: set_dll
@@ -251,6 +296,8 @@ pipeline:
     filter: "{{json.event.get('EventID') == 2946 and json.event.Message != null}}"
   - name: set_network_policy_fields
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [6272, 6273, 6274, 6275, 6276, 6277, 6278, 6279, 6280]}}"
+  - name: set_ntlm_fields
+    filter: "{{json.event.SourceName == 'Microsoft-Windows-NTLM' and json.event.Channel == 'Microsoft-Windows-NTLM/Operational'}}"
   - name: rule
   - name: finalize
 
@@ -273,7 +320,7 @@ stages:
     actions:
       - set:
           dll.path: "{{json.event.ImageLoaded}}"
-          dll.name: "{{json.event.OriginalFileName}}"
+          dll.name: "{{json.event.OriginalFileName if json.event.OriginalFileName != '-' else ''}}"
 
       - set:
           dll.pe.imphash: "{{parsed_hashes_kv.result.IMPHASH or parsed_hashes_kv_2.result.IMPHASH}}"
@@ -369,7 +416,12 @@ stages:
         filter: "{{final.event.type != null}}"
 
       - set:
-          process.name: "{{parsed_message_request_client_info.result.Process}}"
+          process.name: "{{parsed_message_request_client_info.result.Process.strip()}}"
+        filter: "{{(parsed_message_request_client_info.result.Process or '').strip() not in ['', '-']}}"
+
+      - set:
+          process.name: "{{parsed_message_request_client_info_fallback.result.Process.strip()}}"
+        filter: "{{((json.event.RequestClientInfo or '').strip() in ['', '-'] or (parsed_message_request_client_info.result.Process or '').strip() in ['', '-']) and json.event.Message != null and '<?xml' not in json.event.Message and (parsed_message_kv.result.RequestClientInfo or '').strip() not in ['', '-'] and (parsed_message_request_client_info_fallback.result.Process or '').strip() not in ['', '-']}}"
 
       - set:
           process.name: "{{final.process.executable | basename}}"
@@ -412,7 +464,7 @@ stages:
           event.code: "{{json.event.EventID}}"
           action.id: "{{json.event.EventID}}"
           event.provider: "{{json.event.SourceName}}"
-          event.reason: "{{json.event.Description or message_failure_reason.result.FailureReason}}"
+          event.reason: "{{(json.event.Description if json.event.Description != '-' else '') or (json.event.FailureReasonResolved or '').strip() or ((json.event.FailureReason or '').strip() if '%%' not in (json.event.FailureReason or '') else '') or message_failure_reason.result.FailureReason or (json.event.FailureReason or '').strip()}}"
           file.created: "{{json.event.CreationUtcTime}}"
           file.owner: "{{json.event.jobOwner}}"
           log.hostname: "{{json.event.Hostname}}"
@@ -431,11 +483,19 @@ stages:
           source.port: "{{json.event.SourcePort}}"
           url.original: "{{json.event.url or json.event.RemoteName}}"
           user.id: "{{json.event.SubjectUserSid or json.event.UserID}}"
-          user.target.name: "{{json.event.TargetUserName}}"
-          user.target.domain: "{{json.event.TargetDomainName}}"
-          user.target.id: "{{json.event.TargetUserSid}}"
+          user.target.name: "{{json.event.TargetUserName if json.event.TargetUserName != '-' else ''}}"
+          user.target.domain: "{{json.event.TargetDomainName if json.event.TargetDomainName != '-' else ''}}"
+          user.target.id: "{{json.event.TargetUserSid or (json.event.TargetSid if (json.event.EventID | int) in [4720, 4738] else null)}}"
           host.name: "{{json.event.Hostname}}"
           host.hostname: "{{json.event.Hostname.split('.') | first}}"
+      - set:
+          event.reason: "{{json.event.FailureReasonResolved.strip()}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and (json.event.EventID | int) == 4625 and (json.event.FailureReasonResolved or '').strip() != ''}}"
+
+      - set:
+          error.code: "{{json.event.Disposition}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and (json.event.EventID | int) == 4888 and json.event.Disposition != null}}"
+
       - set:
           url.domain: "{{json.event.url.split('/') | first}}"
         filter: "{{json.event.url != null and not json.event.url.startswith('http')}}"
@@ -454,7 +514,7 @@ stages:
       - set:
           event.message: "{{json.event.Message}}"
           # do not include Message containing a json document
-        filter: "{{json.event.Message.strip().startswith('{') == False}}"
+        filter: "{{json.event.Message != null and json.event.Message.strip().startswith('{') == False}}"
 
       - set:
           process.name: "{{json.event.Application.split('\\\\')[-1]}}"
@@ -463,12 +523,29 @@ stages:
   set_action_properties:
     actions:
       - set:
-          action.properties: "{{json.event}}"
+          action.properties: >-
+            {%- set properties = json.event.copy() -%}
+            {%- set _ = properties.pop('Task', none) -%}
+            {%- set _ = properties.pop('UserAccountControl', none) -%}
+            {%- set _ = properties.pop('Accesses', none) -%}
+            {{ properties }}
 
-          action.properties.Accesses: "{{ network_object.event.Accesses.replace('#NEWLINE#', '\\r\\n').replace('#NEWLINE2#', '\\n') }}" # issue with this multi-line field
+          action.properties.Accesses: >-
+            {%- set resolved = (json.event.AccessListResolved or '').strip() -%}
+            {%- set accesses = (json.event.Accesses or '').strip() -%}
+            {%- set access_list = (json.event.AccessList or '').strip() -%}
+            {%- set message_accesses = (network_object.event.Accesses or '').replace('#NEWLINE#', '\r\n').replace('#NEWLINE2#', '\n') if json.event.Message != null and 'Accesses' in json.event.Message else '' -%}
+            {{ (resolved if resolved not in ['', '-'] and '%%' not in resolved else '')
+               or (accesses if accesses not in ['', '-'] and '%%' not in accesses else '')
+               or (access_list if access_list not in ['', '-'] and '%%' not in access_list else '')
+               or (message_accesses if message_accesses.strip() not in ['', '-'] else '')
+               or (resolved if resolved not in ['', '-'] else '')
+               or (accesses if accesses not in ['', '-'] else '')
+               or (access_list if access_list not in ['', '-'] else none) }}
 
           action.properties.Attributes: "{{json.event.Attributes}}"
           action.properties.Requester: "{{json.event.Requester}}"
+          action.properties.Task: "{{json.event.TaskValue if json.event.TaskValue != null else (json.event.Task if (json.event.Task | string).isdigit() else null)}}"
 
           action.properties.MessEventType: "{{ parsed_message_kv.result.EventType.strip() }}"
           action.properties.ParentImage: "{{ parsed_message_kv.result.ParentImage.strip()}}"
@@ -485,7 +562,9 @@ stages:
           action.properties.ErrorCode: '{{ json.event.get("Error Code") or json.event.ErrorCode }}'
           action.properties.ProcessName: '{{ json.event.ProcessName or json.event.get("Process Name") }}'
           action.properties.CallingStationID: "{{ json.event.CallingStationID }}"
-          action.properties.PasswordLastSet: '{{ json.event.get("PasswordLastSet") or json.event.get("PasswordLastSet ") }}'
+          action.properties.PasswordLastSet: "{{ (json.event.PasswordLastSetResolved or '').strip() or json.event.get('PasswordLastSet') or json.event.get('PasswordLastSet ') }}"
+          action.properties.AccountExpires: "{{(json.event.AccountExpiresResolved or '').strip() or json.event.AccountExpires}}"
+          action.properties.LogonHours: "{{(json.event.LogonHoursResolved or '').strip() or json.event.LogonHours}}"
           action.properties.DnsHostName: '{{ json.event.get("DnsHostName") or json.event.get("DnsHostName ") }}'
 
           action.properties.ThreatName: '{{ json.event.get("Threat Name") }}'
@@ -527,15 +606,30 @@ stages:
         filter: "{{(json.event.Path == null or json.event.Path|string|trim == '') and parsed_message_kv.result.Path != null and parsed_message_kv.result.Path|string|trim != ''}}"
       - set:
           action.properties.UserAccountControl: >
+            {%- set result = [] -%}
+            {%- set resolved = (json.event.UserAccountControlResolved or '').strip() -%}
+            {%- set raw = (json.event.UserAccountControl or '').strip() -%}
+            {%- for item in (resolved if resolved not in ['', '-'] else raw).split('\n') -%}
+              {%- if item.strip() not in ['', '-'] -%}
+                {%- set _ = result.append(item.strip()) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ result }}
+        filter: "{{(json.event.UserAccountControlResolved or '').strip() not in ['', '-'] or ((json.event.UserAccountControl or '').strip() not in ['', '-'] and ('%%' not in (json.event.UserAccountControl or '').strip() or not ('User Account Control:' in (json.event.Message or '') and 'User Parameters:' in (json.event.Message or ''))))}}"
+
+      - set:
+          action.properties.UserAccountControl: >
             {%- set message = json.event.Message -%}
             {%- set start_idx = message.index('User Account Control:') + 'User Account Control:' | length-%}
             {%- set end_idx = message.index('User Parameters:', start_idx) -%}
             {%- set result = [] -%}
             {%- for item in message[start_idx:end_idx].strip().split('\n') -%}
-              {%- set result = result.append(item.strip()) -%}
+              {%- if item.strip() not in ['', '-'] -%}
+                {%- set _ = result.append(item.strip()) -%}
+              {%- endif -%}
             {%- endfor -%}
             {{ result }}
-        filter: '{{ "User Account Control:" in json.event.get("Message", "")}}'
+        filter: "{{(json.event.UserAccountControlResolved or '').strip() in ['', '-'] and ((json.event.UserAccountControl or '').strip() in ['', '-'] or '%%' in (json.event.UserAccountControl or '').strip()) and ('User Account Control:' in (json.event.Message or '') and 'User Parameters:' in (json.event.Message or ''))}}"
 
       - set:
           action.properties.Keywords: "{{ '%d' | format(final.action.properties.Keywords | int) }}"
@@ -687,6 +781,14 @@ stages:
           process.pid: "{{json.event.ProcessID}}"
 
       - set:
+          process.pid: "{{json.event.ProcessId}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and (json.event.EventID | int) in [4625, 4663] and json.event.ProcessID == null and json.event.ProcessId != null and not (json.event.ProcessId | string).lower().startswith('0x')}}"
+
+      - set:
+          process.pid: "{{json.event.ProcessId | int(base=16)}}"
+        filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and (json.event.EventID | int) in [4625, 4663] and json.event.ProcessID == null and json.event.ProcessId != null and (json.event.ProcessId | string).lower().startswith('0x')}}"
+
+      - set:
           process.pid: "{{parsed_message_kv.result.ProcessId}}"
         filter: "{{json.event.SourceName ==  'Microsoft-Windows-Sysmon' and json.event.EventID in [1,2,3,5,7,9,11,12,13,14,15,17,18,22,25,26]}}"
 
@@ -725,8 +827,8 @@ stages:
         filter: "{{final.user.name != null and final.user.domain == null}}"
 
       - set:
-          user.name: "{{json.event.SubjectUserName}}"
-          user.domain: "{{json.event.SubjectDomainName}}"
+          user.name: "{{json.event.SubjectUserName if json.event.SubjectUserName != '-' else ''}}"
+          user.domain: "{{json.event.SubjectDomainName if json.event.SubjectDomainName != '-' else ''}}"
         filter: "{{final.user == null or final.user.name == null }}"
 
       - set:
@@ -1237,7 +1339,7 @@ stages:
         filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and final.event.code in ['4688', '4689']}}"
 
       - set:
-          process.executable: "{{json.event.ProcessName }}"
+          process.executable: "{{json.event.ProcessName if json.event.ProcessName != '-' else ''}}"
         filter: "{{json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and final.event.code in ['4656', '4657', '4658', '4663', '4670', '4674']}}"
 
       - set:
@@ -1250,7 +1352,7 @@ stages:
 
       # does the following override the previous fields ?
       - set:
-          process.executable: "{{json.event.ProcessName }}"
+          process.executable: "{{json.event.ProcessName if json.event.ProcessName != '-' else ''}}"
 
   action_outcome:
     actions:
@@ -1269,6 +1371,43 @@ stages:
       - set:
           event.outcome: "failure"
         filter: "{{json.event.EventID | int == 4625}}"
+
+  set_ntlm_fields:
+    actions:
+      - set:
+          source.ip: "{{json.event.ClientIP}}"
+        filter: "{{json.event.ClientIP | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{json.event.RemoteClientMachine}}"
+        filter: "{{json.event.RemoteClientMachine not in [null, '', '-']}}"
+
+      - delete:
+          - user.id
+          - user.domain
+        filter: "{{json.event.Username not in [null, '', '-']}}"
+
+      - set:
+          source.user.name: "{{json.event.Username}}"
+          user.name: "{{json.event.Username}}"
+        filter: "{{json.event.Username not in [null, '', '-']}}"
+
+      - set:
+          source.user.domain: "{{json.event.DomainName}}"
+          user.domain: "{{json.event.DomainName}}"
+        filter: "{{json.event.Username not in [null, '', '-'] and json.event.DomainName not in [null, '', '-']}}"
+
+      - set:
+          action.properties.NtlmVersion: "{{json.event.NtlmVersion}}"
+        filter: "{{json.event.NtlmVersion not in [null, '']}}"
+
+      - set:
+          action.properties.Status: "{{json.event.Status}}"
+        filter: "{{json.event.Status not in [null, '']}}"
+
+      - set:
+          action.properties.StatusMsg: "{{json.event.StatusMsg}}"
+        filter: "{{json.event.StatusMsg not in [null, '']}}"
 
   set_source_fields:
     actions:
@@ -1320,6 +1459,10 @@ stages:
   set_network_policy_fields:
     actions:
       - set:
+          action.properties.ReasonCode: "{{ json.event.ReasonCode or json.event.get('Reason-Code') or parsed_message_kv.result.get('Reason Code') }}"
+        filter: "{{json.event.EventID == 6274}}"
+
+      - set:
           source.ip: "{{ json.event.CallingStationID }}"
         filter: "{{json.event.CallingStationID | is_ipaddress}}"
 
@@ -1339,3 +1482,33 @@ stages:
     actions:
       - set:
           rule.name: "{{json.event.RuleName}}"
+        filter: "{{json.event.RuleName != '-'}}"
+
+  set_smb_authentication_fields:
+    actions:
+      - set:
+          error.code: "{{json.event.TranslatedStatus}}"
+
+      - set:
+          source.ip: '{{(json.event.ClientName or "").strip().lstrip("\\").strip()}}'
+        filter: '{{(json.event.ClientName or "").strip().lstrip("\\").strip() | is_ipaddress}}'
+
+      - set:
+          source.ip: '{{(json.event.get("EventData.ClientName") or "").strip().lstrip("\\").strip()}}'
+        filter: '{{not ((json.event.ClientName or "").strip().lstrip("\\").strip() | is_ipaddress) and ((json.event.get("EventData.ClientName") or "").strip().lstrip("\\").strip() | is_ipaddress)}}'
+
+      - set:
+          source.domain: >-
+            {%- set primary = (json.event.ClientName or '').strip().lstrip('\\').strip() -%}
+            {%- set fallback = (json.event.get('EventData.ClientName') or '').strip().lstrip('\\').strip() -%}
+            {{ primary if primary not in ['', '-'] else fallback }}
+        filter: >-
+          {%- set primary = (json.event.ClientName or '').strip().lstrip('\\').strip() -%}
+          {%- set fallback = (json.event.get('EventData.ClientName') or '').strip().lstrip('\\').strip() -%}
+          {%- set selected = primary if primary not in ['', '-'] else fallback -%}
+          {{ selected not in ['', '-'] and not (selected | is_ipaddress) }}
+
+      - set:
+          source.ip: "{{smb_client_address.event.address[0:2] | int(base=16)}}.{{smb_client_address.event.address[2:4] | int(base=16)}}.{{smb_client_address.event.address[4:6] | int(base=16)}}.{{smb_client_address.event.address[6:8] | int(base=16)}}"
+          source.port: "{{smb_client_address.event.port | int(base=16)}}"
+        filter: "{{smb_client_address.event.port != null}}"
