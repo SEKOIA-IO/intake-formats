@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-11-04
+
+### Added
+
+- Parse new ECS fields:
+  - `destination.domain`: map from raw field `outgoing_protocol.tls.client_hello_sni` (outbound connections only)
+  - `tls.client.ja3`: map from raw field `outgoing_protocol.tls.ja3_fingerprint`
+  - `tls.client.server_name`: map from raw field `outgoing_protocol.tls.client_hello_sni`
+  - `tls.server.ja3s`: map from raw field `incoming_protocol.tls.ja3s_fingerprint` (outbound connections only)
+  - `tls.version`: map from raw field `outgoing_protocol.tls.tls_version` (normalize recognized TLS versions)
+  - `tls.version_protocol`: map from raw field `outgoing_protocol.tls.tls_version`
+- Parse new custom fields:
+  - `harfanglab.harfanglab.outgoing_protocol.tls.client_hello_alpn`: map from raw field `outgoing_protocol.tls.client_hello_alpn` (preserve the array of protocols offered by the client)
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `network.protocol`: map from raw field `outgoing_protocol.name` (lowercase for network events)
+
 ## [1.3.5] - 2026-08-17
 
 ### Fixed
