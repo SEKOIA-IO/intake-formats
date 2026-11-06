@@ -1,58 +1,22 @@
 name: clever-cloud
 ignored_values: []
 pipeline:
-  - name: parsed_header
+  - name: parsed_event
     external:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
         output_field: message
-  - name: parsed_event
-    filter: >-
-      {{parsed_header.message.message is defined and
-      parsed_header.message.message.startswith('{')}}
-    external:
-      name: json.parse-json
-      properties:
-        input_field: "{{parsed_header.message.message}}"
-        output_field: message
-  - name: parsed_event
-    filter: >-
-      {{parsed_header.message.message is not defined or not
-      parsed_header.message.message.startswith('{')}}
-    external:
-      name: grok.match
-      properties:
-        input_field: "{{parsed_header.message.message}}"
-        output_field: message
-        pattern: (%{CLF_Format}|%{System_log_Format}|%{INFO_Format}|%{FALLBACK})
-        custom_patterns:
-          CLF_Format: >-
-            %{IP:source_ip}(:%{INT:source_port})? (-|%{DATA}) (-|%{DATA})
-            (-|%{DATA}) (-|%{DATA:user_email}) \[%{DATA}\]
-            (%{IPORHOST:url_domain}(:%{INT:destination_port})?)
-            %{WORD:http_method} (-|%{DATA}) \"%{DATA:url_path}\"
-            (%{WORD:http_scheme}/(?<http_version>[\[0-9\]\.]+))
-            \"%{DATA:user_agent}\" %{INT:response_status_code}
-            %{INT:destination_bytes} %{GREEDYDATA}
-          System_log_Format: >-
-            \[%{YEAR}\/%{MONTHNUM2}\/%{MONTHDAY} %{TIME}\] \[(?<caller>[^\]]+)\]
-            %{GREEDYDATA:msg}
-          INFO_Format: >-
-            (%{YEAR}\-%{MONTHNUM2}\-%{MONTHDAY} %{TIME},%{INT} )?INFO\:?
-            %{GREEDYDATA:description}
-          FALLBACK: "%{GREEDYDATA:description}"
   - name: parsed_date
     external:
       name: date.parse
       properties:
-        input_field: "{{parsed_header.message.date}}"
+        input_field: "{{parsed_event.message.date}}"
         output_field: timestamp
         format: null
         timezone: UTC
   - name: ecs_observer_mapping
   - name: ecs_event_mapping
-  - name: ecs_error_mapping
   - name: ecs_log_mapping
   - name: ecs_cloud_mapping
   - name: ecs_process_mapping
@@ -61,21 +25,14 @@ pipeline:
   - name: ecs_destination_mapping
   - name: ecs_http_mapping
   - name: ecs_url_mapping
-  - name: ecs_user_mapping
-  - name: ecs_user_agent_mapping
-  - name: ecs_email_mapping
   - name: custom_fields_mapping
   - name: ecs_kind_categorization
   - name: ecs_web_categorization
     filter: >-
-      {{not final.event.category is defined and (final.http is defined or
-      final.url is defined)}}
-  - name: ecs_email_categorization
-    filter: "{{final.email is defined}}"
+      {{parsed_event.message.http is defined}}
   - name: ecs_network_categorization
     filter: >-
-      {{not final.event.category is defined and (final.source is defined or
-      final.destination is defined)}}
+      {{not parsed_event.message.http is defined and (parsed_event.message.source is defined or parsed_event.message.destination is defined)}}
   - name: ecs_host_categorization
     filter: "{{not final.event.category is defined}}"
   - name: ecs_outcome_categorization
@@ -90,113 +47,83 @@ stages:
     actions:
       - set:
           "@timestamp": "{{parsed_date.timestamp}}"
-          event.action: "{{parsed_event.message.msg}}"
-          event.reason: "{{parsed_event.message.reason}}"
       - set:
-          event.action: "Unknown action"
-          log.description: "{{parsed_event.message.description}}"
-        filter: "{{not final.event.action is defined}}"
-  ecs_error_mapping:
-    actions:
+          event.dataset: "Access Logs"
+        filter: '{{parsed_event.message.http is defined}}'
       - set:
-          error.type: "{{parsed_event.message.err_where}}"
-          error.message: "{{parsed_event.message.error}}"
+          event.dataset: "Access Logs"
+        filter: '{{not parsed_event.message.http is defined and (parsed_event.message.source is defined or parsed_event.message.destination is defined)}}'
+      - set:
+          event.dataset: "Application Logs"
+        filter: '{{not parsed_event.message.http is defined and not parsed_event.message.source is defined and not parsed_event.message.destination is defined and parsed_event.message.message is defined}}'
   ecs_log_mapping:
     actions:
       - set:
-          log.priority: "{{parsed_header.message.priority}}"
-          log.syslog.facility.name: "{{parsed_header.message.facility}}"
-          log.syslog.severity.name: "{{parsed_header.message.severity}}"
+          log.priority: "{{parsed_event.message.priority}}"
+          log.syslog.facility.name: "{{parsed_event.message.facility}}"
+          log.syslog.severity.name: "{{parsed_event.message.severity}}"
   ecs_cloud_mapping:
     actions:
       - set:
-          cloud.region: "{{parsed_header.message.region}}"
-          cloud.instance.id: "{{parsed_header.message.instanceId}}"
-          cloud.service.name: "{{parsed_header.message.service}}"
-          cloud.availability_zone: "{{parsed_header.message.zone}}"
+          cloud.region: "{{parsed_event.message.region}}"
+          cloud.instance.id: "{{parsed_event.message.instanceId}}"
+          cloud.service.name: "{{parsed_event.message.service}}"
+          cloud.availability_zone: "{{parsed_event.message.zone}}"
   ecs_process_mapping:
     actions:
       - set:
-          process.pid: "{{parsed_header.message.pid}}"
+          process.pid: "{{parsed_event.message.pid}}"
   ecs_network_mapping:
     actions:
       - set:
           network.direction: inbound
         filter: >-
-          {{parsed_header.message.http is defined or
-          parsed_header.message.source is defined or
-          parsed_header.message.destination is defined}}
+          {{parsed_event.message.http is defined or
+          parsed_event.message.source is defined or
+          parsed_event.message.destination is defined}}
   ecs_source_mapping:
     actions:
       - set:
-          source.ip: "{{parsed_header.message.source.ip}}"
-          source.port: "{{parsed_header.message.source.port}}"
-          source.geo.city_name: "{{parsed_header.message.source.city}}"
-          source.geo.location.lat: "{{parsed_header.message.source.geoLocation.latitude}}"
-          source.geo.location.lon: "{{parsed_header.message.source.geoLocation.longitude}}"
-          source.geo.country_iso_code: "{{parsed_header.message.source.countryCode}}"
+          source.ip: "{{parsed_event.message.source.ip}}"
+          source.port: "{{parsed_event.message.source.port}}"
+          source.geo.city_name: "{{parsed_event.message.source.city}}"
+          source.geo.location.lat: "{{parsed_event.message.source.geoLocation.latitude}}"
+          source.geo.location.lon: "{{parsed_event.message.source.geoLocation.longitude}}"
+          source.geo.country_iso_code: "{{parsed_event.message.source.countryCode}}"
       - set:
-          source.ip: "{{parsed_event.message.ip_addr}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
-      - set:
-          source.bytes: "{{parsed_header.message.source.bytesOut}}"
+          source.bytes: "{{parsed_event.message.source.bytesOut}}"
         filter: '{{final.network.direction == "outbound"}}'
       - set:
-          source.bytes: "{{parsed_header.message.source.bytesIn}}"
+          source.bytes: "{{parsed_event.message.source.bytesIn}}"
         filter: '{{final.network.direction == "inbound"}}'
-      - set:
-          source.ip: "{{parsed_event.message.source_ip}}"
-          source.port: "{{parsed_event.message.source_port}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
   ecs_destination_mapping:
     actions:
       - set:
-          destination.ip: "{{parsed_header.message.destination.ip}}"
-          destination.port: "{{parsed_header.message.destination.port}}"
-          destination.geo.city_name: "{{parsed_header.message.destination.city}}"
-          destination.geo.location.lat: "{{parsed_header.message.destination.geoLocation.latitude}}"
-          destination.geo.location.lon: "{{parsed_header.message.destination.geoLocation.longitude}}"
-          destination.geo.country_iso_code: "{{parsed_header.message.destination.countryCode}}"
+          destination.ip: "{{parsed_event.message.destination.ip}}"
+          destination.port: "{{parsed_event.message.destination.port}}"
+          destination.geo.city_name: "{{parsed_event.message.destination.city}}"
+          destination.geo.location.lat: "{{parsed_event.message.destination.geoLocation.latitude}}"
+          destination.geo.location.lon: "{{parsed_event.message.destination.geoLocation.longitude}}"
+          destination.geo.country_iso_code: "{{parsed_event.message.destination.countryCode}}"
       - set:
-          destination.bytes: "{{parsed_header.message.source.bytesOut}}"
+          destination.bytes: "{{parsed_event.message.source.bytesOut}}"
         filter: '{{final.network.direction == "inbound"}}'
       - set:
-          destination.bytes: "{{parsed_header.message.source.bytesIn}}"
+          destination.bytes: "{{parsed_event.message.source.bytesIn}}"
         filter: '{{final.network.direction == "outbound"}}'
-      - set:
-          destination.port: "{{parsed_event.message.destination_port}}"
-          destination.bytes: "{{parsed_event.message.destination_bytes}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
   ecs_http_mapping:
     actions:
       - set:
-          http.request.method: "{{parsed_header.message.http.request.method}}"
-          http.response.status_code: "{{parsed_header.message.http.response.statusCode}}"
-        filter: "{{parsed_header.message.http is defined}}"
-      - set:
-          http.request.method: "{{parsed_event.message.http_method or parsed_event.message.method}}"
-          http.response.status_code: >-
-            {{parsed_event.message.response_status_code or
-            parsed_event.message.status_code or parsed_event.message.http_code}}
-          http.request.id: "{{parsed_event.message.request_id}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
+          http.request.method: "{{parsed_event.message.http.request.method}}"
+          http.response.status_code: "{{parsed_event.message.http.response.statusCode}}"
+        filter: "{{parsed_event.message.http is defined}}"
   ecs_url_mapping:
     actions:
       - set:
-          url.path: "{{parsed_header.message.http.request.path}}"
-          url.domain: "{{parsed_header.message.http.request.host}}"
-          url.scheme: "{{parsed_header.message.http.request.scheme}}"
-        filter: "{{parsed_header.message.http is defined}}"
-      - set:
-          url.original: "{{parsed_event.message.url}}"
-          url.path: "{{parsed_event.message.url_path or parsed_event.message.path}}"
-          url.domain: "{{parsed_event.message.url_domain}}"
-        filter: "{{parsed_event.message is defined and parsed_event.message != None}}"
-      - set:
-          url.scheme: "{{parsed_event.message.http_scheme|lower}}"
-        filter: >-
-          {{parsed_event.message is defined and parsed_event.message != None and
-          parsed_event.message.http_scheme != None}}
+          url.path: "{{parsed_event.message.http.request.path}}"
+          url.domain: "{{parsed_event.message.http.request.host}}"
+          url.scheme: "{{parsed_event.message.http.request.scheme}}"
+        filter: "{{parsed_event.message.http is defined}}"
       - set:
           url.full: >-
             {{final.url.scheme}}://{{final.url.domain + ":"+
@@ -210,32 +137,16 @@ stages:
         filter: >-
           {{final.url.full is not defined and final.url.scheme is defined and
           final.url.domain is defined and final.url.path is defined }}
-  ecs_user_mapping:
-    actions:
-      - set:
-          user.id: "{{parsed_event.message.user_id}}"
-          user.email: "{{parsed_event.message.user_email}}"
-  ecs_user_agent_mapping:
-    actions:
-      - set:
-          user_agent.original: "{{parsed_event.message.user_agent}}"
-  ecs_email_mapping:
-    actions:
-      - set:
-          email.to.address: "{{parsed_event.message.to}}"
-        filter: "{{'sending mail' in final.event.action}}"
   custom_fields_mapping:
     actions:
       - set:
-          clever_cloud.commit.id: "{{parsed_header.message.commitId}}"
-          clever_cloud.zone.name: "{{parsed_header.message.zone}}"
-          clever_cloud.request.id: "{{parsed_header.message.requestId}}"
-          clever_cloud.deployment.id: "{{parsed_header.message.deploymentId}}"
-          clever_cloud.application.id: "{{parsed_header.message.applicationId}}"
-          clever_cloud.id: "{{parsed_header.message.id}}"
-      - set:
-          clever_cloud.action.status: "{{parsed_event.message.status}}"
-          clever_cloud.action.caller: "{{parsed_event.message.caller}}"
+          clever_cloud.commit.id: "{{parsed_event.message.commitId}}"
+          clever_cloud.zone.name: "{{parsed_event.message.zone}}"
+          clever_cloud.request.id: "{{parsed_event.message.requestId}}"
+          clever_cloud.deployment.id: "{{parsed_event.message.deploymentId}}"
+          clever_cloud.application.id: "{{parsed_event.message.applicationId}}"
+          clever_cloud.application.log: "{{parsed_event.message.message}}"
+          clever_cloud.id: "{{parsed_event.message.id}}"
   ecs_kind_categorization:
     actions:
       - set:
@@ -261,22 +172,16 @@ stages:
         filter: >-
           {{'web' in final.event.category and not ('access' in
           final.event.type           or 'error' in final.event.type)}}
-  ecs_email_categorization:
-    actions:
-      - set:
-          event.category: "{{(final.event.category|default([])) + ['email']}}"
-      - set:
-          event.type: "{{(final.event.type|default([])) + ['info']}}"
   ecs_network_categorization:
     actions:
       - set:
-          event.type: connection
-          event.category: network
+          event.type: ['connection']
+          event.category: ['network']
   ecs_host_categorization:
     actions:
       - set:
-          event.type: info
-          event.category: host
+          event.type: ['info']
+          event.category: ['host']
   ecs_outcome_categorization:
     actions:
       - set:
