@@ -296,6 +296,8 @@ pipeline:
     filter: "{{json.event.get('EventID') == 2946 and json.event.Message != null}}"
   - name: set_network_policy_fields
     filter: "{{ json.event.SourceName == 'Microsoft-Windows-Security-Auditing' and json.event.EventID in [6272, 6273, 6274, 6275, 6276, 6277, 6278, 6279, 6280]}}"
+  - name: set_ntlm_fields
+    filter: "{{json.event.SourceName == 'Microsoft-Windows-NTLM' and json.event.Channel == 'Microsoft-Windows-NTLM/Operational'}}"
   - name: rule
   - name: finalize
 
@@ -1369,6 +1371,43 @@ stages:
       - set:
           event.outcome: "failure"
         filter: "{{json.event.EventID | int == 4625}}"
+
+  set_ntlm_fields:
+    actions:
+      - set:
+          source.ip: "{{json.event.ClientIP}}"
+        filter: "{{json.event.ClientIP | is_ipaddress}}"
+
+      - set:
+          source.domain: "{{json.event.RemoteClientMachine}}"
+        filter: "{{json.event.RemoteClientMachine not in [null, '', '-']}}"
+
+      - delete:
+          - user.id
+          - user.domain
+        filter: "{{json.event.Username not in [null, '', '-']}}"
+
+      - set:
+          source.user.name: "{{json.event.Username}}"
+          user.name: "{{json.event.Username}}"
+        filter: "{{json.event.Username not in [null, '', '-']}}"
+
+      - set:
+          source.user.domain: "{{json.event.DomainName}}"
+          user.domain: "{{json.event.DomainName}}"
+        filter: "{{json.event.Username not in [null, '', '-'] and json.event.DomainName not in [null, '', '-']}}"
+
+      - set:
+          action.properties.NtlmVersion: "{{json.event.NtlmVersion}}"
+        filter: "{{json.event.NtlmVersion not in [null, '']}}"
+
+      - set:
+          action.properties.Status: "{{json.event.Status}}"
+        filter: "{{json.event.Status not in [null, '']}}"
+
+      - set:
+          action.properties.StatusMsg: "{{json.event.StatusMsg}}"
+        filter: "{{json.event.StatusMsg not in [null, '']}}"
 
   set_source_fields:
     actions:

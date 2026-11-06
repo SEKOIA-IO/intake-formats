@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-06
+
+### Added
+
+- Parse new ECS fields:
+  - `source.user.domain`: map from raw field `DomainName`
+  - `source.user.name`: map from raw field `Username`
+- Parse new custom fields:
+  - `action.properties.NtlmVersion`: map from raw field `NtlmVersion`
+  - `action.properties.StatusMsg`: map from raw field `StatusMsg`
+
+### Changed
+
+- Extend parsing of existing ECS fields for NTLM Operational events:
+  - `source.domain`: identify the remote client machine using raw field `RemoteClientMachine`
+  - `source.ip`: populate the remote client address from raw field `ClientIP` when it is a valid IPv4 or IPv6 address
+- Extend parsing of existing custom fields:
+  - `action.properties.Status`: explicitly preserve the NTLM status code from raw field `Status`, including success values such as `0x0`, without deriving an authentication outcome
+
+### Fixed
+
+- Fix parsing of existing ECS fields for NTLM Operational events:
+  - `user.domain`: use raw field `DomainName` when raw field `Username` is present, clearing the inherited system domain when no remote domain is provided
+  - `user.name`: use raw field `Username` instead of the logging system account, clearing the inherited system SID to keep the identity consistent
+
 ## [1.0.5] - 2026-11-06
 
 ### Added
