@@ -696,8 +696,10 @@ stages:
       # is the launched command line
       - set:
           registry.value: "{{parsed_event.message.entry}}"
-          registry.path: '{{parsed_event.message.location}}\{{parsed_event.message.entry}}'
-        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and parsed_event.message.get("location") not in [none, ""]}}'
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""]}}'
+      - set:
+          registry.path: '{{[final.registry.hive, final.registry.key, parsed_event.message.entry] | join("\\")}}'
+        filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and final.get("registry", {}).get("hive") not in [none, ""]}}'
       - set:
           registry.data.strings: '{{[[parsed_event.message.get("command", ""), parsed_event.message.get("arguments", "")] | select | join(" ")]}}'
         filter: '{{parsed_event.message.get("module") == "Autoruns" and parsed_event.message.get("entry") not in [none, ""] and parsed_event.message.get("command") not in [none, ""]}}'
@@ -710,20 +712,24 @@ stages:
           nextron.thor.registry.string: "{{parsed_event.message.string}}"
           nextron.thor.registry.modified: "{{parsed_event.message.modified}}"
 
+      # The checked key comes as `key`, or as `path` when THOR reports a
+      # missing key. The hive prefix is normalized to its short form
+      # (HKEY_LOCAL_MACHINE -> HKLM) and kept out of registry.key.
       - set:
-          registry.hive: '{{parsed_event.message.key.split("\\")[0]}}'
-          registry.key: '{{parsed_event.message.key.split("\\")[1:] | join("\\")}}'
-        filter: '{{parsed_event.message.get("key") != none and parsed_event.message.key.split("\\")[0] in ["HKLM", "HKCU", "HKU", "HKCR", "HKEY_LOCAL_MACHINE", "HKEY_CURRENT_USER"]}}'
+          registry.hive: '{{ {"HKLM": "HKLM", "HKEY_LOCAL_MACHINE": "HKLM", "LOCAL_MACHINE": "HKLM", "HKCU": "HKCU", "HKEY_CURRENT_USER": "HKCU", "CURRENT_USER": "HKCU", "HKU": "HKU", "HKEY_USERS": "HKU", "HKCR": "HKCR", "HKEY_CLASSES_ROOT": "HKCR"}[(parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[0]] }}'
+          registry.key: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[1:] | join("\\")}}'
+        filter: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[0] in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE", "HKCU", "HKEY_CURRENT_USER", "CURRENT_USER", "HKU", "HKEY_USERS", "HKCR", "HKEY_CLASSES_ROOT"]}}'
       - set:
-          registry.key: "{{parsed_event.message.key}}"
-        filter: '{{parsed_event.message.get("key") != none and parsed_event.message.key.split("\\")[0] not in ["HKLM", "HKCU", "HKU", "HKCR", "HKEY_LOCAL_MACHINE", "HKEY_CURRENT_USER"]}}'
+          registry.key: '{{parsed_event.message.get("key") or parsed_event.message.get("path")}}'
+        filter: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "") != "" and (parsed_event.message.get("key") or parsed_event.message.get("path") or "").split("\\")[0] not in ["HKLM", "HKEY_LOCAL_MACHINE", "LOCAL_MACHINE", "HKCU", "HKEY_CURRENT_USER", "CURRENT_USER", "HKU", "HKEY_USERS", "HKCR", "HKEY_CLASSES_ROOT"]}}'
+      - set:
+          registry.path: '{{[final.registry.get("hive"), final.registry.key, parsed_event.message.get("name")] | select | join("\\")}}'
+        filter: '{{(parsed_event.message.get("key") or parsed_event.message.get("path") or "") != ""}}'
 
+      # registry value data
       - set:
-          registry.path: '{{parsed_event.message.key}}\{{parsed_event.message.name}}'
-        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.get("name") not in [none, ""]}}'
-      - set:
-          registry.path: "{{parsed_event.message.key}}"
-        filter: '{{parsed_event.message.get("key") not in [none, ""] and parsed_event.message.get("name") in [none, ""]}}'
+          registry.data.strings: "{{[parsed_event.message.value | string]}}"
+        filter: '{{parsed_event.message.get("value") not in [none, ""]}}'
 
   # -------------------------------------------- execution-evidence stores ---
   set_shimcache_amcache_fields:
