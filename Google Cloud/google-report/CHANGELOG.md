@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2023-03-14 - 1.17.3
+## [1.17.4] - 2026-11-02
 
-### Change
+### Added
 
-- Add some stages to imrove the parser
+- Parse new custom fields:
+  - `google.report.meet.organizer_email`: map from raw field `organizer_email` to store the Google Meet organizer email separately from the participant identity
+
+### Fixed
+
+- Fix parsing of existing ECS fields:
+  - `user.email`: stop populating with the Google Meet organizer email
+
+## [1.17.3] - 2023-03-14
+
+### Changed
+
+- Add stages to improve the parser
