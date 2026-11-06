@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-06
+
+### Added
+
+- Parse `gatewatcher.type` (type of analysis) from `event.module`, as in the Gatewatcher AionIQ v102 format
+
 ## [1.0.0] - 2026-11-05
 
 ### Added
