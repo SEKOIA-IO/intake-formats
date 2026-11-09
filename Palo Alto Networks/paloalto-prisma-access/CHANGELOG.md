@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `event.outcome` and `action.outcome`: parse `EventStatus`
   - `action.name`: parse `EventIDValue`
   - `event.reason`: parse `ConnectionError` before `Description`
+- `url.original`: do not set `https://` when the URL, file name and URL file name are empty
 
 ## 2024-10-08
 
