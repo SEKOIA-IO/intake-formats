@@ -36,6 +36,8 @@ pipeline:
     filter: '{{ parsed_event.message.properties != null and parsed_event.message.category == "AuditLogs" }}'
   - name: read_message_properties
     filter: "{{ parsed_event.message.properties != null }}"
+  - name: log_type_auditlogs_app_initiator
+    filter: '{{ parsed_event.message.category == "AuditLogs" and parsed_event.message.properties.initiatedBy.app != null and not parsed_event.message.properties.initiatedBy.user }}'
   - name: set_ecs_host_fields
   - name: set_ecs_network_fields
   - name: set_ecs_related_fields
@@ -116,7 +118,7 @@ stages:
               {%- endif -%}
             {%- endfor -%}
             {{ seen.values | to_json }}
-        filter: "{{final.user.id != null or final.user.email != null or final.azuread.identity != null}}"
+        filter: '{{ (final.user.id != null or final.user.email != null or final.azuread.identity != null) and not (parsed_event.message.category == "AuditLogs" and parsed_event.message.properties.initiatedBy.app != null and not parsed_event.message.properties.initiatedBy.user) }}'
 
   set_ecs_source_fields:
     actions:
@@ -531,13 +533,7 @@ stages:
           user.name: "{{ parsed_event.message.properties.initiatedBy.user.userPrincipalName}}"
           user.full_name: "{{ parsed_event.message.properties.initiatedBy.user.displayName}}"
           action.target: "user"
-        filter: "{{parsed_event.message.properties.initiatedBy.user != null}}"
-
-      - set:
-          user.id: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalId}}"
-          user.name: "{{ parsed_event.message.properties.initiatedBy.app.displayName}}"
-          action.target: "application"
-        filter: "{{parsed_event.message.properties.initiatedBy.app != null and parsed_event.message.properties.initiatedBy.user == null}}"
+        filter: "{{ parsed_event.message.properties.initiatedBy.user != null and parsed_event.message.properties.initiatedBy.user != {} }}"
 
       - set:
           user.target.name: >
@@ -549,6 +545,24 @@ stages:
               {%- if item.type == "User" -%}{{ item.id }}{%- endif -%}
             {%- endfor -%}
         filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | list | length == 1 and parsed_event.message.properties.initiatedBy.app.displayName != parsed_event.message.properties.targetResources.0.userPrincipalName}}"
+
+  log_type_auditlogs_app_initiator:
+    actions:
+      # Run after generic user mappings so target user details cannot become the actor.
+      - delete:
+          - user.id
+          - user.name
+          - user.email
+          - user.full_name
+      - delete:
+          - user
+        filter: "{{ final.user == {} }}"
+      - set:
+          azuread.properties.appId: "{{ parsed_event.message.properties.initiatedBy.app.appId }}"
+          azuread.properties.appDisplayName: "{{ parsed_event.message.properties.initiatedBy.app.displayName }}"
+          azuread.properties.servicePrincipalId: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalId }}"
+          azuread.properties.servicePrincipalName: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalName }}"
+          action.target: "application"
 
   log_type_auditlogs:
     actions:
