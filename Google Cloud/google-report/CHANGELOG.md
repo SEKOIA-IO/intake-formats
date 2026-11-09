@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix parsing of existing ECS fields:
+  - `user.name`: stop deriving the actor's username from the email local part to prevent merging accounts from different domains; keep the actor's `user.email`, `user.id`, and `user.domain`
+
 ## [1.17.4] - 2026-11-02
 
 ### Added
