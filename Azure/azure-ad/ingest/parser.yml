@@ -37,7 +37,7 @@ pipeline:
   - name: read_message_properties
     filter: "{{ parsed_event.message.properties != null }}"
   - name: log_type_auditlogs_app_initiator
-    filter: '{{ parsed_event.message.category == "AuditLogs" and parsed_event.message.properties.initiatedBy.app != null and not parsed_event.message.properties.initiatedBy.user }}'
+    filter: '{{ parsed_event.message.category == "AuditLogs" and parsed_event.message.properties.initiatedBy.app is mapping and (parsed_event.message.properties.initiatedBy.app.appId or parsed_event.message.properties.initiatedBy.app.displayName or parsed_event.message.properties.initiatedBy.app.servicePrincipalId or parsed_event.message.properties.initiatedBy.app.servicePrincipalName) and not parsed_event.message.properties.initiatedBy.user }}'
   - name: set_ecs_host_fields
   - name: set_ecs_network_fields
   - name: set_ecs_related_fields
@@ -112,13 +112,17 @@ stages:
       - set:
           related.user: >
             {%- set seen = namespace(values=[]) -%}
-            {%- for candidate in [final.user.id, final.user.email, final.azuread.identity] -%}
+            {%- set candidates = [final.user.id, final.user.email, final.azuread.identity] -%}
+            {%- if parsed_event.message.category == 'AuditLogs' and final.action.target == 'application' -%}
+              {%- set candidates = [final.user.target.id, final.user.target.name, final.user.target.email] -%}
+            {%- endif -%}
+            {%- for candidate in candidates -%}
               {%- if candidate is string and candidate | length > 0 and candidate not in seen.values -%}
                 {%- set seen.values = seen.values + [candidate] -%}
               {%- endif -%}
             {%- endfor -%}
             {{ seen.values | to_json }}
-        filter: '{{ (final.user.id != null or final.user.email != null or final.azuread.identity != null) and not (parsed_event.message.category == "AuditLogs" and parsed_event.message.properties.initiatedBy.app != null and not parsed_event.message.properties.initiatedBy.user) }}'
+        filter: "{{ final.user.id or final.user.email or final.azuread.identity or final.user.target.id or final.user.target.name or final.user.target.email }}"
 
   set_ecs_source_fields:
     actions:
@@ -533,7 +537,7 @@ stages:
           user.name: "{{ parsed_event.message.properties.initiatedBy.user.userPrincipalName}}"
           user.full_name: "{{ parsed_event.message.properties.initiatedBy.user.displayName}}"
           action.target: "user"
-        filter: "{{ parsed_event.message.properties.initiatedBy.user != null and parsed_event.message.properties.initiatedBy.user != {} }}"
+        filter: "{{ parsed_event.message.properties.initiatedBy.user is mapping and parsed_event.message.properties.initiatedBy.user | length > 0 }}"
 
       - set:
           user.target.name: >
@@ -544,7 +548,7 @@ stages:
             {%- for item in parsed_event.message.properties.targetResources -%}
               {%- if item.type == "User" -%}{{ item.id }}{%- endif -%}
             {%- endfor -%}
-        filter: "{{parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | list | length == 1 and parsed_event.message.properties.initiatedBy.app.displayName != parsed_event.message.properties.targetResources.0.userPrincipalName}}"
+        filter: "{{ parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'User') | list | length == 1 }}"
 
   log_type_auditlogs_app_initiator:
     actions:
@@ -559,9 +563,17 @@ stages:
         filter: "{{ final.user == {} }}"
       - set:
           azuread.properties.appId: "{{ parsed_event.message.properties.initiatedBy.app.appId }}"
+        filter: "{{ parsed_event.message.properties.initiatedBy.app.appId is string and parsed_event.message.properties.initiatedBy.app.appId | length > 0 }}"
+      - set:
           azuread.properties.appDisplayName: "{{ parsed_event.message.properties.initiatedBy.app.displayName }}"
+        filter: "{{ parsed_event.message.properties.initiatedBy.app.displayName is string and parsed_event.message.properties.initiatedBy.app.displayName | length > 0 }}"
+      - set:
           azuread.properties.servicePrincipalId: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalId }}"
+        filter: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalId is string and parsed_event.message.properties.initiatedBy.app.servicePrincipalId | length > 0 }}"
+      - set:
           azuread.properties.servicePrincipalName: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalName }}"
+        filter: "{{ parsed_event.message.properties.initiatedBy.app.servicePrincipalName is string and parsed_event.message.properties.initiatedBy.app.servicePrincipalName | length > 0 }}"
+      - set:
           action.target: "application"
 
   log_type_auditlogs:
