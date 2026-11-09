@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.2] - 2026-10-22
+## [1.0.2] - 2026-11-09
 
 ### Added
 
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix existing ECS fields:
+- Fix parsing of existing ECS fields:
   - `file.directory`:
     - keep backslash separators when deriving directory from `winlog.event_data.ScriptName` in the PowerShell 4103 stage
     - clear carried values when `Path`, `script_path`, or `ScriptName` is selected as the replacement source
