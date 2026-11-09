@@ -16,3 +16,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Map `bytes` to `http.response.bytes`
+- Remove beta flag
+- Add `automation_module_uuid` parameter in the manifest file
