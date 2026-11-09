@@ -9,6 +9,7 @@ from typing import Tuple
 import pytest
 import requests
 import yaml
+from requests.adapters import HTTPAdapter, Retry
 
 # Overridable for environments that can't reach app.sekoia.io: the same endpoint is
 # served at https://api.sekoia.io/v1/ingest/formats/validate.
@@ -16,6 +17,18 @@ VALIDATION_URL = (
     os.environ.get("SEKOIA_VALIDATION_URL") or "https://app.sekoia.io/api/v1/ingest/formats/validate"
 )
 INTAKES_PATH = os.path.dirname(os.path.dirname(__file__))
+validation_session = requests.Session()
+validation_session.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=Retry(
+            total=5,
+            backoff_factor=1,
+            status_forcelist=(502, 503, 504),
+            allowed_methods=frozenset({"POST"}),
+        )
+    ),
+)
 
 
 class FormatError(Exception):
@@ -101,7 +114,7 @@ class IntakeTestManager:
                     message = json.load(f)
                     events.append(message["input"])
 
-            response = requests.post(
+            response = validation_session.post(
                 VALIDATION_URL,
                 json={
                     "parser": parser,
