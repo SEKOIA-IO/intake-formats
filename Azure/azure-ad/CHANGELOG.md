@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve application initiators in the existing `azuread.properties.appId`, `azuread.properties.appDisplayName`, `azuread.properties.servicePrincipalId` and `azuread.properties.servicePrincipalName` fields.
 - Require an application identity before clearing user actor fields, and preserve existing application metadata when initiator values are missing or empty.
 - Treat user initiators with only null, empty or non-identity fields as unidentified so they do not suppress application attribution.
+- Do not use audit log `identity` as a fallback for `user.name` or `related.user`, preventing application names such as My Signins from being paired with a user's object id.
 - Map a single audit User target independently of the application display name, and explicitly include application-initiated event targets in `related.user`.
 
 ### [1.0.1] - 2026-11-02
