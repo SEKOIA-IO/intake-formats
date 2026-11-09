@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep application initiators out of `user.id`, `user.name`, `user.email`, `user.full_name` and `related.user` in audit logs while preserving targeted users in `user.target.*`.
+- Preserve application initiators in the existing `azuread.properties.appId`, `azuread.properties.appDisplayName`, `azuread.properties.servicePrincipalId` and `azuread.properties.servicePrincipalName` fields.
+
 ### [1.0.1] - 2026-11-02
 
 ### Added
