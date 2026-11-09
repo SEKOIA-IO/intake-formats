@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-09
+
+### Fixed
+
+- Set `event.outcome: failure` and `event.category: authentication` on failed logins `AUT24327`, `AUT30836` and `AUT31985`
+- Remove the trailing escaped carriage return (`#015`) added by rsyslog, which corrupted `event.code` and the parsing of `msg`
+
 ## [1.0.3] - 2026-10-16
 
 ### Fixed
