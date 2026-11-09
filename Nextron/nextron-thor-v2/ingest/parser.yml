@@ -267,13 +267,18 @@ stages:
           nextron.thor.signature_tags: "{{parsed_event.message.reasons[0].signature.tags}}"
         filter: '{{parsed_event.message.reasons[0].get("signature", {}).get("tags") not in [none, []]}}'
 
-      # MITRE ATT&CK technique tags ("ATTACK.T1059", "attack.t1059.001")
+      # MITRE ATT&CK technique tags: THOR tags its YARA and Sigma signatures
+      # with "T1059" / "T1059_001"; the sub-technique becomes "T1059.001".
+      # Other tags ("SUSP", "SCRIPT", ...) are ignored.
       - set:
-          threat.technique.id: '[{% for t in parsed_event.message.reasons[0].signature.tags if t.upper().startswith("ATTACK.T") and not t.upper().startswith("ATTACK.TA") %}"{{t[7:].upper()}}"{% if not loop.last %},{% endif %}{% endfor %}]'
-        filter: '{{"ATTACK.T" in (parsed_event.message.reasons[0].get("signature", {}).get("tags") or []) | map("upper") | join(",") | replace("ATTACK.TA", "")}}'
+          threat.technique.id: '{% set ids = [] %}{% for t in parsed_event.message.reasons[0].signature.tags %}{% set u = t | string | upper %}{% if u[:1] == "T" and u[1:5].isdigit() and (u | length == 5 or (u | length == 9 and u[5] in "._" and u[6:].isdigit())) %}{% if ids.append(u.replace("_", ".")) %}{% endif %}{% endif %}{% endfor %}[{% for i in ids | unique %}"{{i}}"{% if not loop.last %},{% endif %}{% endfor %}]'
+        filter: '{{(parsed_event.message.reasons[0].get("signature") or {}).get("tags") not in [none, []]}}'
+      - delete:
+          - threat
+        filter: '{{final.get("threat", {}).get("technique", {}).get("id") in [none, "", []]}}'
       - set:
           threat.framework: "MITRE ATT&CK"
-        filter: '{{"ATTACK.T" in (parsed_event.message.reasons[0].get("signature", {}).get("tags") or []) | map("upper") | join(",") | replace("ATTACK.TA", "")}}'
+        filter: '{{final.get("threat", {}).get("technique", {}).get("id") not in [none, "", []]}}'
 
       # Recover the description from the composite reason name (part after the
       # first " / ") when the signature carries none — the plain YARA/Sigma case.
