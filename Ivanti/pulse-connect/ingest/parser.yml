@@ -4,6 +4,8 @@ pipeline:
     external:
       name: kv.parse-kv
       properties:
+        # rsyslog escapes the trailing carriage return as `#015`, which corrupts the last key-value (msg)
+        input_field: "{{original.message.strip().removesuffix('#015').rstrip()}}"
         item_sep: '\s'
   - name: field_extraction
   - name: msg_parsing
@@ -20,8 +22,10 @@ pipeline:
           AUT24326: "AUT24326: %{NOTSPACE} authentication successful for %{USERNAME:user} from %{IP:src}"
           AUT24414: "AUT24414: Agent login succeeded for %{DATA:user}(/%{DATA:user_domain})?( \\(session:%{DATA:sid}\\))? from (%{IP:src}|%{MAC:src_mac}) with %{GREEDYDATA:user_agent}."
           AUT24604: "AUT24604: SSL negotiation failed while client at source IP '%{IP:src}' was trying to connect to '%{IP:dst}'. Reason: '%{DATA:reason}'"
-          AUT24804: "AUT24804: Host Checker policy '%{DATA:policy}' failed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}' reason '%{DATA:reason}'."
-          AUT24803: "AUT24803: Host Checker policy '%{DATA:policy}' passed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}' for user '%{USERNAME:user}'."
+          AUT24804: "AUT24804: Host Checker policy '%{DATA:policy}' failed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}'%{SPACE}for user '%{DATA:user}'%{SPACE}reason '%{DATA:reason}'."
+          AUT24803: "AUT24803: Host Checker policy '%{DATA:policy}' passed on host '%{HOST_ADDRESS}' address '%{MAC:host_mac}'%{SPACE}for user '%{DATA:user}'(%{SPACE}session '%{DATA:host_checker_session}')?\\.?"
+          FBR32068: "FBR32068: Bookmark access started for application_type \\[%{DATA:application_type}\\] bookmark-type: \\[%{DATA:bookmark_type}\\], bookmark-name: \\[%{DATA:bookmark_name}\\], resource: \\[%{DATA:resource}\\]\\.?"
+          WEB20174: "WEB20174: WebRequest completed, %{WORD:http_method} to \\[%{DATA:resource}\\] from \\[%{IP:dst}\\] result=\\[%{NUMBER:http_status}\\] sent=\\[%{NUMBER}\\] received=\\[%{NUMBER}\\] in \\[%{NUMBER}\\] seconds"
           AUT31556: "AUT31556: Unauthenticated request url %{URIPATHPARAM:url} %{GREEDYDATA}"
           AUT32033: "AUT32033: Session created for user: \\[%{DATA:user}/%{DATA:user_domain}\\] from \\[%{IP:src}\\] with primary auth-server type: \\[%{DATA:primary_auth_server_type}\\], primary auth-server name: \\[%{DATA:primary_auth_server_name}\\], secondary auth-server type: \\[%{DATA:secondary_auth_server_type}\\], secondary auth-servername: \\[%{DATA:secondary_auth_server_name}\\], secondary auth-server user: \\[%{DATA:secondary_auth_server_user}\\], mac-address: \\[%{MAC:srv_mac}\\]."
           AUT32051: "AUT32051: Established connection with type: \\[%{DATA:nwtype}\\]"
@@ -45,7 +49,10 @@ stages:
           service.name: "{{kv_event.message.vpn}}"
           user.name: "{{kv_event.message.user}}"
           user.domain: "{{kv_event.message.realm}}"
-          user.roles: "{{kv_event.message.roles.split(',') if kv_event.message.roles}}"
+          user.roles: "{{kv_event.message.roles.split(',') | map('trim') | list if kv_event.message.roles}}"
+          user_agent.original: "{{kv_event.message.agent}}"
+          ivanti.connect_secure.session.id: "{{kv_event.message.sessionID}}"
+          ivanti.connect_secure.instant_virtual_system: "{{kv_event.message.ivs}}"
           event.provider: "{{kv_event.message.proto}}"
           service.type: "{{kv_event.message.type}}"
           observer.ip: ["{{kv_event.message.fw}}"]
@@ -69,6 +76,8 @@ stages:
           "AUT24804": ["host"]
           "AUT24803": ["host"]
           "AUT23457": ["authentication"]
+          "FBR32068": ["web"]
+          "WEB20174": ["web"]
         mapping:
           event.code: event.category
         fallback: ["network"]
@@ -131,7 +140,27 @@ stages:
 
       - set:
           event.outcome: "failure"
-        filter: "{{final.event.code == 'AUT23457'}}"
+        filter: "{{final.event.code in ['AUT23457', 'AUT24804']}}"
+
+      - set:
+          event.outcome: "success"
+        filter: "{{final.event.code == 'AUT24803'}}"
+
+      - set:
+          event.type: ["access"]
+        filter: "{{final.event.code in ['FBR32068', 'WEB20174']}}"
+
+      - set:
+          http.request.method: "{{kv_event.message.op | upper}}"
+        filter: "{{final.event.code == 'WEB20174' and kv_event.message.op is defined and kv_event.message.op | string | trim | length > 0}}"
+
+      - set:
+          http.response.status_code: "{{kv_event.message.result | int}}"
+        filter: "{{final.event.code == 'WEB20174' and kv_event.message.result is defined and kv_event.message.result | string | trim | length > 0}}"
+
+      - set:
+          event.duration: "{{(kv_event.message.duration | float * 1000000000) | int}}"
+        filter: "{{final.event.code == 'WEB20174' and kv_event.message.duration is defined and kv_event.message.duration | string | trim | length > 0}}"
 
   details_extraction:
     actions:
@@ -150,6 +179,19 @@ stages:
           server.mac: "{{msg_parsing.details.srv_mac}}"
           source.mac: "{{msg_parsing.details.src_mac}}"
           tls.client.x509.serial_number: "{{msg_parsing.details.serial_number|upper}}"
+          url.original: "{{msg_parsing.details.resource}}"
+          ivanti.connect_secure.bookmark.name: "{{msg_parsing.details.bookmark_name}}"
+          ivanti.connect_secure.bookmark.type: "{{msg_parsing.details.bookmark_type}}"
+          ivanti.connect_secure.bookmark.application_type: "{{msg_parsing.details.application_type}}"
+
+      # WEB20174: fall back on the method and status from msg when op or result are missing
+      - set:
+          http.request.method: "{{msg_parsing.details.http_method | upper}}"
+        filter: "{{msg_parsing.details.http_method != null and not final.get('http', {}).get('request', {}).get('method')}}"
+
+      - set:
+          http.response.status_code: "{{msg_parsing.details.http_status | int}}"
+        filter: "{{msg_parsing.details.http_status != null and not final.get('http', {}).get('response', {}).get('status_code')}}"
 
       - set:
           tls.client.x509.subject.common_name:
