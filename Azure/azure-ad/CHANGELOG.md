@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-09
+
+### Fixed
+
+- Audit logs initiated by an application no longer describe the application as a user: its name, application id and service principal id go to `azuread.properties.appDisplayName`, `azuread.properties.appId` and `azuread.servicePrincipalId` instead of `user.name` and `user.id`
+- Audit logs no longer fill `user.name` from `identity`, the display name of the initiator, which kept an application name next to the id of the user who acted through it
+
 ### [1.0.1] - 2026-11-02
 
 ### Added
