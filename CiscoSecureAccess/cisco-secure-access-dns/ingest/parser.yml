@@ -25,6 +25,15 @@ pipeline:
           - organization_id
         delimiter: ","
 
+  - name: get_user_email
+    filter: "{{'@' in parsed_dsv.message.most_granular_identity}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_dsv.message.most_granular_identity
+        output_field: message
+        pattern: "%{GREEDYDATA:name} \\(%{EMAILADDRESS:mail}\\)"
+
   - name: set_ecs_fields
 
   - name: set_custom_fields
@@ -49,11 +58,18 @@ stages:
           dns.response_code: "{{parsed_dsv.message.response_code}}"
           dns.question.name: "{{parsed_dsv.message.domain.strip('.')}}"
 
+          host.name: "{{get_user_email.message.name or parsed_dsv.message.most_granular_identity}}"
+          host.type: "{{parsed_dsv.message.most_granular_identity_type}}"
+
           rule.id: "{{parsed_dsv.message.rule_id}}"
 
           destination.geo.country_iso_code: "{{parsed_dsv.message.destination_countries}}"
 
           organization.id: "{{parsed_dsv.message.organization_id}}"
+
+      - set:
+          user.email: "{{get_user_email.message.mail}}"
+        filter: "{{'@' in parsed_dsv.message.most_granular_identity}}"
 
       - translate:
         dictionary:
