@@ -5,16 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-07-29
+## [Unreleased]
+
+## [1.1.1] - 2026-11-06
+
+### Fixed
+
+- Fix `TypeError` parsing warnings on `user.target.name` and `user.target.id` when a `User` target resource lacks `id`, `userPrincipalName` or `displayName`
+- Stop rendering `None` as the `targetedUser` id in `action.properties` when the target resource has no `id`
+
+## [1.1.0] - 2026-10-19
 
 ### Added
 
-- Parse new custom fields from sign-in logs:
-  - `azure.entraid.properties.authenticationRequirement`, `azure.entraid.properties.authenticationDetails`
-  - `azure.entraid.properties.uniqueTokenIdentifier`, `azure.entraid.properties.crossTenantAccessType`
-  - `azure.entraid.properties.flaggedForReview`, `azure.entraid.properties.isTenantRestricted`, `azure.entraid.properties.riskEventTypes_v2`
-  - `azure.entraid.properties.network_location.network_type` and `azure.entraid.properties.network_location.network_names` from `networkLocationDetails`
-- Parse the Microsoft Entra Agent ID identity type into `azure.entraid.properties.initiatedBy.agentType` (audit logs)
+- Parse new ECS fields:
+  - `event.code` from Entra sign-in status error code
+  - `user_agent.original` from `additionalDetails[].key == "User-Agent"` for audit events without `deviceDetail.browser`
+- Add field descriptions in fields metadata:
+  - `action.properties`
+  - `azure.entraid.properties.*`
+  - `azuread.properties.*`
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - generalize `targetResources` matching (position-independent, supports both `type` and `Type`) across event families and harden scalar extraction (deterministic first match) to avoid silent value concatenation:
+    - `host.id`
+    - `host.name`
+    - `host.os.name`
+    - `service.id`
+    - `service.name`
+  - extend fallback mapping with `initiatedBy.app.ipAddress` when present:
+    - `source.ip`
+  - keep fallback-only by preserving browser-derived value when `deviceDetail.browser` is already present:
+    - `user_agent.original`
+  - extend user identity mapping for app-initiated and PIM events:
+    - `user.id` and `user.name` from `initiatedBy.app` (`servicePrincipalId` and `displayName`) when actor user fields are absent
+    - `user.id`, `user.name`, and `user.email` from PIM impacted-user targets with support for both `targetResources[].type` and `targetResources[].Type`
+    - improve PIM handling end-to-end: detect PIM from `initiatedBy.user.displayName == "Azure AD PIM"` (including events logged by `Core Directory`) and avoid re-emitting the selected impacted user as `user.target.*`
+- Extend parsing of existing custom fields:
+  - extend fallback mapping with `message.appId` when `additionalDetails[].key == "AppId"` is absent:
+    - `azure.entraid.properties.appId`
+    - `azuread.properties.appId`
+  - extend backward-compatibility aliases for existing Entra ID custom fields:
+    - `azuread.properties.appliedConditionalAccessPolicies`
+    - `azuread.properties.clientAppUsed`
+    - `azuread.properties.conditionalAccessPolicy.displayName`
+    - `azuread.properties.conditionalAccessPolicy.newState`
+    - `azuread.properties.conditionalAccessPolicy.oldState`
+    - `azuread.properties.isInteractive`
+    - `azuread.properties.operationType`
+  - generalize `targetResources` matching (position-independent) and harden extraction behavior for service-principal targets (deterministic first match and case-insensitive `ServicePrincipal` matching):
+    - `azure.entraid.properties.modifiedProperties`
+    - `azure.entraid.properties.targetServicePrincipalDisplayName`
+    - `azuread.properties.modifiedProperties`
+    - `azuread.properties.targetServicePrincipalDisplayName`
+  - add forward-compatibility alias for existing Azure AD custom field:
+    - `azure.entraid.properties.status.errorCode`
+- Reorganize parser stages for readability while preserving field population chronology and outputs:
+  - rename `set_common_fields` to `set_ecs_fields`
+  - split custom mappings into dedicated stages:
+    - `set_custom_fields_action`
+    - `set_custom_fields_azure`
+    - `set_custom_fields_azuread`
+  - rename `set_target_user_fields_from_action_properties` to `set_ecs_user_target_fields`
+  - rename `set_ecs_category` to `normalize_ecs_event_classification`
+
+## [1.0.2] - 2026-07-29
 
 ### Fixed
 
@@ -23,14 +80,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `action.properties` enrichment so `targetedUser` entries are added only for impacted users and not duplicated for the actor
 - Fix app-initiated scenarios by preserving impacted target user values when no actor user identity is available in top-level fields
 
-## 2026-07-21
+## [1.0.1] - 2026-07-21
 
 ### Added
 
 - Add ECS target user fields for `UserManagement` events when the impacted user differs from the actor:
-    - `user.target.id`
-    - `user.target.name`
-    - `user.target.email`
+  - `user.target.id`
+  - `user.target.name`
+  - `user.target.email`
 
 ### Changed
 
@@ -38,17 +95,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update PIM user override so `user.name` also prefers `targetResources[].userPrincipalName`
 - Update `user.email` behavior to keep the actor identity and avoid replacing it with the target user email
 
-## 2026-05-27
+## [1.0.0] - 2026-05-27
 
 ### Added
 
 - Added `azuread.properties` aliases matching existing `azure.entraid.properties` mappings:
-    - `azuread.properties.appId`
-    - `azuread.properties.conditionalAccessStatus`
-    - `azuread.properties.resourceId`
-    - `azuread.properties.riskDetail`
-    - `azuread.properties.riskEventTypes`
-    - `azuread.properties.riskLevelAggregated`
-    - `azuread.properties.riskLevelDuringSignIn`
-    - `azuread.properties.riskState`
-    - `azuread.properties.targetServicePrincipalDisplayName`
+  - `azuread.properties.appId`
+  - `azuread.properties.conditionalAccessStatus`
+  - `azuread.properties.resourceId`
+  - `azuread.properties.riskDetail`
+  - `azuread.properties.riskEventTypes`
+  - `azuread.properties.riskLevelAggregated`
+  - `azuread.properties.riskLevelDuringSignIn`
+  - `azuread.properties.riskState`
+  - `azuread.properties.targetServicePrincipalDisplayName`
