@@ -15,6 +15,7 @@ stages:
     actions:
       - set:
           event.category: ["network"]
+          event.kind: "alert"
           event.dataset: "Security logs"
           event.module: "akamai.waf"
 
@@ -24,21 +25,41 @@ stages:
           observer.product: "Akamai WAF"
           observer.type: "waf"
 
-          event.action: "{{parse_event.message.attackData.appliedAction}}"
+          event.action: >
+            {%- set rules = parse_event.message.attackData.get('rules', []) -%}
+            {%- if parse_event.message.attackData.get('appliedAction') -%}
+              {{ parse_event.message.attackData.get('appliedAction') }}
+            {%- elif rules | length > 0 -%}
+              {{ rules[0].get('ruleAction') }}
+            {%- endif -%}
 
       - set:
-          event.reason: "{{parse_event.message.attackData.rules[0].ruleMessage}}"
+          event.reason: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('ruleMessage')
+            }}
         filter: "{{parse_event.message.attackData.get('rules', []) | length > 0}}"
 
       - translate:
         dictionary:
           "deny": ["denied"]
         mapping:
-          parse_event.message.attackData.appliedAction: event.type
+          event.action: event.type
         fallback: ["info"]
 
       - set:
+          source.as.number: "{{parse_event.message.geo.asn}}"
+          source.geo.country_iso_code: "{{parse_event.message.geo.country}}"
           client.ip: "{{parse_event.message.attackData.clientIP}}"
+          network.protocol: "{{parse_event.message.httpMessage.protocol.split('/')[0] | lower}}"
           url.port: "{{parse_event.message.httpMessage.port}}"
           url.path: "{{parse_event.message.httpMessage.path}}"
           url.query: "{{parse_event.message.httpMessage.query}}"
@@ -55,15 +76,60 @@ stages:
           http.version: "{{parse_event.message.httpMessage.protocol}}"
           http.request.method: "{{parse_event.message.httpMessage.method}}"
           http.request.referrer: "{{parse_event.message.httpMessage.requestHeaders.referrer}}"
+          http.request.body.bytes: "{{parse_event.message.httpMessage.requestHeaders.get('Content-Length')}}"
+          http.request.mime_type: "{{parse_event.message.httpMessage.requestHeaders.get('Content-Type')}}"
           http.response.status_code: "{{parse_event.message.httpMessage.status}}"
           http.response.body.bytes: "{{parse_event.message.httpMessage.bytes}}"
 
           akamai.configuration.id: "{{parse_event.message.configId}}"
           akamai.bot.score: "{{parse_event.message.botData.botScore}}"
           akamai.bot.response_segment: "{{parse_event.message.botData.responseSegment}}"
-
-          http.request.mime_type: "{{parse_event.message.httpMessage.responseHeaders.get('Content-Type')}}"
+          akamai.http.request.headers.content_type: "{{parse_event.message.httpMessage.requestHeaders.get('Content-Type')}}"
           user_agent.original: "{{parse_event.message.httpMessage.requestHeaders.get('User-Agent')}}"
+
+      - set:
+          tls.version_protocol: "tls"
+          tls.version: "{{parse_event.message.httpMessage.tls[3:]}}"
+        filter: "{{parse_event.message.httpMessage.get('tls', '').startswith('tls')}}"
+
+      - set:
+          rule.id: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('rule')
+            }}
+          rule.name: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('ruleMessage')
+            }}
+          rule.ruleset: >
+            {{
+              (
+                (
+                  parse_event.message.attackData.get('rules', [])
+                  | rejectattr('ruleSelector', 'equalto', '')
+                  | list
+                  | first
+                )
+                or (parse_event.message.attackData.get('rules', []) | first)
+              ).get('ruleTag')
+            }}
+        filter: "{{parse_event.message.attackData.get('rules', []) | length > 0}}"
 
       - set:
           akamai.rules: >
@@ -73,7 +139,11 @@ stages:
               {%- if rule.get("ruleVersion") -%}{%- set _ = data.update({'version': rule.get("ruleVersion")}) -%}{%- endif -%}
               {%- if rule.get("rule") -%}{%- set _ = data.update({'id': rule.get("rule")}) -%}{%- endif -%}
               {%- if rule.get("ruleDescription") -%}{%- set _ = data.update({'description': rule.get("ruleDescription")}) -%}{%- endif -%}
-              {%- if rule.get("ruleTags") -%}{%- set _ = data.update({'tags': rule.get("ruleTags")}) -%}{%- endif -%}
+              {%- set tags = [] -%}
+              {%- if rule.get("ruleTags") -%}{%- set tags = rule.get("ruleTags") -%}{%- endif -%}
+              {%- if rule.get("ruleTag") and rule.get("ruleTag") not in tags -%}{%- set _ = tags.append(rule.get("ruleTag")) -%}{%- endif -%}
+              {%- if tags | length > 0 -%}{%- set _ = data.update({'tags': tags}) -%}{%- endif -%}
+              {%- if rule.get("ruleSelector") -%}{%- set _ = data.update({'selector': rule.get("ruleSelector")}) -%}{%- endif -%}
               {%- if rule.get("ruleData") -%}{%- set _ = data.update({'data': rule.get("ruleData")}) -%}{%- endif -%}
               {%- if rule.get("ruleMessage") -%}{%- set _ = data.update({'message': rule.get("ruleMessage")}) -%}{%- endif -%}
               {%- if rule.get("ruleAction") -%}{%- set _ = data.update({'action': rule.get("ruleAction")}) -%}{%- endif -%}

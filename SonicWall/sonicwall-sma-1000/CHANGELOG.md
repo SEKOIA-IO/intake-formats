@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-03
+
+### Added
+
+- Support parsing of additional SonicWall SMA 1000 log types:
+  - Management Message Log cron-command variant (`(user) CMD (...)`)
+  - Network Tunnel Audit Log bracketed variant (`[...] ... Audit Src=... Command=... Dest=...`)
+  - Resource Access Log (`EventMessage: Resource Access`)
+
+### Changed
+
+- Harmonize log-type naming across format assets:
+  - Changelog entries now use canonical log type names
+  - Parser stage names follow `parse_<log_type>` and `set_<log_type>` conventions for new variants
+  - Manifest `data_sources` descriptions align with the same naming, without changing existing keys
+- Extend ECS fields extraction for the new Resource Access Log and Network Tunnel Audit Log variants:
+  - `destination.domain`
+  - `source.user.domain`
+  - `source.user.email`
+  - `source.user.name`
+  - `user.email`
+- Extend ECS fields extraction for the new Management Message Log cron-command variant:
+  - `process.command_line`
+
 ## [1.0.0] - 2026-08-19
 
 ### Added

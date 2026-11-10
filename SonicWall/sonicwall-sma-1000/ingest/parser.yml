@@ -6,10 +6,11 @@ pipeline:
       properties:
         input_field: "{{ original.message }}"
         output_field: result
-        pattern: "%{MANAGEMENT_MESSAGE}|%{SYSTEM_MESSAGE}|%{MANAGEMENT_AUDIT}|%{MANAGEMENT_ACCESS}|%{NETWORK_TUNNEL}|%{NETWORK_FLOW}|%{WEB_PROXY}|%{WORKPLACE_SERVICE}|%{WORKPLACE_CLIENT}|%{MANAGEMENT_PLAIN}|%{MANAGEMENT_PLAIN_SERVICE}|%{UNREGISTERED_DEVICE}|%{UNIX_AUTH}"
+        pattern: "%{MANAGEMENT_MESSAGE}|%{NETWORK_TUNNEL_AUDIT_BRACKETED}|%{SYSTEM_MESSAGE}|%{MANAGEMENT_AUDIT}|%{MANAGEMENT_ACCESS}|%{NETWORK_TUNNEL}|%{NETWORK_FLOW}|%{WEB_PROXY}|%{WORKPLACE_SERVICE}|%{WORKPLACE_CLIENT}|%{MANAGEMENT_PLAIN}|%{MANAGEMENT_PLAIN_SERVICE}|%{UNREGISTERED_DEVICE}|%{UNIX_AUTH}|%{RESOURCE_ACCESS}|%{CRON_CMD}"
         custom_patterns:
           MANAGEMENT_MESSAGE: "^(?P<management_datestamp>\\S+) (?P<management_service>[^@\\s]+)@(?P<management_hostname>\\S+) (?P<management_facility>[^.\\s]+)\\.(?P<management_syslog_level>\\S+) AMC: (?P<management_internal_date>\\d{4}-\\d{2}-\\d{2}) (?P<management_internal_time>\\d{2}:\\d{2}:\\d{2}) (?P<management_timezone>[+-]\\d{4}) (?P<management_level>\\S+) (?P<management_message>.*)$"
-          SYSTEM_MESSAGE: "^\\[(?P<system_datestamp>[^\\]]+)\\] (?P<system_hostname>\\S+) (?:(?P<system_node>\\S+) )?(?P<system_pid>\\d+) (?P<system_app_id>\\S+) (?P<system_source_id>\\S+) (?P<system_level>\\S+) (?P<system_type>\\S+) (?P<system_message>.*)$"
+          NETWORK_TUNNEL_AUDIT_BRACKETED: "^\\[(?P<audit_flow_datestamp>[^\\]]+)\\]\\s+(?P<audit_flow_hostname>\\S+)\\s+(?P<audit_flow_pid>\\d+)\\s+(?P<audit_flow_app_id>\\S+)\\s+(?P<audit_flow_source_id>\\S+)\\s+(?P<audit_flow_level>\\S+)\\s+(?P<audit_flow_type>\\S+)\\s+Src='(?P<audit_flow_src>[^']+)'\\s+User='(?P<audit_flow_user>[^']+)'\\s+TunnelVersion='(?P<audit_flow_tunnel_version>[^']+)'\\s+Command='(?P<audit_flow_command>[^']+)'\\s+Dest='(?P<audit_flow_dest>[^']+)'\\s+Error='(?P<audit_flow_error>[^']+)'\\s+SrcBytes='(?P<audit_flow_src_bytes>\\d+)'\\s+DstBytes='(?P<audit_flow_dst_bytes>\\d+)'\\s+Duration='(?P<audit_flow_duration>\\d+)'\\s+PlatformPrefix='(?P<audit_flow_platform_prefix>[^']+)'\\s+EquipmentId='(?P<audit_flow_equipment_id>[^']+)'(?:\\s+SessionKey='(?P<audit_flow_session_key>[^']+)')?$"
+          SYSTEM_MESSAGE: "^\\[(?P<system_datestamp>[^\\]]+)\\]\\s+(?P<system_hostname>\\S+)\\s+(?:(?P<system_node>\\S+)\\s+)?(?P<system_pid>\\d+)\\s+(?P<system_app_id>\\S+)\\s+(?P<system_source_id>\\S+)\\s+(?P<system_level>\\S+)\\s+(?P<system_type>\\S+)\\s+(?P<system_message>.*)$"
           MANAGEMENT_AUDIT: "^(?P<audit_level>Error|Warning|Info|Verbose) (?P<audit_date>\\d{1,2}/\\d{1,2}/\\d{4}) (?P<audit_time>\\d{2}:\\d{2}:\\d{2}) (?P<audit_username>\\S+) (?P<audit_message>.*)$"
           MANAGEMENT_ACCESS: "^(?P<mgmt_source_ip>\\S+) \\- (?P<mgmt_username>[^\\s(][^\\s]*) \\[(?P<mgmt_datestamp>[^\\]]+)\\] \"(?P<mgmt_http_method>[A-Z]+) (?P<mgmt_url_path>\\S+) HTTP/(?P<mgmt_http_version>[^\"]+)\" (?P<mgmt_status>\\d{3}) (?P<mgmt_bytesout>\\d+)$"
           NETWORK_TUNNEL: "^\\[(?P<tunnel_source_ip>[^\\]]+)\\]:(?P<tunnel_source_port>\\d+) \\- \"(?P<tunnel_user_realm>[^\"]+)\" \"(?P<tunnel_datestamp>[^\"]+)\" (?P<tunnel_version>\\S+) tunnel (?P<tunnel_client_ip>\\S+) (?P<tunnel_error_code>-?\\d+) (?P<tunnel_client_bytes>\\d+) (?P<tunnel_server_bytes>\\d+) (?P<tunnel_duration>\\d+) (?P<tunnel_platform_prefix>\\S+)\\\"(?P<tunnel_equipment_id>[^\"]*)\"$"
@@ -21,6 +22,8 @@ pipeline:
           MANAGEMENT_PLAIN_SERVICE: "^(?P<plain_service_date>\\d{4}-\\d{2}-\\d{2}) (?P<plain_service_time>\\d{2}:\\d{2}:\\d{2}) (?P<plain_service_timezone>[+-]\\d{4}) (?P<plain_service_level>\\S+)\\s+(?P<plain_service_class>[^\\s]+) - (?P<plain_service_message>.*)\\n?$"
           UNREGISTERED_DEVICE: "^https?://(?P<unreg_target>[^/]+)/UnregisteredDevices\\.xml(?:\\?(?P<unreg_query_params>.*))?$"
           UNIX_AUTH: "^pam_unix\\((?P<unix_auth_context>[^)]*)\\): (?P<unix_auth_message>.*)$"
+          RESOURCE_ACCESS: "^EventMessage: Resource Access - User='(?P<resource_user>[^']+)', Src='(?P<resource_src>[^']+)', Dest_IP='(?P<resource_dest_ip>[^']+)', Rule Info='(?P<resource_rule_info>[^']+)', Full Destination='(?P<resource_full_destination>[^']+)', Access Agent='(?P<resource_access_agent>[^']+)', Allowed='(?P<resource_allowed>[^']+)'$"
+          CRON_CMD: "^\\((?P<cron_user>[^)]+)\\) CMD \\((?P<cron_command>.*)\\)$"
 
   - name: parse_unregistered_query
     filter: "{{ parsed_event.result != None and 'unreg_target' in parsed_event.result and parsed_event.result.unreg_target != None and 'unreg_query_params' in parsed_event.result and parsed_event.result.unreg_query_params != None and 'UnregisteredDevices.xml' in original.message }}"
@@ -86,6 +89,15 @@ pipeline:
         format: "%m/%d/%Y %H:%M:%S"
         output_field: date
 
+  - name: parse_network_tunnel_audit_bracketed_datetime
+    filter: "{{ parsed_event.result != None and 'audit_flow_datestamp' in parsed_event.result and parsed_event.result.audit_flow_datestamp != None }}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{ parsed_event.result.audit_flow_datestamp.replace(':', ' ', 1) }}"
+        format: "%d/%b/%Y %H:%M:%S.%f %z"
+        output_field: date
+
   - name: parse_management_access_datetime
     filter: "{{ parsed_event.result != None and 'mgmt_datestamp' in parsed_event.result and parsed_event.result.mgmt_datestamp != None }}"
     external:
@@ -95,7 +107,7 @@ pipeline:
         format: "%d/%b/%Y %H:%M:%S %z"
         output_field: date
 
-  - name: parse_network_tunnel_datetime
+  - name: parse_network_tunnel_audit_datetime
     filter: "{{ parsed_event.result != None and 'tunnel_datestamp' in parsed_event.result and parsed_event.result.tunnel_datestamp != None }}"
     external:
       name: date.parse
@@ -104,7 +116,7 @@ pipeline:
         format: "%d/%b/%Y %H:%M:%S.%f %z"
         output_field: date
 
-  - name: parse_network_flow_datetime
+  - name: parse_network_tunnel_audit_flow_datetime
     filter: "{{ parsed_event.result != None and 'flow_datestamp' in parsed_event.result and parsed_event.result.flow_datestamp != None }}"
     external:
       name: date.parse
@@ -150,17 +162,23 @@ pipeline:
         output_field: date
 
   - name: set_common_fields
+  - name: set_resource_access_fields
+    filter: "{{ parsed_event.result != None and 'resource_user' in parsed_event.result and parsed_event.result.resource_user != None }}"
   - name: set_system_message_fields
     filter: "{{ parsed_event.result != None and 'system_datestamp' in parsed_event.result and parsed_event.result.system_datestamp != None }}"
+  - name: set_network_tunnel_audit_bracketed_fields
+    filter: "{{ parsed_event.result != None and 'audit_flow_datestamp' in parsed_event.result and parsed_event.result.audit_flow_datestamp != None }}"
   - name: set_management_message_fields
     filter: "{{ parsed_event.result != None and (('management_datestamp' in parsed_event.result and parsed_event.result.management_datestamp != None) or ('plain_date' in parsed_event.result and parsed_event.result.plain_date != None) or ('plain_service_date' in parsed_event.result and parsed_event.result.plain_service_date != None)) }}"
   - name: set_unix_auth_fields
     filter: "{{ parsed_event.result != None and 'unix_auth_context' in parsed_event.result and parsed_event.result.unix_auth_context != None }}"
+  - name: set_cron_cmd_fields
+    filter: "{{ parsed_event.result != None and 'cron_user' in parsed_event.result and parsed_event.result.cron_user != None }}"
   - name: set_management_audit_fields
     filter: "{{ parsed_event.result != None and 'audit_date' in parsed_event.result and 'audit_time' in parsed_event.result and parsed_event.result.audit_date != None and parsed_event.result.audit_time != None and '/' in parsed_event.result.audit_date }}"
   - name: set_management_access_fields
     filter: "{{ parsed_event.result != None and 'mgmt_datestamp' in parsed_event.result and parsed_event.result.mgmt_datestamp != None }}"
-  - name: set_network_tunnel_fields
+  - name: set_network_tunnel_audit_fields
     filter: "{{ parsed_event.result != None and (('tunnel_datestamp' in parsed_event.result and parsed_event.result.tunnel_datestamp != None) or ('flow_datestamp' in parsed_event.result and parsed_event.result.flow_datestamp != None)) }}"
   - name: set_web_proxy_fields
     filter: "{{ parsed_event.result != None and 'web_datestamp' in parsed_event.result and parsed_event.result.web_datestamp != None }}"
@@ -177,6 +195,45 @@ stages:
           observer.product: Secure Mobile Access
           observer.type: firewall
           observer.vendor: SonicWall
+
+  set_resource_access_fields:
+    actions:
+      - set:
+          event.action: resource-access
+          event.category: ["network"]
+          event.dataset: sonicwall.sma.1000.resource_access
+          event.type: ["connection"]
+          message: "{{ original.message }}"
+          source.ip: "{{ parsed_event.result.resource_src.rsplit(':', 1)[0] }}"
+          source.port: "{{ parsed_event.result.resource_src.rsplit(':', 1)[1] | int }}"
+          source.user.name: "{{ parsed_event.result.resource_user.split(')@(')[0].strip('(').strip() }}"
+          source.user.domain: "{{ parsed_event.result.resource_user.split(')@(')[1].split(')')[0].strip() }}"
+          destination.ip: "{{ parsed_event.result.resource_dest_ip.rsplit(':', 1)[0] }}"
+          destination.port: "{{ parsed_event.result.resource_dest_ip.rsplit(':', 1)[1] | int }}"
+          user.name: "{{ parsed_event.result.resource_user.split(')@(')[0].strip('(').strip() }}"
+          user.domain: "{{ parsed_event.result.resource_user.split(')@(')[1].split(')')[0].strip() }}"
+        filter: "{{ parsed_event.result.resource_src != None and ':' in parsed_event.result.resource_src and parsed_event.result.resource_dest_ip != None and ':' in parsed_event.result.resource_dest_ip and parsed_event.result.resource_user != None and ')@(' in parsed_event.result.resource_user }}"
+
+      - set:
+          source.user.email: "{{ parsed_event.result.resource_user.split(')@(')[0].strip('(').strip() }}"
+          user.email: "{{ parsed_event.result.resource_user.split(')@(')[0].strip('(').strip() }}"
+        filter: "{{ parsed_event.result.resource_user != None and ')@(' in parsed_event.result.resource_user and '@' in parsed_event.result.resource_user.split(')@(')[0].strip('(').strip() }}"
+
+      - set:
+          rule.name: "{{ parsed_event.result.resource_rule_info }}"
+        filter: "{{ parsed_event.result.resource_rule_info != None and parsed_event.result.resource_rule_info != '-' }}"
+
+      - set:
+          destination.domain: "{{ parsed_event.result.resource_full_destination.rsplit(':', 1)[0] }}"
+        filter: "{{ parsed_event.result.resource_full_destination != None and ':' in parsed_event.result.resource_full_destination and parsed_event.result.resource_full_destination.rsplit(':', 1)[0].lower() != parsed_event.result.resource_full_destination.rsplit(':', 1)[0].upper() }}"
+
+      - set:
+          event.outcome: success
+        filter: "{{ parsed_event.result.resource_allowed != None and parsed_event.result.resource_allowed == '1' }}"
+
+      - set:
+          event.outcome: failure
+        filter: "{{ parsed_event.result.resource_allowed != None and parsed_event.result.resource_allowed == '0' }}"
 
   set_system_message_fields:
     actions:
@@ -271,6 +328,67 @@ stages:
           rule.id: "{{ parsed_event.result.system_message.split('accessRule(')[1].split(':', 1)[0] }}"
           rule.name: "{{ parsed_event.result.system_message.split('accessRule(')[1].split(':', 1)[1].split(')')[0] }}"
         filter: "{{ parsed_event.result.system_message != None and 'accessRule(' in parsed_event.result.system_message and ':' in parsed_event.result.system_message.split('accessRule(')[1] and ')' in parsed_event.result.system_message.split('accessRule(')[1] }}"
+
+  set_network_tunnel_audit_bracketed_fields:
+    actions:
+      - set:
+          event.category: ["network"]
+          event.dataset: sonicwall.sma.1000.network_tunnel
+          event.severity: 6
+          event.type: ["connection"]
+          message: "{{ original.message }}"
+
+      - set:
+          "@timestamp": "{{ parse_network_tunnel_audit_bracketed_datetime.date }}"
+          observer.hostname: "{{ parsed_event.result.audit_flow_hostname }}"
+          process.pid: "{{ parsed_event.result.audit_flow_pid | int }}"
+          sonicwall.sma.1000.app_id: "{{ parsed_event.result.audit_flow_app_id }}"
+          sonicwall.sma.1000.source_id: "{{ parsed_event.result.audit_flow_source_id }}"
+          source.ip: "{{ parsed_event.result.audit_flow_src.rsplit(':', 1)[0] }}"
+          source.port: "{{ parsed_event.result.audit_flow_src.rsplit(':', 1)[1] | int }}"
+          destination.ip: "{{ parsed_event.result.audit_flow_dest.rsplit(':', 1)[0] }}"
+          destination.port: "{{ parsed_event.result.audit_flow_dest.rsplit(':', 1)[1] | int }}"
+          source.bytes: "{{ parsed_event.result.audit_flow_src_bytes | int }}"
+          destination.bytes: "{{ parsed_event.result.audit_flow_dst_bytes | int }}"
+          event.duration: "{{ parsed_event.result.audit_flow_duration | int * 1000000000 }}"
+          process.name: "{{ parsed_event.result.audit_flow_platform_prefix }}"
+          sonicwall.sma.1000.equipment_id: "{{ parsed_event.result.audit_flow_equipment_id }}"
+          sonicwall.sma.1000.tunnel_version: "{{ parsed_event.result.audit_flow_tunnel_version }}"
+        filter: "{{ parse_network_tunnel_audit_bracketed_datetime != None and parse_network_tunnel_audit_bracketed_datetime.date != None and parsed_event.result.audit_flow_src != None and ':' in parsed_event.result.audit_flow_src and parsed_event.result.audit_flow_dest != None and ':' in parsed_event.result.audit_flow_dest }}"
+
+      - set:
+          source.user.name: "{{ parsed_event.result.audit_flow_user.split(')@(')[0].strip('(').strip() }}"
+          source.user.domain: "{{ parsed_event.result.audit_flow_user.split(')@(')[1].split(')')[0].strip() }}"
+        filter: "{{ parsed_event.result.audit_flow_user != None and ')@(' in parsed_event.result.audit_flow_user }}"
+
+      - set:
+          source.user.email: "{{ parsed_event.result.audit_flow_user.split(')@(')[0].strip('(').strip() }}"
+        filter: "{{ parsed_event.result.audit_flow_user != None and ')@(' in parsed_event.result.audit_flow_user and '@' in parsed_event.result.audit_flow_user.split(')@(')[0].strip('(').strip() }}"
+
+      - set:
+          network.protocol: "{{ parsed_event.result.audit_flow_command.split(':', 1)[1] | lower }}"
+          sonicwall.sma.1000.connection_type: "{{ parsed_event.result.audit_flow_command | lower }}"
+        filter: "{{ parsed_event.result.audit_flow_command != None and ':' in parsed_event.result.audit_flow_command }}"
+
+      - set:
+          event.severity: 3
+        filter: "{{ parsed_event.result.audit_flow_level != None and parsed_event.result.audit_flow_level.lower() == 'error' }}"
+
+      - set:
+          event.severity: 4
+        filter: "{{ parsed_event.result.audit_flow_level != None and parsed_event.result.audit_flow_level.lower() == 'warning' }}"
+
+      - set:
+          event.severity: 7
+        filter: "{{ parsed_event.result.audit_flow_level != None and parsed_event.result.audit_flow_level.lower() == 'verbose' }}"
+
+      - set:
+          event.outcome: success
+        filter: "{{ parsed_event.result.audit_flow_error != None and parsed_event.result.audit_flow_error == '0' }}"
+
+      - set:
+          event.outcome: failure
+        filter: "{{ parsed_event.result.audit_flow_error != None and parsed_event.result.audit_flow_error != '0' }}"
 
   set_management_message_fields:
     actions:
@@ -454,7 +572,7 @@ stages:
           sonicwall.sma.1000.http_status_class: 5xx
         filter: "{{ parsed_event.result.mgmt_status != None and parsed_event.result.mgmt_status | int >= 500 and parsed_event.result.mgmt_status | int < 600 }}"
 
-  set_network_tunnel_fields:
+  set_network_tunnel_audit_fields:
     actions:
       - set:
           event.category: ["network"]
@@ -463,7 +581,7 @@ stages:
           message: "{{ original.message }}"
 
       - set:
-          "@timestamp": "{{ parse_network_tunnel_datetime.date }}"
+          "@timestamp": "{{ parse_network_tunnel_audit_datetime.date }}"
           destination.bytes: "{{ parsed_event.result.tunnel_server_bytes | int }}"
           destination.ip: "{{ parsed_event.result.tunnel_client_ip }}"
           event.duration: "{{ parsed_event.result.tunnel_duration | int * 1000000000 }}"
@@ -484,7 +602,7 @@ stages:
         filter: "{{ parsed_event.result.tunnel_datestamp != None and parsed_event.result.tunnel_error_code != '-1' }}"
 
       - set:
-          "@timestamp": "{{ parse_network_flow_datetime.date }}"
+          "@timestamp": "{{ parse_network_tunnel_audit_flow_datetime.date }}"
           destination.bytes: "{{ parsed_event.result.flow_server_bytes | int }}"
           destination.ip: "{{ parsed_event.result.flow_destination.split(':')[0] }}"
           destination.port: "{{ parsed_event.result.flow_destination.split(':')[-1] | int }}"
@@ -679,3 +797,16 @@ stages:
       - set:
           sonicwall.sma.1000.unix_auth.context_type: "{{ parsed_event.result.unix_auth_context.split(':', 1)[1] }}"
         filter: "{{ parsed_event.result.unix_auth_context != None and ':' in parsed_event.result.unix_auth_context }}"
+
+  set_cron_cmd_fields:
+    actions:
+      - set:
+          event.action: scheduled-command
+          event.category: ["host"]
+          event.dataset: sonicwall.sma.1000.management_message
+          event.provider: cron
+          event.severity: 6
+          event.type: ["info"]
+          message: "{{ original.message }}"
+          process.command_line: "{{ parsed_event.result.cron_command }}"
+          user.name: "{{ parsed_event.result.cron_user }}"
