@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-10
+
+### Added
+
+- Parse `riskEventTypes_v2` from sign-in events into `azure.entraid.properties.riskEventTypes_v2` and its legacy alias `azuread.properties.riskEventTypes_v2`
+
 ## [1.1.1] - 2026-11-06
 
 ### Fixed
