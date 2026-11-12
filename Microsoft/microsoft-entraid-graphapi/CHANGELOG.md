@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-10
+
+### Added
+
+- Parse `riskEventTypes_v2` from sign-in events into `azure.entraid.properties.riskEventTypes_v2` and its legacy alias `azuread.properties.riskEventTypes_v2`
+- Parse the agent identity type of the audit initiator (`initiatedBy.user.agentType` or `initiatedBy.app.agentType`) into `azure.entraid.properties.initiatedBy.agentType` and its legacy alias `azuread.properties.initiatedBy.agentType`
+
 ## [1.1.1] - 2026-11-06
 
 ### Fixed
