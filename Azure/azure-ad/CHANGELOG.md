@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-12
+
 ### Fixed
 
-- Keep application initiators out of `user.id`, `user.name`, `user.email`, `user.full_name` and `related.user` in audit logs while preserving targeted users in `user.target.*`.
-- Preserve application initiators in the existing `azuread.properties.appId`, `azuread.properties.appDisplayName`, `azuread.properties.servicePrincipalId` and `azuread.properties.servicePrincipalName` fields.
-- Require an application identity before clearing user actor fields, and preserve existing application metadata when initiator values are missing or empty.
-- Treat user initiators with only null, empty or non-identity fields as unidentified so they do not suppress application attribution.
-- Do not use audit log `identity` as a fallback for `user.name` or `related.user`, preventing application names such as My Signins from being paired with a user's object id.
-- Map a single audit User target independently of the application display name, and explicitly include application-initiated event targets in `related.user`.
+- Audit logs initiated by an application no longer describe the application as a user: its name, application id and service principal go to `azuread.properties.appDisplayName`, `azuread.properties.appId`, `azuread.properties.servicePrincipalId` and `azuread.properties.servicePrincipalName` instead of `user.*`, while the targeted user stays in `user.target.*`
+- Audit logs no longer fill `user.name` from `identity`, the display name of the initiator, which kept an application name such as "My Signins" next to the id of the user who acted through it
+
+### Added
+
+- Smart descriptions for audit logs initiated by an application (group membership, user and device updates, app role assignments, service principal creation)
 
 ### [1.0.1] - 2026-11-02
 
