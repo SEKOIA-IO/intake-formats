@@ -7,17 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-11-03
+## [1.0.1] - 2026-11-12
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `event.outcome`: parse `EventStatus` (`success` or `failure`) for GlobalProtect events in JSON format
+- Extend parsing of existing custom fields:
+  - `action.name`: parse `EventIDValue` for GlobalProtect events in JSON format
+  - `action.outcome`: parse `EventStatus` for GlobalProtect events in JSON format
 
 ### Fixed
 
-- Fix GlobalProtect events in the JSON format:
-  - `event.outcome` and `action.outcome`: parse `EventStatus`
-  - `action.name`: parse `EventIDValue`
-  - `event.reason`: parse `ConnectionError` before `Description`
-- `url.original`: do not set `https://` when the URL, file name and URL file name are empty
+- Fix parsing of existing ECS fields:
+  - `event.reason`: parse `ConnectionError` before `Description` for GlobalProtect events in JSON format
+  - `url.original`: no longer set to `https://` when `URL`, `FileName` and `URLFilename` are empty
 
-## 2024-10-08
+## [1.0.0] - 2024-10-08
 
 ### Added
 
