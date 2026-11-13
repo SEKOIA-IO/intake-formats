@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-13
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `destination.domain`: fallback to CEF `destination_domain_name` when `dhost` is missing
+
 ## [1.0.3] - 2026-09-29
 
 ### Fixed
