@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Set `event.outcome` to `failure` for CEF event 33 (Unknown User Login Attempt), including SSL-VPN portal logins without a result field.
+
 ## [1.0.0] - 2026-10-13
 
 ### Fixed
