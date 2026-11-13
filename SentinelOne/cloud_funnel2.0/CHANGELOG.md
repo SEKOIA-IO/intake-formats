@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2024-01-29 - 1.0.1
+## [1.0.2] - 2026-11-12
+
+### Added
+
+- Parse new custom fields:
+  - `action.properties.ScriptBlockSize`: compute the UTF-8 byte size of `action.properties.ScriptBlockText` from raw field `cmdScript.content` and skip empty values
+
+## [1.0.1] - 2024-01-29
 
 ### Changed
 
