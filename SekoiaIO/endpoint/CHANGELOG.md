@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-12
+
+### Added
+
+- Parse new custom fields:
+  - `action.properties.ScriptBlockSize`: compute the UTF-8 byte size of `action.properties.ScriptBlockText` from raw field `action.properties.ScriptBlockText` and skip empty values
+
+## [1.0.2] - 2026-10-15
+
 ### Changed
 
 - Add the Windows ARM64 download link to the intake description, next to the Windows x86-64 one
 
-## 2026-10-02
+## [1.0.1] - 2026-10-02
 
 ### Fixed
 
@@ -22,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix existing custom fields:
   - `sekoiaio.server.os.type`: apply Windows fallback only when host OS type is missing to avoid overriding explicit Linux host context
 
-## 2024-08-22
+## [1.0.0] - 2024-08-22
 
 ### Added
 

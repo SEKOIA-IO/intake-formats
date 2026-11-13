@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-11-12
+
+### Added
+
+- Parse new custom fields:
+  - `action.properties.ScriptBlockSize`: compute the UTF-8 byte size of `action.properties.ScriptBlockText` from raw fields `script_block`, `event_data.ScriptBlockText` or `eventlog.event_data.ScriptBlockText` and skip empty values
+
 ## [1.3.6] - 2026-11-04
 
 ### Added
