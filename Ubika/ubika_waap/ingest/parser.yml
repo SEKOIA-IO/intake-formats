@@ -33,7 +33,7 @@ pipeline:
         input_field: "parse_header.message.payload"
         output_field: "plain"
         # <host> <ident> <authuser> [<date>] <request> <status> <bytes> <referer> <user-agent>
-        pattern: "%{IPORHOST:host} %{USERNAME:ident} %{USERNAME:authuser} \\[%{DATA:date}\\] \"%{WORD:http_method} %{URIPATHPARAM:http_request} %{DATA:http_version}\" %{INT:http_status} %{DATA:http_bytes} %{QS:http_referrer} %{QS:http_user_agent}.*"
+        pattern: "%{IPORHOST:host} %{USERNAME:ident} %{USERNAME:authuser} \\[%{DATA:date}\\] \"(?:%{WORD:http_method} %{URIPATHPARAM:http_request} %{DATA:http_version}|-)\" %{INT:http_status} %{DATA:http_bytes} %{QS:http_referrer} %{QS:http_user_agent}.*"
 
     filter: '{{parse_header.message.payload | re_match("^\\s*\\{.*\\}\\s*$") == False}}'
 
@@ -67,14 +67,23 @@ stages:
           event.type: ["access"]
 
           source.ip: "{{ parse_event.plain.host }}"
-          user_agent.original: '{{ parse_event.plain.http_user_agent.strip(''"'') }}'
-          http.request.method: "{{ parse_event.plain.http_method }}"
-          http.request.referrer: '{{ parse_event.plain.http_referrer.strip(''"'') }}'
           http.response.status_code: "{{ parse_event.plain.http_status }}"
-          url.original: "{{ parse_event.plain.http_request }}"
 
           ubika.waap.tunnel.uuid: "{{ parse_header.message.tunnel_uuid }}"
         filter: "{{ parse_event.plain != null }}"
+
+      - set:
+          user_agent.original: '{{ parse_event.plain.http_user_agent.strip(''"'') }}'
+        filter: '{{ parse_event.plain != null and parse_event.plain.http_user_agent.strip(''"'') != "-" }}'
+
+      - set:
+          http.request.referrer: '{{ parse_event.plain.http_referrer.strip(''"'') }}'
+        filter: '{{ parse_event.plain != null and parse_event.plain.http_referrer.strip(''"'') != "-" }}'
+
+      - set:
+          http.request.method: "{{ parse_event.plain.http_method }}"
+          url.original: "{{ parse_event.plain.http_request }}"
+        filter: "{{ parse_event.plain.http_method != null }}"
 
       - set:
           http.response.body.bytes: "{{ parse_event.plain.http_bytes | int }}"
