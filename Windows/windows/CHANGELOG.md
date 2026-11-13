@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-13
+
+### Added
+
+- Parse new custom fields:
+  - `action.properties.SecurityDescriptor`: map from raw field `SecurityDescriptor` for certificate template events (4898)
+  - `action.properties.SessionKeyEncryptionType`: map from raw field `SessionKeyEncryptionType` for Kerberos events (4768, 4769), keeping the hexadecimal value as-is
+  - `action.properties.TemplateDSObjectFQDN`: map from raw field `TemplateDSObjectFQDN` for certificate template events (4898)
+
+### Changed
+
+- Extend parsing of existing custom fields:
+  - `action.properties.TicketEncryptionType`: document the field and parse it for every Kerberos event carrying it (4768, 4769, 4770)
+
 ## [1.0.6] - 2026-11-06
 
 ### Added
