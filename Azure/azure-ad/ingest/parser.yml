@@ -465,30 +465,20 @@ stages:
               {%- if prop.displayName == 'Group.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
             {%- endfor -%}
 
-      # Common group lookup for user and device membership changes.
+      # Prefer member modified properties, then fall back to the Group target.
       - set:
           group.id: >
-            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'in', ['User', 'Device']) | selectattr('modifiedProperties') | map(attribute='modifiedProperties') | list | first or [] -%}
-            {%- for prop in properties -%}
-              {%- if prop.displayName == 'Group.ObjectID' -%}
-                {%- if parsed_event.message.operationName == 'Add member to group' -%}
-                  {{ prop.newValue | from_json or "" }}
-                {%- else -%}
-                  {{ prop.oldValue | from_json or "" }}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
+            {%- set resources = parsed_event.message.properties.targetResources or [] -%}
+            {%- set value_key = 'newValue' if parsed_event.message.operationName == 'Add member to group' else 'oldValue' -%}
+            {%- set properties = resources | selectattr('type', 'in', ['User', 'Device']) | selectattr('modifiedProperties') | map(attribute='modifiedProperties') | sum(start=[]) -%}
+            {%- set value = properties | selectattr('displayName', 'equalto', 'Group.ObjectID') | map(attribute=value_key) | map('from_json') | select('string') | map('trim') | select | first -%}
+            {{ value or (resources | selectattr('type', 'equalto', 'Group') | map(attribute='id') | select('string') | map('trim') | select | first) or "" }}
           group.name: >
-            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'in', ['User', 'Device']) | selectattr('modifiedProperties') | map(attribute='modifiedProperties') | list | first or [] -%}
-            {%- for prop in properties -%}
-              {%- if prop.displayName == 'Group.DisplayName' -%}
-                {%- if parsed_event.message.operationName == 'Add member to group' -%}
-                  {{ prop.newValue | from_json or "" }}
-                {%- else -%}
-                  {{ prop.oldValue | from_json or "" }}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
+            {%- set resources = parsed_event.message.properties.targetResources or [] -%}
+            {%- set value_key = 'newValue' if parsed_event.message.operationName == 'Add member to group' else 'oldValue' -%}
+            {%- set properties = resources | selectattr('type', 'in', ['User', 'Device']) | selectattr('modifiedProperties') | map(attribute='modifiedProperties') | sum(start=[]) -%}
+            {%- set value = properties | selectattr('displayName', 'equalto', 'Group.DisplayName') | map(attribute=value_key) | map('from_json') | select('string') | map('trim') | select | first -%}
+            {{ value or (resources | selectattr('type', 'equalto', 'Group') | map(attribute='displayName') | select('string') | map('trim') | select | first) or "" }}
         filter: "{{ parsed_event.message.category == 'AuditLogs' and parsed_event.message.operationName in ['Add member to group', 'Remove member from group'] }}"
 
       - set:
