@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Parse ECS fields `group.id` and `group.name` for user and device group membership changes, using new values for additions and old values for removals while preserving existing `user.target.group.*` and `user.changes.group.*` mappings.
+- Smart description showing the affected group name and Object ID for membership changes.
+- Anonymized regression tests for device and user additions/removals, including application-initiated changes and Group targets with no display name or modified properties.
+
 ## [1.0.2] - 2026-11-12
 
 ### Fixed
