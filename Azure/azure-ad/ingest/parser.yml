@@ -465,6 +465,32 @@ stages:
               {%- if prop.displayName == 'Group.DisplayName' -%}{{prop.newValue | from_json or "null"}}{%- endif -%}
             {%- endfor -%}
 
+      # Common group lookup for user and device membership changes.
+      - set:
+          group.id: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'in', ['User', 'Device']) | selectattr('modifiedProperties') | map(attribute='modifiedProperties') | list | first or [] -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'Group.ObjectID' -%}
+                {%- if parsed_event.message.operationName == 'Add member to group' -%}
+                  {{ prop.newValue | from_json or "" }}
+                {%- else -%}
+                  {{ prop.oldValue | from_json or "" }}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          group.name: >
+            {%- set properties = parsed_event.message.properties.targetResources | selectattr('type', 'in', ['User', 'Device']) | selectattr('modifiedProperties') | map(attribute='modifiedProperties') | list | first or [] -%}
+            {%- for prop in properties -%}
+              {%- if prop.displayName == 'Group.DisplayName' -%}
+                {%- if parsed_event.message.operationName == 'Add member to group' -%}
+                  {{ prop.newValue | from_json or "" }}
+                {%- else -%}
+                  {{ prop.oldValue | from_json or "" }}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+        filter: "{{ parsed_event.message.category == 'AuditLogs' and parsed_event.message.operationName in ['Add member to group', 'Remove member from group'] }}"
+
       - set:
           source.ip: "{{parsed_event.message.ipAddress}}"
         filter: "{{parsed_event.message.ipAddress | is_ipaddress}}"
