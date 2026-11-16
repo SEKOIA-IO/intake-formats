@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Smart description showing the affected group name and Object ID for membership changes.
 - Anonymized regression tests for device and user additions/removals, including application-initiated changes and Group targets with no display name or modified properties.
 
+### Fixed
+
+- Fall back to the Group target's ID and display name when member modified properties do not provide usable group information, checking all User and Device targets.
+- Omit empty or whitespace-only group values so incomplete membership events cannot produce blank group descriptions.
+- Keep user membership descriptions identifying the member and actor, while displaying the affected group for device membership events ahead of generic service descriptions.
+
 ## [1.0.2] - 2026-11-12
 
 ### Fixed
