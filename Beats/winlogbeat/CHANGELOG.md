@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.2] - 2026-11-12
+## [1.0.2] - 2026-11-16
 
 ### Added
 
 - Parse new custom fields:
   - `action.properties.ScriptBlockSize`: compute the UTF-8 byte size of `action.properties.ScriptBlockText` from raw field `winlog.event_data.ScriptBlockText` and skip empty values
+
+### Fixed
+
+- Fix smart descriptions:
+  - PowerShell 4104 events: do not render `NULL` when `user.id` is missing
+  - Windows PowerShell 400, 403, 600 and 800 events and Security 1102 events: use a dedicated description instead of the raw message
 
 ## [1.0.1] - 2026-05-27
 
