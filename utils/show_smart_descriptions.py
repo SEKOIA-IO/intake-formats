@@ -127,7 +127,7 @@ class SmartDescriptionManager(IntakeTestManager):
         # generate markdown table
         markdown = "| Test File | Smart Description |\n|---|---|\n"
         for row in table:
-            markdown += "|" + "|".join(row) + "|" + "\n"
+            markdown += "|" + "|".join(cell.replace("|", "\\|").replace("\r", "").replace("\n", "<br>") for cell in row) + "|" + "\n"
 
         print(markdown)
 
