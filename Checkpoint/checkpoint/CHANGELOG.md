@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-16
+
+### Changed
+
+- Extend parsing of existing custom and ECS fields to `SmartDefense` (IPS) CEF events, matched by CEF label name:
+  - `checkpoint.protection_name`, `checkpoint.protection_type`, `checkpoint.threat_prevention_rule_id`, `checkpoint.malware_action_or_attack_information`
+  - `event.reason`, `event.risk_score`
+
 ## [1.0.4] - 2026-11-13
 
 ### Changed
