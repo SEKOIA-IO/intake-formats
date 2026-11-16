@@ -7,16 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-11-12
+## [1.0.2] - 2026-11-12
 
 ### Added
 
 - Parse new custom fields:
   - `action.properties.ScriptBlockSize`: compute the UTF-8 byte size of `action.properties.ScriptBlockText` from raw field `winlog.event_data.ScriptBlockText` and skip empty values
 
-## [1.0.0] - 2026-05-27
-
-## [Unreleased] - 2026-05-27
+## [1.0.1] - 2026-05-27
 
 ### Added
 
@@ -24,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add dedicated `file.name` extraction (basename) from script/file paths (`Path`, `script_path`, `ScriptName`) to improve analysis when full paths are randomized
 - Add a dedicated test case for this behavior in `Beats/winlogbeat/tests/powershell_path_and_hashes.json`
 
-## [Unreleased] - 2026-05-26
+## [1.0.0] - 2026-05-26
 
 ### Removed
 
