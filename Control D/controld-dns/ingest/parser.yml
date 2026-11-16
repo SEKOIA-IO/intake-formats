@@ -1,0 +1,119 @@
+name: controld-dns
+ignored_values: []
+pipeline:
+  - name: stage1
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: json
+  - name: stage2
+    description: ""
+    filter: ""
+    external: null
+stages:
+  stage2:
+    actions:
+      - set:
+          observer.vendor: "Control D"
+          observer.product: "Control D DNS"
+          observer.type: "dns"
+        filter: ""
+        name: set
+      - set:
+          event.category: '["network"]'
+          event.type: '["info"]'
+        filter: ""
+        name: set
+      - set:
+          "@timestamp": "{{stage1.json.time}}"
+        filter: "{{stage1.json.time != null}}"
+        name: set
+      - set:
+          dns.question.name: "{{stage1.json.query}}"
+        filter: ""
+        name: set
+      - set:
+          dns.question.type: "{{stage1.json.query_type}}"
+        filter: ""
+        name: set
+      - set:
+          dns.answers: |
+            [
+              {%- for answer in stage1.json.answers -%}
+                {%- for ip in answer.ips -%}
+                  {
+                    "data": "{{ ip }}",
+                    "type": "{{ stage1.json.query_type }}"
+                  }{% if not loop.last %},{% endif %}
+                {%- endfor -%}
+                {% if not loop.last %},{% endif %}
+              {%- endfor -%}
+            ]
+        filter: "{{stage1.json.answers != null}}"
+        name: set
+      - translate:
+        dictionary:
+          0: "NOERROR"
+          1: "FORMERR"
+          2: "SERVFAIL"
+          3: "NXDOMAIN"
+          4: "NOTIMP"
+          5: "REFUSED"
+          6: "YXDOMAIN"
+          7: "YXRRSET"
+          8: "NXRRSET"
+          9: "NOTAUTH"
+          10: "NOTZONE"
+        mapping:
+          stage1.json.reply_code_id: dns.response_code
+      - set:
+          source.ip: "{{stage1.json.src_ip}}"
+        filter: "{{stage1.json.src_ip | is_ipaddress}}"
+        name: set
+      - set:
+          network.protocol: "{{stage1.json.protocol}}"
+        filter: ""
+        name: set
+      - set:
+          organization.id: "{{stage1.json.organization.id}}"
+        filter: "{{stage1.json.organization != null and stage1.json.organization.id != null}}"
+        name: set
+      - set:
+          organization.name: "{{stage1.json.organization.name}}"
+        filter: ""
+        name: set
+      - set:
+          controld.action: >-
+            {%- if stage1.json.controld_action == -1 -%}fail {%- elif
+            stage1.json.controld_action == 0 -%}block {%- elif
+            stage1.json.controld_action == 1 -%}pass {%- elif
+            stage1.json.controld_action == 2 -%}redirect_ip {%- elif
+            stage1.json.controld_action == 3 -%}redirect_loc {%- else -%}unknown
+            {%- endif -%}
+        filter: "{{stage1.json.controld_action != null}}"
+        name: set
+      - set:
+          event.action: >-
+            {%- if stage1.json.controld_action == -1 -%}fail {%- elif
+            stage1.json.controld_action == 0 -%}block {%- elif
+            stage1.json.controld_action == 1 -%}pass {%- elif
+            stage1.json.controld_action == 2 -%}redirect_ip {%- elif
+            stage1.json.controld_action == 3 -%}redirect_loc {%- else -%}unknown
+            {%- endif -%}
+        filter: "{{stage1.json.controld_action != null}}"
+        name: set
+      - set:
+          controld.trigger: "{{stage1.json.controld_trigger}}"
+        filter: ""
+        name: set
+      - set:
+          controld.trigger.name: "{{stage1.json.controld_trigger_name}}"
+        filter: ""
+        name: set
+      - set:
+          controld.spoof.target: "{{stage1.json.controld_spoof_target}}"
+        filter: ""
+        name: set

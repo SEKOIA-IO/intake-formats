@@ -3,6 +3,13 @@ pipeline:
   - name: parsed_event
     external:
       name: json.parse-json
+  - name: parse_details
+    filter: "{{parsed_event.message.details not in [None, ''] and parsed_event.message.details | trim not in ['', '[]']}}"
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{parsed_event.message.details}}"
+        output_field: details
   - name: parse_date
     external:
       name: date.parse
@@ -45,6 +52,7 @@ stages:
           user_agent.version: "{{parsed_event.message.browser_version}}"
           user.email: "{{parsed_event.message.user}}"
           user.name: "{{parsed_event.message.user_name}}"
+          user.target.email: "{{parsed_event.message.matched_username}}"
           organization.name: "{{parsed_event.message.org}}"
           network.bytes: "{{parsed_event.message.numbytes}}"
           host.name: "{{parsed_event.message.hostname}}"
@@ -152,6 +160,9 @@ stages:
       - set:
           file.name: "{{parsed_event.message.object}}"
         filter: '{{parsed_event.message.filename == null and parsed_event.message.object_type in ["File", "Document", "Folder"]}}'
+      - set:
+          url.domain: '{{(((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain") | map(attribute="value") | first)}}'
+        filter: '{{parse_details.details != null and parse_details.details | length > 0 and (((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain") | list | length) > 0}}'
   set_netskope_fields:
     actions:
       - set:
@@ -173,6 +184,10 @@ stages:
         filter: "{{parsed_event.message.other_categories | length > 0}}"
 
       - set:
+          netskope.events.domain_notes: '{{(((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain/Notes") | map(attribute="value") | first)}}'
+        filter: '{{parse_details.details != null and parse_details.details | length > 0 and (((parse_details.details | first).diff.get("added", []) + (parse_details.details | first).diff.get("changed", [])) | selectattr("key", "equalto", "exception/Domain/Notes") | list | length) > 0}}'
+
+      - set:
           netskope.events.severity_id: "{{parsed_event.message.severity_id}}"
           netskope.events.severity_level: "{{parsed_event.message.severity_level}}"
         filter: '{{ parsed_event.message.severity_level|int(-1) == -1  and not parsed_event.message.type == "malsite" }}'
@@ -190,6 +205,10 @@ stages:
       - set:
           netskope.alerts.severity: "{{parsed_event.message.severity}}"
         filter: "{{ parsed_event.message.severity|int(-1) == -1}}"
+
+      - set:
+          netskope.alerts.breach_date: "{{parsed_event.message.breach_date | int | string | to_rfc3339}}"
+        filter: "{{parsed_event.message.breach_date | int(0) > 0}}"
 
       - set:
           netskope.audit.severity_id: "{{parsed_event.message.severity_level}}"

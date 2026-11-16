@@ -312,6 +312,7 @@ stages:
           host.name: "{{parsed_event.message.srcname}}"
           host.os.family: "{{parsed_event.message.osname}}"
           observer.serial_number: "{{parsed_event.message.devid or parsed_event.message.deviceExternalId}}"
+          network.iana_number: "{{parsed_event.message.proto}}"
           network.transport: "{{parsed_event.message.proto}}"
           observer.egress.interface.name: "{{parsed_event.message.dstintf or parsed_event.message.deviceOutboundInterface}}"
           observer.egress.interface.alias: "{{parsed_event.message.dstintfrole}}"
@@ -330,7 +331,7 @@ stages:
           source.packets: "{{parsed_event.message.sentpkt or parsed_event.message.get('Packets Sent')}}"
           fortinet.fortigate.icmp.request.type: "{{parsed_event.message.icmptype}}"
           fortinet.fortigate.icmp.request.code: "{{parsed_event.message.icmpcode}}"
-          url.original: "{{parsed_event.message.url or parsed_event.message.request}}"
+          url.original: "{{parsed_event.message.url or parsed_event.message.request or parsed_event.message.http_url}}"
           user_agent.original: "{{parsed_event.message.requestClientApplication or parsed_event.message.agent}}"
           user.name: "{{parsed_event.message.unauthuser}}"
           fortinet.fortigate.user.source: "{{parsed_event.message.unauthusersource}}"
@@ -383,8 +384,12 @@ stages:
           http.request.referrer: "{{parsed_event.message.http_referer or parsed_event.message.referralurl}}"
 
       - set:
-          file.name: "{{parsed_event.message.fname or parsed_event.message.url | basename}}"
-        filter: "{{parsed_event.message.subtype == 'app-ctrl'}}"
+          url.domain: "{{parsed_event.message.http_host}}"
+        filter: "{{final.url.get('domain') == None and parsed_event.message.get('http_host') not in [None, '', 'N/A', 'NA', 'None', 'undefined', 'Reserved']}}"
+
+      - set:
+          url.query: "{{parsed_event.message.http_qry}}"
+        filter: "{{final.url.get('query') == None and parsed_event.message.get('http_qry') not in [None, '', 'N/A', 'NA', 'None', 'undefined', 'Reserved']}}"
 
       - set:
           fortinet.fortigate.poluuid: "{{parsed_event.message.uuid}}"
@@ -458,6 +463,18 @@ stages:
       - set:
           dns.question.name: "{{parsed_event.message.qname.strip()[1:-1]}}"
         filter: "{{parsed_event.message.get('qname') != None and parsed_event.message.qname.strip().startswith('[') and parsed_event.message.qname.strip().endswith(']')}}"
+
+      - set:
+          dns.resolved_ip: >
+            [
+              {% for ip in parsed_event.message.ipaddr.split(',') %}
+                {% if ip.strip() | is_ipaddress %}
+                  "{{ip.strip()}}",
+                {% endif %}
+              {% endfor %}
+            ]
+        filter: "{{parsed_event.message.get('ipaddr') not in [None, '', 'N/A', 'NA', 'None', 'undefined', 'Reserved']}}"
+
       - set:
           source.user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
           user.name: "{{parsed_event.message.user or parsed_event.message.suser}}"
