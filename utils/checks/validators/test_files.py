@@ -2,6 +2,7 @@ import argparse
 import json
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from . import INTAKES_PATH, Validator
 from .anonymization import AnonymizationValidator
@@ -10,6 +11,8 @@ from .parser import check_event_category_to_type_mapping
 
 
 class TestFileValidator(Validator):
+    __test__: ClassVar[bool] = False
+
     def __init__(self, args: argparse.Namespace) -> None:
         self._config = AnonymizationValidator.get_anonymization_config(args)
         self._exceptions = AnonymizationValidator.get_anonymization_exceptions(args)
