@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-18
+
+### Changed
+
+- Adding trim to `parsed_event.message.logger` to ensure good event categorization
+
 ## [1.0.3] - 2026-10-06
 
 ### Added
