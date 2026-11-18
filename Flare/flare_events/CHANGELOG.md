@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## 2026-11-18
+
+### Added
+
+- Add `flare.events.truncated_fields`: the fields the connector cut to fit the intake size limit (from 0.6.7)
+
+## 2026-11-17
+
+### Changed
+
+- Date events by when Flare matched the item to the tenant (`metadata.matched_at`, added by the connector from 0.6.5), as in Flare's feed, instead of the item's own date, which can be years old. Events without it keep the item's date
+
+### Added
+
+- Parse the item's own date in `flare.events.created_at`
+
 ## 2026-11-02
 
 ### Added
