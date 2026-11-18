@@ -15,5 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Prioritize role assignment details over generic administrative descriptions when a source IP is present.
 - Default `event.outcome` to `unknown` for unmapped, non-empty operation statuses.
 - Include operation statuses and role assignment details in smart descriptions.
