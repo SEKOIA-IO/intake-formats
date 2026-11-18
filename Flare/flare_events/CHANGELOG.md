@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## 2026-11-18
+
+### Added
+
+- Add `flare.events.truncated_fields`: the fields the connector cut to fit the intake size limit (from 0.6.7)
+
 ## 2026-11-17
 
 ### Changed
