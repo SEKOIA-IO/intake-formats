@@ -15,4 +15,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Default `event.outcome` to `unknown` for unmapped, non-empty operation statuses.
 - Include operation statuses and role assignment details in smart descriptions.
