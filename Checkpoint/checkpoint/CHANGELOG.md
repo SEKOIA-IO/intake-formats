@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.5] - 2026-11-16
+## [1.0.5] - 2026-11-19
 
 ### Added
 
-- Add a smart description for `SmartDefense` (IPS) events with a protection name, so they are no longer described as malware activity
+- Add smart descriptions for `SmartDefense` (IPS) events with a protection name, with or without an action, so they are no longer described as malware activity or shown as the raw message
 
 ### Changed
 
