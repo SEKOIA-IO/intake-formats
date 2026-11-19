@@ -28,6 +28,7 @@ When reviewing a pull request, please check and comment on the following:
 ### 4. Parser Quality
 - **Field Extraction**: Verify that important security fields are extracted (timestamps, IPs, users, actions)
 - **Taxonomy Compliance**: Check that fields map correctly to Sekoia.io taxonomy
+- **No `related.*` fields**: Flag any parser that sets `related.hosts`, `related.ip`, `related.user` or `related.hash`. These fields are computed by the ingestion pipeline, which overwrites them; the parser must set the source fields instead (see `doc/taxonomy.md`)
 - **Error Handling**: Ensure parsers handle malformed data gracefully
 - **Performance**: Look for potential performance issues in regex patterns or loops
 
