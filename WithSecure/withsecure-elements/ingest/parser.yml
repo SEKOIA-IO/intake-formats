@@ -56,6 +56,8 @@ pipeline:
     filter: '{{json_event.message.engine == "applicationControl"}}'
   - name: set_email_fields
     filter: '{{"emailscan" in json_event.message.engine|lower}}'
+  - name: inbox_rule_scan
+    filter: '{{json_event.message.engine == "inboxRuleScan"}}'
   - name: set_event_category
 
 stages:
@@ -125,6 +127,11 @@ stages:
 
           withsecure.status: "{{(event_xml.message.Event.EventData.Data | selectattr('@Name', '==', 'Status') | first).get('#text')}}"
           withsecure.substatus: "{{(event_xml.message.Event.EventData.Data | selectattr('@Name', '==', 'SubStatus') | first).get('#text')}}"
+
+      - set:
+          user.name: "{{json_event.message.details.userPrincipalName}}"
+          user.email: "{{json_event.message.details.userPrincipalName}}"
+        filter: "{{json_event.message.details.get('userPrincipalName') != None and json_event.message.details.get('userName') == None and json_event.message.get('userName') == None}}"
 
       - set:
           event.reason: "{{json_event.message.details.description}}"
@@ -354,6 +361,14 @@ stages:
             {%- endif -%}
             {{threats}}
         filter: "{{json_event.message.details.get('attachments') != None or json_event.message.details.get('urls') != None}}"
+
+  inbox_rule_scan:
+    actions:
+      - set:
+          event.category: ["email"]
+          event.type: ["info"]
+          service.type: "{{json_event.message.details.serviceType}}"
+          withsecure.inbox_rule.name: "{{json_event.message.details.inboxRuleName}}"
 
   set_event_category:
     actions:
