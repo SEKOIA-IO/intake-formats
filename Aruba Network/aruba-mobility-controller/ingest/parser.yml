@@ -1,0 +1,446 @@
+name: aruba-mobility-controller
+ignored_values:
+  - <>
+  - n/a
+  - N/A
+  - ""
+pipeline:
+  - name: parsed_header
+    external:
+      name: cef.parse-cef
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: parsed_nested_message
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_header.message.msg}}"
+        output_field: message
+        pattern: (%{EVENT_CODE_MESSAGES}|%{EVENT_CODE_MESSAGES_PREFIX}%{EVENT_CODE_MESSAGES}|%{PLAIN_TEXT_MESSSAGES})
+        custom_patterns:
+          EVENT_CODE_MESSAGES: >-
+            \<%{INT:error_number}\> \<%{INT:process_id}\>
+            \<(?<severity>(EMERG|ALERT|CRIT|ERRS|WARN|NOTI|INFO|DEBUG))\>
+            \\\|(?<process_name>[^\\\|]+)\\\|(
+            \\\|(?<subprocess_name>[^\\\|]+)\\\|)?\s+%{GREEDYDATA:log_description}
+          PLAIN_TEXT_MESSSAGES: "%{GREEDYDATA:log_description}"
+          EVENT_CODE_MESSAGES_PREFIX: '[0-9]\[[0-9]+\]\:\s'
+  - name: parsed_event
+    filter: "{{parsed_nested_message.message.error_number != None }}"
+    external:
+      name: grok.case_match
+      properties:
+        input_field: "{{parsed_nested_message.message.log_description}}"
+        output_field: message
+        pattern_key: "{{parsed_nested_message.message.error_number}}"
+        patterns:
+          "122013": >-
+            ('%{NOTCOMMA:action}, server reply was
+            %{GREEDYDATA:reason}'|%{DATA:authentication_method}
+            (?<action>authentication) for username
+            '(%{MAC:station_mac}|%{DATA:user_name})', server reply from
+            '%{DATA:authentication_server}' was %{DATA:result}
+            server-msg\\=%{GREEDYDATA:reason})
+          "122050": >-
+            (?<action>TAC_readAccountCmdReply)\(%{INT}\):
+            %{DATA:authentication_method} ACCT Reply %{DATA:result} from
+            Server:\'%{DATA:authentication_server}\' for
+            user:\'(%{MAC:station_mac}|%{DATA:user_name})\',
+            CMD\\?=\'%{DATA:command_line}\'%{GREEDYDATA:reason}
+          "124003": >-
+            Result\\?=%{NOTPARENTHESIS:action}\(%{INT:result_code}\),
+            method\\?=%{NOTCOMMA:authentication_method},
+            server\\?=%{NOTCOMMA:authentication_server},
+            user\\?=(%{MAC:station_mac}|%{NOTSPACE:user_name})
+          "124025": >-
+            Administrative user \'(%{MAC:station_mac}|%{NOTSPACE:user_name})\'
+            (?<action>authenticated
+            successfully)\s+\(role\\?=%{NOTCOMMA:user_role},
+            privileged\\?=%{INT}\)
+          "124038": >-
+            (?<action>[a-zA-Z\s]+ server) %{NOTSPACE:authentication_server} for
+            method\\?=%{NOTSEMICOLON:authentication_method};
+            user\\?=(%{MAC:station_mac}|%{NOTCOMMA:user_name}),\s+essid\\?=%{DATA:essid},
+            domain\\?=%{DATA:domain}, server-group\\?=%{DATA:server_group}
+          "124066": >-
+            Administrative User
+            result\\?=%{NOTPARENTHESIS:action}\(%{INT:result_code}\),
+            method\\?=%{NOTCOMMA:authentication_method},
+            username\\?=(%{MAC:station_mac}|%{NOTSPACE:user_name})
+            IP\\?=%{IP:source_ip} auth
+            server\\?=%{NOTSPACE:authentication_server}
+          "124068": >-
+            auth_handle_dot1x_auth_response U[Ss]er %{MAC:station_mac}
+            (?<reason>failed dot1x). %{DATA:action}
+          "125023": >-
+            (?<action>Authentication Succeeded) for User
+            (%{MAC:station_mac}|%{NOTCOMMA:user_name}), connection type
+            %{WORD:connection_type}
+          "125024": >-
+            (?<action>Authentication Succeeded) for User
+            (%{MAC:station_mac}|%{NOTCOMMA:user_name}), Logged in from
+            %{IP:source_ip} port %{INT:source_port}, Connecting to %{IP:dest_ip}
+            port %{INT:dest_port} connection type %{WORD:connection_type}
+          "138053": >-
+            (?<action>[a-zA-Z\s]+ the %{DATA} packet) for Station
+            %{MAC:source_mac} %{MAC} doing %{DATA:authentication_method}
+          "138207": >-
+            (?<action>%{DATA:authentication_method} reject) for station
+            %{DATA:user_name} %{MAC:station_mac} from server
+            %{NOTSPACE:authentication_server}.
+          "305003": AP (%{IP:ap_ip}|%{NOTSPACE:ap_name}) (?<action>is down)
+          "305006": AP (%{IP:ap_ip}|%{NOTSPACE:ap_name}) (?<action>rebooted)
+          "305011": AP (%{IP:ap_ip}|%{NOTSPACE:ap_name}) (?<action>rebooting).
+          "501080": >-
+            (?<action>Deauth) to sta: %{NOTSPACE:station_mac}: Ageout AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            %{GREEDYDATA:reason}
+          "501093": >-
+            (?<action>Auth success): %{NOTSPACE:station_mac}: AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+          "501094": >-
+            (?<action>Auth failure): %{NOTSPACE:station_mac}: AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            Reason %{GREEDYDATA:reason}
+          "501100": >-
+            (?<action>Assoc success) @ %{DATA:timestamp}:
+            %{NOTSPACE:station_mac}: AP
+            %{IP:ap_ip}-%{NOTDASH:bssid}-%{NOTSPACE:ap_name}
+          "501101": >-
+            (?<action>Assoc failure): %{NOTSPACE:station_mac}: AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            Reason %{GREEDYDATA:reason}
+          "501102": >-
+            (?<action>Disassoc) from sta: %{NOTSPACE:station_mac} AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            Reason %{GREEDYDATA:reason}
+          "501105": >-
+            (?<action>Deauth) from sta: %{NOTSPACE:station_mac}: AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            Reason %{GREEDYDATA:reason}
+          "501106": >-
+            (?<action>Deauth) to sta: %{NOTSPACE:station_mac}: Ageout AP
+            %{IP:source_ip}-%{NOTDASH:bssid}-(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            %{GREEDYDATA:reason}
+          "501218": >-
+            stm_sta_assign_vlan %{INT}: VLAN: sta %{MAC:station_mac},
+            (?<action>STM assigns MAC based vlan_id)
+            %{INT:vlan_id}%{GREEDYDATA}?
+          "522005": >-
+            MAC\\?=%{NOTSPACE:station_mac} IP\\?=%{IP:source_ip} (?<action>User
+            entry deleted): reason\\?=%{GREEDYDATA:reason}
+          "522006": >-
+            MAC\\?=%{NOTSPACE:station_mac} IP\\?=%{IP:source_ip} (?<action>User
+            entry added): reason\\?=%{GREEDYDATA:reason}
+          "522008": >-
+            (?<action>User Authentication Successful):
+            username\\?=%{NOTSPACE:user_name}? MAC\\?=%{NOTSPACE:station_mac}
+            IP\\?=%{IP:source_ip} role\\?=%{NOTSPACE:user_role}
+            VLAN\\?=%{NOTSPACE:vlan_id} AP\\?=(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            SSID\\?=%{NOTSPACE:ssid} AAA profile\\?=%{NOTSPACE} auth
+            method\\?=%{NOTSPACE:authentication_method} auth
+            server\\?=%{NOTSPACE:authentication_server}
+          "522015": >-
+            MAC\\?=%{NOTSPACE:station_mac} IP\\?=%{IP:source_ip}
+            (?<action>Remove Bridge Entry)
+          "522026": >-
+            MAC\\?=%{NOTSPACE:station_mac} IP\\?=%{IP:source_ip} (?<action>User
+            miss): ingress\\?=%{DATA}, VLAN\\?=%{INT:vlan_id} flags\\?=%{DATA}
+          "522029": >-
+            MAC\\?=%{NOTSPACE:station_mac} (?<action>Station authenticate):
+            method\\?=%{NOTCOMMA:authentication_method}, role\\?=%{NOTCOMMA},
+            VLAN\\?=%{NOTSLASH:vlan_id}/%{NOTCOMMA:default_vlan_id}, Derivation\\?=%{NOTCOMMA}, Value
+            Pair\\?=%{NOTCOMMA}(, Profile\\?=%{NOTSPACE})?
+          "522030": >-
+            MAC\\?=%{NOTSPACE:station_mac} (?<action>Station deauthenticated):
+            BSSID\\?=%{NOTCOMMA:bssid}, ESSID\\?=%{DATA:essid}
+          "522035": >-
+            MAC\\?=%{NOTSPACE:station_mac} (?<action>Station UP):
+            BSSID\\?=%{NOTSPACE:bssid} ESSID\\?=%{DATA:essid}
+            VLAN\\?=%{NOTSPACE:vlan_id}
+            AP-name\\?=%{NOTSPACE:ap_name}?%{GREEDYDATA}?
+          "522036": >-
+            MAC\\?=%{NOTSPACE:station_mac} (?<action>Station DN):
+            BSSID\\?=%{NOTSPACE:bssid} ESSID\\?=%{DATA:essid}
+            VLAN\\?=%{NOTSPACE:vlan_id} AP-name\\?=%{NOTSPACE:ap_name}?
+            reason\\?=%{GREEDYDATA:reason}
+          "522037": >-
+            MAC\\?=%{NOTSPACE:station_mac} IP\\?=%{IP:source_ip}
+            (?<action>Assign VLAN) %{NOTCOMMA:vlan_id}, Default\\?=%{INT}
+            Current\\?=%{INT} BSSID\\?=%{NOTSPACE:bssid}
+          "522038": >-
+            username\\?=%{NOTSPACE:user_name} MAC\\?=%{NOTSPACE:station_mac}
+            IP\\?=%{IP:source_ip} Result\\?=(?<action>Authentication [^\s]+)
+            method\\?=%{NOTCOMMA:authentication_method}
+            server\\?=%{NOTSPACE:authentication_server}
+          "522044": >-
+            MAC\\?=%{NOTSPACE:station_mac} (?<action>Station
+            authenticate\(start\)): method\\?=%{NOTCOMMA:authentication_method},
+            role\\?=%{NOTCOMMA}, VLAN\\?=%{NOTSLASH:vlan_id}/%{NOTCOMMA:default_vlan_id},
+            Derivation\\?=%{NOTCOMMA}, Value Pair\\?=%{NOTCOMMA},
+            flags\\?=%{NOTCOMMA}(, Profile\\?=%{NOTSPACE})
+          "522049": >-
+            MAC\\?=%{NOTCOMMA:station_mac},IP\\?=(%{IP:source_ip}|N/A)
+            (?<action>User role updated), existing Role\\?=%{DATA:user_role},
+            new Role\\?=%{DATA:user_new_role}, reason\\?=%{GREEDYDATA:reason}
+          "522050": >-
+            MAC\\?=%{NOTCOMMA:station_mac},IP\\?=(%{IP:source_ip}|N/A)
+            (?<action>User data downloaded to datapath), new
+            Role\\?=%{DATA:user_new_role}, bw Contract\\?=%{DATA},
+            reason\\?=%{GREEDYDATA:reason}
+          "522051": MAC\\?=%{NOTSPACE:station_mac} (?<action>Clear Bridge Entry)
+          "522157": >-
+            (?<action>Update [^\s]+ bridge-mode) user:
+            username\\?=%{NOTSPACE:user_name}? MAC\\?=%{NOTSPACE:station_mac}
+            IP\\?=%{IP:source_ip} AP\\?=(%{IP:ap_ip}|%{NOTSPACE:ap_name})
+            aclnum\\?=%{NOTSPACE}\.
+          "522275": >-
+            (?<action>User Authentication failed).
+            username\\?=%{NOTSPACE:user_name} userip\\?=%{IP:source_ip}
+            usermac\\?=%{NOTSPACE:station_mac}
+            authmethod\\?=%{NOTSPACE:authentication_method}
+            servername\\?=%{NOTSPACE:authentication_server}
+            serverip\\?=%{IP:authentication_server_ip}
+            apname\\?=%{NOTSPACE:ap_name}?
+            bssid\\?=%{NOTSPACE:bssid}%{GREEDYDATA}
+          "522310": >-
+            (%{DATA:action} for %{DATA} user
+            (%{MAC:station_mac}|%{NOTSPACE:user_name})|(?<action>auth_gsm_update_dot1x_bridge_user):
+            mac %{MAC:station_mac} user object lookup failed result
+            %{GREEDYDATA})
+          "522394": >-
+            (?<action>(auth_send_supplicant_up_to_dot1x|auth_send_sm_reset_to_dot1x))\(%{INT}\):
+            %{GREEDYDATA:result} for
+            user\\=(%{MAC:station_mac}|%{DATA:user_name}) on
+            AP\\=(%{IP:ap_ip}|%{NOTSPACE:ap_name}) - %{GREEDYDATA:reason}.
+          "522395": >-
+            (?<action>Station Authentication Successful):
+            username\\?=%{NOTSPACE:user_name} MAC\\?=%{NOTSPACE:station_mac}
+            role\\?=%{NOTSPACE} VLAN\\?=%{NOTSPACE:vlan_id}
+            AP\\?=(%{IP:ap_ip}|%{NOTSPACE:ap_name}) SSID\\?=%{NOTSPACE:ssid} AAA
+            profile\\?=%{NOTSPACE} auth
+            method\\?=%{NOTSPACE:authentication_method} auth
+            server\\?=%{GREEDYDATA:authentication_server}
+        custom_patterns:
+          NOTDASH: "[^-]+"
+          NOTCOMMA: "[^,]+"
+          NOTSEMICOLON: "[^;]+"
+          NOTPARENTHESIS: '[^\(]+'
+          NOTSLASH: '[^\/]+'
+  - name: parsed_event
+    filter: "{{not parsed_event is defined or parsed_event.message == None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_nested_message.message.log_description}}"
+        output_field: message
+        pattern: (%{USER_LOGIN}|%{USER_LOGOUT}|%{TRACE_ON}|%{TRACE_ROTATE})
+        custom_patterns:
+          TRACE_ON: >-
+            (?<action>trace_on): tracing to
+            \"(%{PATH:file_path}|%{DATA:file_name})\" started
+          USER_LOGIN: >-
+            USER: %{NOTSPACE:user_name} has (?<action>logged in) from
+            %{IP:source_ip}%{GREEDYDATA}
+          USER_LOGOUT: >-
+            USER: %{NOTSPACE:user_name} connected from %{IP:source_ip} has
+            (?<action>logged out)%{GREEDYDATA}
+          TRACE_ROTATE: >-
+            (?<action>trace_rotate_file): rotating
+            (%{PATH:file_path}|%{DATA:file_name})
+  - name: parsed_event
+    filter: >-
+      {{not parsed_event is defined and
+      parsed_nested_message.message.error_number == None }}
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{parsed_nested_message.message.log_description}}"
+        output_field: message
+        pattern: (%{USER_LOGIN}|%{USER_LOGOUT})
+        custom_patterns:
+          USER_LOGIN: >-
+            USER: %{NOTSPACE:user_name} has (?<action>logged in) from
+            %{IP:source_ip}%{GREEDYDATA}
+          USER_LOGOUT: >-
+            USER: %{NOTSPACE:user_name} connected from %{IP:source_ip} has
+            (?<action>logged out)%{GREEDYDATA}
+  - name: ecs_observer_mapping
+  - name: ecs_event_mapping
+  - name: ecs_process_mapping
+  - name: ecs_user_mapping
+  - name: ecs_host_mapping
+  - name: ecs_network_mapping
+  - name: ecs_source_mapping
+  - name: ecs_destination_mapping
+  - name: ecs_file_mapping
+  - name: custom_fields_mapping
+  - name: ecs_authentication_categorization
+  - name: ecs_host_categorization
+  - name: ecs_outcome_categorization
+stages:
+  ecs_observer_mapping:
+    actions:
+      - set:
+          observer.vendor: Aruba Networks
+          observer.product: "{{parsed_header.message.DeviceProduct}}"
+          observer.version: "{{parsed_header.message.DeviceVersion}}"
+          observer.hostname: "{{parsed_header.message.dvchost}}"
+  ecs_event_mapping:
+    actions:
+      - set:
+          event.code: "{{parsed_nested_message.message.error_number}}"
+          event.action: "{{parsed_event.message.action}}"
+          event.reason: "{{parsed_event.message.reason}}"
+          event.dataset: "{{parsed_event.message.Name}}"
+      - set:
+          log.description: "{{parsed_nested_message.message.log_description}}"
+  ecs_process_mapping:
+    actions:
+      - set:
+          process.pid: "{{parsed_header.message.dvcpid}}"
+          process.name: "{{parsed_header.message.deviceProcessName}}"
+          process.command_line: "{{parsed_event.message.command_line}}"
+  ecs_user_mapping:
+    actions:
+      - set:
+          user.name: "{{parsed_event.message.user_name}}"
+          user.roles: "{{parsed_event.message.user_role}}"
+          user.changes.roles: "{{parsed_event.message.user_new_role}}"
+  ecs_host_mapping:
+    actions:
+      - set:
+          host.name: "{{parsed_event.message.server_name}}"
+          host.domain: "{{parsed_event.message.domain}}"
+  ecs_network_mapping:
+    actions:
+      - set:
+          network.vlan.id: "{{parsed_event.message.vlan_id}}"
+          network.protocol: "{{parsed_event.message.connection_type}}"
+  ecs_source_mapping:
+    actions:
+      - set:
+          source.ip: "{{parsed_event.message.source_ip}}"
+        filter: "{{parsed_event.message.source_ip | is_ipaddress}}"
+        name: set
+      - set:
+          source.mac: "{{parsed_event.message.station_mac}}"
+          source.port: "{{parsed_event.message.source_port}}"
+  ecs_destination_mapping:
+    actions:
+      - set:
+          destination.ip: "{{parsed_event.message.destination_ip}}"
+        filter: "{{parsed_event.message.destination_ip | is_ipaddress}}"
+      - set:
+          destination.port: "{{parsed_event.message.destination_port}}"
+  ecs_file_mapping:
+    actions:
+      - set:
+          file.name: "{{parsed_event.message.file_name}}"
+          file.path: "{{parsed_event.message.file_path}}"
+  custom_fields_mapping:
+    actions:
+      - set:
+          aruba.mobility_controller.ssid: "{{parsed_event.message.ssid}}"
+          aruba.mobility_controller.bssid: "{{parsed_event.message.bssid}}"
+          aruba.mobility_controller.essid: "{{parsed_event.message.essid}}"
+          aruba.mobility_controller.action: "{{parsed_event.message.action}}"
+          aruba.mobility_controller.default.vlan.id: "{{parsed_event.message.default_vlan_id}}"
+          aruba.mobility_controller.server.group: "{{parsed_event.message.server_group}}"
+          aruba.mobility_controller.access_point.name: "{{parsed_event.message.ap_name}}"
+          aruba.mobility_controller.authentication.method: "{{parsed_event.message.authentication_method}}"
+          aruba.mobility_controller.authentication.server: "{{parsed_event.message.authentication_server}}"
+      - set:
+          aruba.mobility_controller.access_point.ip: "{{parsed_event.message.ap_ip}}"
+        filter: "{{parsed_event.message.ap_ip | is_ipaddress}}"
+  ecs_authentication_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['authentication']}}"
+        filter: >-
+          {{(final.process.name == 'authmgr' or 'dot1x' in final.process.name  or 'login' in
+          final.event.action|lower or 'logon' in final.event.action|lower or
+          'authentication' in final.event.action|lower or 'authenticate' in
+          final.event.action|lower or 'logout' in final.event.action|lower or 
+          'logoff' in final.event.action|lower or 'logged out' in
+          final.event.action|lower or 'logged in' in final.event.action|lower or
+          'deauth' in final.event.action|lower or 'radius' in
+          final.event.action|lower or 'tacacs' in final.event.action|lower or
+          'dot1x' in final.event.action|lower or 'ldap' in
+          final.event.action|lower) and not final.event.action in
+          ["trace_rotate_file","trace_on"]}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'authentication' in
+          final.event.category and ('logout' in final.event.action|lower or 
+          'logoff' in final.event.action|lower or 'logged out' in
+          final.event.action|lower or 'deauth' in final.event.action|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and
+          final.event.action|lower not in ['auth_send_sm_reset_to_dot1x']and
+          ('login' in final.event.action|lower or 'logon' in
+          final.event.action|lower or 'authentication' in
+          final.event.action|lower or 'logged in' in final.event.action|lower or
+          'authenticate' in final.event.action|lower or 'reject' in
+          final.event.action|lower or 'auth_send' in final.event.action|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{'info' not in final.event.type and 'authentication' in
+          final.event.category and 'end' not in final.event.type and 'start' not
+          in final.event.type}}
+  ecs_host_categorization:
+    actions:
+      - set:
+          event.category: "{{(final.event.category|default([])) + ['host']}}"
+        filter: "{{not final.event.category is defined}}"
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['change']}}"
+        filter: >-
+          {{'change' not in final.event.type and 'host' in final.event.category
+          and ('upgrading' in final.log.description|lower or ('change' in
+          final.log.description|lower and not 'no change' in
+          final.log.description|lower))}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['end']}}"
+        filter: >-
+          {{'end' not in final.event.type and 'host' in final.event.category and
+          ('went down' in final.log.description|lower or 'rebooting' in
+          final.log.description|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['start']}}"
+        filter: >-
+          {{'start' not in final.event.type and 'host' in final.event.category
+          and ('booted' in final.log.description|lower or 'rebooted' in
+          final.log.description|lower)}}
+      - set:
+          event.type: "{{(final.event.type|default([])) + ['info']}}"
+        filter: >-
+          {{not final.event.type is defined or ('info' not in final.event.type
+          and 'host' in final.event.category and ('end' not in final.event.type
+          and 'start' not in final.event.type and 'change' not in
+          final.event.type and 'access' not in final.event.type))}}
+  ecs_outcome_categorization:
+    actions:
+      - set:
+          event.outcome: failure
+        filter: >-
+          {{final.event.type != ['info'] and ('fail' in final.event.action|lower
+          or 'reject' in final.event.action|lower or 'denied' in
+          final.event.type or parsed_event.message.result == '1' or 'fail' in
+          parsed_event.message.result|lower)}}
+      - set:
+          event.outcome: unknown
+        filter: >-
+          {{final.event.code in ['522044']}}
+      - set:
+          event.outcome: success
+        filter: >-
+          {{final.event.type != ['info'] and (('success' in
+          final.event.action|lower and not 'unsuccess' in
+          final.event.action|lower) or final.event.outcome is not defined)}}
