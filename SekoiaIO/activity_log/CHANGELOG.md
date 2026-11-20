@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Extract the API key name into `sekoiaio.activity.client.name` and display it in the smart descriptions of actions performed with an API key
+
 ### Changed
 
 - Do not populate `user.full_name` for API key profiles, since the value is the internal API key label rather than a real user name
