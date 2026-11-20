@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-16
+
+### Added
+
+- Parse new fields `bitdefender.gravityzone.detection_technique` and `bitdefender.gravityzone.driver_path`
+- Adding `event.category` for `antitampering` events
+
+## [1.1.0]
+
 ### Added
 
 - Map `agent.id` from `deviceExternalId`, the unique GravityZone computer identifier expected by EDR actions (e.g. isolation), so agent identifiers are attached to host assets
