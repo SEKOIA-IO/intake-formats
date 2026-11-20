@@ -1,0 +1,93 @@
+name: microsoft-outlook-phishing-reports
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+  - name: set_common
+  - name: set_report
+  - name: set_original
+    filter: "{{json_event.message.schema_version == 2 and json_event.message.eml_parsed_data | length == 1}}"
+  - name: unsupported_schema
+    filter: "{{json_event.message.schema_version != 2}}"
+stages:
+  set_common:
+    actions:
+      - set:
+          "@timestamp": "{{json_event.message.received_datetime}}"
+          event.kind: event
+          event.category:
+            - email
+          event.type:
+            - info
+          event.module: microsoft_outlook
+          event.dataset: microsoft_outlook.phishing_report
+          event.action: user_reported_email
+  set_report:
+    actions:
+      - set:
+          microsoft_outlook.report.id: "{{json_event.message.id}}"
+          microsoft_outlook.report.mailbox: "{{json_event.message.collection_mailbox}}"
+          microsoft_outlook.report.event_id: "{{json_event.message.report_event_id}}"
+          microsoft_outlook.report.subject: "{{json_event.message.subject}}"
+          user.email: "{{json_event.message.from_address}}"
+          user.full_name: "{{json_event.message.from_name}}"
+          microsoft_outlook.report.reporter.address: "{{json_event.message.from_address}}"
+          microsoft_outlook.report.reporter.name: "{{json_event.message.from_name}}"
+          microsoft_outlook.report.internet_message_id: "{{json_event.message.internet_message_id}}"
+          microsoft_outlook.report.parent_folder_id: "{{json_event.message.parent_folder_id}}"
+          microsoft_outlook.report.received_datetime: "{{json_event.message.received_datetime}}"
+          microsoft_outlook.report.original_count: "{{json_event.message.reported_email_count}}"
+          microsoft_outlook.report.original_index: "{{json_event.message.reported_email_index}}"
+          microsoft_outlook.extraction.status: "{{json_event.message.extraction_status}}"
+          microsoft_outlook.extraction.content_truncated: "{{json_event.message.content_truncated}}"
+          microsoft_outlook.extraction.errors: "{{json_event.message.processing_errors}}"
+          microsoft_outlook.schema_version: "{{json_event.message.schema_version}}"
+  set_original:
+    actions:
+      - set:
+          email.subject: "{{json_event.message.eml_parsed_data[0].subject}}"
+          email.message_id: "{{json_event.message.eml_parsed_data[0].get('message_id', '').strip().strip('<>')}}"
+          email.content_type: "{{json_event.message.eml_parsed_data[0].content_type}}"
+          email.origination_timestamp: "{{json_event.message.eml_parsed_data[0].origination_timestamp}}"
+          email.attachments: "{{json_event.message.eml_parsed_data[0].attachment_files}}"
+          file.hash.sha256: "{{json_event.message.eml_parsed_data[0].source_sha256}}"
+          microsoft_outlook.original.source_graph_attachment_type: "{{json_event.message.eml_parsed_data[0].source_graph_attachment_type}}"
+          microsoft_outlook.original.source_detected_format: "{{json_event.message.eml_parsed_data[0].source_detected_format}}"
+          microsoft_outlook.original.source_attachment_id: "{{json_event.message.eml_parsed_data[0].source_attachment_id}}"
+          microsoft_outlook.original.source_attachment_name: "{{json_event.message.eml_parsed_data[0].source_attachment}}"
+          microsoft_outlook.original.from: "{{json_event.message.eml_parsed_data[0].from}}"
+          microsoft_outlook.original.date: "{{json_event.message.eml_parsed_data[0].date}}"
+          microsoft_outlook.original.received_headers: "{{json_event.message.eml_parsed_data[0].received_headers}}"
+          microsoft_outlook.original.authentication.raw: "{{json_event.message.eml_parsed_data[0].authentication_results}}"
+          microsoft_outlook.original.authentication.spf: "{{json_event.message.eml_parsed_data[0].spf_result}}"
+          microsoft_outlook.original.authentication.dkim: "{{json_event.message.eml_parsed_data[0].dkim_result}}"
+          microsoft_outlook.original.authentication.dmarc: "{{json_event.message.eml_parsed_data[0].dmarc_result}}"
+          microsoft_outlook.urls.observed: "{{json_event.message.eml_parsed_data[0].urls}}"
+          microsoft_outlook.urls.destinations: "{{json_event.message.eml_parsed_data[0].destination_urls}}"
+      - set:
+          email.from.address: "{{json_event.message.eml_parsed_data[0].from_addresses}}"
+        filter: '{{json_event.message.eml_parsed_data[0].get("from_addresses", []) | length > 0}}'
+      - set:
+          email.to.address: "{{json_event.message.eml_parsed_data[0].to_addresses}}"
+        filter: '{{json_event.message.eml_parsed_data[0].get("to_addresses", []) | length > 0}}'
+      - set:
+          email.cc.address: "{{json_event.message.eml_parsed_data[0].cc_addresses}}"
+        filter: '{{json_event.message.eml_parsed_data[0].get("cc_addresses", []) | length > 0}}'
+      - set:
+          email.reply_to.address: "{{json_event.message.eml_parsed_data[0].reply_to_addresses}}"
+        filter: '{{json_event.message.eml_parsed_data[0].get("reply_to_addresses", []) | length > 0}}'
+      - set:
+          email.sender.address: "{{json_event.message.eml_parsed_data[0].sender_addresses[0]}}"
+        filter: "{{json_event.message.eml_parsed_data[0].sender_addresses | length > 0}}"
+      - set:
+          url.original: "{{json_event.message.eml_parsed_data[0].destination_urls[0]}}"
+        filter: "{{json_event.message.eml_parsed_data[0].destination_urls | length > 0}}"
+      - set:
+          microsoft_outlook.original.x_originating_ip: "{{json_event.message.eml_parsed_data[0].x_originating_ip}}"
+        filter: "{{json_event.message.eml_parsed_data[0].get('x_originating_ip', '') | length > 0}}"
+  unsupported_schema:
+    actions:
+      - set:
+          error.code: unsupported_schema
+          error.message: Expected phishing report schema version 2; update the Outlook connector.
+          microsoft_outlook.extraction.status: unsupported_schema
