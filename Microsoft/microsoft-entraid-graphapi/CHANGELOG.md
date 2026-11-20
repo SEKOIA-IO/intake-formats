@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-06
+
+### Fixed
+
+- Fix `TypeError` parsing warnings on `user.target.name` and `user.target.id` when a `User` target resource lacks `id`, `userPrincipalName` or `displayName`
+- Stop rendering `None` as the `targetedUser` id in `action.properties` when the target resource has no `id`
+
 ## [1.1.0] - 2026-10-19
 
 ### Added

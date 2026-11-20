@@ -47,6 +47,8 @@ To execute a subset of tests, you could define some options:
 - `mise run test --module='<module-directory>'`: to only run tests for a specific module (`<module-directory>` correspond to the name of the module directory)
 - `mise run test --format='<format-slug>'`: to only run tests for a specific format (`<format-slug>` correspond to the slug defined in the manifest of the format)
 
+The tests send the parsers to the Sekoia.io validation endpoint. If `app.sekoia.io` is not reachable from your environment, set the `SEKOIA_VALIDATION_URL` environment variable to another endpoint, for example `https://api.sekoia.io/v1/ingest/formats/validate`.
+
 The option `--fix-expectations` can be used to automatically replace the expected files with the actual result in the test files. Use this option carefully to avoid data loss in your test files.
 
 ## Anonymize test fixtures
@@ -63,7 +65,7 @@ The command updates both `input.message` and `expected.message` in place for eac
 
 ## Validate the format
 
-To validate the format, you can use the command `mise run validate` to check that all tests are passing and that the format is well defined.
+To validate the format, you can use the command `mise run validate` to check that all tests are passing and that the format is well defined. Only the formats changed against `origin/develop` are checked; new files must be tracked by git (`git add -N <file>`) to be taken into account, and the command warns about untracked ones.
 
 ```shell
 $ mise run validate
