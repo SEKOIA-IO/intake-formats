@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop setting `event.outcome: success` on every event: the outcome now only reflects the result of the logged action
+- Set `action.outcome` and `event.outcome` to `failure` on connection ends (`Connection closed by`, `Disconnected from`, `Received disconnect from`, `Connection reset by`) that happen before authentication (`[preauth]`) or for an `invalid user` / `illegal user`
+
 ## 2024-01-17 - 2.0.0
 
 ### Changed
