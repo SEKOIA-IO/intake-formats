@@ -9,6 +9,9 @@ pipeline:
 
   - name: set_common_fields
 
+  - name: set_role_assignment
+    filter: "{{parsed_event.message.operationName.value == 'Microsoft.Authorization/roleAssignments/write' and parsed_event.message.properties.requestbody | length > 0}}"
+
   - name: set_administrative
     filter: "{{parsed_event.message.category.value == 'Administrative'}}"
 
@@ -29,6 +32,9 @@ stages:
           event.provider: "{{parsed_event.message.resourceProviderName.value}}"
           event.action: "{{parsed_event.message.operationName.value}}"
           event.dataset: "{{parsed_event.message.category.value}}"
+          event.outcome: "{{ {'Succeeded': 'success', 'Failed': 'failure'}.get(parsed_event.message.status.value, 'unknown') if parsed_event.message.status.value else None }}"
+          azure.activity_logs.status: "{{parsed_event.message.status.value}}"
+          http.request.body.content: "{{parsed_event.message.properties.requestbody}}"
           log.level: "{{parsed_event.message.level}}"
           azure.activity_logs.operation_id: "{{parsed_event.message.operationId}}"
           azure.activity_logs.correlation_id: "{{parsed_event.message.correlationId}}"
@@ -38,6 +44,13 @@ stages:
           azure.activity_logs.channels: "{{parsed_event.message.channels}}"
 
           observer.name: "{{parsed_event.message.identity.claims.name}}"
+
+  set_role_assignment:
+    actions:
+      - set:
+          azure.activity_logs.role_assignment.principal_id: "{{(parsed_event.message.properties.requestbody | from_json).properties.principalId}}"
+          azure.activity_logs.role_assignment.principal_type: "{{(parsed_event.message.properties.requestbody | from_json).properties.principalType}}"
+          azure.activity_logs.role_assignment.role_definition_id: "{{(parsed_event.message.properties.requestbody | from_json).properties.roleDefinitionId}}"
 
   set_administrative:
     actions:
