@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-19
+
+### Added
+
+- Add smart descriptions for `SmartDefense` (IPS) events with a protection name, with or without an action, so they are no longer described as malware activity or shown as the raw message
+
+### Changed
+
+- Extend parsing of existing custom and ECS fields to `SmartDefense` (IPS) CEF events, matched by CEF label name:
+  - `checkpoint.protection_name`, `checkpoint.protection_type`, `checkpoint.threat_prevention_rule_id`, `checkpoint.malware_action_or_attack_information`
+  - `checkpoint.malware_family` (when a `Malware Family` label is present)
+  - `event.reason`, `event.risk_score`, `threat.software.name` (when a `Malware Family` label is present)
+
 ## [1.0.4] - 2026-11-13
 
 ### Changed
