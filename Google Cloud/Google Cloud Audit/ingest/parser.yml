@@ -35,6 +35,7 @@ pipeline:
   - name: google_cloud_audit
   - name: parse_operation
   - name: parse_resourceLocation
+  - name: parse_serviceData
 
 stages:
   google_cloud_audit:
@@ -62,6 +63,7 @@ stages:
         filter: "{{json_event.message.resource != null and json_event.message.resource.type == 'k8s_node' }}"
 
       - set:
+          google_cloud_audit.resource.labels.bucket_name: "{{json_event.message.resource.labels.bucket_name}}"
           google_cloud_audit.resource.labels.method: "{{json_event.message.resource.labels.method}}"
           google_cloud_audit.resource.labels.project_id: "{{json_event.message.resource.labels.project_id}}"
           google_cloud_audit.resource.labels.service: "{{json_event.message.resource.labels.service}}"
@@ -75,6 +77,7 @@ stages:
           google_cloud_audit.protoPayload.metadata.type: "{{json_event.message.protoPayload.metadata.get('@type')}}"
           google_cloud_audit.protoPayload.metadata.event: "{{json_event.message.protoPayload.metadata.event}}"
           google_cloud_audit.protoPayload.metadata.operationType: "{{json_event.message.protoPayload.metadata.operationType}}"
+          google_cloud_audit.protoPayload.metadata.sessionId: "{{json_event.message.protoPayload.metadata.session_id}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.metadata != null}}"
 
       - set:
@@ -94,6 +97,20 @@ stages:
       - set:
           google_cloud_audit.protoPayload.request.policy.bindings: "{{json_event.message.protoPayload.request.policy.bindings}}"
           google_cloud_audit.protoPayload.request.policy.etag: "{{json_event.message.protoPayload.request.policy.etag}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.request != null and json_event.message.protoPayload.request.policy != null}}"
+
+      - set:
+          google_cloud_audit.protoPayload.request.policy.configuredLogTypes: >
+            {%- set l = json_event.message.protoPayload.request.policy.auditConfigs | map(attribute='auditLogConfigs') | list -%}
+            {%- set log_types = [] -%}
+            {%- for audit_log_config in l -%}
+              {%- for log_type in audit_log_config | map(attribute='logType') | list -%}
+                {%- if log_type not in log_types -%}
+                  {%- set _ = log_types.append(log_type) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {{ log_types }}
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.request != null and json_event.message.protoPayload.request.policy != null}}"
 
       - set:
@@ -150,8 +167,17 @@ stages:
         filter: "{{json_event.message.protoPayload != null}}"
 
       - set:
+          service.target.name: "{{json_event.message.protoPayload.request.policy.auditConfigs[0].service}}"
+          google_cloud_audit.protoPayload.request.policy.service: "{{json_event.message.protoPayload.request.policy.auditConfigs | map(attribute='service') | list}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.request != null and json_event.message.protoPayload.request.policy != null and json_event.message.protoPayload.request.policy.auditConfigs != null and json_event.message.protoPayload.request.policy.auditConfigs[0] != null and json_event.message.protoPayload.request.policy.auditConfigs[0].service != null}}"
+
+      - set:
           source.ip: "{{json_event.message.protoPayload.requestMetadata.callerIp}}"
         filter: "{{json_event.message.protoPayload.requestMetadata.callerIp | is_ipaddress}}"
+
+      - set:
+          network.name: "{{json_event.message.protoPayload.requestMetadata.callerNetwork}}"
+        filter: "{{json_event.message.protoPayload.requestMetadata.callerNetwork != null}}"
 
       - set:
           user_agent.original: "{{json_event.message.protoPayload.requestMetadata.callerSuppliedUserAgent}}"
@@ -159,6 +185,14 @@ stages:
       - set:
           google_cloud_audit.protoPayload.requestMetadata.requestAttributes.time: "{{json_event.message.protoPayload.requestMetadata.requestAttributes.time}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.requestMetadata != null and json_event.message.protoPayload.requestMetadata.requestAttributes != null}}"
+
+      - set:
+          error.code: "{{json_event.message.protoPayload.status.code}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.status != null and json_event.message.protoPayload.status.code != null}}"
+
+      - set:
+          error.message: "{{json_event.message.protoPayload.status.message}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.status != null and json_event.message.protoPayload.status.message != null}}"
 
   parse_operation:
     actions:
@@ -174,3 +208,11 @@ stages:
       - set:
           google_cloud_audit.protoPayload.resourceLocation.currentLocations: "{{json_event.message.protoPayload.resourceLocation.currentLocations}}"
         filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.resourceLocation != null}}"
+
+  parse_serviceData:
+    actions:
+      - set:
+          service.type: "{{json_event.message.protoPayload.serviceData.get('@type')}}"
+          google_cloud_audit.protoPayload.serviceData.jobInsertResponse.resource.jobName.location: "{{json_event.message.protoPayload.serviceData.jobInsertResponse.resource.jobName.location}}"
+          google_cloud_audit.protoPayload.serviceData.jobInsertResponse.resource.jobName.projectId: "{{json_event.message.protoPayload.serviceData.jobInsertResponse.resource.jobName.projectId}}"
+        filter: "{{json_event.message.protoPayload != null and json_event.message.protoPayload.serviceData != null}}"
