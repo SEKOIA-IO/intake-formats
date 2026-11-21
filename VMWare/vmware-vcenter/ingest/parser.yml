@@ -6,7 +6,7 @@ pipeline:
       properties:
         input_field: "{{original.message}}"
         output_field: message
-        pattern: "%{SESSION_TYPE_1}|%{SESSION_TYPE_2}|%{SESSION_TYPE_3}|%{SESSION_TYPE_4}|%{SESSION_TYPE_6}|%{CONNECTIONS}|%{FAULT}|%{FAULT_TYPE_2}|%{HTTP_LOGS_1}|%{HTTP_LOGS_4}|%{HTTP_LOGS_2}|%{HTTP_LOGS_3}|%{LOGIN}|%{OTHERS_EVENTS_TYPE_6}|%{OTHERS_EVENTS}|%{OTHERS_EVENTS_TYPE_2}|%{OTHERS_EVENTS_TYPE_3}|%{OTHERS_EVENTS_TYPE_5}|%{OTHERS_EVENTS_TYPE_7}|%{OTHERS_EVENTS_TYPE_7_1}|%{OTHERS_EVENTS_TYPE_8}|%{OTHERS_EVENTS_TYPE_9}|%{OTHERS_EVENTS_TYPE_10}|%{VLSI_API}|%{VIDM_HTTP}|%{VIDM_LOG}|%{VMCAD}|%{PERMISSION_TYPE_1}|%{PERMISSION_TYPE_2}|%{SESSION_COUNT}|%{OTHERS_EVENTS_TYPE_12}|%{TOMCAT_ACCESS}|%{DNSMASQ_QUERY}|%{WCP_SERVICE}|%{MODIFY_ENTRY}"
+        pattern: "%{SESSION_TYPE_1}|%{SESSION_TYPE_2}|%{SESSION_TYPE_3}|%{SESSION_TYPE_4}|%{SESSION_TYPE_6}|%{CONNECTIONS}|%{FAULT}|%{FAULT_TYPE_2}|%{HTTP_LOGS_1}|%{HTTP_LOGS_4}|%{HTTP_LOGS_2}|%{HTTP_LOGS_3}|%{LOGIN}|%{OTHERS_EVENTS_TYPE_6}|%{OTHERS_EVENTS}|%{OTHERS_EVENTS_TYPE_2}|%{OTHERS_EVENTS_TYPE_3}|%{OTHERS_EVENTS_TYPE_5}|%{OTHERS_EVENTS_TYPE_7}|%{OTHERS_EVENTS_TYPE_7_1}|%{OTHERS_EVENTS_TYPE_8}|%{OTHERS_EVENTS_TYPE_9}|%{OTHERS_EVENTS_TYPE_10}|%{VLSI_API}|%{VIDM_HTTP}|%{VIDM_LOG}|%{VMCAD}|%{PERMISSION_TYPE_1}|%{PERMISSION_TYPE_2}|%{PERMISSION_TYPE_3}|%{SESSION_COUNT}|%{OTHERS_EVENTS_TYPE_12}|%{TOMCAT_ACCESS}|%{DNSMASQ_QUERY}|%{WCP_SERVICE}|%{MODIFY_ENTRY}"
         custom_patterns:
           SESSION_TYPE_1: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA:source_user_name}\] \[%{HOSTNAME:hostname}\] \[%{INT}] \[(?P<reason>Cannot login %{USERNAME:username}@%{IP:user_ip})\]'
           SESSION_TYPE_2: 'Event \[%{INT:id}\] \[1-1\] \[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:event_code}\] \[%{DATA:log_level}\] \[%{DATA}\] \[%{DATA}\] \[%{INT}\] \[(?P<reason>User %{USERNAME_WITH_DOMAIN} logged in as %{DATA})\]'
@@ -39,6 +39,7 @@ pipeline:
           PERMISSION_TYPE_1_MESSAGE_1: "User \\{Name: %{DATA:username}, Domain: %{DATA:user_domain}\\} with role '%{DATA:role}' is authorized for method call '%{DATA:resource_name}'"
           PERMISSION_TYPE_1_MESSAGE_2: "(\\[)?User \\{Name: %{DATA:username}, Domain: %{DATA:user_domain}\\} with role '%{DATA:role}'(\\])? Adding users '%{DATA:target_users}' to local group '%{DATA:group_name}'"
           PERMISSION_TYPE_2: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA} %{DATA} %{DATA:log_level} %{DATA:logger} opId=%{DATA}?\] (?P<reason>User %{USERNAME_WITH_DOMAIN} who belongs to group %{DATA:user_group} %{DATA} to invoke API %{DATA:resource_name})'
+          PERMISSION_TYPE_3: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA} %{DATA} %{DATA:log_level} %{DATA:logger} opId=%{DATA}?\] (?P<reason>User %{USERNAME_WITH_DOMAIN} invoked API %{DATA:resource_name})'
 
           SESSION_COUNT: '%{TIMESTAMP_ISO8601:timestamp} \[%{DATA} %{DATA} %{DATA:log_level} %{DATA:logger} opId=%{DATA}?\] (Session count for user \[after add\]: %{USERNAME_WITH_DOMAIN} is %{NUMBER:num_sessions}|%{GREEDYDATA:reason})'
 
@@ -121,6 +122,7 @@ stages:
           "@timestamp": "{{parsed_event.message.timestamp | to_rfc3339}}"
           user.name: "{{parsed_event.message.username or parsed_json.message.user.split('@')[0]}}"
           user.domain: "{{parsed_event.message.user_domain or parsed_json.message.user.split('@')[1]}}"
+          user.group.name: "{{parsed_event.message.user_group}}"
           source.ip: "{{parsed_event.message.source_ip or parsed_event.message.user_ip}}"
           source.domain: "{{parsed_event.message.source_domain}}"
           destination.ip: "{{parsed_event.message.destination_ip}}"
@@ -130,7 +132,7 @@ stages:
           host.name: "{{parsed_event.message.hostname}}"
           event.reason: "{{parsed_event.message.reason}}"
           log.level: "{{parsed_event.message.log_level}}"
-          log.logger: "{{parsed_event.message.logger}}"
+          log.logger: "{{parsed_event.message.logger | trim}}"
           http.request.method: "{{parsed_event.message.http_method}}"
           url.original: "{{parsed_event.message.url_original}}"
           http.response.status_code: "{{parsed_event.message.response_status}}"
@@ -282,7 +284,7 @@ stages:
       - set:
           event.category: ["iam"]
           event.type: ["info"]
-        filter: "{{ parsed_event.message.logger in ('com.vmware.identity.vlsi.RoleBasedAuthorizer', 'com.vmware.vcenter.trustmanagement.vapi.impl.setup.AuthzPermissionValidator', 'com.vmware.identity.admin.vlsi.PrincipalManagementServiceImpl')}}"
+        filter: "{{ parsed_event.message.logger | trim in ('com.vmware.identity.vlsi.RoleBasedAuthorizer', 'com.vmware.vcenter.trustmanagement.vapi.impl.setup.AuthzPermissionValidator', 'com.vmware.identity.admin.vlsi.PrincipalManagementServiceImpl')}}"
 
       - set:
           user.target.name: "{{parsed_target_users_json.message | map(attribute='name') | list | first}}"
