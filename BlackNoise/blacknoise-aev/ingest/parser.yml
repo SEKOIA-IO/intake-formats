@@ -22,15 +22,15 @@ pipeline:
   - name: set_network
     filter: "{{parsed_event.message.value == null}}"
   - name: set_system_target
-    filter: "{{parsed_event.message.system_target != null}}"
+    filter: "{{parsed_event.message.system_target != null and parsed_event.message.value == null}}"
   - name: set_cloud_target
-    filter: "{{parsed_event.message.cloud_target != null}}"
+    filter: "{{parsed_event.message.cloud_target != null and parsed_event.message.value == null}}"
   - name: set_attack_vector
-    filter: "{{parsed_event.message.attack_vector != null}}"
+    filter: "{{parsed_event.message.attack_vector != null and parsed_event.message.value == null}}"
   - name: set_detection
     filter: "{{parsed_event.message.value == null}}"
   - name: set_recommendations
-    filter: "{{parsed_event.message.recommendations != null}}"
+    filter: "{{parsed_event.message.recommendations != null and parsed_event.message.value == null}}"
   - name: set_outcome
     filter: "{{parsed_event.message.value == null}}"
 
@@ -135,13 +135,18 @@ stages:
         mapping:
           blacknoise.aev.ioc.type: threat.indicator.type
 
+      # A value that is neither a plain IPv4 nor a plain IPv6 address (a CIDR range,
+      # an address with a port) gets no type and no threat.indicator.ip, and stays
+      # searchable through threat.indicator.name.
       - set:
-          threat.indicator.type: '{{"ipv6-addr" if ":" in parsed_event.message.value else "ipv4-addr"}}'
-        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"]}}'
+          threat.indicator.type: ipv4-addr
+          threat.indicator.ip: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"] and parsed_event.message.value | is_ipv4}}'
 
       - set:
+          threat.indicator.type: ipv6-addr
           threat.indicator.ip: "{{parsed_event.message.value}}"
-        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"] and parsed_event.message.value | is_ipaddress}}'
+        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"] and parsed_event.message.value | is_ipv6}}'
 
       - set:
           threat.indicator.url.full: "{{parsed_event.message.value}}"
@@ -151,17 +156,26 @@ stages:
           threat.indicator.url.domain: "{{parsed_event.message.value}}"
         filter: '{{parsed_event.message.type in ["domain", "hostname"]}}'
 
+      # ECS keeps the bare name in file.name and the full path in file.path.
       - set:
-          threat.indicator.file.name: "{{parsed_event.message.value}}"
+          threat.indicator.file.name: "{{parsed_event.message.value | basename}}"
         filter: '{{parsed_event.message.type == "filename"}}'
+
+      - set:
+          threat.indicator.file.path: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "filename" and parsed_event.message.value | basename != parsed_event.message.value}}'
 
       # A `filename|sha256` value carries both halves separated by a pipe, as built by
       # the appliance: f'{path}|{sha256_checksum(path)}'. Split on the last pipe only:
       # the hash never contains one, the path may.
       - set:
-          threat.indicator.file.name: "{{parsed_event.message.value.rsplit('|', 1)[0]}}"
+          threat.indicator.file.name: "{{parsed_event.message.value.rsplit('|', 1)[0] | basename}}"
           threat.indicator.file.hash.sha256: "{{parsed_event.message.value.rsplit('|', 1)[1]}}"
         filter: '{{parsed_event.message.type == "filename|sha256" and "|" in parsed_event.message.value}}'
+
+      - set:
+          threat.indicator.file.path: "{{parsed_event.message.value.rsplit('|', 1)[0]}}"
+        filter: '{{parsed_event.message.type == "filename|sha256" and "|" in parsed_event.message.value and parsed_event.message.value.rsplit("|", 1)[0] | basename != parsed_event.message.value.rsplit("|", 1)[0]}}'
 
       - set:
           threat.indicator.file.hash.md5: "{{parsed_event.message.value}}"
@@ -419,7 +433,7 @@ stages:
       # event.outcome reflects whether the simulation ran, not whether the
       # attack succeeded. The latter lives in blacknoise.aev.exploit_status.
       # `processing` means the run is over and the defensive stack is still being
-      # queried: it always resolves to `executed`, so it already counts as one.
+      # queried, so the simulation did run.
       - translate:
         dictionary:
           executed: success
