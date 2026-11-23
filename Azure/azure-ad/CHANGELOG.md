@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Parse ECS fields `group.id` and `group.name` for user and device group membership changes, using new values for additions and old values for removals while preserving existing `user.target.group.*` and `user.changes.group.*` mappings.
+- Smart description showing the affected group name and Object ID for membership changes.
+- Anonymized regression tests for device and user additions/removals, including application-initiated changes and Group targets with no display name or modified properties.
+
+### Fixed
+
+- Preserve failure descriptions and their reasons for device membership events with group metadata by restricting the group description to successful events.
+- Fall back to the Group target's ID and display name when member modified properties do not provide usable group information, checking all User and Device targets.
+- Omit empty or whitespace-only group values so incomplete membership events cannot produce blank group descriptions.
+- Keep user membership descriptions identifying the member and actor, while displaying the affected group for device membership events ahead of generic service descriptions.
+
 ## [1.0.2] - 2026-11-12
 
 ### Fixed
