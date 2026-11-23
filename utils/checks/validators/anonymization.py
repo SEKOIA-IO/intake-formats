@@ -71,7 +71,9 @@ ACCEPTED_USERNAMES = [
     r"^User\d+$",
     r"^UserName(\d+)?(\$)?$",
     r"^(Test|Admin)User$",
+    r"^user$",
     r"^Admin(istrator)?$",
+    r"^Administrator \(Microsoft\.Office\.Datacenter\.Torus\.PowerShellWorker\)$",
     r"^(Alice|Bob|Charlie|toto|tata)$",
     r"^Host\d+$",
     r"^(root|system|SYSTEM|[sS]ystème)$",
@@ -108,7 +110,6 @@ ACCEPTED_URL_DOMAINS = [
     "acme.com",
     "acme.wtf",
     "acme.tld",
-    "api.chat.org",
     "example.of.address",
     "graph.microsoft.com",
     "amazonaws.com",
@@ -514,6 +515,10 @@ class AnonymizationValidator:
         Returns:
             bool: True if the domain is properly anonymized, False otherwise.
         """
+        # Domain-like fields may contain plain IP addresses in some logs.
+        if self.validate_ip(domain):
+            return True
+
         # Reverse-DNS PTR names (e.g. "107.100.168.192.in-addr.arpa") embed an IPv4 address in
         # their leading labels. Validate the embedded address instead of treating it as a hostname,
         # since it is effectively an IP address, not organizational/personal data.
@@ -572,6 +577,12 @@ class AnonymizationValidator:
         Returns:
             bool: True if the username is properly anonymized, False otherwise.
         """
+        # Windows down-level logon names (DOMAIN\user): accept them only when both parts are anonymized
+        if username.count("\\") == 1:
+            domain, name = username.split("\\")
+            if domain and name:
+                return self.validate_domain(domain) and self.validate_username(name)
+
         # Check against accepted usernames
         if username in ACCEPTED_IPV4_ADDRESSES:
             return True
