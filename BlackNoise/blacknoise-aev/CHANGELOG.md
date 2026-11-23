@@ -10,4 +10,7 @@ and this project adheres to
 
 ### Added
 
-- Initial version of the BlackNoise Simulation intake format
+- Initial version of the BlackNoise AEV intake format, covering the two record types
+  the platform reports on one intake: adversarial actions (`event.action:
+  simulation_event`) and the indicators of compromise they produce (`event.action:
+  ioc`), correlated through `trace.id`
