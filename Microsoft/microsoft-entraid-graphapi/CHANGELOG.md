@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-24
+
+### Added
+
+- Parse new ECS field:
+  - `source.geo.name` (first name of the first `networkLocationDetails` entry, i.e. the admin-defined named location)
+- Parse new custom fields, populated as-is from the raw Graph API fields:
+  - `azure.entraid.properties.authenticationDetails`
+  - `azure.entraid.properties.authenticationRequirement`
+  - `azure.entraid.properties.crossTenantAccessType`
+  - `azure.entraid.properties.flaggedForReview`
+  - `azure.entraid.properties.initiatedBy.user.agentType`
+  - `azure.entraid.properties.isTenantRestricted`
+  - `azure.entraid.properties.networkLocationDetails`
+  - `azure.entraid.properties.riskEventTypes_v2`
+  - `azure.entraid.properties.uniqueTokenIdentifier`
+- Parse new legacy custom fields, with the same mapping as the Azure AD format:
+  - `azuread.properties.network_location.network_names` (first `networkLocationDetails` entry)
+  - `azuread.properties.network_location.network_type` (first `networkLocationDetails` entry)
+  - `azuread.properties.riskEventTypes_v2`
+  - `azuread.properties.uniqueTokenIdentifier`
+- Add smart descriptions for sign-ins (authentication requirement, named location type, cross-tenant access type)
+
 ## [1.1.1] - 2026-11-06
 
 ### Fixed
