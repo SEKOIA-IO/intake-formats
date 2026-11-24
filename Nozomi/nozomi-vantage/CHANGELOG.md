@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Extract Guardian Air wireless context from asset events (protocol, network, region, channel, signal metrics)
-- Extract asset mobility, triangulated location, geofencing area, zones, technology category, and risk
-- Add a smart description for wireless assets
+- Extract Guardian Air wireless context from asset events (network.name, network.protocol, region, activation, channel, and numeric RSSI, SNR, and noise).
+- Extract asset mobility, location source, geofencing area, zones, technology category, and risk.
+- Map asset coordinates to host.geo.location.lat and host.geo.location.lon only when both coordinates are present.
+- Add a smart description for wireless assets.
