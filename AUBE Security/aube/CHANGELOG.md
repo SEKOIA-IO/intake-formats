@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   servers appear behind (NAT, bastion) to `aube.server.shared_ip_addresses`
 - The analyst's evaluation comment, when AUBE Portal sends it, to
   `aube.evaluation.comment`
+- The AI Evaluation Assistant's explanation the analyst saw when confirming,
+  when AUBE Portal sends it, to `aube.evaluation.ai_comment`
 - Schema 1.0 events are parsed as before
 
 ## [1.0.0] - 2026-11-04
