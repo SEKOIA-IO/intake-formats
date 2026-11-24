@@ -1,0 +1,428 @@
+name: bitwarden_event_logs
+pipeline:
+  # Bitwarden HEC event integrations: one JSON object per event, rendered from the HEC
+  # template stored with the integration configuration (bitwarden/clients hec-template.ts).
+  # Template placeholders are always strings and empty ("") when the value is null.
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+
+  # Templates before 2026-01-23: the event is the serialized EventMessage in a string
+  # (`Event` or `event`), with PascalCase keys and numeric enums.
+  - name: legacy_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: >-
+          {%- set m = parsed_event.message if parsed_event.message is mapping else {} -%}
+          {%- set raw = m.Event or m.event -%}
+          {{ raw if raw is string and raw.startswith("{") else "{}" }}
+        output_field: message
+
+  # Normalize the event once: EventType code, action, taxonomy, outcome, identifiers and
+  # the optional enrichment (`enrichment_details` or the flat fields of older templates).
+  # Enums from bitwarden/server: EventType, DeviceType, EventSystemUser.
+  - name: event_info
+    external:
+      name: json.parse-json
+      properties:
+        input_field: >-
+          {%- set m = parsed_event.message if parsed_event.message is mapping else {} -%}
+          {%- set legacy = legacy_event.message if legacy_event.message is mapping else {} -%}
+          {%- if m.event is mapping -%}
+          {%- set e = m.event -%}
+          {%- elif legacy -%}
+          {%- set e = {
+            "type": legacy.get("Type"), "date": legacy.get("Date"), "memberId": legacy.get("UserId"),
+            "organizationId": legacy.get("OrganizationId"), "providerId": legacy.get("ProviderId"),
+            "itemId": legacy.get("CipherId"), "collectionId": legacy.get("CollectionId"),
+            "groupId": legacy.get("GroupId"), "policyId": legacy.get("PolicyId"),
+            "organizationUserId": legacy.get("OrganizationUserId"), "actingUserId": legacy.get("ActingUserId"),
+            "installationId": legacy.get("InstallationId"), "device": legacy.get("DeviceType"),
+            "ipAddress": legacy.get("IpAddress"), "systemUser": legacy.get("SystemUser"),
+            "domainName": legacy.get("DomainName"), "secretId": legacy.get("SecretId"),
+            "projectId": legacy.get("ProjectId"), "serviceAccountId": legacy.get("ServiceAccountId")
+          } -%}
+          {%- else -%}
+          {%- set e = {} -%}
+          {%- endif -%}
+          {%- set actions = {
+                1000: "User_LoggedIn",
+                1001: "User_ChangedPassword",
+                1002: "User_Updated2fa",
+                1003: "User_Disabled2fa",
+                1004: "User_Recovered2fa",
+                1005: "User_FailedLogIn",
+                1006: "User_FailedLogIn2fa",
+                1007: "User_ClientExportedVault",
+                1008: "User_UpdatedTempPassword",
+                1009: "User_MigratedKeyToKeyConnector",
+                1010: "User_RequestedDeviceApproval",
+                1011: "User_TdeOffboardingPasswordSet",
+                1100: "Cipher_Created",
+                1101: "Cipher_Updated",
+                1102: "Cipher_Deleted",
+                1103: "Cipher_AttachmentCreated",
+                1104: "Cipher_AttachmentDeleted",
+                1105: "Cipher_Shared",
+                1106: "Cipher_UpdatedCollections",
+                1107: "Cipher_ClientViewed",
+                1108: "Cipher_ClientToggledPasswordVisible",
+                1109: "Cipher_ClientToggledHiddenFieldVisible",
+                1110: "Cipher_ClientToggledCardCodeVisible",
+                1111: "Cipher_ClientCopiedPassword",
+                1112: "Cipher_ClientCopiedHiddenField",
+                1113: "Cipher_ClientCopiedCardCode",
+                1114: "Cipher_ClientAutofilled",
+                1115: "Cipher_SoftDeleted",
+                1116: "Cipher_Restored",
+                1117: "Cipher_ClientToggledCardNumberVisible",
+                1118: "Cipher_ClientToggledTOTPSeedVisible",
+                1119: "Cipher_ClientCopiedBankAccountNumber",
+                1120: "Cipher_ClientCopiedBankAccountPin",
+                1121: "Cipher_ClientToggledBankAccountNumberVisible",
+                1122: "Cipher_ClientToggledBankAccountPinVisible",
+                1123: "Cipher_ClientCopiedLicenseNumber",
+                1124: "Cipher_ClientToggledLicenseNumberVisible",
+                1125: "Cipher_ClientCopiedPassportNumber",
+                1126: "Cipher_ClientToggledPassportNumberVisible",
+                1127: "Cipher_ClientCopiedSwiftCode",
+                1128: "Cipher_ClientToggledSwiftCodeVisible",
+                1129: "Cipher_ClientCopiedIban",
+                1130: "Cipher_ClientToggledIbanVisible",
+                1131: "Cipher_ClientCopiedNationalIdentificationNumber",
+                1132: "Cipher_ClientToggledNationalIdentificationNumberVisible",
+                1133: "Cipher_ClientHttpAuthReleased",
+                1300: "Collection_Created",
+                1301: "Collection_Updated",
+                1302: "Collection_Deleted",
+                1400: "Group_Created",
+                1401: "Group_Updated",
+                1402: "Group_Deleted",
+                1500: "OrganizationUser_Invited",
+                1501: "OrganizationUser_Confirmed",
+                1502: "OrganizationUser_Updated",
+                1503: "OrganizationUser_Removed",
+                1504: "OrganizationUser_UpdatedGroups",
+                1505: "OrganizationUser_UnlinkedSso",
+                1506: "OrganizationUser_ResetPassword_Enroll",
+                1507: "OrganizationUser_ResetPassword_Withdraw",
+                1508: "OrganizationUser_AdminResetPassword",
+                1509: "OrganizationUser_ResetSsoLink",
+                1510: "OrganizationUser_FirstSsoLogin",
+                1511: "OrganizationUser_Revoked",
+                1512: "OrganizationUser_Restored",
+                1513: "OrganizationUser_ApprovedAuthRequest",
+                1514: "OrganizationUser_RejectedAuthRequest",
+                1515: "OrganizationUser_Deleted",
+                1516: "OrganizationUser_Left",
+                1517: "OrganizationUser_AutomaticallyConfirmed",
+                1518: "OrganizationUser_SelfRevoked",
+                1519: "OrganizationUser_AdminResetTwoFactor",
+                1520: "OrganizationUser_Revoked_TwoFactorNonCompliance",
+                1521: "OrganizationUser_Revoked_SingleOrganizationNonCompliance",
+                1522: "OrganizationUser_NotificationBannerActionClicked",
+                1523: "OrganizationUser_Staged",
+                1524: "OrganizationUser_InviteLinkAccepted",
+                1525: "OrganizationUser_AdminChangedEmail",
+                1526: "OrganizationUser_InviteLinkConfirmed",
+                1600: "Organization_Updated",
+                1601: "Organization_PurgedVault",
+                1602: "Organization_ClientExportedVault",
+                1603: "Organization_VaultAccessed",
+                1604: "Organization_EnabledSso",
+                1605: "Organization_DisabledSso",
+                1606: "Organization_EnabledKeyConnector",
+                1607: "Organization_DisabledKeyConnector",
+                1608: "Organization_SponsorshipsSynced",
+                1609: "Organization_CollectionManagement_Updated",
+                1610: "Organization_CollectionManagement_LimitCollectionCreationEnabled",
+                1611: "Organization_CollectionManagement_LimitCollectionCreationDisabled",
+                1612: "Organization_CollectionManagement_LimitCollectionDeletionEnabled",
+                1613: "Organization_CollectionManagement_LimitCollectionDeletionDisabled",
+                1614: "Organization_CollectionManagement_LimitItemDeletionEnabled",
+                1615: "Organization_CollectionManagement_LimitItemDeletionDisabled",
+                1616: "Organization_CollectionManagement_AllowAdminAccessToAllCollectionItemsEnabled",
+                1617: "Organization_CollectionManagement_AllowAdminAccessToAllCollectionItemsDisabled",
+                1618: "Organization_ItemOrganization_Accepted",
+                1619: "Organization_ItemOrganization_Declined",
+                1620: "Organization_AutoConfirmEnabled_Admin",
+                1621: "Organization_AutoConfirmDisabled_Admin",
+                1622: "Organization_AutoConfirmEnabled_Portal",
+                1623: "Organization_AutoConfirmDisabled_Portal",
+                1624: "Organization_InviteLinkCreated",
+                1625: "Organization_InviteLinkDomainsEdited",
+                1626: "Organization_InviteLinkDeleted",
+                1627: "Organization_InviteLinkClientCopied",
+                1628: "Organization_InviteLinkRefreshed",
+                1629: "Organization_InviteLinkConfirmEnabled",
+                1630: "Organization_InviteLinkConfirmDisabled",
+                1700: "Policy_Updated",
+                1800: "ProviderUser_Invited",
+                1801: "ProviderUser_Confirmed",
+                1802: "ProviderUser_Updated",
+                1803: "ProviderUser_Removed",
+                1900: "ProviderOrganization_Created",
+                1901: "ProviderOrganization_Added",
+                1902: "ProviderOrganization_Removed",
+                1903: "ProviderOrganization_VaultAccessed",
+                2000: "OrganizationDomain_Added",
+                2001: "OrganizationDomain_Removed",
+                2002: "OrganizationDomain_Verified",
+                2003: "OrganizationDomain_NotVerified",
+                2100: "Secret_Retrieved",
+                2101: "Secret_Created",
+                2102: "Secret_Edited",
+                2103: "Secret_Deleted",
+                2104: "Secret_Permanently_Deleted",
+                2105: "Secret_Restored",
+                2200: "Project_Retrieved",
+                2201: "Project_Created",
+                2202: "Project_Edited",
+                2203: "Project_Deleted",
+                2300: "ServiceAccount_UserAdded",
+                2301: "ServiceAccount_UserRemoved",
+                2302: "ServiceAccount_GroupAdded",
+                2303: "ServiceAccount_GroupRemoved",
+                2304: "ServiceAccount_Created",
+                2305: "ServiceAccount_Deleted",
+                2400: "PhishingBlocker_SiteAccessed",
+                2401: "PhishingBlocker_SiteExited",
+                2402: "PhishingBlocker_Bypassed",
+                2500: "Send_Created_Text",
+                2501: "Send_Created_Text_WithEmailVerification",
+                2502: "Send_Created_Text_WithPasswordProtection",
+                2503: "Send_Created_File",
+                2504: "Send_Created_File_WithEmailVerification",
+                2505: "Send_Created_File_WithPasswordProtection",
+                2506: "Send_Edited_Text",
+                2507: "Send_Edited_File",
+                2508: "Send_Deleted_Text",
+                2509: "Send_Deleted_File",
+                2510: "Send_Accessed_Text",
+                2511: "Send_Accessed_File",
+                2512: "Send_PolicyDisabled",
+                2513: "Send_PolicyEnabled",
+                2600: "Pam_AccessRequest_Submitted",
+                2601: "Pam_AccessRequest_Approved",
+                2602: "Pam_AccessRequest_Denied",
+                2603: "Pam_AccessLease_Activated",
+                2604: "Pam_AccessLease_Revoked",
+                2605: "Pam_AccessRequest_Cancelled",
+                2606: "Pam_AccessLease_Extended",
+                2607: "Pam_AccessLease_Expired",
+                2608: "Pam_AccessLease_ActivationRejected",
+                2609: "Pam_AccessRule_Created",
+                2610: "Pam_AccessRule_Updated",
+                2611: "Pam_AccessRule_Deleted",
+                2612: "Pam_Rotation_Succeeded",
+                2613: "Pam_Rotation_Failed"
+          } -%}
+          {%- set devices = {
+            "0": "Android", "1": "iOS", "2": "Chrome Extension", "3": "Firefox Extension",
+            "4": "Opera Extension", "5": "Edge Extension", "6": "Windows", "7": "macOS",
+            "8": "Linux", "9": "Chrome", "10": "Firefox", "11": "Opera", "12": "Edge",
+            "13": "Internet Explorer", "14": "Unknown Browser", "15": "Android", "16": "UWP",
+            "17": "Safari", "18": "Vivaldi", "19": "Vivaldi Extension", "20": "Safari Extension",
+            "21": "SDK", "22": "Server", "23": "Windows CLI", "24": "MacOs CLI", "25": "Linux CLI",
+            "26": "DuckDuckGo", "27": "DuckDuckGo Extension"
+          } -%}
+          {%- set device_names = {
+            "ChromeExtension": "Chrome Extension", "FirefoxExtension": "Firefox Extension",
+            "OperaExtension": "Opera Extension", "EdgeExtension": "Edge Extension",
+            "WindowsDesktop": "Windows", "MacOsDesktop": "macOS", "LinuxDesktop": "Linux",
+            "ChromeBrowser": "Chrome", "FirefoxBrowser": "Firefox", "OperaBrowser": "Opera",
+            "EdgeBrowser": "Edge", "IEBrowser": "Internet Explorer", "UnknownBrowser": "Unknown Browser",
+            "AndroidAmazon": "Android", "SafariBrowser": "Safari", "VivaldiBrowser": "Vivaldi",
+            "VivaldiExtension": "Vivaldi Extension", "SafariExtension": "Safari Extension",
+            "WindowsCLI": "Windows CLI", "MacOsCLI": "MacOs CLI", "LinuxCLI": "Linux CLI",
+            "DuckDuckGoBrowser": "DuckDuckGo", "DuckDuckGoExtension": "DuckDuckGo Extension"
+          } -%}
+          {%- set system_users = {
+            "0": "Unknown", "1": "SCIM", "2": "DomainVerification", "3": "PublicApi",
+            "4": "TwoFactorDisabled", "5": "BitwardenPortal", "6": "Pam"
+          } -%}
+          {%- set codes = [] -%}
+          {%- if (e.type | string).isdigit() -%}
+          {%- set _ = codes.append(e.type | int) -%}
+          {%- elif e.type -%}
+          {#- 2026-01-23 template: `type` is the EventType name -#}
+          {%- for code, name in actions.items() if name == e.type -%}
+          {%- set _ = codes.append(code) -%}
+          {%- endfor -%}
+          {%- endif -%}
+          {%- set c = codes[0] if codes else none -%}
+          {%- set type_name = e.type if e.type is string and not (e.type | string).isdigit() and e.type else none -%}
+          {%- set tax = none -%}
+          {%- if c == none -%}
+          {%- elif c in [1000, 1005, 1006, 1010] -%}
+          {%- set tax = ["authentication", ["start"]] -%}
+          {%- elif c in [1007, 1602, 1603, 1903, 2100, 2200, 2510, 2511] or (1107 <= c and c <= 1114) or (1117 <= c and c <= 1133) -%}
+          {%- set tax = ["file", ["info"]] -%}
+          {%- elif c in [1100, 1103, 1300, 2101, 2201] or (2500 <= c and c <= 2505) -%}
+          {%- set tax = ["file", ["creation"]] -%}
+          {%- elif c in [1101, 1105, 1106, 1116, 1301, 2102, 2105, 2202, 2506, 2507] -%}
+          {%- set tax = ["file", ["change"]] -%}
+          {%- elif c in [1102, 1104, 1115, 1302, 1601, 2103, 2104, 2203, 2508, 2509] -%}
+          {%- set tax = ["file", ["deletion"]] -%}
+          {%- elif 1001 <= c and c <= 1011 -%}
+          {%- set tax = ["iam", ["user", "change"]] -%}
+          {%- elif c == 1400 -%}
+          {%- set tax = ["iam", ["group", "creation"]] -%}
+          {%- elif c in [1401, 2302, 2303] -%}
+          {%- set tax = ["iam", ["group", "change"]] -%}
+          {%- elif c == 1402 -%}
+          {%- set tax = ["iam", ["group", "deletion"]] -%}
+          {%- elif c in [1500, 1523, 1524, 1800, 2304] -%}
+          {%- set tax = ["iam", ["user", "creation"]] -%}
+          {%- elif c in [1503, 1515, 1516, 1803, 2305] -%}
+          {%- set tax = ["iam", ["user", "deletion"]] -%}
+          {%- elif c == 1522 -%}
+          {%- set tax = ["iam", ["user", "info"]] -%}
+          {%- elif (1500 <= c and c <= 1526) or c in [1801, 1802, 2300, 2301] -%}
+          {%- set tax = ["iam", ["user", "change"]] -%}
+          {%- elif c in [1900, 2000, 2609] -%}
+          {%- set tax = ["configuration", ["creation"]] -%}
+          {%- elif c in [1902, 2001, 2611] -%}
+          {%- set tax = ["configuration", ["deletion"]] -%}
+          {%- elif (1600 <= c and c <= 1630) or c in [1700, 1901, 2002, 2003, 2512, 2513, 2610] -%}
+          {%- set tax = ["configuration", ["change"]] -%}
+          {%- elif c in [2400, 2402] -%}
+          {%- set tax = ["web", ["access"]] -%}
+          {%- elif c == 2401 -%}
+          {%- set tax = ["web", ["info"]] -%}
+          {%- elif c in [2600, 2601, 2602, 2605] -%}
+          {%- set tax = ["iam", ["info"]] -%}
+          {%- elif 2603 <= c and c <= 2613 -%}
+          {%- set tax = ["iam", ["change"]] -%}
+          {%- endif -%}
+          {%- if c == none or c not in actions -%}
+          {%- set outcome = "unknown" -%}
+          {%- elif c in [1005, 1006, 2003, 2602, 2608, 2613] -%}
+          {%- set outcome = "failure" -%}
+          {%- else -%}
+          {%- set outcome = "success" -%}
+          {%- endif -%}
+          {%- set ed = e.enrichment_details if e.enrichment_details is mapping else {} -%}
+          {%- set actor = ed.actingUser if ed.actingUser is mapping else {} -%}
+          {%- set member = ed.member if ed.member is mapping else {} -%}
+          {%- set group = ed.group if ed.group is mapping else {} -%}
+          {%- set org = ed.organization if ed.organization is mapping else {} -%}
+          {#- `device` is the DeviceType id, or its name in the 2026-01-23 template -#}
+          {%- set device = e.device | string if (e.device | string).isdigit() else none -%}
+          {%- set device_label = e.deviceName or e.deviceType or (e.device if e.device is string and not device else none) -%}
+          {%- set system_user = e.systemUser | string if (e.systemUser | string).isdigit() else none -%}
+          {%- set actor_type = actor.type or e.actingUserType -%}
+          {%- set member_type = member.type or e.userType -%}
+          {#- memberId is rendered from #UserId#: the user affected by the event. It equals
+              actingUserId for self actions (logins...), and holds an OrganizationUserId for
+              ServiceAccount_UserAdded/UserRemoved (2300/2301). -#}
+          {%- set member_is_org_user = c in [2300, 2301] -%}
+          {%- set has_target = e.memberId and e.memberId != e.actingUserId and not member_is_org_user -%}
+          {{ {
+            "code": (c | string) if c != none else none,
+            "action": e.typeName or type_name or actions.get(c, "Unknown_EventType" ~ (("_" ~ c) if c != none else "")),
+            "category": [tax[0]] if tax else none,
+            "type": tax[1] if tax else none,
+            "outcome": outcome,
+            "date": e.date or none,
+            "ip": e.ipAddress or none,
+            "device_id": (device | int) if device else none,
+            "device_name": device_names.get(device_label, device_label) if device_label else devices.get(device),
+            "system_user_id": (system_user | int) if system_user else none,
+            "system_user_name": system_users.get(system_user),
+            "user_id": e.actingUserId or none,
+            "user_full_name": actor.name or e.actingUserName or none,
+            "user_email": actor.email or e.actingUserEmail or none,
+            "user_roles": [actor_type] if actor_type else none,
+            "target_id": e.memberId if has_target else none,
+            "target_full_name": (member.name or e.userName or none) if has_target else none,
+            "target_email": (member.email or e.userEmail or none) if has_target else none,
+            "target_roles": [member_type] if has_target and member_type else none,
+            "organization_user_id": e.organizationUserId or (e.memberId if member_is_org_user else none) or none,
+            "organization_id": e.organizationId or none,
+            "organization_name": org.name or none,
+            "group_id": e.groupId or none,
+            "group_name": group.name or e.groupName or none,
+            "item_id": e.itemId or none,
+            "collection_id": e.collectionId or none,
+            "policy_id": e.policyId or none,
+            "installation_id": e.installationId or none,
+            "provider_id": e.providerId or none,
+            "domain_name": e.domainName or none,
+            "secret_id": e.secretId or none,
+            "project_id": e.projectId or none,
+            "service_account_id": e.serviceAccountId or none
+          } | to_json }}
+        output_field: message
+
+  - name: parsed_date
+    filter: "{{event_info.message.date != null}}"
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{event_info.message.date}}"
+        output_field: timestamp
+
+  - name: set_event_fields
+  - name: set_user_fields
+  - name: set_object_fields
+
+stages:
+  set_event_fields:
+    actions:
+      - set:
+          observer.vendor: Bitwarden
+          observer.product: Password Manager
+          event.dataset: bitwarden.event_logs
+          event.kind: event
+          event.action: "{{event_info.message.action}}"
+          event.code: "{{event_info.message.code}}"
+          event.category: "{{event_info.message.category}}"
+          event.type: "{{event_info.message.type}}"
+          event.outcome: "{{event_info.message.outcome}}"
+          "@timestamp": "{{parsed_date.timestamp}}"
+          bitwarden.password_manager.device.type_id: "{{event_info.message.device_id}}"
+          bitwarden.password_manager.device.type_name: "{{event_info.message.device_name}}"
+          bitwarden.password_manager.system_user.id: "{{event_info.message.system_user_id}}"
+          bitwarden.password_manager.system_user.name: "{{event_info.message.system_user_name}}"
+
+      - set:
+          source.ip: "{{event_info.message.ip}}"
+        filter: "{{event_info.message.ip | is_ipaddress}}"
+
+  set_user_fields:
+    actions:
+      # Bitwarden accounts log in with their email address: it is the login name.
+      - set:
+          user.id: "{{event_info.message.user_id}}"
+          user.email: "{{event_info.message.user_email}}"
+          user.name: "{{event_info.message.user_email}}"
+          user.full_name: "{{event_info.message.user_full_name}}"
+          user.roles: "{{event_info.message.user_roles}}"
+          user.target.id: "{{event_info.message.target_id}}"
+          user.target.email: "{{event_info.message.target_email}}"
+          user.target.name: "{{event_info.message.target_email}}"
+          user.target.full_name: "{{event_info.message.target_full_name}}"
+          user.target.roles: "{{event_info.message.target_roles}}"
+
+  set_object_fields:
+    actions:
+      - set:
+          organization.id: "{{event_info.message.organization_id}}"
+          organization.name: "{{event_info.message.organization_name}}"
+          group.id: "{{event_info.message.group_id}}"
+          group.name: "{{event_info.message.group_name}}"
+          bitwarden.password_manager.organization_user.id: "{{event_info.message.organization_user_id}}"
+          bitwarden.password_manager.item.id: "{{event_info.message.item_id}}"
+          bitwarden.password_manager.collection.id: "{{event_info.message.collection_id}}"
+          bitwarden.password_manager.policy.id: "{{event_info.message.policy_id}}"
+          bitwarden.password_manager.installation.id: "{{event_info.message.installation_id}}"
+          bitwarden.password_manager.provider.id: "{{event_info.message.provider_id}}"
+          bitwarden.password_manager.domain.name: "{{event_info.message.domain_name}}"
+          bitwarden.password_manager.secret.id: "{{event_info.message.secret_id}}"
+          bitwarden.password_manager.project.id: "{{event_info.message.project_id}}"
+          bitwarden.password_manager.service_account.id: "{{event_info.message.service_account_id}}"

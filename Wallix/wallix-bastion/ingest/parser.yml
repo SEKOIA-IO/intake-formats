@@ -9,14 +9,60 @@ pipeline:
         input_field: '{{original.message.replace(" ; ", " ").replace("\\\\", "\\")}}'
 
   - name: parse_pam_unix_fields
-    filter: '{{original.message.startswith("pam_unix(")}}'
+    filter: '{{original.message.startswith("pam_unix(") and ":session): " in original.message}}'
     external:
       name: grok.match
       properties:
         input_field: "{{original.message}}"
-        pattern: 'pam_unix\((cron|sudo|sshd|systemd-user):session\): %{EVENT_REASON:event_reason} for user %{WORD:user_name}(\(uid=%{DATA:user_uid}\))?.*'
+        pattern: 'pam_unix\(%{PAM_SERVICE:pam_service}:session\): %{EVENT_REASON:event_reason} for user %{PAM_USER:user_name}(\(uid=%{INT:user_uid}\))?( by %{PAM_OPT_VALUE:actor_name}\(uid=%{INT:actor_uid}\))?.*'
         custom_patterns:
           EVENT_REASON: "session (opened|closed)"
+          PAM_SERVICE: "[^:)]+"
+          PAM_USER: "[^\\s(]+"
+          PAM_OPT_VALUE: "[^\\s(]*"
+
+  - name: parse_pam_unix_auth_failure
+    filter: '{{original.message.startswith("pam_unix(") and ":auth): authentication failure" in original.message}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: 'pam_unix\(%{PAM_SERVICE:pam_service}:auth\): authentication failure; logname=%{PAM_OPT_VALUE:logname} uid=%{INT:uid} euid=%{INT:euid} tty=%{PAM_OPT_VALUE:tty} ruser=%{PAM_OPT_VALUE:ruser} rhost=%{PAM_OPT_VALUE:rhost}(\s+user=%{PAM_USER:user_name})?.*'
+        custom_patterns:
+          PAM_SERVICE: "[^:)]+"
+          PAM_USER: "\\S+"
+          PAM_OPT_VALUE: "\\S*"
+
+  - name: parse_failed_su
+    filter: '{{original.message.startswith("FAILED SU ")}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: 'FAILED SU \(to %{SU_USER:target_name}\) %{SU_USER:actor_name} on %{NOTSPACE:tty}'
+        custom_patterns:
+          SU_USER: "[^\\s()]+"
+
+  - name: parse_logind_session
+    filter: '{{original.message.startswith("New session ")}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: 'New session %{NOTSPACE:session_id} of user %{LOGIND_USER:user_name}\.$'
+        custom_patterns:
+          LOGIND_USER: "\\S+?"
+
+  - name: parse_sudo_command
+    filter: '{{not original.message.startswith("pam_unix(") and " : " in original.message and " ; USER=" in original.message and " ; COMMAND=" in original.message}}'
+    external:
+      name: grok.match
+      properties:
+        input_field: "{{original.message}}"
+        pattern: '^\s*%{SUDO_USER:sudo_user} : (%{SUDO_ERROR:sudo_error} ; )?(TTY|PWD|USER)=.*'
+        custom_patterns:
+          SUDO_USER: "[^\\s:]+"
+          SUDO_ERROR: "[^;=]+?"
 
   - name: parse_session_recording
     filter: '{{original.message.startswith("[sessionintegrity]") and (" file=[" in original.message or " files=[" in original.message)}}'
@@ -33,7 +79,13 @@ pipeline:
   - name: set_ip_fields
   - name: set_domain_fields
   - name: set_pam_unix_fields
-    filter: '{{original.message.startswith("pam_unix(")}}'
+    filter: '{{original.message.startswith("pam_unix(") and ":session): " in original.message}}'
+  - name: set_pam_unix_auth_failure_fields
+    filter: '{{original.message.startswith("pam_unix(") and ":auth): authentication failure" in original.message}}'
+  - name: set_failed_su_fields
+    filter: '{{original.message.startswith("FAILED SU ")}}'
+  - name: set_logind_session_fields
+    filter: '{{original.message.startswith("New session ")}}'
 
 stages:
   set_ecs_fields:
@@ -143,8 +195,22 @@ stages:
   set_auditd:
     actions:
       - set:
-          user.name: "{{parsed_event.message.USER}}"
           process.command_line: "{{parsed_event.message.COMMAND}}"
+
+      - set:
+          user.name: "{{parsed_event.message.USER}}"
+        filter: '{{not (not original.message.startswith("pam_unix(") and " : " in original.message and " ; USER=" in original.message and " ; COMMAND=" in original.message)}}'
+
+      - set:
+          event.action: "sudo-command"
+          user.name: "{{parse_sudo_command.message.sudo_user}}"
+          user.target.name: "{{parsed_event.message.USER}}"
+        filter: '{{not original.message.startswith("pam_unix(") and " : " in original.message and " ; USER=" in original.message and " ; COMMAND=" in original.message}}'
+
+      - set:
+          event.outcome: "failure"
+          event.reason: "{{parse_sudo_command.message.sudo_error}}"
+        filter: '{{not original.message.startswith("pam_unix(") and " : " in original.message and " ; USER=" in original.message and " ; COMMAND=" in original.message and parse_sudo_command.message.get("sudo_error") not in [none, ""]}}'
 
   set_provider:
     actions:
@@ -165,7 +231,13 @@ stages:
         filter: '{{original.message.startswith("pam_unix(sudo")}}'
       - set:
           event.provider: "sudo"
-        filter: '{{original.message.startswith("root")}}'
+        filter: '{{not original.message.startswith("pam_unix(") and " : " in original.message and " ; USER=" in original.message and " ; COMMAND=" in original.message}}'
+      - set:
+          event.provider: "su"
+        filter: '{{original.message.startswith("pam_unix(su:") or original.message.startswith("pam_unix(su-l:") or original.message.startswith("FAILED SU ")}}'
+      - set:
+          event.provider: "systemd-logind"
+        filter: '{{original.message.startswith("New session ")}}'
       - set:
           event.provider: "sshd"
         filter: '{{original.message.startswith("rexec")}}'
@@ -210,9 +282,87 @@ stages:
   set_pam_unix_fields:
     actions:
       - set:
-          user.name: "{{ parse_pam_unix_fields.message.user_name }}"
           event.reason: "{{ parse_pam_unix_fields.message.event_reason }}"
 
       - set:
+          event.action: "session-opened"
+          event.category: ["session"]
+          event.type: ["start"]
+          event.outcome: "success"
+        filter: '{{parse_pam_unix_fields.message.get("event_reason") == "session opened"}}'
+
+      - set:
+          event.action: "session-closed"
+          event.category: ["session"]
+          event.type: ["end"]
+        filter: '{{parse_pam_unix_fields.message.get("event_reason") == "session closed"}}'
+
+      - set:
+          user.name: "{{ parse_pam_unix_fields.message.user_name }}"
+        filter: '{{parse_pam_unix_fields.message.get("pam_service") not in ["sudo", "sudo-i", "su", "su-l"]}}'
+
+      - set:
           user.id: "{{ parse_pam_unix_fields.message.user_uid }}"
-        filter: '{{parse_pam_unix_fields.message.get("user_uid") is not in [none, "0"]}}'
+        filter: '{{parse_pam_unix_fields.message.get("pam_service") not in ["sudo", "sudo-i", "su", "su-l"] and parse_pam_unix_fields.message.get("user_uid") is not in [none, "0"]}}'
+
+      - set:
+          user.target.name: "{{ parse_pam_unix_fields.message.user_name }}"
+          user.target.id: "{{ parse_pam_unix_fields.message.user_uid }}"
+          user.name: "{{ parse_pam_unix_fields.message.actor_name }}"
+          user.id: "{{ parse_pam_unix_fields.message.actor_uid }}"
+        filter: '{{parse_pam_unix_fields.message.get("pam_service") in ["sudo", "sudo-i", "su", "su-l"]}}'
+
+  set_pam_unix_auth_failure_fields:
+    actions:
+      - set:
+          event.action: "authentication-failure"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+          event.reason: "authentication failure"
+          wallix.terminal: "{{ parse_pam_unix_auth_failure.message.tty }}"
+        filter: '{{parse_pam_unix_auth_failure.message.get("pam_service") is not none}}'
+
+      - set:
+          user.name: "{{ parse_pam_unix_auth_failure.message.user_name }}"
+        filter: '{{parse_pam_unix_auth_failure.message.get("pam_service") not in ["sudo", "sudo-i", "su", "su-l"]}}'
+
+      - set:
+          source.ip: "{{ parse_pam_unix_auth_failure.message.rhost }}"
+        filter: '{{parse_pam_unix_auth_failure.message.get("rhost") not in [none, ""] and parse_pam_unix_auth_failure.message.rhost | is_ipaddress}}'
+
+      - set:
+          source.domain: "{{ parse_pam_unix_auth_failure.message.rhost }}"
+        filter: '{{parse_pam_unix_auth_failure.message.get("rhost") not in [none, ""] and not parse_pam_unix_auth_failure.message.rhost | is_ipaddress}}'
+
+      - set:
+          user.target.name: "{{ parse_pam_unix_auth_failure.message.user_name }}"
+          user.name: "{{ parse_pam_unix_auth_failure.message.logname }}"
+          user.id: "{{ parse_pam_unix_auth_failure.message.uid }}"
+        filter: '{{parse_pam_unix_auth_failure.message.get("pam_service") in ["sudo", "sudo-i", "su", "su-l"]}}'
+
+      - set:
+          user.name: "{{ parse_pam_unix_auth_failure.message.ruser }}"
+        filter: '{{parse_pam_unix_auth_failure.message.get("pam_service") in ["sudo", "sudo-i", "su", "su-l"] and parse_pam_unix_auth_failure.message.get("ruser") not in [none, ""]}}'
+
+  set_failed_su_fields:
+    actions:
+      - set:
+          event.action: "su-failed"
+          event.category: ["authentication"]
+          event.type: ["start"]
+          event.outcome: "failure"
+          user.name: "{{ parse_failed_su.message.actor_name }}"
+          user.target.name: "{{ parse_failed_su.message.target_name }}"
+          wallix.terminal: "{{ parse_failed_su.message.tty }}"
+        filter: '{{parse_failed_su.message.get("actor_name") is not none}}'
+
+  set_logind_session_fields:
+    actions:
+      - set:
+          event.action: "session-created"
+          event.category: ["session"]
+          event.type: ["start"]
+          user.name: "{{ parse_logind_session.message.user_name }}"
+          wallix.logind.session.id: "{{ parse_logind_session.message.session_id }}"
+        filter: '{{parse_logind_session.message.get("session_id") is not none}}'

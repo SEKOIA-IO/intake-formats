@@ -72,7 +72,14 @@ class SmartDescriptionManager(IntakeTestManager):
             field_name = g.group(0).strip("{").strip("}")
             field_parsed_value = parsed.get(field_name, "NULL")
             if type(field_parsed_value) == list:
-                field_parsed_value = ", ".join(field_parsed_value)
+                field_parsed_value = ", ".join(str(item) for item in field_parsed_value)
+            elif type(field_parsed_value) == dict and "address" in field_parsed_value:
+                # Handle nested structures like email.to with {"address": [...]}
+                addresses = field_parsed_value.get("address", [])
+                if isinstance(addresses, list):
+                    field_parsed_value = ", ".join(str(addr) for addr in addresses)
+                else:
+                    field_parsed_value = str(addresses)
 
             return "`%s`" % str(field_parsed_value)
 
@@ -120,7 +127,7 @@ class SmartDescriptionManager(IntakeTestManager):
         # generate markdown table
         markdown = "| Test File | Smart Description |\n|---|---|\n"
         for row in table:
-            markdown += "|" + "|".join(row) + "|" + "\n"
+            markdown += "|" + "|".join(cell.replace("|", "\\|").replace("\r", "").replace("\n", "<br>") for cell in row) + "|" + "\n"
 
         print(markdown)
 

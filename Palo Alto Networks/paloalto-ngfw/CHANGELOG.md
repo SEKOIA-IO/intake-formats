@@ -6,15 +6,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-## 2025-16-01
 
-- Add parsing of session.id and session.endreason
+## [1.0.4] - 2026-10-20
 
-## 2025-07-01
+### Changed
 
-- Always display url.original
+- Extend parsing of existing ECS fields:
+  - `destination.packets`: parse `PacketsReceived` in JSON TRAFFIC events, including zero values
+  - `event.sequence`: parse the sequence number in `CONFIG` CSV events with or without change-detail columns
+  - `source.packets`: parse `PacketsSent` in JSON TRAFFIC events, including zero values
+  - `user.target.name`: extract the account name from `CONFIG` user-management XPath entries
 
-## 2024-15-01
+### Fixed
+
+- Fix existing ECS fields:
+  - `event.category`: classify `CONFIG` events as configuration changes and include IAM for targeted accounts
+  - `event.outcome`: normalize `CONFIG` and `Unauthorized` statuses to report failed operations as failures
+  - `event.type`: classify `CONFIG` events as changes and include user events for targeted accounts
+  - `log.hostname`: map the device name to hostname after aligning `CONFIG` CSV column positions
+  - `observer.name`: map the device name from aligned `CONFIG` CSV layouts with and without change-detail columns
+  - `url.original`: avoid populating placeholder-only URL values when URL source fields are empty
+- Fix existing custom fields:
+  - `action.outcome`: normalize `CONFIG` and `Unauthorized` statuses to `success` or `failure` consistently with `event.outcome`
+  - `paloalto.DGHierarchyLevel1`: map hierarchy level 1 from the corrected `CONFIG` CSV column position
+  - `paloalto.DGHierarchyLevel2`: map hierarchy level 2 from the corrected `CONFIG` CSV column position
+  - `paloalto.DGHierarchyLevel3`: map hierarchy level 3 from the corrected `CONFIG` CSV column position
+  - `paloalto.DGHierarchyLevel4`: map hierarchy level 4 from the corrected `CONFIG` CSV column position
+  - `paloalto.VirtualSystemName`: map virtual system name from the corrected `CONFIG` CSV column position
+  - `paloalto.XPath`: preserve the XPath value from the 29-column `CONFIG` CSV variant
+
+## [1.0.3] - 2026-08-13
+
+### Added
+
+- Support PAN-OS audit subtype CSV events (audit logger), including `GRP_MGMT` events carrying embedded Linux `auditd` payloads in `EventDescription`
+- Parse ECS fields for PAN-OS audit subtype CSV events (audit logger):
+  - `action.outcome`
+  - `action.type`
+  - `event.action`
+  - `event.category`
+  - `event.code`
+  - `event.outcome`
+  - `event.sequence`
+  - `event.type`
+  - `group.name`
+  - `process.command_line`
+  - `process.executable`
+  - `process.name`
+  - `process.pid`
+  - `related.user`
+  - `user.id`
+  - `user.name`
+  - `user.target.name`
+
+### Changed
+
+- Update `action.name` mapping for PAN-OS audit subtype events (map from audit object value `log-critical-activity`)
+- Normalize quote handling for audit `exe` and `acct` values to support both escaped and unescaped forms
+- Keep `user.id` as actor UID and map `acct` to `user.target.name` while preserving `user.name` for compatibility
+
+## [1.0.2] - 2025-16-01
+
+- Parse new custom fields:
+  - `paloalto.session.endreason`
+  - `paloalto.session.id`
+
+## [1.0.1] - 2025-07-01
+
+- Always display ECS field `url.original`
+
+## [1.0.0] - 2024-15-01
 
 ### Update
 

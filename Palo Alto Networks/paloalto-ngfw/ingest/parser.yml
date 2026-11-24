@@ -263,6 +263,25 @@ pipeline:
           - HighResolutionTimestamp
         delimiter: ","
 
+  # AUDIT CSV
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.DeviceSN in ['audit', 'AUDIT']}}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - DeviceSN
+          - ReceiveTime
+          - Type
+          - EventID
+          - Object
+          - FUTURE_USE
+          - EventDescription
+          - Status
+        delimiter: ","
+
   # THREAT CSV
   - name: parsed_event
     filter: "{{parsed_dsv.message.Type == 'THREAT'}}"
@@ -558,10 +577,10 @@ pipeline:
           - ClusterName
         delimiter: ","
 
-  # DECRYPTION CONFIG
+  # CONFIG CSV
   # https://docs.paloaltonetworks.com/pan-os/10-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/config-log-fields
   - name: parsed_event
-    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
+    filter: "{{parsed_dsv.message.Type == 'CONFIG' and original.message.split(',') | length == 29}}"
     external:
       name: dsv.parse-dsv
       properties:
@@ -573,8 +592,8 @@ pipeline:
           - DeviceSN
           - Type
           - Subtype
+          - ConfigVersion
           - GenerateTime
-          - FutureUse
           - SourceHostname
           - VirtualSystemName
           - Action
@@ -596,7 +615,55 @@ pipeline:
           - AuditComment
           - FutureUse
           - HighResTimestamp
+          - XPath
         delimiter: ","
+
+  - name: parsed_event
+    filter: "{{parsed_dsv.message.Type == 'CONFIG' and original.message.split(',') | length == 27}}"
+    external:
+      name: dsv.parse-dsv
+      properties:
+        input_field: original.message
+        output_field: message
+        columnnames:
+          - FutureUse
+          - ReceiveTime
+          - DeviceSN
+          - Type
+          - Subtype
+          - ConfigVersion
+          - GenerateTime
+          - SourceHostname
+          - VirtualSystemName
+          - Action
+          - SourceUser
+          - Client
+          - Result
+          - ConfigurationPath
+          - SequenceNumber
+          - ActionFlags
+          - DGHierarchyLevel1
+          - DGHierarchyLevel2
+          - DGHierarchyLevel3
+          - DGHierarchyLevel4
+          - VirtualSystemName
+          - DeviceName
+          - DeviceGroup
+          - AuditComment
+          - FutureUse
+          - HighResTimestamp
+          - XPath
+        delimiter: ","
+
+  - name: parsed_config_target
+    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.XPath}}"
+        pattern: >-
+          ^/config/mgt-config/users/entry\[@name=['"](?P<target_name>[^'"]+)['"]\](?:/.*)?$
 
   # AUTH CSV
   # https://docs.paloaltonetworks.com/pan-os/10-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/authentication-log-fields
@@ -760,6 +827,24 @@ pipeline:
 
     filter: '{{parsed_event.message.get("EventDescription") != None}}'
 
+  - name: parsed_system_audit_header
+    external:
+      name: grok.match
+      properties:
+        raise_errors: false
+        input_field: "{{parsed_event.message.EventDescription}}"
+        pattern: "type=%{WORD:audit_type} msg=audit\\(%{NUMBER:audit_epoch}\\.%{NUMBER:audit_msec}:%{NUMBER:audit_seq}\\): pid=%{NUMBER:pid} uid=%{NUMBER:uid} auid=%{NUMBER:auid} ses=%{NUMBER:ses} subj=%{DATA:subj} msg='%{DATA:audit_kv}'"
+    filter: '{{parsed_event.message.get("EventDescription") != None and parsed_event.message.Type in ["audit", "AUDIT"]}}'
+
+  - name: parsed_system_audit_kv
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parsed_system_audit_header.message.audit_kv}}"
+        value_sep: "="
+        item_sep: "\\s"
+    filter: '{{parsed_system_audit_header.message.get("audit_kv") != None}}'
+
   - name: parsed_threat
     external:
       name: grok.match
@@ -785,6 +870,10 @@ pipeline:
         pattern: "%{IP:range_1}-%{IP:range_2}|%{GREEDYDATA:geoname}"
 
   - name: set_extracted_fields
+  - name: set_json_packet_counts
+    filter: "{{parsed_event.message.LogType == 'TRAFFIC'}}"
+  - name: set_panos_audit_fields
+    filter: '{{parsed_event.message.Type in ["audit", "AUDIT"]}}'
   - name: set_finalize_user_name
   - name: set_category_fields
   - name: set_ecs_deviceOutboundInterface
@@ -794,8 +883,46 @@ pipeline:
   - name: set_action_outcome
   - name: set_event_outcome
   - name: set_csv_severity
+  - name: set_config_fields
+    filter: "{{parsed_dsv.message.Type == 'CONFIG'}}"
 
 stages:
+  set_json_packet_counts:
+    actions:
+      - set:
+          source.packets: "{{parsed_event.message.PacketsSent}}"
+        filter: "{{final.source.get('packets') == None and parsed_event.message.PacketsSent != None and (parsed_event.message.PacketsSent is number or parsed_event.message.PacketsSent.isdigit())}}"
+      - set:
+          destination.packets: "{{parsed_event.message.PacketsReceived}}"
+        filter: "{{final.destination.get('packets') == None and parsed_event.message.PacketsReceived != None and (parsed_event.message.PacketsReceived is number or parsed_event.message.PacketsReceived.isdigit())}}"
+
+  set_config_fields:
+    actions:
+      - set:
+          event.category: ["configuration"]
+          event.type: ["change"]
+          observer.name: "{{parsed_event.message.DeviceName}}"
+      - set:
+          event.sequence: "{{parsed_event.message.SequenceNumber | int}}"
+        filter: "{{parsed_event.message.SequenceNumber != None and parsed_event.message.SequenceNumber.isdigit()}}"
+      - set:
+          event.outcome: "success"
+          action.outcome: "success"
+        filter: "{{parsed_event.message.Result == 'Succeeded'}}"
+      - set:
+          event.outcome: "failure"
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Result == 'Failed'}}"
+      - set:
+          event.outcome: "failure"
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Result == 'Unauthorized'}}"
+      - set:
+          user.target.name: "{{parsed_config_target.message.target_name}}"
+          event.category: ["configuration", "iam"]
+          event.type: ["change", "user"]
+        filter: "{{parsed_config_target.message.get('target_name') != None}}"
+
   set_csv_severity:
     actions:
       - set:
@@ -832,6 +959,9 @@ stages:
           action.outcome: "success"
         filter: "{{parsed_event.message.get('Action') != None}}"
       - set:
+          action.outcome: "failure"
+        filter: "{{parsed_event.message.Status == 'Unauthorized' or parsed_event.message.PanOSEventStatus == 'Unauthorized' or parsed_event.message.EventStatus == 'Unauthorized' or parsed_event.message.Result == 'Unauthorized'}}"
+      - set:
           action.outcome: "{{parsed_event.message.Status}}"
         filter: "{{parsed_event.message.Status in ['success','failure', 'unknown']}}"
       - set:
@@ -866,6 +996,9 @@ stages:
       - set:
           event.outcome: "failure"
         filter: "{{'Invalid' in parsed_event.message.msg}}"
+      - set:
+          event.outcome: "failure"
+        filter: "{{parsed_event.message.Status == 'Unauthorized' or parsed_event.message.PanOSEventStatus == 'Unauthorized' or parsed_event.message.EventStatus == 'Unauthorized' or parsed_event.message.Result == 'Unauthorized'}}"
 
   set_extracted_fields:
     actions:
@@ -1022,7 +1155,7 @@ stages:
       - set:
           url.original: "https://{{parsed_event.message.URL or parsed_event.message.FileName or parsed_event.message.URLFilename}}"
           destination.domain: '{{final.url.original.split("://")[1].split("/")[0].split(":")[0]}}'
-        filter: "{{final.action.type == 'url' and (parsed_event.message.URL != None or parsed_event.message.FileName != None or parsed_event.message.URLFilename != None)}}"
+        filter: "{{final.action.type == 'url' and (parsed_event.message.URL not in [None, ''] or parsed_event.message.FileName not in [None, ''] or parsed_event.message.URLFilename not in [None, ''])}}"
 
       - set:
           source.ip: "{{parsed_event.message.PublicIPv4}}"
@@ -1237,6 +1370,36 @@ stages:
           paloalto.destination.region: "{{parsed_event.message.PanOSDestinationLocation or parsed_event.message.DestinationLocation}}"
         filter: "{{parsed_ip_range_destination.message.get('range_1') != None and parsed_ip_range_destination.message.get('range_2') != None}}"
 
+  set_panos_audit_fields:
+    actions:
+      - set:
+          action.type: "audit"
+          action.name: "{{parsed_event.message.Object}}"
+          event.action: "{{parsed_system_audit_kv.message.op}}"
+          event.code: "{{parsed_system_audit_header.message.audit_type}}"
+          event.sequence: "{{parsed_system_audit_header.message.audit_seq | int}}"
+          event.outcome: "{{parsed_system_audit_kv.message.res or parsed_event.message.Status}}"
+          action.outcome: "{{parsed_system_audit_kv.message.res or parsed_event.message.Status}}"
+          process.executable: '{{parsed_system_audit_kv.message.exe | replace("\"", "")}}'
+          process.command_line: '{{parsed_system_audit_kv.message.exe | replace("\"", "")}}'
+          process.name: '{{(parsed_system_audit_kv.message.exe | replace("\"", "")).split("/") | last}}'
+          process.pid: "{{parsed_system_audit_header.message.pid}}"
+          group.name: '{{parsed_system_audit_kv.message.grp | replace("\"", "")}}'
+          related.user:
+            - '{{parsed_system_audit_kv.message.acct | replace("\"", "")}}'
+          user.id: "{{parsed_system_audit_header.message.uid}}"
+          user.target.name: '{{parsed_system_audit_kv.message.acct | replace("\"", "")}}'
+          user.name: '{{parsed_system_audit_kv.message.acct | replace("\"", "")}}'
+        filter: '{{parsed_system_audit_kv.get("message") != None}}'
+
+      - set:
+          source.ip: "{{parsed_system_audit_kv.message.addr}}"
+        filter: '{{parsed_system_audit_kv.message.get("addr") not in [None, "?"] and parsed_system_audit_kv.message.addr | is_ipaddress}}'
+
+      - set:
+          host.name: "{{parsed_system_audit_kv.message.hostname}}"
+        filter: '{{parsed_system_audit_kv.message.get("hostname") not in [None, "?"]}}'
+
   set_finalize_user_name:
     actions:
       - set:
@@ -1261,6 +1424,10 @@ stages:
       - set:
           event.category: ["network"]
           event.type: ["info"]
+      - set:
+          event.category: ["iam"]
+          event.type: ["change"]
+        filter: '{{final.action.type == "audit" and final.event.action != None}}'
       - set:
           event.category: ["authentication"]
           event.type: ["info"]
