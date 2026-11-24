@@ -7,16 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-24
+
+### Added
+
+- Parse new custom fields:
+  - `azuread.properties.targetRoleDisplayName`: from raw field `properties.targetResources[].displayName` of the single `Role` target (e.g. the role requested in a PIM activation)
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `event.type`: set `["change", "user"]` instead of `["info"]` for PIM role management audit logs (`loggedByService` = `PIM`, category `RoleManagement`, with a `Role` target)
+  - `network.type`: derive `ipv4` or `ipv6` from the first valid `ipaddr` entry of `additionalDetails` in audit logs
+  - `source.ip`: map the first valid `ipaddr` entry of `additionalDetails` in audit logs (e.g. PIM role activation requests where `initiatedBy.user.ipAddress` is null) when neither `callerIpAddress`, `ipAddress` nor `properties.ipAddress` is a valid IP, ignoring invalid values and duplicate entries
+
 ## [1.0.2] - 2026-11-12
 
 ### Fixed
 
-- Audit logs initiated by an application no longer describe the application as a user: its name, application id and service principal go to `azuread.properties.appDisplayName`, `azuread.properties.appId`, `azuread.properties.servicePrincipalId` and `azuread.properties.servicePrincipalName` instead of `user.*`, while the targeted user stays in `user.target.*`
-- Audit logs no longer fill `user.name` from `identity`, the display name of the initiator, which kept an application name such as "My Signins" next to the id of the user who acted through it
-
-### Added
-
-- Smart descriptions for audit logs initiated by an application (group membership, user and device updates, app role assignments, service principal creation)
+- Fix existing ECS fields:
+  - `user.email`: stop filling it with the initiating application in audit logs initiated by an application, the targeted user staying in `user.target.*`
+  - `user.full_name`: stop filling it with the initiating application in audit logs initiated by an application, the targeted user staying in `user.target.*`
+  - `user.id`: stop filling it with the initiating application in audit logs initiated by an application, the targeted user staying in `user.target.*`
+  - `user.name`: stop filling it from raw field `identity` in audit logs, which could hold an application name such as "My Signins" next to the id of the user who acted through it, and with the initiating application in audit logs initiated by an application
+- Fix existing custom fields:
+  - `azuread.properties.appDisplayName`: map raw field `properties.initiatedBy.app.displayName` in audit logs initiated by an application instead of `user.*`
+  - `azuread.properties.appId`: map raw field `properties.initiatedBy.app.appId` in audit logs initiated by an application instead of `user.*`
+  - `azuread.properties.servicePrincipalId`: map raw field `properties.initiatedBy.app.servicePrincipalId` in audit logs initiated by an application instead of `user.*`
+  - `azuread.properties.servicePrincipalName`: map raw field `properties.initiatedBy.app.servicePrincipalName` in audit logs initiated by an application instead of `user.*`
 
 ### [1.0.1] - 2026-11-02
 
