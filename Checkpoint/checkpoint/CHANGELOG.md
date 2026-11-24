@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-23
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `event.reason`: map from the `Malware Action` CEF label, or `Attack Information` when absent, for `SmartDefense` (IPS) events
+  - `event.risk_score`: map from the `Confidence` CEF label as a number for `SmartDefense` (IPS) events
+  - `threat.software.name`: map from the `Malware Family` CEF label, when present, for `SmartDefense` (IPS) events
+- Extend parsing of existing custom fields:
+  - `checkpoint.malware_action_or_attack_information`: map from the `Malware Action` CEF label, or `Attack Information` when absent, for `SmartDefense` (IPS) events
+  - `checkpoint.malware_family`: map from the `Malware Family` CEF label, when present, for `SmartDefense` (IPS) events
+  - `checkpoint.protection_name`: map from the `Protection Name` CEF label for `SmartDefense` (IPS) events
+  - `checkpoint.protection_type`: map from the `Protection Type` CEF label for `SmartDefense` (IPS) events
+  - `checkpoint.threat_prevention_rule_id`: map from the `Threat Prevention Rule ID` CEF label for `SmartDefense` (IPS) events
+
+## [1.0.4] - 2026-11-13
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `destination.domain`: fallback to CEF `destination_domain_name` when `dhost` is missing
+
 ## [1.0.3] - 2026-09-29
 
 ### Fixed

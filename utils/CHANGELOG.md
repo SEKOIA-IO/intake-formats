@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-10-29
+
+### Added
+
+- Allow overriding the format validation endpoint with the `SEKOIA_VALIDATION_URL` environment variable
+
+### Changed
+
+- Compute the files checked by `mise run fix` and `mise run validate` against `origin/develop`, as the CI does
+- Run the compliance checks of `mise run validate` with the same options as the CI
+
+### Fixed
+
+- Stop `mise run fix` and `mise run validate` when `origin/develop` is missing, and warn about untracked format files ignored by the checks
+- Prevent the linter and `mise run validate` from checking every format when no format changed
+- Fail the linter with `--changes` when the diff against `origin/develop` fails, instead of reporting no changes
+
 ## 2026-10-13
 
 ### Fixed
