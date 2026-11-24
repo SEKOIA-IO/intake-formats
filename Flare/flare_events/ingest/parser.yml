@@ -7,7 +7,16 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  # Dated when Flare matched the item to the tenant (added by the connector), as in Flare's own feed:
+  # the item can be years old, e.g. the history Flare matches when a tenant is created
   - name: parsed_event_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.metadata.matched_at or json_event.message.header.timestamp or json_event.message.metadata.estimated_created_at}}"
+        output_field: date
+
+  - name: parsed_item_created_at
     external:
       name: date.parse
       properties:
@@ -73,6 +82,7 @@ stages:
           "@timestamp": "{{parsed_event_timestamp.date}}"
           event.start: "{{parsed_event_start.date}}"
           event.end: "{{parsed_event_end.date}}"
+          flare.events.created_at: "{{parsed_item_created_at.date}}"
           event.category: ["threat"]
           event.type: ["indicator"]
           event.kind: "alert"
@@ -109,6 +119,8 @@ stages:
           flare.events.victim_name: "{{json_event.message.header.victim_name}}"
           flare.events.emails: "{{json_event.message.data.features.emails}}"
           flare.events.usernames: "{{json_event.message.data.features.usernames}}"
+          # Fields the connector cut to fit the intake size limit (from 0.6.7)
+          flare.events.truncated_fields: "{{json_event.message.data.truncated_fields}}"
           flare.events.identifiers.id: >
             {%- set ids = [] -%}
             {%- for identifier in json_event.message.identifiers or [] -%}
