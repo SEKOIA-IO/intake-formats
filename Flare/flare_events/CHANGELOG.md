@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## 2026-11-24
+
+### Changed
+
+- Read a missing field like a `null` one, so that events keep the same parsing when the connector stops sending the fields set to `null`
+
 ## 2026-11-18
 
 ### Added
