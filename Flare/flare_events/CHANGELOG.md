@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## 2026-11-25
+
+### Added
+
+- Keep the context Flare gives analysts: the text that matched (`flare.events.content_preview`), the English translation, Flare's topics and intents, and the CVEs mentioned
+- Stealer logs: the sites of the stolen credentials, the applications and kinds of access they open, the kinds of personal data and Flare's findings on the device; bots: their location, OS and the sites they hold access to
+- Code platform items (`driller`): the link, the kind of item, the project, the commit and its author, the file path, the snippets and whether a secret detection rule matched
+- Chat messages and attachments: the message link, the file name and type, the extracted text; forum topics: their title and first post
+
+### Fixed
+
+- Exposed services: read the host name, IP address, service, product, ASN, organization and country Flare sends
+
 ## 2026-11-24
 
 ### Changed
@@ -53,9 +66,9 @@
 ### Added
 
 - Add new Flare detection rules for:
-    - high-severity exposure
-    - leaked credentials with exposed passwords
-    - stealer-log malware infection
+  - high-severity exposure
+  - leaked credentials with exposed passwords
+  - stealer-log malware infection
 
 ## 2026-06-08
 
