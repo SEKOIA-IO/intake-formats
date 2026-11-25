@@ -146,22 +146,8 @@ stages:
           flare.events.title_en: "{{json_event.message.data.topic_title_en or json_event.message.header.parent_title_en}}"
           flare.events.vulnerabilities: "{{json_event.message.data.features.vulnerabilities or none}}"
           # Flare's classification of the conversation, e.g. "Ransomware & Extortion"
-          flare.events.topics: >
-            {%- set values = [] -%}
-            {%- for item in json_event.message.data.inherited_topics or [] -%}
-              {%- if item.value -%}
-                {%- set _ = values.append(item.value) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if values | length > 0 -%}{{ values }}{%- endif -%}
-          flare.events.intents: >
-            {%- set values = [] -%}
-            {%- for item in json_event.message.data.inherited_intents or [] -%}
-              {%- if item.value -%}
-                {%- set _ = values.append(item.value) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if values | length > 0 -%}{{ values }}{%- endif -%}
+          flare.events.topics: "{{(json_event.message.data.inherited_topics or []) | map(attribute='value') | select | list or none}}"
+          flare.events.intents: "{{(json_event.message.data.inherited_intents or []) | map(attribute='value') | select | list or none}}"
 
       - set:
           threat.indicator.ip: "{{json_event.message.data.features.ip_addresses[0]}}"
@@ -332,48 +318,27 @@ stages:
           flare.events.stealer_log.sources: "{{json_event.message.data.sources}}"
           # What the stolen credentials open, e.g. "IdP", "VPN (Corporate)"
           flare.events.stealer_log.applications: "{{json_event.message.data.applications or json_event.message.header.applications}}"
-          flare.events.stealer_log.access_types: >
-            {%- set values = [] -%}
-            {%- for item in json_event.message.data.access_types or [] -%}
-              {%- if item.value -%}
-                {%- set _ = values.append(item.value) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if values | length > 0 -%}{{ values }}{%- endif -%}
-          flare.events.stealer_log.pii_types: >
-            {%- set values = [] -%}
-            {%- for item in json_event.message.data.pii_type or [] -%}
-              {%- if item.value -%}
-                {%- set _ = values.append(item.value) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if values | length > 0 -%}{{ values }}{%- endif -%}
+          flare.events.stealer_log.access_types: "{{((json_event.message.data.access_types or json_event.message.header.access_types) or []) | map(attribute='value') | select | list or none}}"
+          flare.events.stealer_log.pii_types: "{{((json_event.message.data.pii_type or json_event.message.header.pii_type) or []) | map(attribute='value') | select | list or none}}"
           # e.g. "Fake Infected Device"
-          flare.events.stealer_log.analysis_labels: >
-            {%- set values = [] -%}
-            {%- for item in json_event.message.data.analysis_labels or [] -%}
-              {%- if item.value -%}
-                {%- set _ = values.append(item.value) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if values | length > 0 -%}{{ values }}{%- endif -%}
+          flare.events.stealer_log.analysis_labels: "{{((json_event.message.data.analysis_labels or json_event.message.header.analysis_labels) or []) | map(attribute='value') | select | list or none}}"
           flare.events.stealer_log.secrets_count: "{{json_event.message.data.secrets_count}}"
           # The sites the stolen credentials are for
           flare.events.stealer_log.credential_hosts: >
             {%- set hosts = [] -%}
             {%- for credential in json_event.message.data.credentials or [] -%}
-              {%- set host = (credential.url or '').split('://')[-1].split('/')[0].split('@')[-1] -%}
+              {%- set host = (credential.url or '').split('://', 1)[-1].split('/')[0].split('@')[-1].split(':')[0] -%}
               {%- if host and host not in hosts -%}
                 {%- set _ = hosts.append(host) -%}
               {%- endif -%}
             {%- endfor -%}
             {%- if hosts | length > 0 -%}{{ hosts }}{%- endif -%}
-          # Bots (infected devices for sale)
-          flare.events.stealer_log.resources: "{{json_event.message.data.resources}}"
 
       - set:
           host.geo.name: "{{json_event.message.data.location}}"
           host.os.full: "{{json_event.message.data.os}}"
+          # The sites the bot holds access to
+          flare.events.stealer_log.credential_hosts: "{{json_event.message.data.resources}}"
         filter: "{{json_event.message.header.type == 'bot'}}"
 
   set_source_code_fields:
@@ -509,7 +474,7 @@ stages:
 
       - set:
           destination.as.number: "{{json_event.message.data.asn | replace('AS', '') | int}}"
-        filter: "{{json_event.message.data.asn | default(none) is not none}}"
+        filter: "{{((json_event.message.data.asn or '') | replace('AS', '')).isdigit()}}"
 
   set_social_media_fields:
     actions:

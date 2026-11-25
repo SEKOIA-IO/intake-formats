@@ -6,14 +6,14 @@
 
 ### Added
 
-- Keep the context Flare gives analysts: the text that matched (`flare.events.content_preview`), the English translation, Flare's topics and intents, and the CVEs mentioned
-- Stealer logs: the sites of the stolen credentials, the applications and kinds of access they open, the kinds of personal data and Flare's findings on the device; bots: their location, OS and the sites they hold access to
-- Code platform items (`driller`): the link, the kind of item, the project, the commit and its author, the file path, the snippets and whether a secret detection rule matched
-- Chat messages and attachments: the message link, the file name and type, the extracted text; forum topics: their title and first post
+- Add the text that matched the tenant's identifiers, the English translation, Flare's topics and intents, and the CVEs mentioned: `flare.events.content_preview`, `flare.events.content_en`, `flare.events.title_en`, `flare.events.topics`, `flare.events.intents`, `flare.events.vulnerabilities`
+- Add the context of stealer logs and bots: `flare.events.stealer_log.credential_hosts` (the sites of the stolen credentials, or the sites a bot holds access to), `flare.events.stealer_log.applications`, `flare.events.stealer_log.access_types`, `flare.events.stealer_log.pii_types`, `flare.events.stealer_log.analysis_labels`, `flare.events.stealer_log.secrets_count`; the location and OS of bots
+- Add the context of code platform items (`driller`): `url.full`, `file.path`, the author in `user.*`, `flare.events.driller.type`, `flare.events.driller.project_name`, `flare.events.driller.dork_name`, `flare.events.driller.commit_sha`, `flare.events.driller.issue_title`, `flare.events.driller.snippets`, `flare.events.driller.secret_detected`, `flare.events.driller.secret_detection_rule_ids`
+- Add the message link of chat messages (`flare.events.chat_message.message_link`), the file of attachments (`file.name`, `file.mime_type`, `flare.events.attachment.url`, `flare.events.attachment.extracted_content`), and the title and first post of forum topics
 
 ### Fixed
 
-- Exposed services: read the host name, IP address, service, product, ASN, organization and country Flare sends
+- Exposed services: read the host name, IP address, service, product, ASN, organization and country Flare sends. `destination.address` is now the IP address; the host name is in `host.name`
 
 ## 2026-11-24
 
@@ -66,9 +66,9 @@
 ### Added
 
 - Add new Flare detection rules for:
-  - high-severity exposure
-  - leaked credentials with exposed passwords
-  - stealer-log malware infection
+    - high-severity exposure
+    - leaked credentials with exposed passwords
+    - stealer-log malware infection
 
 ## 2026-06-08
 
