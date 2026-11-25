@@ -176,6 +176,25 @@ stages:
           source.ip: "{{parsed_event.message.callerIpAddress}}"
         filter: "{{parsed_event.message.callerIpAddress | is_ipaddress}}"
 
+      # source.ip last-resort fallback (e.g. PIM audit logs): first valid `ipaddr` entry of additionalDetails,
+      # only when no other IP field is available; invalid values and later duplicates are ignored
+      - set:
+          source.ip: >-
+            {%- for v in (parsed_event.message.properties.additionalDetails | default([], true) | selectattr('key', 'equalto', 'ipaddr') | map(attribute='value') | list) if v | is_ipaddress -%}
+              {%- if loop.first -%}{{ v }}{%- endif -%}
+            {%- endfor -%}
+          network.type: >-
+            {%- for v in (parsed_event.message.properties.additionalDetails | default([], true) | selectattr('key', 'equalto', 'ipaddr') | map(attribute='value') | list) if v | is_ipaddress -%}
+              {%- if loop.first -%}{{ 'ipv6' if ':' in v else 'ipv4' }}{%- endif -%}
+            {%- endfor -%}
+        filter: >-
+          {{ not (parsed_event.message.ipAddress | is_ipaddress)
+             and not (parsed_event.message.properties.ipAddress | is_ipaddress)
+             and not (parsed_event.message.callerIpAddress | is_ipaddress)
+             and (parsed_event.message.properties.additionalDetails | default([], true)
+               | selectattr('key', 'equalto', 'ipaddr') | map(attribute='value')
+               | map('is_ipaddress') | select | list | length > 0) }}
+
   read_device_details:
     actions:
       - set:
@@ -637,6 +656,20 @@ stages:
           azuread.properties.targetDevicePrincipalName: "{{parsed_event.message.properties.targetResources[0].devicePrincipalName}}"
           azuread.properties.targetDeviceDisplayName: "{{parsed_event.message.properties.targetResources[0].displayName}}"
         filter: '{{ parsed_event.message.properties.targetResources|length == 1 and parsed_event.message.properties.targetResources[0].type == "Device"}}'
+
+      # Directory role targeted by the audit event (e.g. PIM role activation requests).
+      # Kept custom: a request is not an effective role change, so user.changes.roles / user.target.roles do not fit.
+      - set:
+          azuread.properties.targetRoleDisplayName: >-
+            {%- for item in parsed_event.message.properties.targetResources -%}
+              {%- if item.type == "Role" -%}{{ item.displayName }}{%- endif -%}
+            {%- endfor -%}
+        filter: "{{ parsed_event.message.properties.targetResources is iterable and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'Role') | list | length == 1 }}"
+
+      # PIM role management events change the role membership of a user (ECS: iam + change + user).
+      - set:
+          event.type: ["change", "user"]
+        filter: "{{ parsed_event.message.properties.loggedByService == 'PIM' and parsed_event.message.properties.category == 'RoleManagement' and parsed_event.message.properties.targetResources is iterable and parsed_event.message.properties.targetResources | selectattr('type', 'equalto', 'Role') | list | length > 0 }}"
   log_type_authentication:
     actions:
       - set:
