@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `action.name`: policy action, including protected access and blocking
   - `paloalto.endpoint.serial_number`: browser device serial number
 - Add Browser smart descriptions and anonymized tests for the event types and policy actions in the supplied sample.
+- Add URL-free Browser smart descriptions for events such as sign-outs with a null `NetworkURL`.
 - Handle null or missing `ClassificationMITRE` and default `observer.product` to `Prisma Access Browser` when `LogSource` is null or missing.
 - Classify completed Browser authentication (`loginSuccess`, `loginFail`) with `event.type: end`.
 
