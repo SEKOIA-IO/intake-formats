@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support Prisma Access Browser, Browser Extension and Mobile Browser events.
+- Parse ECS fields for Browser events:
+  - `event.action`, `event.category`, `event.type`, `event.outcome`
+  - `host.name`, `network.application`, `observer.product`, `observer.vendor`
+  - `rule.category`, `rule.description`, `url.original`, `user.email`, `user.name`, `user.domain`
+  - `threat.framework`, `threat.technique.id`
+- Parse custom fields for Browser events:
+  - `action.name`: policy action, including protected access and blocking
+  - `paloalto.endpoint.serial_number`: browser device serial number
+- Add Browser smart descriptions and anonymized tests for the event types and policy actions in the supplied sample.
+
 ## [1.0.1] - 2026-11-12
 
 ### Changed
