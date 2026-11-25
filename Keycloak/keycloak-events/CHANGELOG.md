@@ -10,3 +10,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Map Keycloak event `username` to ECS `user.name`, independently of `userId`.
+- Use `user.name` in login smart descriptions when available.
