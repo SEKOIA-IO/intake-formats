@@ -268,13 +268,14 @@ stages:
               {% endif %}
               {% endfor %} ]
           dns.resolved_ip: >
-            {% set ips = [] %}
+            {%- set ips -%}
             {%- for answer in json.event.winlog.event_data.QueryResults.split(";")|select('ne', '')|list -%}
             {%- if "type:" not in answer -%}
-            {% set ips = ips.append(answer[7:]) %}
+            {{ answer[7:] | tojson }},
             {%- endif -%}
             {%- endfor -%}
-            {{ips}}
+            {%- endset -%}
+            {{ ('[' ~ ips[:-1] ~ ']') | from_json }}
           file.code_signature.subject_name: "{{json.event.winlog.event_data.Signature}}"
           file.code_signature.status: "{{json.event.winlog.event_data.SignatureStatus}}"
           file.name: "{{json.event.winlog.event_data.PipeName}}"
@@ -422,9 +423,9 @@ stages:
               "0CCE9242-69AE-11D9-BED3-505054503030": ["Kerberos Authentication Service", "Account Logon"]
               }
             %}
-            {% set subCatGuid = json.event.winlog.event_data.get("SubcategoryGuid").replace("{","").replace("}","").toUpperCase() %}
+            {% set subCatGuid = json.event.winlog.event_data.get("SubcategoryGuid").replace("{","").replace("}","").upper() %}
             {%- if subCatGuid in mapping -%}
-            {{subCatGuid[1]}}
+            {{mapping[subCatGuid][1]}}
             {%- endif -%}
           winlog.event_data.SubCategory: >
             {% set mapping = {
@@ -487,9 +488,9 @@ stages:
               "0CCE9242-69AE-11D9-BED3-505054503030": ["Kerberos Authentication Service", "Account Logon"]
               }
             %}
-            {% set subCatGuid = json.event.winlog.event_data.get("SubcategoryGuid").replace("{","").replace("}","").toUpperCase() %}
+            {% set subCatGuid = json.event.winlog.event_data.get("SubcategoryGuid").replace("{","").replace("}","").upper() %}
             {%- if subCatGuid in mapping -%}
-            {{subCatGuid[0]}}
+            {{mapping[subCatGuid][0]}}
             {%- endif -%}
         filter: "{{json.event.winlog.event_data.get('SubcategoryGuid') != None}}"
       - set:
@@ -509,7 +510,7 @@ stages:
                 "0x00040000": "WRITE_DAC",
                 "0x00080000": "WRITE_OWNER",
                 "0x00100000": "SYNCHRONIZE",
-                "0x00F00000": "STANDARD_RIGHTS_REQUIRED",
+                "0x000F0000": "STANDARD_RIGHTS_REQUIRED",
                 "0x001F0000": "STANDARD_RIGHTS_ALL",
                 "0x0000FFFF": "SPECIFIC_RIGHTS_ALL",
                 "0x01000000": "ADS_RIGHT_ACCESS_SYSTEM_SECURITY",
@@ -519,16 +520,24 @@ stages:
                 "0x80000000": "ADS_RIGHT_GENERIC_READ"
                 }
             -%}
-            {% set new_val = json.event.winlog.event_data.AccessMask.split('x')[-1] %}
-            {% set len_val = json.event.winlog.event_data.AccessMask.split('x')[-1] | length %}
-            {% set accessmask_list = [] %}
-            {% set str_zeros = "0x00000000" %}
-            {%- for i in range(len_val) -%}
-              {% set str_val = str_zeros[:9-i]+new_val[len_val-1-i]+str_zeros[10-i:] %}
-              {%- if str_val in mapping -%}
-                {% set accessmask_list = accessmask_list.append(mapping.get(str_val)) %}
+            {%- set hex_values = {"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "a": 10, "b": 11, "c": 12, "d": 13, "e": 14, "f": 15} -%}
+            {%- set value = ('00000000' ~ (json.event.winlog.event_data.AccessMask.split('x')[-1] | lower))[-8:] -%}
+            {%- set items -%}
+            {%- for key, label in mapping | dictsort -%}
+              {%- set key_hex = key[2:] | lower -%}
+              {%- set missing_bits -%}
+              {%- for key_char in key_hex -%}
+                {%- set key_nibble = hex_values.get(key_char, 0) -%}
+                {%- set value_nibble = hex_values.get(value[loop.index0], 0) -%}
+                {%- for bit in [1, 2, 4, 8] if (key_nibble // bit) % 2 == 1 and (value_nibble // bit) % 2 == 0 -%}x{%- endfor -%}
+              {%- endfor -%}
+              {%- endset -%}
+              {%- if missing_bits == "" -%}
+                {{ label | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set accessmask_list = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {%- if accessmask_list != [] -%}
             {{accessmask_list}}
             {%- endif -%}
@@ -560,16 +569,24 @@ stages:
               "0x00200000": "USER_USE_AES_KEYS"
               }
             %}
-            {% set new_val = json.event.winlog.event_data.NewUacValue.split('x')[-1] %}
-            {% set len_val = json.event.winlog.event_data.NewUacValue.split('x')[-1] | length %}
-            {% set uac_list = [] %}
-            {% set str_zeros = "0x00000000" %}
-            {%- for i in range(len_val) -%}
-              {% set str_val = str_zeros[:9-i]+new_val[len_val-1-i]+str_zeros[10-i:] %}
-              {%- if str_val in mapping -%}
-                {% set uac_list = uac_list.append(mapping.get(str_val)) %}
+            {%- set hex_values = {"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "a": 10, "b": 11, "c": 12, "d": 13, "e": 14, "f": 15} -%}
+            {%- set value = ('00000000' ~ (json.event.winlog.event_data.NewUacValue.split('x')[-1] | lower))[-8:] -%}
+            {%- set items -%}
+            {%- for key, label in mapping | dictsort -%}
+              {%- set key_hex = key[2:] | lower -%}
+              {%- set missing_bits -%}
+              {%- for key_char in key_hex -%}
+                {%- set key_nibble = hex_values.get(key_char, 0) -%}
+                {%- set value_nibble = hex_values.get(value[loop.index0], 0) -%}
+                {%- for bit in [1, 2, 4, 8] if (key_nibble // bit) % 2 == 1 and (value_nibble // bit) % 2 == 0 -%}x{%- endfor -%}
+              {%- endfor -%}
+              {%- endset -%}
+              {%- if missing_bits == "" -%}
+                {{ label | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set uac_list = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {%- if uac_list != [] -%}
             {{uac_list}}
             {%- endif -%}
@@ -599,16 +616,24 @@ stages:
               "0x00000001": "Validate"
               }
             %}
-            {% set new_val = json.event.winlog.event_data.TicketOptions.split('x')[-1] %}
-            {% set len_val = json.event.winlog.event_data.TicketOptions.split('x')[-1] | length %}
-            {% set tod_list = [] %}
-            {% set str_zeros = "0x00000000" %}
-            {%- for i in range(len_val) -%}
-              {% set str_val = str_zeros[:9-i]+new_val[len_val-1-i]+str_zeros[10-i:] %}
-              {%- if str_val in mapping -%}
-                {% set tod_list = tod_list.append(mapping.get(str_val)) %}
+            {%- set hex_values = {"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "a": 10, "b": 11, "c": 12, "d": 13, "e": 14, "f": 15} -%}
+            {%- set value = ('00000000' ~ (json.event.winlog.event_data.TicketOptions.split('x')[-1] | lower))[-8:] -%}
+            {%- set items -%}
+            {%- for key, label in mapping | dictsort -%}
+              {%- set key_hex = key[2:] | lower -%}
+              {%- set missing_bits -%}
+              {%- for key_char in key_hex -%}
+                {%- set key_nibble = hex_values.get(key_char, 0) -%}
+                {%- set value_nibble = hex_values.get(value[loop.index0], 0) -%}
+                {%- for bit in [1, 2, 4, 8] if (key_nibble // bit) % 2 == 1 and (value_nibble // bit) % 2 == 0 -%}x{%- endfor -%}
+              {%- endfor -%}
+              {%- endset -%}
+              {%- if missing_bits == "" -%}
+                {{ label | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set tod_list = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {%- if tod_list != [] -%}
             {{tod_list}}
             {%- endif -%}
@@ -693,28 +718,23 @@ stages:
         filter: '{{json.event.event.get("code") in ["1100", "1102", "1104", "1105", "1108", "4624", "4648", "4625","4670", "4673", "4674", "4689", "4697", "4719", "4720", "4722","4723", "4724", "4725", "4726", "4727", "4728", "4729", "4730","4731", "4732", "4733", "4734", "4735", "4737", "4738", "4740","4741", "4742", "4743", "4744", "4745", "4746", "4747", "4748","4749", "4750", "4751", "4752", "4753", "4754", "4755", "4756","4757", "4758", "4759", "4760", "4761", "4762", "4763", "4764","4767", "4768", "4769", "4770", "4771", "4798", "4799", "4817","4904", "4905", "4907", "4912", "5140", "5145"]}}'
       - set:
           process.args: >
-            {%- set start = 0 -%}
-            {%- set end = 0 -%}
-            {%- set in_quote = false -%}
-            {%- set al = [] -%}
-            {%- for i in range (len(json.event.winlog.event_data.CommandLine)) -%}
-              {%- set end = i -%}
-              {%- if json.event.winlog.event_data.CommandLine[i] == '\"' -%}
-                {%- if in_quote -%}
-                  {%- set in_quote = false -%}
-                {%- else -%}
-                  {%- set in_quote = true -%}
-                {%- endif -%}
-              {%- endif -%}
-              {%- if json.event.winlog.event_data.CommandLine[i] == " " and in_quote == false -%}
-                {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end]) -%}
-                {%- set start = i + 1 -%}
-              {%- endif -%}
-              {%- if (i == len(json.event.winlog.event_data.CommandLine) - 1) -%}
-                {%- set al = al.append(json.event.winlog.event_data.CommandLine[start:end+1]) -%}
+            {%- set command_line = json.event.winlog.event_data.CommandLine -%}
+            {%- set al -%}
+            {%- for segment in command_line.split('\"') -%}
+              {%- if not loop.first -%}\"{%- endif -%}
+              {%- if loop.index0 is even -%}
+                {%- for part in segment.split(" ") -%}
+                  {%- if not loop.first -%}","{%- endif -%}
+                  {{ (part | tojson)[1:-1] }}
+                {%- endfor -%}
+              {%- else -%}
+                {{ (segment | tojson)[1:-1] }}
               {%- endif -%}
             {%- endfor -%}
-            {{al}}
+            {%- endset -%}
+            {%- if command_line != "" -%}
+            {{ ('["' ~ al ~ '"]') | from_json | reject("equalto", "") | list }}
+            {%- endif -%}
           process.command_line: "{{json.event.winlog.event_data.CommandLine}}"
           process.executable: "{{json.event.winlog.event_data.NewProcessName}}"
           process.name: '{{json.event.winlog.event_data.NewProcessName.split("\\")|last}}'
@@ -1921,76 +1941,76 @@ stages:
         filter: '{{json.event.winlog.event_data.ConnectedUser.split("\\")|length == 2}}'
       - set:
           powershell.command.invocation_details: >
-            {%- set results = [] -%}
-            {%- set param3 = json.event.winlog.event_data.param3.split("\n") -%}
-            {%- for v in param3 -%}
-            {%- set detailRegex = '^([^:(]+)\(([^)]+)\)\:\s*(.+)?$' -%}
-            {%- set parameterBindingRegex = 'name\=(.+);\s*value\=(.+)$' -%}
-            {%- if re.match(detailRegex, v) == None -%}
-            {%- set results = results.append({"value":v}) -%}
+            {%- set results -%}
+            {%- for v in json.event.winlog.event_data.param3.split("\n") -%}
+            {%- set type_split = v.partition("(") -%}
+            {%- set command_split = type_split[2].partition(")") -%}
+            {%- if type_split[0] == "" or type_split[1] == "" or ":" in type_split[0] or command_split[0] == "" or command_split[1] == "" or command_split[2][:1] != ":" -%}
+            {"value": {{ v | tojson }}},
             {%- else -%}
-            {%- set matches = [] -%}
-            {%- for i in re.search(detailRegex,v).groups() -%}
-            {%- set matches = matches.append(i) -%}
-            {%- endfor -%}
-            {%- if len(matches) != 4 -%}
-            {%- set results = results.append({"value":v}) -%}
-            {%- elif matches[1] != "ParameterBinding" -%}
-            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"value": matches[3]}) -%}
-            {%- elif re.match(parameterBindingRegex,matches[3]) == None -%}
-            {%- set results = results.append({"value": matches[4]}) -%}
-            {%- else -%}
-            {%- set nameValMatches = [] -%}
-            {%- for i in re.search(parameterBindingRegex,matches[3]).groups() -%}
-            {%- set nameValMatches = nameValMatches.append(i) -%}
-            {%- endfor -%}
-            {%- if len(nameValMatches) != 3 -%}
-            {%- set results = results.append({"value": matches[3]}) -%}
-            {%- else -%}
-            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"name": nameValMatches[1],"value": nameValMatches[2]}) -%}
-            {%- endif -%}
-            {%- endif -%}
+            {%- set detail = command_split[2][1:].lstrip() or none -%}
+            {%- set name_values -%}
+            {%- if type_split[0] == "ParameterBinding" and detail and detail[:5] == "name=" -%}
+            {%- set parts = detail[5:].split(";") -%}
+            {%- for part in parts -%}
+            {%- set name = parts[:loop.index0] | join(";") -%}
+            {%- set value = (parts[loop.index0:] | join(";")).lstrip() -%}
+            {%- if name != "" and value[:6] == "value=" and value[6:] != "" -%}
+            [{{ name | tojson }}, {{ value[6:] | tojson }}],
             {%- endif -%}
             {%- endfor -%}
-            {{results}}
+            {%- endif -%}
+            {%- endset -%}
+            {%- set name_values = ('[' ~ name_values[:-1] ~ ']') | from_json -%}
+            {%- if type_split[0] != "ParameterBinding" -%}
+            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "value": {{ detail | tojson }}},
+            {%- elif name_values | length == 0 -%}
+            {"value": {{ detail | tojson }}},
+            {%- else -%}
+            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "name": {{ (name_values | last)[0] | tojson }}, "value": {{ (name_values | last)[1] | tojson }}},
+            {%- endif -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ results[:-1] ~ ']') | from_json }}
         filter: '{{json.event.event.get("code") == "800"}}'
       - set:
           powershell.command.invocation_details: >
-            {%- set results = [] -%}
-            {%- set payload = json.event.winlog.event_data.Payload.split("\n") -%}
-            {%- for v in payload -%}
-            {%- set detailRegex = '^([^:(]+)\(([^)]+)\)\:\s*(.+)?$' -%}
-            {%- set parameterBindingRegex = 'name\=(.+);\s*value\=(.+)$' -%}
-            {%- if re.match(detailRegex, v) == None -%}
-            {%- set results = results.append({"value":v}) -%}
+            {%- set results -%}
+            {%- for v in json.event.winlog.event_data.Payload.split("\n") -%}
+            {%- set type_split = v.partition("(") -%}
+            {%- set command_split = type_split[2].partition(")") -%}
+            {%- if type_split[0] == "" or type_split[1] == "" or ":" in type_split[0] or command_split[0] == "" or command_split[1] == "" or command_split[2][:1] != ":" -%}
+            {"value": {{ v | tojson }}},
             {%- else -%}
-            {%- set matches = [] -%}
-            {%- for i in re.search(detailRegex,v).groups() -%}
-            {%- set matches = matches.append(i) -%}
-            {%- endfor -%}
-            {%- if len(matches) != 4 -%}
-            {%- set results = results.append({"value":v}) -%}
-            {%- elif matches[1] != "ParameterBinding" -%}
-            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"value": matches[3]}) -%}
-            {%- elif re.match(parameterBindingRegex,matches[3]) == None -%}
-            {%- set results = results.append({"value": matches[4]}) -%}
-            {%- else -%}
-            {%- set nameValMatches = [] -%}
-            {%- for i in re.search(parameterBindingRegex,matches[3]).groups() -%}
-            {%- set nameValMatches = nameValMatches.append(i) -%}
-            {%- endfor -%}
-            {%- if len(nameValMatches) != 3 -%}
-            {%- set results = results.append({"value": matches[3]}) -%}
-            {%- else -%}
-            {%- set results = results.append({"type": matches[1],"related_command": matches[2],"name": nameValMatches[1],"value": nameValMatches[2]}) -%}
-            {%- endif -%}
-            {%- endif -%}
+            {%- set detail = command_split[2][1:].lstrip() or none -%}
+            {%- set name_values -%}
+            {%- if type_split[0] == "ParameterBinding" and detail and detail[:5] == "name=" -%}
+            {%- set parts = detail[5:].split(";") -%}
+            {%- for part in parts -%}
+            {%- set name = parts[:loop.index0] | join(";") -%}
+            {%- set value = (parts[loop.index0:] | join(";")).lstrip() -%}
+            {%- if name != "" and value[:6] == "value=" and value[6:] != "" -%}
+            [{{ name | tojson }}, {{ value[6:] | tojson }}],
             {%- endif -%}
             {%- endfor -%}
-            {{results}}
+            {%- endif -%}
+            {%- endset -%}
+            {%- set name_values = ('[' ~ name_values[:-1] ~ ']') | from_json -%}
+            {%- if type_split[0] != "ParameterBinding" -%}
+            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "value": {{ detail | tojson }}},
+            {%- elif name_values | length == 0 -%}
+            {"value": {{ detail | tojson }}},
+            {%- else -%}
+            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "name": {{ (name_values | last)[0] | tojson }}, "value": {{ (name_values | last)[1] | tojson }}},
+            {%- endif -%}
+            {%- endif -%}
+            {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ results[:-1] ~ ']') | from_json }}
         filter: '{{json.event.event.get("code") == "4103"}}'
       - set:
-          file.name: '{{json.event..winlog.event_data.ScriptName.split("\\")|last}}'
+          file.name: '{{json.event.winlog.event_data.ScriptName.split("\\")|last}}'
           file.directory: '{{json.event.winlog.event_data.ScriptName.split("\\")[:-1]|join}}'
         filter: '{{json.event.winlog.event_data.ScriptName.split("\\")|length > 1}}'
       - set:
