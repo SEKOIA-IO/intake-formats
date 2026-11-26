@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-26
+
+### Fixed
+
+- Build lists and dicts without mutating them in place (`.append`, `.update`, ...), which not every Jinja engine supports
+- Keep both the recipient and the mailbox address in `email.to.address` for automated investigation events
+
 ## [1.0.6] - 2026-11-03
 
 ### Fixed

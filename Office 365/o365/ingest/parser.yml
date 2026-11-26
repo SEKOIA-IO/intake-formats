@@ -160,30 +160,34 @@ stages:
 
       - set:
           threat.enrichments: >
-            {%- set enrichments = [] -%}
+            {%- set enrichment_items -%}
             {%- for threat in parse_data.ParsedData.get("Entities", []) -%}
-              {%- set indicator = {} -%}
+              {%- set indicator_fields -%}
               {%- if threat.get("FirstSeen") -%}
-                {%- set _ = indicator.update({"first_seen": threat.get("FirstSeen")}) -%}
+                "first_seen": {{ threat.get("FirstSeen") | tojson }},
               {%- endif -%}
               {%- if threat.get("SenderIP") -%}
-                {%- set _ = indicator.update({"ip": threat.get("SenderIP")}) -%}
+                "ip": {{ threat.get("SenderIP") | tojson }},
               {%- endif -%}
               {%- if threat.get("Recipient") -%}
-                {%- set _ = indicator.update({"email": {"address": threat.get("Recipient")}}) -%}
+                "email": {"address": {{ threat.get("Recipient") | tojson }} },
               {%- endif -%}
               {%- if threat.get("SourceEntityId")-%}
-                {%- set _ = indicator.update({"url": {"full": threat.get("SourceEntityId")}}) -%}
+                "url": {"full": {{ threat.get("SourceEntityId") | tojson }} },
               {%- elif threat.get("Url") -%}
-                {%- set _ = indicator.update({"url": {"full": threat.get("Url")}}) -%}
+                "url": {"full": {{ threat.get("Url") | tojson }} },
               {%- endif -%}
               {%- if threat.get("Source") -%}
-                {%- set _ = indicator.update({"provider": threat.get("Source")}) -%}
+                "provider": {{ threat.get("Source") | tojson }},
               {%- endif -%}
+              {%- endset -%}
+              {%- set indicator = ('{' ~ indicator_fields[:-1] ~ '}') | from_json -%}
               {%- if indicator != {} and indicator.keys() | length > 2 -%}
-                {%- set _ = enrichments.append({"indicator": indicator}) -%}
+                {"indicator": {{ indicator | tojson }} },
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set enrichments = ('[' ~ enrichment_items[:-1] ~ ']') | from_json -%}
             {%- if enrichments | length > 0 -%}
               {{ enrichments }}
             {%- endif -%}
@@ -328,10 +332,12 @@ stages:
             ]
 
           office365.exchange_admin.parameters_kv: >
-            {%- set result = {} -%}
-            {%- for parameter in json_event.message.Parameters -%}
-              {%- set _ = result.update({parameter.Name: parameter.Value}) -%}
+            {%- set result_fields -%}
+            {%- for parameter in json_event.message.Parameters if parameter.Name is defined and parameter.Name is not none -%}
+              {{ parameter.Name | string | tojson }}: {{ parameter.Value | default(none) | tojson }},
             {%- endfor -%}
+            {%- endset -%}
+            {%- set result = ('{' ~ result_fields[:-1] ~ '}') | from_json -%}
             {%- if result | length > 0 -%}{{ result }}{%- endif -%}
 
           email.to.address: >
@@ -487,16 +493,18 @@ stages:
 
       - set:
           email.attachments: >
-            {%- set attachments = [] -%}
+            {%- set attachment_items -%}
             {%- for raw_attachment in json_event.message.Item.Attachments.split("; ") -%}
               {%- if " (" in raw_attachment and raw_attachment.endswith("b)") -%}
                 {%- set file_name = raw_attachment.rsplit(" (", 1)[0] | basename -%}
                 {%- set file_size = raw_attachment.rsplit(" (", 1)[1].strip("b)") | int -%}
-                {%- set _ = attachments.append({"file": {"name": file_name, "size": file_size}}) -%}
+                {"file": {"name": {{ file_name | tojson }}, "size": {{ file_size | tojson }} } },
               {%- else -%}
-                {%- set _ = attachments.append({"file": {"name": (raw_attachment | basename)}}) -%}
+                {"file": {"name": {{ (raw_attachment | basename) | tojson }} } },
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set attachments = ('[' ~ attachment_items[:-1] ~ ']') | from_json -%}
             {{ attachments }}
         filter: '{{json_event.message.get("Item", {}).get("Attachments") not in [None, ""]}}'
 
@@ -534,17 +542,18 @@ stages:
             ]
 
           email.attachments: >
-            {%- set attachments = [] -%}
+            {%- set attachment_items -%}
             {%- if json_event.message.AffectedItems != None -%}
               {%- for email in json_event.message.AffectedItems -%}
                 {%- for file in email.Attachments.split("; ") -%}
                   {%- set file_name = file.rsplit(" (", 1)[0] | basename -%}
                   {%- set file_size = file.rsplit(" (", 1)[1].strip('b)') | int -%}
-                  {%- set item = {"file": {"name": file_name, "size": file_size}} -%}
-                  {%- set attachments = attachments.append(item) -%}
+                  {"file": {"name": {{ file_name | tojson }}, "size": {{ file_size | tojson }} } },
                 {%- endfor -%}
               {%- endfor -%}
             {%- endif -%}
+            {%- endset -%}
+            {%- set attachments = ('[' ~ attachment_items[:-1] ~ ']') | from_json -%}
             {{ attachments }}
 
       - set:
@@ -617,27 +626,31 @@ stages:
           office365.exchange.client_info_string: "{{json_event.message.ClientInfoString}}"
           office365.exchange.operation_count: "{{json_event.message.OperationCount}}"
           office365.exchange.folder.ids: >
-            {%- set folder_ids = [] -%}
+            {%- set folder_id_items -%}
             {%- for folder in json_event.message.Folders -%}
               {%- set folder_id = folder.get("Id") -%}
               {%- if folder_id -%}
-                {%- set _ = folder_ids.append(folder_id) -%}
+                {{ folder_id | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set folder_ids = ('[' ~ folder_id_items[:-1] ~ ']') | from_json -%}
             {%- if folder_ids | length > 0 -%}{{ folder_ids }}{%- endif -%}
           office365.exchange.email.ids: >
-            {%- set item_ids = [] -%}
+            {%- set item_id_items -%}
             {%- for folder in json_event.message.Folders -%}
               {%- for item in folder["FolderItems"] -%}
                 {%- set item_id = item.get("Id") -%}
                 {%- if item_id -%}
-                  {%- set _ = item_ids.append(item_id) -%}
+                  {{ item_id | tojson }},
                 {%- endif -%}
               {%- endfor -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set item_ids = ('[' ~ item_id_items[:-1] ~ ']') | from_json -%}
             {%- if item_ids | length > 0 -%}{{ item_ids }}{%- endif -%}
           office365.exchange.email.internet_message_ids: >
-            {%- set internet_message_ids = [] -%}
+            {%- set internet_message_id_items -%}
             {%- for folder in json_event.message.Folders -%}
               {%- for item in folder["FolderItems"] -%}
                 {%- set internet_message_id = item.get("InternetMessageId") -%}
@@ -645,32 +658,38 @@ stages:
                   {%- if internet_message_id.startswith("<") and internet_message_id.endswith(">") -%}
                     {%- set internet_message_id = internet_message_id[1:-1] -%}
                   {%- endif -%}
-                  {%- set _ = internet_message_ids.append(internet_message_id) -%}
+                  {{ internet_message_id | tojson }},
                 {%- endif -%}
               {%- endfor -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set internet_message_ids = ('[' ~ internet_message_id_items[:-1] ~ ']') | from_json -%}
             {%- if internet_message_ids | length > 0 -%}{{ internet_message_ids }}{%- endif -%}
           office365.exchange.email.sizes: >
-            {%- set sizes = [] -%}
+            {%- set size_items -%}
             {%- for folder in json_event.message.Folders -%}
               {%- for item in folder["FolderItems"] -%}
                 {%- set size = item.get("SizeInBytes") -%}
                 {%- if size != None -%}
-                  {%- set _ = sizes.append(size) -%}
+                  {{ size | tojson }},
                 {%- endif -%}
               {%- endfor -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set sizes = ('[' ~ size_items[:-1] ~ ']') | from_json -%}
             {%- if sizes | length > 0 -%}{{ sizes }}{%- endif -%}
           office365.exchange.email.subjects: >
-            {%- set subjects = [] -%}
+            {%- set subject_items -%}
             {%- for folder in json_event.message.Folders -%}
               {%- for item in folder["FolderItems"] -%}
                 {%- set subj = item.get("Subject") -%}
                 {%- if subj -%}
-                  {%- set _ = subjects.append(subj) -%}
+                  {{ subj | tojson }},
                 {%- endif -%}
               {%- endfor -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set subjects = ('[' ~ subject_items[:-1] ~ ']') | from_json -%}
             {%- if subjects | length > 0 -%}{{ subjects }}{%- endif -%}
 
       - set:
@@ -1028,12 +1047,14 @@ stages:
 
       - set:
           office365.investigation.alert.urls: >
-            {%- set urls = [] -%}
+            {%- set url_items -%}
             {%- for link in parse_data.ParsedData.ExtendedLinks -%}
               {%- if link.Type == "webLink" -%}
-                {%- set urls = urls.append(link.Href) -%}
+                {{ link.Href | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set urls = ('[' ~ url_items[:-1] ~ ']') | from_json -%}
             {{urls|unique|list or None}}
         filter: '{{parse_data.ParsedData.ExtendedLinks|selectattr("Type", "equalto", "webLink") | list | length > 0}}'
 
@@ -1043,15 +1064,17 @@ stages:
       - set:
           office365.investigation.emails: >
             [
-              {% set total_entities = [] %}
-              {% for action in json_event.message.Actions | map("from_json") %}
-                {% for entity in action.Entities %}
-                  {% set total_entities = total_entities.append(entity) %}
-                {% endfor %}
-              {% endfor %}
-              {% for entity in parse_data.ParsedData.Entities %}
-                {% set total_entities = total_entities.append(entity) %}
-              {% endfor %}
+              {%- set total_entity_items -%}
+              {%- for action in json_event.message.Actions | map("from_json") -%}
+                {%- for entity in action.Entities -%}
+                  {{ entity | tojson }},
+                {%- endfor -%}
+              {%- endfor -%}
+              {%- for entity in parse_data.ParsedData.Entities -%}
+                {{ entity | tojson }},
+              {%- endfor -%}
+              {%- endset -%}
+              {% set total_entities = ('[' ~ total_entity_items[:-1] ~ ']') | from_json %}
               {%- for entity in total_entities -%}
                 {
                   {%- if entity.AntispamDirection != null -%}"direction": "{{entity.AntispamDirection}}",{%- endif -%}
@@ -1074,108 +1097,86 @@ stages:
       - set:
           office365.investigation.emails: >
             [
-              {% set result = [] %}
-              {% for data in final.office365.investigation.emails %}
-                {% if data not in result and data != {} %}
-                  {% set result = result.append(data) %}
-                {% endif %}
-              {% endfor %}
-              {%- for data in result -%}
-                {{data}},
+              {%- for data in final.office365.investigation.emails -%}
+                {%- if data not in final.office365.investigation.emails[:loop.index0] and data != {} -%}
+                  {{data}},
+                {%- endif -%}
               {%- endfor -%}
             ]
         filter: "{{final.office365.get('investigation', {}).get('emails', []) | length > 1}}"
 
       - set:
           office365.investigation.email.urls: >
-            {%- set urls = [] -%}
+            {%- set url_items -%}
               {%- for Property in parse_data.ParsedData.Entities -%}
                 {%- if Property.Urls -%}
-                  {%- set urls = urls.extend(Property.Urls) -%}
+                  {%- for url in Property.Urls -%}
+                    {{ url | tojson }},
+                  {%- endfor -%}
                 {%- endif -%}
               {%- endfor -%}
+            {%- endset -%}
+            {%- set urls = ('[' ~ url_items[:-1] ~ ']') | from_json -%}
             {{urls|unique|list or None}}
           url.original: "{{final.office365.investigation.email.urls | first}}"
           office365.investigation.email.sender.ip: >
-            {%- set senders = [] -%}
-              {%- for Property in parse_data.ParsedData.Entities -%}
-                {%- if Property.SenderIP -%}
-                  {%- set senders = senders.append(Property.SenderIP) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {{senders|unique|list or None}}
+            {{parse_data.ParsedData.Entities | map(attribute="SenderIP") | select | unique | list or None}}
 
           office365.investigation.email.subjects: >
-            {%- set subjects = [] -%}
-              {%- for Property in parse_data.ParsedData.Entities -%}
-                {%- if Property.Subject -%}
-                  {%- set subjects = subjects.append(Property.Subject) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {{ subjects or None}}
+            {{parse_data.ParsedData.Entities | map(attribute="Subject") | select | list or None}}
 
           office365.investigation.email.sender.domains: >
-            {%- set senders = [] -%}
-              {%- for Property in parse_data.ParsedData.Entities -%}
-                {%- if Property.P1SenderDomain -%}
-                  {%- set senders = senders.append(Property.P1SenderDomain) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {{senders|unique|list or None}}
+            {{parse_data.ParsedData.Entities | map(attribute="P1SenderDomain") | select | unique | list or None}}
 
           office365.investigation.threats: >
-            {%- set threats = [] -%}
+            {%- set threat_items -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- if Property.Threats -%}
                 {%- if Property.Threats is iterable -%}
-                  {%- set threats = threats.extend(Property.Threats) -%}
+                  {%- for threat in Property.Threats -%}
+                    {{ threat | tojson }},
+                  {%- endfor -%}
                 {%- else -%}
-                  {%- set threats = threats.append(Property.Threats | string) -%}
+                  {{ Property.Threats | string | tojson }},
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set threats = ('[' ~ threat_items[:-1] ~ ']') | from_json -%}
             {{ threats or None}}
 
           office365.investigation.delivery.action: >
-            {%- set actions = [] -%}
-            {%- for Property in parse_data.ParsedData.Entities -%}
-              {%- if Property.DeliveryAction -%}
-                {%- set actions = actions.append(Property.DeliveryAction) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{ actions or None}}
+            {{parse_data.ParsedData.Entities | map(attribute="DeliveryAction") | select | list or None}}
 
           email.from.address: >
-            {%- set senders = [] -%}
-            {%- for Property in parse_data.ParsedData.Entities -%}
-              {%- if Property.Sender -%}
-                {%- set senders = senders.append(Property.Sender) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{senders|unique|list or None}}
+            {{parse_data.ParsedData.Entities | map(attribute="Sender") | select | unique | list or None}}
 
           email.to.address: >
-            {%- set receivers = [] -%}
+            {%- set receiver_items -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- if Property.Recipient != null -%}
-                {%- set receivers = receivers.append(Property.Recipient) -%}
+                {{ Property.Recipient | tojson }},
               {%- endif -%}
               {%- if Property.MailboxPrimaryAddress != null-%}
-                {%- set receivers = receivers.append(Property.MailboxPrimaryAddress) -%}
+                {{ Property.MailboxPrimaryAddress | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set receivers = ('[' ~ receiver_items[:-1] ~ ']') | from_json -%}
             {{receivers|unique|list or None}}
           email.attachments: >-
-            {%- set attachments = [] -%}
+            {%- set attachment_items -%}
             {%- for Property in parse_data.ParsedData.Entities -%}
               {%- for file in Property.Files -%}
                 {%- for file_hash in file.FileHashes -%}
                   {%- if file_hash.Algorithm == 'SHA256' -%}
-                    {%- set attachments = attachments.append({"file": {"name": file.Name, "hash": {"sha256": file_hash.Value }}}) -%}
+                    {"file": {"name": {{ file.Name | default(none) | tojson }}, "hash": {"sha256": {{ file_hash.Value | default(none) | tojson }} } } },
                   {%- endif -%}
                 {%- endfor -%}
               {%- endfor -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set attachments = ('[' ~ attachment_items[:-1] ~ ']') | from_json -%}
             {{attachments or None}}
         filter: "{{parse_data.ParsedData.Entities != None and parse_data.ParsedData.Entities | length > 0}}"
 
