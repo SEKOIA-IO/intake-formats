@@ -34,16 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `cloudflare.ID`: map from `AuditLogID`
   - `cloudflare.zone_name`: map from `ZoneName`
   - `cloudflare.zone_tag`: map from `ZoneID`
-- Rework smart descriptions to use `event.outcome`, `user.email` and `cloudflare.ActionDescription`
+- Rework smart descriptions to use `event.outcome`, `user.email` (with or without `user.id`) and `cloudflare.ActionDescription`
 - Rename test fixtures as `test_v1_<theme>_00X` and `test_v2_<theme>_00X` to clearly identify Audit Logs v1 and v2 records
 
 ### Fixed
 
 - Fix existing ECS fields:
-  - `event.category` set to `configuration` instead of `network`
-  - `event.type` set from the action type (`creation`, `change`, `deletion`, `access`, fallback `info`) instead of always `access`
+  - `event.category`: set to `configuration` instead of `network`
+  - `event.dataset`: set to `audit_logs_v2` instead of `audit_logs` for Audit Logs v2 records
+  - `event.type`: set from the action type (`creation`, `change`, `deletion`, `access`, fallback `info`) instead of always `access`
   - `source.ip`: rename the two IPv4-mapped normalization stages that shared the same name, so `ActorIPAddress` takes precedence over `ActorIP`
-  - `user.email` and `user.id` are no longer set from empty values
+  - `user.email`: no longer set from empty values
+  - `user.id`: no longer set from empty values
 - Fix existing custom fields:
   - `cloudflare.ActionDescription`: no longer set from empty values
   - `cloudflare.ActorContext`: no longer set from empty values
@@ -64,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix existing custom fields:
-  - `cloudflare.ActionResult` set to `true` when the action result is `success`
+  - `cloudflare.ActionResult`: set to `true` when the action result is `success`
 
 ## [1.0.0] - 2026-09-30
 
