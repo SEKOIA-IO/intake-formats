@@ -27,7 +27,8 @@ stages:
           event.dataset: "aruba-clearpass"
 
           "@timestamp": "{{parsed_event.message.rt | to_rfc3339}}"
-          event.action: "{{parsed_event.message.act}}"
+          error.code: "{{parsed_event.message.ArubaClearpassCppmErrorCodeErrorCode}}"
+          event.action: "{{parsed_event.message.act or parsed_event.message.ArubaClearpassTacacsAuthenAction}}"
           event.code: "{{parsed_event.message.DeviceEventClassID}}"
           event.severity: "{{parsed_event.message.Severity}}"
           destination.ip: "{{parsed_event.message.dst}}"
@@ -35,14 +36,30 @@ stages:
           observer.ip: "{{parsed_event.message.dvc}}"
           source.ip: "{{parsed_event.message.src}}"
           observer.version: "{{parsed_event.message.DeviceVersion}}"
-          user.name: "{{parsed_event.message.duser}}"
+          user.name: "{{parsed_event.message.duser or parsed_event.message.ArubaClearpassUserUsername}}"
 
           aruba.clearpass.name: "{{parsed_event.message.Name}}"
           aruba.clearpass.category: "{{parsed_event.message.cat}}"
 
       - set:
+          error.code: "{{parsed_event.message.cn3}}"
+        filter: "{{parsed_event.message.cn3 not in [None, '0'] and parsed_event.message.cn3Label == 'CPPM Error Code'}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.cs1}}"
+        filter: "{{parsed_event.message.cs1 | is_ipaddress and parsed_event.message.cs1Label == 'Remote IP'}}"
+
+      - set:
+          error.message: "{{parsed_event.message.ArubaClearpassCppmErrorCodeErrorCodeDetails}}"
+        filter: "{{parsed_event.message.ArubaClearpassCppmErrorCodeErrorCodeDetails | lower not in [None, '', 'success']}}"
+
+      - set:
           user.roles: ["{{parsed_event.message.dpriv.strip('[]')}}"]
         filter: "{{parsed_event.message.dpriv | length > 0}}"
+
+      - set:
+          service.name: "{{parsed_event.message.destinationServiceName}}"
+        filter: "{{parsed_event.message.destinationServiceName != None}}"
 
   set_session_fields:
     actions:
@@ -67,7 +84,56 @@ stages:
         filter: "{{'Authentication' in parsed_event.message.get('Name', '')}}"
 
       - set:
+          event.type: ["start"]
+          event.outcome: >
+            {%- if parsed_event.message.get('cs4') == '1' -%}
+              success
+            {%- elif parsed_event.message.get('cs4') == '0' -%}
+              failure
+            {%- else -%}
+              unknown
+            {%- endif -%}
+        filter: "{{parsed_event.message.cs4Label == 'Login Status'}}"
+
+      - set:
           host.os.family: "{{parsed_event.message.get('Endpoint.Device-Family')}}"
+
+      - set:
+          aruba.clearpass.enforcement_profile: "{{parsed_event.message.cs5}}"
+        filter: "{{parsed_event.message.cs5 != None and parsed_event.message.cs5Label == 'Enforcement Profiles'}}"
+
+      - set:
+          aruba.clearpass.privilege_level: "{{parsed_event.message.cs4}}"
+        filter: "{{parsed_event.message.cs4 != None and parsed_event.message.cs4Label == 'Privilege Level'}}"
+
+      - set:
+          aruba.clearpass.login_status: "{{parsed_event.message.cs4}}"
+        filter: "{{parsed_event.message.cs4 != None and parsed_event.message.cs4Label == 'Login Status'}}"
+
+      - set:
+          aruba.clearpass.user.authentication.source: "{{parsed_event.message.ArubaClearpassUserAuthenticationSource}}"
+          network.vlan.id: "{{parsed_event.message.ArubaClearpassAuthVLAN}}"
+          observer.hostname: "{{parsed_event.message.ArubaClearpassCppmNodeCPPM}}"
+
+      - set:
+          aruba.clearpass.authentication.protocol: "{{parsed_event.message.cs2}}"
+        filter: "{{parsed_event.message.cs2 != None and parsed_event.message.cs2Label == 'Authentication Protocol'}}"
+
+      - set:
+          aruba.clearpass.authentication.source: "{{parsed_event.message.cs3}}"
+        filter: "{{parsed_event.message.cs3 != None and parsed_event.message.cs3Label == 'Authentication Source'}}"
+
+      - set:
+          aruba.clearpass.tacacs.command: "{{parsed_event.message.ArubaClearpassTacacsCommand}}"
+        filter: "{{parsed_event.message.ArubaClearpassTacacsCommand != None}}"
+
+      - set:
+          aruba.clearpass.tacacs.service: "{{parsed_event.message.cs6}}"
+        filter: "{{parsed_event.message.cs6 != None and parsed_event.message.cs6Label == 'Tacacs Service'}}"
+
+      - set:
+          aruba.clearpass.tacacs.authentication.action: "{{parsed_event.message.ArubaClearpassTacacsAuthenAction}}"
+        filter: "{{parsed_event.message.ArubaClearpassTacacsAuthenAction != None}}"
 
       - set:
           aruba.clearpass.endpoint.mac_vendor: "{{parsed_event.message.get('Endpoint.MAC-Vendor')}}"
@@ -75,6 +141,34 @@ stages:
           aruba.clearpass.endpoint.device_category: "{{parsed_event.message.get('Endpoint.Device-Category')}}"
           aruba.clearpass.endpoint.status: "{{parsed_event.message.ArubaClearpassEndpointStatus}}"
           aruba.clearpass.endpoint.added_at: "{{parsed_event.message.get('Endpoint.Added-At') | to_rfc3339}}"
+          host.hostname: "{{parsed_event.message.get('ArubaClearpassEndpointHostname') or parsed_event.message.get('Endpoint.Hostname')}}"
+          aruba.clearpass.nad.network_device: "{{parsed_event.message.get('ArubaClearpassNadNetworkDevice')}}"
+          aruba.clearpass.nad.name: "{{parsed_event.message.get('ArubaClearpassNadName')}}"
+          aruba.clearpass.radius.user_name: "{{parsed_event.message.get('ArubaClearpassRadiusUsername')}}"
+          aruba.clearpass.radius.calling_station_id: "{{parsed_event.message.get('ArubaClearpassRadiusCallingStationId')}}"
+          aruba.clearpass.radius.termination_cause: "{{parsed_event.message.get('ArubaClearpassRadiusTerminationCause')}}"
+
+      - set:
+          host.ip:
+            [
+              "{{parsed_event.message.get('ArubaClearpassEndpointIPAddress') or parsed_event.message.get('Endpoint.IPAddress')}}",
+            ]
+        filter: "{{(parsed_event.message.get('ArubaClearpassEndpointIPAddress') or parsed_event.message.get('Endpoint.IPAddress')) | is_ipaddress}}"
+
+      - set:
+          aruba.clearpass.radius.nas_ip_address: "{{parsed_event.message.get('ArubaClearpassRadiusNASIPAddress')}}"
+        filter: "{{parsed_event.message.get('ArubaClearpassRadiusNASIPAddress') | is_ipaddress}}"
+
+      - set:
+          aruba.clearpass.radius.framed_ip_address: "{{parsed_event.message.get('ArubaClearpassRadiusFramedIPAddress')}}"
+        filter: "{{parsed_event.message.get('ArubaClearpassRadiusFramedIPAddress') | is_ipaddress}}"
+
+      - set:
+          host.mac:
+            [
+              "{{(parsed_event.message.get('ArubaClearpassEndpointMACAddress') or parsed_event.message.get('Endpoint.MACAddress')) | to_mac_address}}",
+            ]
+        filter: "{{(parsed_event.message.get('ArubaClearpassEndpointMACAddress') or parsed_event.message.get('Endpoint.MACAddress')) not in [None, '']}}"
 
       - translate:
         dictionary:
