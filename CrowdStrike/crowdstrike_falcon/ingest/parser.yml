@@ -644,33 +644,34 @@ stages:
 
       - set:
           crowdstrike.mobile.network_connections: >
-            {%- set connections = [] -%}
+            {%- set items -%}
             {%- for item in parsed_event.message.event.MobileNetworkConnections -%}
-            {%- set connection = {} -%}
             {%- set timestamp = item.get("AccessTimestamp") | to_rfc3339 -%}
             {%- set direction = item.get("ConnectionDirection") | int -%}
             {%- set flags = item.get("ConnectionFlags") | int -%}
-            {%- set context = {"pid":item.get("ContextProcessId") | string} -%}
+            {%- set context_pid = item.get("ContextProcessId") | string -%}
             {%- set is_ipv6 = item.get("IsIPV6") -%}
             {%- set protocol = item.get("Protocol") | int -%}
             {%- set url = item.get("Url") -%}
-            {%- set _ = connection.update({"timestamp":timestamp, "direction":direction, "flags":flags, "context":context, "is_ipv6":is_ipv6, "protocol":protocol, "url":url}) -%}
+            {"timestamp": {{ timestamp | tojson }}, "direction": {{ direction | tojson }}, "flags": {{ flags | tojson }}, "context": {"pid": {{ context_pid | tojson }} }, "is_ipv6": {{ is_ipv6 | tojson }}, "protocol": {{ protocol | tojson }}, "url": {{ url | tojson }}
             {%- if item.get("LocalAddress") not in [None, ""] -%}
-            {%- set source = {"address":item.get("LocalAddress")} -%}
+            , "source": {"address": {{ item.get("LocalAddress") | tojson }}
             {%- if item.get("LocalPort") not in [None, ""] -%}
-            {%- set _ = source.update({"port":item.get("LocalPort")}) -%}
+            , "port": {{ item.get("LocalPort") | tojson }}
             {%- endif -%}
-            {%- set _ = connection.update({"source":source}) -%}
+            }
             {%- endif -%}
             {%- if item.get("RemoteAddress") not in [None, ""] -%}
-            {%- set destination = {"address":item.get("RemoteAddress")} -%}
+            , "destination": {"address": {{ item.get("RemoteAddress") | tojson }}
             {%- if item.get("RemotePort") not in [None, ""] -%}
-            {%- set _ = destination.update({"port":item.get("RemotePort")}) -%}
+            , "port": {{ item.get("RemotePort") | tojson }}
             {%- endif -%}
-            {%- set _ = connection.update({"destination":destination}) -%}
+            }
             {%- endif -%}
-            {%- set _ = connections.append(connection) -%}
+            },
             {%- endfor -%}
+            {%- endset -%}
+            {%- set connections = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {{connections}}
         filter: "{{parsed_event.message.event.get('MobileNetworkConnections') != None}}"
 
@@ -785,9 +786,8 @@ stages:
 
       - set:
           crowdstrike.threatgraph_indicators: >
-            {%- set indicators = [] -%}
+            {%- set items -%}
             {%- for item in parsed_event.message.event.ThreatgraphIndicators -%}
-            {%- set indicator = {} -%}
             {%- set indicator_id = item.get("IndicatorId") -%}
             {%- set signal_timestamp = item.get("SignalAssociationTimestamp") | string | to_rfc3339 -%}
             {%- set pattern_id = item.get("PatternId") -%}
@@ -799,9 +799,10 @@ stages:
             {%- set template_instance_id = item.get("TemplateInstanceId") -%}
             {%- set description = item.get("Description") -%}
             {%- set display_name = item.get("DisplayName") -%}
-            {%- set _ = indicator.update({"indicator_id":indicator_id, "signal_association_timestamp":signal_timestamp, "pattern_id":pattern_id, "pattern_disposition":pattern_disposition, "severity":severity, "process_id":process_id, "host_id":host_id, "hostname":hostname, "template_instance_id":template_instance_id, "description":description, "display_name":display_name}) -%}
-            {%- set _ = indicators.append(indicator) -%}
+            {"indicator_id": {{ indicator_id | tojson }}, "signal_association_timestamp": {{ signal_timestamp | tojson }}, "pattern_id": {{ pattern_id | tojson }}, "pattern_disposition": {{ pattern_disposition | tojson }}, "severity": {{ severity | tojson }}, "process_id": {{ process_id | tojson }}, "host_id": {{ host_id | tojson }}, "hostname": {{ hostname | tojson }}, "template_instance_id": {{ template_instance_id | tojson }}, "description": {{ description | tojson }}, "display_name": {{ display_name | tojson }} },
             {%- endfor -%}
+            {%- endset -%}
+            {%- set indicators = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {{indicators}}
         filter: "{{parsed_event.message.event.get('ThreatgraphIndicators') not in [None, []]}}"
 
