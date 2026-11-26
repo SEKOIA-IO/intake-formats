@@ -1,0 +1,454 @@
+name: blacknoise-aev
+pipeline:
+  - name: parsed_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  # BlackNoise emits two kinds of record on the same intake. An indicator carries a
+  # `value`, a simulation never does, so that field discriminates between the two.
+  - name: set_envelope
+  - name: set_indicator
+    filter: "{{parsed_event.message.value != null}}"
+  - name: set_indicator_type
+    filter: "{{parsed_event.message.value != null}}"
+  - name: set_simulation
+    filter: "{{parsed_event.message.value == null}}"
+  - name: set_simulation_context
+    filter: "{{parsed_event.message.value == null}}"
+  - name: set_mitre
+    filter: "{{parsed_event.message.value == null}}"
+  - name: set_network
+    filter: "{{parsed_event.message.value == null}}"
+  - name: set_system_target
+    filter: "{{parsed_event.message.system_target != null and parsed_event.message.value == null}}"
+  - name: set_cloud_target
+    filter: "{{parsed_event.message.cloud_target != null and parsed_event.message.value == null}}"
+  - name: set_attack_vector
+    filter: "{{parsed_event.message.attack_vector != null and parsed_event.message.value == null}}"
+  - name: set_detection
+    filter: "{{parsed_event.message.value == null}}"
+  - name: set_recommendations
+    filter: "{{parsed_event.message.recommendations != null and parsed_event.message.value == null}}"
+  - name: set_outcome
+    filter: "{{parsed_event.message.value == null}}"
+
+stages:
+  # Fields both record types share, including the keys that tie an indicator back to
+  # the simulation that produced it.
+  set_envelope:
+    actions:
+      # event.dataset is set per record type, in set_indicator and set_simulation.
+      - set:
+          event.module: blacknoise
+          observer.vendor: "BlackNoise"
+          observer.product: "BlackNoise"
+          observer.type: "sensor"
+
+      # The catalog entry that defines the simulated technique behaves like a
+      # rule: it has a stable identifier, a name and a description.
+      - set:
+          event.code: "{{parsed_event.message.event_bn_id}}"
+          rule.id: "{{parsed_event.message.event_bn_id}}"
+        filter: "{{parsed_event.message.event_bn_id != null}}"
+
+      # Carried by both record types: an indicator names the technique that produced
+      # it, so an analyst reads it without joining back to the action.
+      - set:
+          rule.name: "{{parsed_event.message.name}}"
+        filter: "{{parsed_event.message.name != null}}"
+
+      # execution_id identifies one run of the technique and is the join key
+      # between an adversarial action and every indicator that run produced.
+      - set:
+          trace.id: "{{parsed_event.message.execution_id}}"
+          blacknoise.aev.execution_id: "{{parsed_event.message.execution_id}}"
+        filter: "{{parsed_event.message.execution_id != null}}"
+
+      # Identifiers are published with the readable name they refer to, never on
+      # their own: an opaque identifier alone tells an analyst nothing.
+      - set:
+          blacknoise.aev.campaign_name: "{{parsed_event.message.campaign_name}}"
+        filter: "{{parsed_event.message.campaign_name != null}}"
+
+      - set:
+          blacknoise.aev.campaign_id: "{{parsed_event.message.campaign_id}}"
+        filter: "{{parsed_event.message.campaign_id != null}}"
+
+      - set:
+          "@timestamp": "{{parsed_event.message.start_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.start_time != null}}"
+
+  # An indicator of compromise produced by a simulation. One record per indicator, so
+  # threat.indicator.* describes exactly one observable, the way ECS intends.
+  set_indicator:
+    actions:
+      # event.action and event.dataset both discriminate: `ioc` and
+      # `blacknoise.indicator` here, `simulation_event` and `blacknoise.simulation` on
+      # an adversarial action. One filter tells the two record types apart.
+      - set:
+          event.kind: enrichment
+          event.category: [threat]
+          event.type: [indicator]
+          event.action: ioc
+          event.dataset: blacknoise.indicator
+
+      - set:
+          threat.indicator.name: "{{parsed_event.message.value}}"
+          threat.indicator.provider: "BlackNoise"
+
+      # The MISP type and category are kept verbatim: they are the vocabulary the
+      # product speaks, and only a subset of them has an ECS equivalent.
+      - set:
+          blacknoise.aev.ioc.type: "{{parsed_event.message.type}}"
+        filter: "{{parsed_event.message.type != null}}"
+
+      - set:
+          blacknoise.aev.ioc.category: "{{parsed_event.message.category}}"
+        filter: "{{parsed_event.message.category != null}}"
+
+      - set:
+          threat.indicator.first_seen: "{{parsed_event.message.start_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.start_time != null}}"
+
+  set_indicator_type:
+    actions:
+      # MISP type to the STIX cyber-observable vocabulary ECS expects in
+      # threat.indicator.type. Types with no ECS representation are left out here and
+      # land in a blacknoise.aev.ioc.* field below instead. ip-src and ip-dst are
+      # typed right after, since the MISP type does not tell IPv4 from IPv6.
+      - translate:
+        dictionary:
+          url: url
+          domain: domain-name
+          hostname: domain-name
+          filename|sha256: file
+          filename: file
+          md5: file
+          sha1: file
+          sha256: file
+          mac-address: mac-addr
+          command: process
+          download: file
+          delete: file
+        mapping:
+          blacknoise.aev.ioc.type: threat.indicator.type
+
+      # A value that is neither a plain IPv4 nor a plain IPv6 address (a CIDR range,
+      # an address with a port) gets no type and no threat.indicator.ip, and stays
+      # searchable through threat.indicator.name.
+      - set:
+          threat.indicator.type: ipv4-addr
+          threat.indicator.ip: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"] and parsed_event.message.value | is_ipv4}}'
+
+      - set:
+          threat.indicator.type: ipv6-addr
+          threat.indicator.ip: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type in ["ip-src", "ip-dst"] and parsed_event.message.value | is_ipv6}}'
+
+      - set:
+          threat.indicator.url.full: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "url"}}'
+
+      - set:
+          threat.indicator.url.domain: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type in ["domain", "hostname"]}}'
+
+      # ECS keeps the bare name in file.name and the full path in file.path.
+      - set:
+          threat.indicator.file.name: "{{parsed_event.message.value | basename}}"
+        filter: '{{parsed_event.message.type == "filename"}}'
+
+      - set:
+          threat.indicator.file.path: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "filename" and parsed_event.message.value | basename != parsed_event.message.value}}'
+
+      # A `filename|sha256` value carries both halves separated by a pipe, as built by
+      # the appliance: f'{path}|{sha256_checksum(path)}'. Split on the last pipe only:
+      # the hash never contains one, the path may.
+      - set:
+          threat.indicator.file.name: "{{parsed_event.message.value.rsplit('|', 1)[0] | basename}}"
+          threat.indicator.file.hash.sha256: "{{parsed_event.message.value.rsplit('|', 1)[1]}}"
+        filter: '{{parsed_event.message.type == "filename|sha256" and "|" in parsed_event.message.value}}'
+
+      - set:
+          threat.indicator.file.path: "{{parsed_event.message.value.rsplit('|', 1)[0]}}"
+        filter: '{{parsed_event.message.type == "filename|sha256" and "|" in parsed_event.message.value and parsed_event.message.value.rsplit("|", 1)[0] | basename != parsed_event.message.value.rsplit("|", 1)[0]}}'
+
+      - set:
+          threat.indicator.file.hash.md5: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "md5"}}'
+
+      - set:
+          threat.indicator.file.hash.sha1: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "sha1"}}'
+
+      - set:
+          threat.indicator.file.hash.sha256: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "sha256"}}'
+
+      # Types ECS has no field for. The value also stays in threat.indicator.name, so a
+      # generic indicator search still finds them.
+      - set:
+          blacknoise.aev.ioc.command: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "command"}}'
+
+      - set:
+          blacknoise.aev.ioc.downloaded_file: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "download"}}'
+
+      - set:
+          blacknoise.aev.ioc.deleted_file: "{{parsed_event.message.value}}"
+        filter: '{{parsed_event.message.type == "delete"}}'
+
+      - set:
+          blacknoise.aev.ioc.mac_address: "{{parsed_event.message.value | to_mac_address}}"
+        filter: '{{parsed_event.message.type == "mac-address"}}'
+
+  set_simulation:
+    actions:
+      # event.action and event.dataset both discriminate: `simulation_event` and
+      # `blacknoise.simulation` here, `ioc` and `blacknoise.indicator` on an indicator.
+      # The lifecycle state stays in blacknoise.aev.execution_status and the
+      # technique's own name in rule.name.
+      - set:
+          event.kind: event
+          event.category: [intrusion_detection]
+          event.type: [info]
+          event.action: simulation_event
+          event.dataset: blacknoise.simulation
+
+      - set:
+          rule.description: "{{parsed_event.message.description}}"
+        filter: "{{parsed_event.message.description != null}}"
+
+      - set:
+          event.reason: "{{parsed_event.message.execution_message}}"
+        filter: "{{parsed_event.message.execution_message != null}}"
+
+      - set:
+          event.start: "{{parsed_event.message.start_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.start_time != null}}"
+
+      - set:
+          event.end: "{{parsed_event.message.end_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.end_time != null}}"
+
+      - set:
+          blacknoise.aev.stop_time: "{{parsed_event.message.stop_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.stop_time != null}}"
+
+      # Read at the top level on purpose. That value is the clock drift snapshotted
+      # when this run started, so it describes the run. attack_vector carries a field of
+      # the same name holding the vector's current drift, which may have been
+      # re-synchronised since and would misdate a past run.
+      - set:
+          blacknoise.aev.time_offset_in_seconds: "{{parsed_event.message.time_offset_in_seconds}}"
+        filter: "{{parsed_event.message.time_offset_in_seconds != null}}"
+
+  set_simulation_context:
+    actions:
+      # Paired with blacknoise.aev.target_name, set by set_system_target or
+      # set_cloud_target depending on what the simulation was aimed at.
+      - set:
+          blacknoise.aev.target_id: "{{parsed_event.message.target_id}}"
+        filter: "{{parsed_event.message.target_id != null}}"
+
+      - set:
+          blacknoise.aev.severity: "{{parsed_event.message.severity}}"
+        filter: "{{parsed_event.message.severity != null}}"
+
+      # Numeric mirror on the usual 1 (low) to 4 (critical) scale. The catalog only
+      # grades a technique low or high.
+      - translate:
+        dictionary:
+          low: "1"
+          high: "3"
+        mapping:
+          blacknoise.aev.severity: event.severity
+
+      - set:
+          blacknoise.aev.execution_status: "{{parsed_event.message.execution_status}}"
+        filter: "{{parsed_event.message.execution_status != null}}"
+
+      # exploit_status reports whether the target actually fell, which is
+      # independent from whether the simulation ran (execution_status).
+      - set:
+          blacknoise.aev.exploit_status: "{{parsed_event.message.exploit_status}}"
+        filter: "{{parsed_event.message.exploit_status != null}}"
+
+  set_mitre:
+    actions:
+      - set:
+          threat.framework: "MITRE ATT&CK"
+        filter: "{{parsed_event.message.tactic != null or (parsed_event.message.techniques != null and parsed_event.message.techniques | length > 0)}}"
+
+      - set:
+          threat.technique.id: "{{parsed_event.message.techniques}}"
+        filter: "{{parsed_event.message.techniques != null and parsed_event.message.techniques | length > 0}}"
+
+      - set:
+          threat.tactic.name: >
+            {%- set tactics = {
+              "reconnaissance": "Reconnaissance",
+              "resource_development": "Resource Development",
+              "initial_access": "Initial Access",
+              "execution": "Execution",
+              "persistence": "Persistence",
+              "privilege_escalation": "Privilege Escalation",
+              "defense_evasion": "Defense Evasion",
+              "credential_access": "Credential Access",
+              "discovery": "Discovery",
+              "lateral_movement": "Lateral Movement",
+              "collection": "Collection",
+              "command_and_control": "Command and Control",
+              "exfiltration": "Exfiltration",
+              "impact": "Impact"
+            } -%}
+            {#- A tactic the table does not know yet is kept as sent, not dropped. -#}
+            {{- tactics.get(parsed_event.message.tactic, parsed_event.message.tactic) -}}
+        filter: "{{parsed_event.message.tactic != null}}"
+
+  set_network:
+    actions:
+      # `source` carries the address the simulation was launched from.
+      - set:
+          source.ip: "{{parsed_event.message.source}}"
+          observer.ip: "{{parsed_event.message.source}}"
+        filter: "{{parsed_event.message.source | is_ipaddress}}"
+
+      - set:
+          blacknoise.aev.ip_targets: "{{parsed_event.message.ip_targets}}"
+        filter: "{{parsed_event.message.ip_targets != null and parsed_event.message.ip_targets | length > 0}}"
+
+  set_system_target:
+    actions:
+      - set:
+          host.name: "{{parsed_event.message.system_target.name}}"
+        filter: "{{parsed_event.message.system_target.name != null}}"
+
+      - set:
+          destination.ip: "{{parsed_event.message.system_target.ip_address}}"
+          host.ip: "{{parsed_event.message.system_target.ip_address}}"
+        filter: "{{parsed_event.message.system_target.ip_address | is_ipaddress}}"
+
+      # OSType values (windows, macos, linux) already match the ECS vocabulary.
+      - set:
+          host.os.type: "{{parsed_event.message.system_target.environment}}"
+        filter: "{{parsed_event.message.system_target.environment != null}}"
+
+      - set:
+          blacknoise.aev.target_name: "{{parsed_event.message.system_target.name}}"
+        filter: "{{parsed_event.message.system_target.name != null}}"
+
+  set_cloud_target:
+    actions:
+      # CloudEnvironmentType values (aws, azure) match the ECS vocabulary.
+      - set:
+          cloud.provider: "{{parsed_event.message.cloud_target.environment}}"
+        filter: "{{parsed_event.message.cloud_target.environment != null}}"
+
+      - set:
+          cloud.region: "{{parsed_event.message.cloud_target.region}}"
+        filter: "{{parsed_event.message.cloud_target.region != null}}"
+
+      - set:
+          cloud.account.name: "{{parsed_event.message.cloud_target.name}}"
+        filter: "{{parsed_event.message.cloud_target.name != null}}"
+
+      - set:
+          blacknoise.aev.cloud_domain_name: "{{parsed_event.message.cloud_target.domain_name}}"
+        filter: "{{parsed_event.message.cloud_target.domain_name != null}}"
+
+      - set:
+          blacknoise.aev.target_name: "{{parsed_event.message.cloud_target.name}}"
+        filter: "{{parsed_event.message.cloud_target.name != null}}"
+
+  set_attack_vector:
+    actions:
+      # Kept out of source.ip on purpose: `source` already carries the address the
+      # simulation was launched from, and overwriting it here would silently drop it.
+      - set:
+          blacknoise.aev.attack_vector.ip: "{{parsed_event.message.attack_vector.ip}}"
+        filter: "{{parsed_event.message.attack_vector.ip | is_ipaddress}}"
+
+      - set:
+          blacknoise.aev.attack_vector.name: "{{parsed_event.message.attack_vector.name}}"
+        filter: "{{parsed_event.message.attack_vector.name != null}}"
+
+      - set:
+          blacknoise.aev.attack_vector.type: "{{parsed_event.message.attack_vector.type}}"
+        filter: "{{parsed_event.message.attack_vector.type != null}}"
+
+  set_detection:
+    actions:
+      # detection_status is the point of the exercise: did the SOC see it.
+      - set:
+          blacknoise.aev.detection_status: "{{parsed_event.message.detection_status}}"
+        filter: "{{parsed_event.message.detection_status != null}}"
+
+      - set:
+          blacknoise.aev.detection_time: "{{parsed_event.message.detection_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.detection_time != null}}"
+
+      - set:
+          blacknoise.aev.reaction_time: "{{parsed_event.message.reaction_time | to_rfc3339}}"
+        filter: "{{parsed_event.message.reaction_time != null}}"
+
+      - set:
+          blacknoise.aev.detection_sources: "{{parsed_event.message.detection_sources}}"
+        filter: "{{parsed_event.message.detection_sources != null and parsed_event.message.detection_sources | length > 0}}"
+
+      - set:
+          blacknoise.aev.reaction_sources: "{{parsed_event.message.reaction_sources}}"
+        filter: "{{parsed_event.message.reaction_sources != null and parsed_event.message.reaction_sources | length > 0}}"
+
+      # The timestamps above are date fields, so they already support range queries.
+      # These two durations are the aggregate a SOC reports on directly, and save
+      # every consumer from recomputing them. MttCalculatorService produces them in
+      # whole minutes, and only for events the defensive stack alerted on.
+      - set:
+          blacknoise.aev.time_to_detect_minutes: "{{parsed_event.message.mtt.d.value}}"
+        filter: "{{parsed_event.message.mtt.d.value != null}}"
+
+      - set:
+          blacknoise.aev.time_to_respond_minutes: "{{parsed_event.message.mtt.r.value}}"
+        filter: "{{parsed_event.message.mtt.r.value != null}}"
+
+  set_recommendations:
+    actions:
+      # Detection content BlackNoise suggests for what the simulation did.
+      - set:
+          blacknoise.aev.recommendations.sigma_rule: "{{parsed_event.message.recommendations.sigma_rule}}"
+        filter: "{{parsed_event.message.recommendations.sigma_rule != null}}"
+
+      - set:
+          blacknoise.aev.recommendations.suricata_rule: "{{parsed_event.message.recommendations.suricata_rule}}"
+        filter: "{{parsed_event.message.recommendations.suricata_rule != null}}"
+
+  set_outcome:
+    actions:
+      # event.outcome reflects whether the simulation ran, not whether the
+      # attack succeeded. The latter lives in blacknoise.aev.exploit_status.
+      # `processing` means the run is over and the defensive stack is still being
+      # queried, so the simulation did run.
+      - translate:
+        dictionary:
+          executed: success
+          executed_warning: success
+          executed_without_secrets: success
+          processing: success
+          error: failure
+          canceled: unknown
+          unexecuted: unknown
+          out_of_scope: unknown
+          waiting: unknown
+          in_progress: unknown
+        mapping:
+          blacknoise.aev.execution_status: event.outcome
+
+      - set:
+          event.kind: alert
+        filter: '{{parsed_event.message.exploit_status == "exploited"}}'
