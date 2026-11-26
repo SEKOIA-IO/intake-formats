@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix parsing of existing ECS fields:
+  - `user.id`: unwrap claims identities (`i:0#.f|membership|...`) and guest URNs (`urn:spo:guest#...`), so the field carries the actual identity instead of the raw wrapper
+
 ## [1.0.6] - 2026-11-03
 
 ### Fixed
