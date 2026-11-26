@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Parse access logs for connections that time out without sending an HTTP request.
+- Omit missing user-agent and referrer placeholders from access log fields.
+
 ## 2023-10-31 - 1.0.3
 
 ### Added

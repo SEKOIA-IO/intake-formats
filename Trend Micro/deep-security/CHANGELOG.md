@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-16
+
+### Fixed
+
+- Write the named groups of the Windows event pattern as `(?P<name>...)`, which every RE2 version supports, unlike `(?<name>...)`
+
 ## 2026-10-30
 
 ### Fixed

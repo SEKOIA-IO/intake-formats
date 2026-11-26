@@ -1,7 +1,20 @@
-# Gatewatcher ECS parser for sekoia
+# Changelog
 
-This format parse ECS logs exported from the GCenter (version v103+).
+All notable changes to this project will be documented in this file.
 
-# Versions
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- 1.0.0: initial release
+## [Unreleased]
+
+## 2026-11-06
+
+### Added
+
+- Parse `gatewatcher.type` (type of analysis) from `event.module`, as in the Gatewatcher AionIQ v102 format; modules without a v102 equivalent keep the raw `event.module` value
+
+## [1.0.0] - 2024-09-18
+
+### Added
+
+- Initial release of the format, parsing ECS logs exported from the GCenter (version v103+)

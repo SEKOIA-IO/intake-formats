@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-11-16
+
+### Added
+
+- Parse PAM sessions of any service (including `sudo-i` and `su`), PAM `auth` authentication failures, `FAILED SU` messages and systemd-logind `New session` messages
+- Set `event.action`, `event.category`, `event.type` and, when the message supports it, `event.outcome` on PAM, `su`, logind and sudo `COMMAND=` events
+- Add the `wallix.terminal` and `wallix.logind.session.id` fields
+
+### Changed
+
+- For privilege escalation events (`sudo`, `sudo-i`, `su` PAM events and sudo `COMMAND=` lines), the initiating user is now in `user.name`/`user.id` and the target account in `user.target.name`/`user.target.id` (the target was previously stored in `user.name`)
+
 ## [Unreleased] - 2026-06-15
 
 ### Added
