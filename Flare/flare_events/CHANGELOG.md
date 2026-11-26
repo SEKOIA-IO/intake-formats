@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## 2026-11-26
+
+### Fixed
+
+- Build lists and dicts without mutating them in place (`.append`, `.update`, ...), which not every Jinja engine supports
+
 ## 2026-11-24
 
 ### Changed
