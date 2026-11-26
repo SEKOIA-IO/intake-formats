@@ -1,0 +1,231 @@
+name: hodeishield-alerts
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+
+  - name: parsed_created_at
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.created_at}}"
+        output_field: datetime
+    # An alert with no created_at, a null one or one that is not a date string skips this stage.
+    filter: "{{json_event.message.get('created_at') is string and json_event.message.created_at.split('-')[0].isdigit()}}"
+
+  - name: set_fields
+
+stages:
+  set_fields:
+    actions:
+      - set:
+          event.kind: "alert"
+          event.dataset: "hodeishield.alerts"
+          hodeishield.alert.id: "{{json_event.message.id}}"
+          observer.vendor: "HodeiShield"
+          observer.product: "HodeiShield"
+          message: "{{json_event.message.title}}"
+          rule.name: "{{json_event.message.title}}"
+          rule.category: "{{json_event.message.type}}"
+          hodeishield.alert.type: "{{json_event.message.type}}"
+          hodeishield.alert.status: "{{json_event.message.status}}"
+          hodeishield.alert.vendor_id: "{{json_event.message.vendor_id}}"
+
+      # Without a parsed created_at, @timestamp is left unset and the platform reception time applies.
+      - set:
+          "@timestamp": "{{parsed_created_at.datetime}}"
+        filter: "{{parsed_created_at.datetime != None}}"
+
+      # A status change is the alert plus event_type and previous_status, added by the connector. It is dated
+      # at the change (updated_at), not at the creation of the alert.
+      - set:
+          # updated_at is RFC 3339 UTC from the API; not run through date.parse because older events lack it.
+          "@timestamp": "{{json_event.message.updated_at}}"
+          event.action: "alert-status-changed"
+        filter: "{{json_event.message.get('event_type') == 'status_change'}}"
+
+      - set:
+          hodeishield.alert.previous_status: "{{json_event.message.previous_status}}"
+        filter: "{{json_event.message.get('previous_status') is not none}}"
+
+      # The HTTPS push adds a stable delivery identifier to the alert, constant across retries of the same alert.
+      - set:
+          hodeishield.event_id: "{{json_event.message.event_id}}"
+        filter: "{{json_event.message.get('event_id') is not none}}"
+
+      - set:
+          hodeishield.alert.updated_at: "{{json_event.message.updated_at}}"
+        filter: "{{json_event.message.get('updated_at') is not none}}"
+
+      # Alerts about a known vulnerability are categorized as such (the platform sends cve_critical, older
+      # senders cve). Alerts about a package or an agent update are package events. The others are threats.
+      # The only event type allowed with the threat category is indicator.
+      - set:
+          event.category: ["vulnerability"]
+          event.type: ["info"]
+        filter: "{{json_event.message.get('type') in ['cve', 'cve_critical']}}"
+
+      - set:
+          event.category: ["package"]
+          event.type: ["info"]
+        filter: "{{json_event.message.get('type') == 'agent_update_stalled'}}"
+
+      - set:
+          event.category: ["threat"]
+          event.type: ["indicator"]
+        filter: "{{json_event.message.get('type') not in ['cve', 'cve_critical', 'agent_update_stalled']}}"
+
+      # Severity scale: info=10, low=25, medium=50, high=75, critical=100.
+      - set:
+          event.severity: "10"
+        filter: "{{json_event.message.get('severity') == 'info'}}"
+
+      - set:
+          event.severity: "25"
+        filter: "{{json_event.message.get('severity') == 'low'}}"
+
+      - set:
+          event.severity: "50"
+        filter: "{{json_event.message.get('severity') == 'medium'}}"
+
+      - set:
+          event.severity: "75"
+        filter: "{{json_event.message.get('severity') == 'high'}}"
+
+      - set:
+          event.severity: "100"
+        filter: "{{json_event.message.get('severity') == 'critical'}}"
+
+      - set:
+          rule.description: "{{json_event.message.description}}"
+        filter: "{{json_event.message.get('description') is not none}}"
+
+      - set:
+          url.original: "{{json_event.message.source_url}}"
+        filter: "{{json_event.message.get('source_url') is not none}}"
+
+      - set:
+          hodeishield.alert.economic_impact: "{{json_event.message.economic_impact}}"
+        filter: "{{json_event.message.get('economic_impact') is not none}}"
+
+      - set:
+          hodeishield.alert.acknowledged_at: "{{json_event.message.acknowledged_at}}"
+        filter: "{{json_event.message.get('acknowledged_at') is not none}}"
+
+      - set:
+          hodeishield.alert.resolved_at: "{{json_event.message.resolved_at}}"
+        filter: "{{json_event.message.get('resolved_at') is not none}}"
+
+      - set:
+          hodeishield.alert.resolution_reason: "{{json_event.message.resolution_reason}}"
+        filter: "{{json_event.message.get('resolution_reason') is not none}}"
+
+      # Alerts of the rating, third-party, DORA and endpoint agent types carry a details object with
+      # type-specific fields. The HodeiShield event name goes to event.action.
+      - set:
+          event.action: "{{json_event.message.details.alert_event_type}}"
+        filter: "{{(json_event.message.get('details') or {}).get('alert_event_type') is not none}}"
+
+      - set:
+          host.id: "{{json_event.message.details.endpoint_id}}"
+        filter: "{{(json_event.message.get('details') or {}).get('endpoint_id') is not none}}"
+
+      - set:
+          package.version: "{{json_event.message.details.installed_version}}"
+        filter: "{{(json_event.message.get('details') or {}).get('installed_version') is not none}}"
+
+      - set:
+          hodeishield.alert.details.vendor_name: "{{json_event.message.details.vendor_name}}"
+        filter: "{{(json_event.message.get('details') or {}).get('vendor_name') is not none}}"
+
+      - set:
+          hodeishield.alert.details.scan_id: "{{json_event.message.details.scan_id}}"
+        filter: "{{(json_event.message.get('details') or {}).get('scan_id') is not none}}"
+
+      - set:
+          hodeishield.alert.details.dependency_id: "{{json_event.message.details.dependency_id}}"
+        filter: "{{(json_event.message.get('details') or {}).get('dependency_id') is not none}}"
+
+      - set:
+          hodeishield.alert.details.third_party_name: "{{json_event.message.details.third_party_name}}"
+        filter: "{{(json_event.message.get('details') or {}).get('third_party_name') is not none}}"
+
+      - set:
+          hodeishield.alert.details.third_party_type: "{{json_event.message.details.third_party_type}}"
+        filter: "{{(json_event.message.get('details') or {}).get('third_party_type') is not none}}"
+
+      - set:
+          hodeishield.alert.details.confidence: "{{json_event.message.details.confidence}}"
+        filter: "{{(json_event.message.get('details') or {}).get('confidence') is not none}}"
+
+      - set:
+          hodeishield.alert.details.score_previous: "{{json_event.message.details.score_previous}}"
+        filter: "{{(json_event.message.get('details') or {}).get('score_previous') is not none}}"
+
+      - set:
+          hodeishield.alert.details.score_current: "{{json_event.message.details.score_current}}"
+        filter: "{{(json_event.message.get('details') or {}).get('score_current') is not none}}"
+
+      - set:
+          hodeishield.alert.details.score_threshold: "{{json_event.message.details.score_threshold}}"
+        filter: "{{(json_event.message.get('details') or {}).get('score_threshold') is not none}}"
+
+      - set:
+          hodeishield.alert.details.score_delta: "{{json_event.message.details.score_delta}}"
+        filter: "{{(json_event.message.get('details') or {}).get('score_delta') is not none}}"
+
+      - set:
+          hodeishield.alert.details.score_delta_threshold: "{{json_event.message.details.score_delta_threshold}}"
+        filter: "{{(json_event.message.get('details') or {}).get('score_delta_threshold') is not none}}"
+
+      - set:
+          hodeishield.alert.details.scanned_at: "{{json_event.message.details.scanned_at}}"
+        filter: "{{(json_event.message.get('details') or {}).get('scanned_at') is not none}}"
+
+      - set:
+          hodeishield.alert.details.discovered_at: "{{json_event.message.details.discovered_at}}"
+        filter: "{{(json_event.message.get('details') or {}).get('discovered_at') is not none}}"
+
+      - set:
+          hodeishield.alert.details.incident_id: "{{json_event.message.details.incident_id}}"
+        filter: "{{(json_event.message.get('details') or {}).get('incident_id') is not none}}"
+
+      - set:
+          hodeishield.alert.details.incident_severity: "{{json_event.message.details.incident_severity}}"
+        filter: "{{(json_event.message.get('details') or {}).get('incident_severity') is not none}}"
+
+      - set:
+          hodeishield.alert.details.incident_status: "{{json_event.message.details.incident_status}}"
+        filter: "{{(json_event.message.get('details') or {}).get('incident_status') is not none}}"
+
+      - set:
+          hodeishield.alert.details.reporting_status: "{{json_event.message.details.reporting_status}}"
+        filter: "{{(json_event.message.get('details') or {}).get('reporting_status') is not none}}"
+
+      - set:
+          hodeishield.alert.details.detection_date: "{{json_event.message.details.detection_date}}"
+        filter: "{{(json_event.message.get('details') or {}).get('detection_date') is not none}}"
+
+      - set:
+          hodeishield.alert.details.stall_kind: "{{json_event.message.details.stall_kind}}"
+        filter: "{{(json_event.message.get('details') or {}).get('stall_kind') is not none}}"
+
+      - set:
+          hodeishield.alert.details.expected_version: "{{json_event.message.details.expected_version}}"
+        filter: "{{(json_event.message.get('details') or {}).get('expected_version') is not none}}"
+
+      - set:
+          hodeishield.alert.details.update_outcome: "{{json_event.message.details.update_outcome}}"
+        filter: "{{(json_event.message.get('details') or {}).get('update_outcome') is not none}}"
+
+      - set:
+          hodeishield.alert.details.trailing_endpoints: "{{json_event.message.details.trailing_endpoints}}"
+        filter: "{{(json_event.message.get('details') or {}).get('trailing_endpoints') is not none}}"
+
+      - set:
+          hodeishield.alert.details.reporting_endpoints: "{{json_event.message.details.reporting_endpoints}}"
+        filter: "{{(json_event.message.get('details') or {}).get('reporting_endpoints') is not none}}"
+
+      - set:
+          hodeishield.alert.details.since: "{{json_event.message.details.since}}"
+        filter: "{{(json_event.message.get('details') or {}).get('since') is not none}}"
