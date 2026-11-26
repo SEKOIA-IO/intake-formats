@@ -529,10 +529,12 @@ stages:
     actions:
       - set:
           action.properties: >-
-            {%- set properties = json.event.copy() -%}
-            {%- set _ = properties.pop('Task', none) -%}
-            {%- set _ = properties.pop('UserAccountControl', none) -%}
-            {%- set _ = properties.pop('Accesses', none) -%}
+            {%- set fields -%}
+            {%- for k, v in json.event.items() if k not in ['Task', 'UserAccountControl', 'Accesses'] -%}
+              {{ k | tojson }}: {{ v | tojson }},
+            {%- endfor -%}
+            {%- endset -%}
+            {%- set properties = ('{' ~ fields[:-1] ~ '}') | from_json -%}
             {{ properties }}
 
           action.properties.Accesses: >-
@@ -611,14 +613,16 @@ stages:
         filter: "{{(json.event.Path == null or json.event.Path|string|trim == '') and parsed_message_kv.result.Path != null and parsed_message_kv.result.Path|string|trim != ''}}"
       - set:
           action.properties.UserAccountControl: >
-            {%- set result = [] -%}
             {%- set resolved = (json.event.UserAccountControlResolved or '').strip() -%}
             {%- set raw = (json.event.UserAccountControl or '').strip() -%}
+            {%- set items -%}
             {%- for item in (resolved if resolved not in ['', '-'] else raw).split('\n') -%}
               {%- if item.strip() not in ['', '-'] -%}
-                {%- set _ = result.append(item.strip()) -%}
+                {{ item.strip() | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set result = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {{ result }}
         filter: "{{(json.event.UserAccountControlResolved or '').strip() not in ['', '-'] or ((json.event.UserAccountControl or '').strip() not in ['', '-'] and ('%%' not in (json.event.UserAccountControl or '').strip() or not ('User Account Control:' in (json.event.Message or '') and 'User Parameters:' in (json.event.Message or ''))))}}"
 
@@ -627,12 +631,14 @@ stages:
             {%- set message = json.event.Message -%}
             {%- set start_idx = message.index('User Account Control:') + 'User Account Control:' | length-%}
             {%- set end_idx = message.index('User Parameters:', start_idx) -%}
-            {%- set result = [] -%}
+            {%- set items -%}
             {%- for item in message[start_idx:end_idx].strip().split('\n') -%}
               {%- if item.strip() not in ['', '-'] -%}
-                {%- set _ = result.append(item.strip()) -%}
+                {{ item.strip() | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set result = ('[' ~ items[:-1] ~ ']') | from_json -%}
             {{ result }}
         filter: "{{(json.event.UserAccountControlResolved or '').strip() in ['', '-'] and ((json.event.UserAccountControl or '').strip() in ['', '-'] or '%%' in (json.event.UserAccountControl or '').strip()) and ('User Account Control:' in (json.event.Message or '') and 'User Parameters:' in (json.event.Message or ''))}}"
 

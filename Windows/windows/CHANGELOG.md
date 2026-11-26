@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-26
+
+### Fixed
+
+- Build `action.properties` and `action.properties.UserAccountControl` without mutating them in place (`.copy`, `.pop`, `.append`), which not every Jinja engine supports
+
 ## [1.0.9] - 2026-11-20
 
 ### Fixed
