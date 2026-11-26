@@ -5,7 +5,7 @@ pipeline:
       name: json.parse-json
       properties:
         input_field: "{{original.message}}"
-  - name: normalize_ip
+  - name: normalize_actor_ip
     filter: "{{json_event.message.ActorIP != None}}"
     external:
       name: grok.match
@@ -13,7 +13,7 @@ pipeline:
         input_field: json_event.message.ActorIP
         output_field: actor
         pattern: "::ffff:%{IP:ipv4}"
-  - name: normalize_ip
+  - name: normalize_actor_ip_address
     filter: "{{json_event.message.ActorIPAddress != None}}"
     external:
       name: grok.match
@@ -21,73 +21,161 @@ pipeline:
         input_field: json_event.message.ActorIPAddress
         output_field: actor
         pattern: "::ffff:%{IP:ipv4}"
-  - name: set_ecs_fields
-  - name: set_cloudflare_fields
+  - name: set_common_fields
+  - name: set_v1_fields
+  - name: set_v2_fields
 
 stages:
-  set_ecs_fields:
+  # Fields with the same name and meaning in Audit Logs v1 (`audit_logs`) and v2 (`audit_logs_v2`)
+  set_common_fields:
+    actions:
+      - set:
+          event.kind: "event"
+          event.category: ["configuration"]
+          event.type: ["info"]
+          event.dataset: "audit_logs"
+          cloud.provider: "cloudflare"
+          observer.type: "proxy"
+          observer.vendor: "Cloudflare"
+
+      - set:
+          event.action: "{{json_event.message.ActionType}}"
+        filter: '{{json_event.message.ActionType is not in [None, ""]}}'
+
+      # v1 action types are `<product>_<verb>[_<object>]` (e.g. gateway_create_location), v2 are plain verbs (create, update, delete, view)
+      - set:
+          event.type: ["access"]
+        filter: "{{'view' in (json_event.message.ActionType | lower).split('_')}}"
+      - set:
+          event.type: ["change"]
+        filter: "{{['update', 'edit', 'change', 'set'] | select('in', (json_event.message.ActionType | lower).split('_')) | list | length > 0}}"
+      - set:
+          event.type: ["creation"]
+        filter: "{{['create', 'add'] | select('in', (json_event.message.ActionType | lower).split('_')) | list | length > 0}}"
+      - set:
+          event.type: ["deletion"]
+        filter: "{{['delete', 'remove'] | select('in', (json_event.message.ActionType | lower).split('_')) | list | length > 0}}"
+
+      - set:
+          user.email: "{{json_event.message.ActorEmail}}"
+        filter: '{{json_event.message.ActorEmail is not in [None, ""]}}'
+      - set:
+          user.id: "{{json_event.message.ActorID}}"
+        filter: '{{json_event.message.ActorID is not in [None, ""]}}'
+
+      - set:
+          cloudflare.ActorType: "{{json_event.message.ActorType}}"
+        filter: '{{json_event.message.ActorType is not in [None, ""]}}'
+      - set:
+          cloudflare.ResourceID: "{{json_event.message.ResourceID}}"
+        filter: '{{json_event.message.ResourceID is not in [None, ""]}}'
+      - set:
+          cloudflare.ResourceType: "{{json_event.message.ResourceType}}"
+        filter: '{{json_event.message.ResourceType is not in [None, ""]}}'
+
+  # Fields only available in Audit Logs v1 (`audit_logs`)
+  set_v1_fields:
     actions:
       - set:
           "@timestamp": "{{json_event.message.When}}"
-      - set:
-          cloud.account.id: "{{json_event.message.OwnerID}}"
-        filter: '{{json_event.message.OwnerID is not in [""]}}'
-      - set:
-          event.action: "{{json_event.message.ActionType}}"
-          event.category: ["network"]
-          event.dataset: "audit_logs"
-          event.type: ["access"]
-          observer.type: "proxy"
-          observer.vendor: "Cloudflare"
-          user.email: "{{json_event.message.ActorEmail}}"
-          user.id: "{{json_event.message.ActorID}}"
+        filter: '{{json_event.message.When is not in [None, ""]}}'
 
       - set:
-          source.ip: "{{json_event.message.ActorIPAddress}}"
-        filter: "{{json_event.message.ActorIPAddress | is_ipaddress}}"
+          cloud.account.id: "{{json_event.message.OwnerID}}"
+        filter: '{{json_event.message.OwnerID is not in [None, ""]}}'
+
+      # ActionResult is a boolean in v1
+      - set:
+          event.outcome: "{{ 'success' if json_event.message.ActionResult else 'failure' }}"
+          cloudflare.ActionResult: "{{json_event.message.ActionResult}}"
+        filter: "{{json_event.message.ActionResult in [true, false]}}"
 
       - set:
           source.ip: "{{json_event.message.ActorIP}}"
         filter: "{{json_event.message.ActorIP | is_ipaddress}}"
+      - set:
+          source.ip: "{{normalize_actor_ip.actor.ipv4}}"
+        filter: "{{normalize_actor_ip.actor.ipv4 | is_ipaddress}}"
 
-      - set:
-          source.ip: "{{normalize_ip.actor.ipv4}}"
-        filter: "{{normalize_ip.actor.ipv4 | is_ipaddress}}"
-
-  set_cloudflare_fields:
-    actions:
-      - set:
-          cloudflare.ActionResult: "{{json_event.message.ActionResult}}"
-          cloudflare.ActionDescription: "{{json_event.message.ActionDescription}}"
-          cloudflare.ActorContext: "{{json_event.message.ActorContext}}"
-      - set:
-          cloudflare.ActionResult: "{{ true if json_event.message.ActionResult | lower == 'success' else false }}"
-        filter: '{{json_event.message.ActionResult | lower is in ["success", "failure"]}}'
-      - set:
-          cloudflare.ActorType: "{{json_event.message.ActorType}}"
-        filter: '{{json_event.message.ActorType is not in [""]}}'
       - set:
           cloudflare.ID: "{{json_event.message.ID}}"
-        filter: '{{json_event.message.ID is not in [""]}}'
+        filter: '{{json_event.message.ID is not in [None, ""]}}'
+      - set:
+          cloudflare.Interface: "{{json_event.message.Interface}}"
+        filter: '{{json_event.message.Interface is not in [None, ""]}}'
       - set:
           cloudflare.zone_tag: "{{json_event.message.Metadata.zone_tag}}"
-        filter: '{{json_event.message.Metadata.zone_tag is not in [""]}}'
+        filter: '{{json_event.message.Metadata.zone_tag is not in [None, ""]}}'
+      - set:
+          cloudflare.zone_name: "{{json_event.message.Metadata.zone_name}}"
+        filter: '{{json_event.message.Metadata.zone_name is not in [None, ""]}}'
       - set:
           cloudflare.request_client_default: "{{json_event.message.Metadata.Request.client_default}}"
       - set:
           cloudflare.request_name: "{{json_event.message.Metadata.Request.name}}"
-        filter: '{{json_event.message.Metadata.Request.name is not in [""]}}'
+        filter: '{{json_event.message.Metadata.Request.name is not in [None, ""]}}'
       - set:
           cloudflare.request_networks: "{{json_event.message.Metadata.Request.networks}}"
+
+  # Fields only available in Audit Logs v2 (`audit_logs_v2`), set last so that they take precedence over their v1 equivalents
+  set_v2_fields:
+    actions:
+      # Renamed from When
       - set:
-          cloudflare.zone_name: "{{json_event.message.Metadata.zone_name}}"
-        filter: '{{json_event.message.Metadata.zone_name is not in [""]}}'
+          "@timestamp": "{{json_event.message.ActionTimestamp}}"
+        filter: '{{json_event.message.ActionTimestamp is not in [None, ""]}}'
+
       - set:
-          cloudflare.Interface: "{{json_event.message.Interface}}"
-        filter: '{{json_event.message.Interface is not in [""]}}'
+          cloud.account.id: "{{json_event.message.AccountID}}"
+        filter: '{{json_event.message.AccountID is not in [None, ""]}}'
       - set:
-          cloudflare.ResourceID: "{{json_event.message.ResourceID}}"
-        filter: '{{json_event.message.ResourceID is not in [""]}}'
+          cloud.account.name: "{{json_event.message.AccountName}}"
+        filter: '{{json_event.message.AccountName is not in [None, ""]}}'
+
+      # ActionResult is a string ("success" / "failure") in v2
       - set:
-          cloudflare.ResourceType: "{{json_event.message.ResourceType}}"
-        filter: '{{json_event.message.ResourceType is not in [""]}}'
+          event.outcome: "{{json_event.message.ActionResult | lower}}"
+          cloudflare.ActionResult: "{{ true if json_event.message.ActionResult | lower == 'success' else false }}"
+        filter: '{{json_event.message.ActionResult is string and json_event.message.ActionResult | lower is in ["success", "failure"]}}'
+
+      # Renamed from ActorIP
+      - set:
+          source.ip: "{{json_event.message.ActorIPAddress}}"
+        filter: "{{json_event.message.ActorIPAddress | is_ipaddress}}"
+      - set:
+          source.ip: "{{normalize_actor_ip_address.actor.ipv4}}"
+        filter: "{{normalize_actor_ip_address.actor.ipv4 | is_ipaddress}}"
+
+      - set:
+          http.request.id: "{{json_event.message.Raw.cf_ray_id}}"
+        filter: '{{json_event.message.Raw.cf_ray_id is not in [None, ""]}}'
+      - set:
+          http.request.method: "{{json_event.message.Raw.method}}"
+        filter: '{{json_event.message.Raw.method is not in [None, ""]}}'
+      - set:
+          http.response.status_code: "{{json_event.message.Raw.status_code}}"
+        filter: '{{json_event.message.Raw.status_code is not in [None, ""]}}'
+      - set:
+          url.original: "{{json_event.message.Raw.uri}}"
+        filter: '{{json_event.message.Raw.uri is not in [None, ""]}}'
+      - set:
+          user_agent.original: "{{json_event.message.Raw.user_agent}}"
+        filter: '{{json_event.message.Raw.user_agent is not in [None, ""]}}'
+
+      # Renamed from ID
+      - set:
+          cloudflare.ID: "{{json_event.message.AuditLogID}}"
+        filter: '{{json_event.message.AuditLogID is not in [None, ""]}}'
+      - set:
+          cloudflare.ActionDescription: "{{json_event.message.ActionDescription}}"
+        filter: '{{json_event.message.ActionDescription is not in [None, ""]}}'
+      - set:
+          cloudflare.ActorContext: "{{json_event.message.ActorContext}}"
+        filter: '{{json_event.message.ActorContext is not in [None, ""]}}'
+      # Replace Metadata.zone_tag / Metadata.zone_name
+      - set:
+          cloudflare.zone_tag: "{{json_event.message.ZoneID}}"
+        filter: '{{json_event.message.ZoneID is not in [None, ""]}}'
+      - set:
+          cloudflare.zone_name: "{{json_event.message.ZoneName}}"
+        filter: '{{json_event.message.ZoneName is not in [None, ""]}}'
