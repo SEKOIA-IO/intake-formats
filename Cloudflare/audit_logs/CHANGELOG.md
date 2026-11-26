@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 2026-11-25
+## [1.0.2] - 2026-11-25
+
+### Fixed
+
+- Fix existing ECS fields:
+  - `source.ip` no longer keeps the `::ffff:` IPv4-mapped prefix when both `ActorIP` and `ActorIPAddress` are present (the two IP normalization stages shared the same name, so one overwrote the other)
+
+## [1.0.1] - 2026-11-25
 
 ### Added
 
@@ -25,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix existing custom fields:
   - `cloudflare.ActionResult` set to `true` when the action result is `success`
 
-## 2026-09-30
+## [1.0.0] - 2026-09-30
 
 ### Fixed
 
