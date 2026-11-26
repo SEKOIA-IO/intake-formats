@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-26
+
+### Fixed
+
+- Build lists and dicts without mutating them in place (`.append`, `.update`, ...), which not every Jinja engine supports
+
 ## [1.0.4] - 2026-10-20
 
 ### Changed
