@@ -1,0 +1,55 @@
+name: anozrway
+pipeline:
+  - name: json_event
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: set_common
+    filter: "{{json_event.message['event.action'] not in [none, '']}}"
+  - name: leak_event
+    filter: "{{json_event.message['event.action'] == 'new_pro_leaks'}}"
+  - name: high_risk_event
+    filter: "{{json_event.message['event.action'] == 'new_high_risk_individual'}}"
+
+stages:
+  set_common:
+    actions:
+      - set:
+          # The date of the scan that found the exposure; the platform's own @timestamp is the push time.
+          "@timestamp": "{{json_event.message['anz.eni_view_date']}}"
+          event.kind: alert
+          event.category: ["threat"]
+          event.type: ["indicator"]
+          event.action: "{{json_event.message['event.action']}}"
+          event.provider: "{{json_event.message['event.provider']}}"
+          event.dataset: anozrway.alerts
+          # event.id is reserved by Sekoia.io (its own event UUID): carry ours as anozrway.event_id.
+          anozrway.event_id: "{{json_event.message['event.id']}}"
+          user.email: "{{json_event.message['user.email']}}"
+          user.name: "{{json_event.message['user.email'].split('@')[0] if json_event.message['user.email']}}"
+          user.id: "{{json_event.message['user.id']}}"
+          observer.type: threat-intel
+          observer.vendor: Anozr Way
+          observer.product: Anozr Way
+
+  leak_event:
+    actions:
+      - set:
+          threat.indicator.provider: "{{json_event.message['threat.indicator.provider']}}"
+          threat.indicator.type: "{{json_event.message['threat.indicator.type']}}"
+          threat.indicator.first_seen: "{{json_event.message['anz.added_date']}}"
+          anozrway.source_key: "{{json_event.message['anz.source_key']}}"
+          anozrway.leak_type: "{{json_event.message['anz.leak_type']}}"
+          anozrway.leak_date: "{{json_event.message['anz.leak_date']}}"
+          anozrway.exposed_data_types: "{{json_event.message['anz.iocs']}}"
+
+  high_risk_event:
+    actions:
+      - set:
+          event.risk_score: "{{json_event.message['anz.human_score']}}"
+          anozrway.threat_scores.account_takeover: "{{json_event.message['anz.account_takeover']}}"
+          anozrway.threat_scores.phishing: "{{json_event.message['anz.phishing']}}"
+          anozrway.threat_scores.identity_theft: "{{json_event.message['anz.identity_theft']}}"
+          anozrway.threat_scores.coercion: "{{json_event.message['anz.coercion']}}"
