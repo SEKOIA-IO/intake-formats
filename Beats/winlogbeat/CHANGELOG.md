@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Split `process.args` from the command line, ignoring repeated spaces: the template relied on `range` and `len`, which are not available
 - Decode `winlog.event_data.AccessMaskDescription`, `NewUACList` and `TicketOptionsDescription` from their bitmasks: the templates relied on `range`, which is not available, and missed the flags sharing a hex digit (e.g. `0x15`)
 - Fix the mask of `STANDARD_RIGHTS_REQUIRED` (`0x000F0000`)
+- Drop the empty arguments from the PowerShell `process.args` and `process.args_count`
 - Build lists and dicts without mutating them in place (`.append`, `.update`, ...), which not every Jinja engine supports
 
 ## [1.0.2] - 2026-11-16
