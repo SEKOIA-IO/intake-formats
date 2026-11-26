@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-26
+
+### Fixed
+
+- Build `related.ip` and `related.user` without `namespace`, which is not available
+
 ## [1.0.3] - 2026-11-24
 
 ### Added
