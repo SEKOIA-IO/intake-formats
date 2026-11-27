@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `office365.alert.internal_recipient_count_today`: parse `InternalRecipientCountToday` from `Data.rs`
   - `office365.alert.last_message_recipient_count`: parse `LastMessageRcptCount` from `Data.rs`
   - `office365.alert.last_message_trace_id`: parse `Last MessagetraceId` from `Data.rs`
+- Add a smart description for the Security & Compliance `EmailSendingLimitExceeded` alert
 
 ### Changed
 
