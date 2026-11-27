@@ -8,7 +8,7 @@ pipeline:
         output_field: pre_message
         pattern: "%{KV_MESSAGE_WIDTH_DATETIME}|%{KV_MESSAGE}|%{WITH_HEADER}"
         custom_patterns:
-          KV_MESSAGE_WIDTH_DATETIME: '(%{SUB_PREFIX})?\s*%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER} %{WORD:severity}\s*%{GREEDYDATA:reason_with_kv}'
+          KV_MESSAGE_WIDTH_DATETIME: '(%{SUB_PREFIX})?\s*%{NUMBER} %{NUMBER} %{NUMBER} %{DATETIME} %{NUMBER} %{NUMBER:message_code} %{WORD:severity}\s*%{GREEDYDATA:reason_with_kv}'
           KV_MESSAGE: '(%{WORD:event_type} )?%{NUMBER} %{NUMBER} %{NUMBER}\s*%{GREEDYDATA:reason_with_kv}'
           WITH_HEADER: "%{NOT_KV_DATA:status}:\\s+%{GREEDYDATA:reason_with_kv}"
 
@@ -341,6 +341,16 @@ stages:
           event.category: ["network"]
           event.reason: "{{parsed_kv_sentence.result.get('Response')}}"
         filter: "{{parsed_kv_sentence.result.get('Response') != None}}"
+
+      - set:
+          event.category: ["authentication"]
+          event.outcome: "failure"
+        filter: "{{ pre_parsed_event.pre_message.get('message_code') == '5400' and pre_parsed_event.pre_message.reason_with_kv.startswith('Failed-Attempt') }}"
+
+      - set:
+          event.category: ["authentication"]
+          event.outcome: "success"
+        filter: "{{ pre_parsed_event.pre_message.get('message_code') == '5200' and pre_parsed_event.pre_message.reason_with_kv.startswith('Passed-Authentication') }}"
 
       - set:
           event.category: ["authentication"]
