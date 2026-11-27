@@ -175,11 +175,16 @@ stages:
       - set:
           dns.answers: >
             {%- set records = parse_event.message.dns_records.split() -%}
+            {#- Index of the first data record: the tokens before it belong to no record -#}
+            {%- set data_indexes -%}
+              {%- for record in records -%}
+                {%- if "." in record or "-" in record or record | is_ipaddress -%}{{ loop.index0 | string }},{%- endif -%}
+              {%- endfor -%}
+            {%- endset -%}
+            {%- set first_data = data_indexes.split(",")[0] | int(-1) -%}
             {%- set fields -%}
               {%- for record in records -%}
-                {%- set seen -%}
-                  {%- for previous in records[:loop.index0] if "." in previous or "-" in previous or previous | is_ipaddress -%}x{%- endfor -%}
-                {%- endset -%}
+                {%- set seen = first_data != -1 and loop.index0 > first_data -%}
                 {%- if "." in record or "-" in record or record | is_ipaddress -%}
                   {%- if seen -%} },{ {%- endif -%}
                   "data": {{ record | tojson }}
