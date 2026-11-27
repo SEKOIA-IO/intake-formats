@@ -17,8 +17,15 @@ pipeline:
   - name: set_common_fields
   - name: set_host_hostname
     filter: "{{not (parsed.message.server.source_host | is_ipaddress)}}"
+  # The host's own addresses: the server's Own IP addresses (schema 1.1) and
+  # its Source host when that is an address. A host name and its addresses
+  # are set together.
   - name: set_host_ip
-    filter: "{{parsed.message.server.source_host | is_ipaddress}}"
+    filter: '{{(parsed.message.server.source_host | is_ipaddress) or ((parsed.message.server.get("ip_addresses") or []) | length > 0)}}'
+  # Addresses several servers appear behind (NAT, bastion): they narrow the
+  # host down without identifying it, so they never go to host.ip.
+  - name: set_shared_ip_addresses
+    filter: '{{(parsed.message.server.get("shared_ip_addresses") or []) | length > 0}}'
   - name: set_confirmed_fields
     filter: "{{parsed.message.event_type == 'confirmed_anomaly'}}"
   - name: set_withdrawn_fields
@@ -83,6 +90,12 @@ stages:
           aube.evaluation.reviewed_at: "{{parsed.message.evaluation.reviewed_at}}"
           aube.evaluation.previous_status: "{{parsed.message.evaluation.previous_status}}"
           aube.evaluation.history_id: "{{parsed.message.evaluation.history_id}}"
+          aube.evaluation.comment: "{{parsed.message.evaluation.comment}}"
+          aube.evaluation.ai_comment: "{{parsed.message.evaluation.ai_comment}}"
+          aube.evaluation.ai_verdict: "{{parsed.message.evaluation.ai_verdict}}"
+          aube.evaluation.ai_risk_level: "{{parsed.message.evaluation.ai_risk_level}}"
+          aube.evaluation.ai_confidence: "{{parsed.message.evaluation.ai_confidence}}"
+          aube.evaluation.ai_reason: "{{parsed.message.evaluation.ai_reason}}"
           aube.redaction: "{{parsed.message.redaction}}"
 
       # AUBE severity (highest CS.txt level among the period's events) ->
@@ -107,7 +120,24 @@ stages:
   set_host_ip:
     actions:
       - set:
-          host.ip: ["{{parsed.message.server.source_host}}"]
+          # Each address is inserted JSON-encoded (to_json), never raw.
+          host.ip: >
+            [
+            {%- set source = [parsed.message.server.source_host] if parsed.message.server.source_host | is_ipaddress else [] -%}
+            {%- for ip in ((parsed.message.server.get("ip_addresses") or []) + source) | unique -%}
+              {%- if ip is string and ip | is_ipaddress -%}{{ ip | to_json }},{%- endif -%}
+            {%- endfor -%}
+            ]
+
+  set_shared_ip_addresses:
+    actions:
+      - set:
+          aube.server.shared_ip_addresses: >
+            [
+            {%- for ip in (parsed.message.server.get("shared_ip_addresses") or []) | unique -%}
+              {%- if ip is string and ip | is_ipaddress -%}{{ ip | to_json }},{%- endif -%}
+            {%- endfor -%}
+            ]
 
   # An analyst-confirmed anomaly is the alert; its time is the confirmation,
   # so a late confirmation of an old period still alerts. The period itself
