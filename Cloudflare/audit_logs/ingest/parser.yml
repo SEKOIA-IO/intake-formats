@@ -13,6 +13,14 @@ pipeline:
         input_field: json_event.message.ActorIP
         output_field: actor
         pattern: "::ffff:%{IP:ipv4}"
+  - name: normalize_ip
+    filter: "{{json_event.message.ActorIPAddress != None}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: json_event.message.ActorIPAddress
+        output_field: actor
+        pattern: "::ffff:%{IP:ipv4}"
   - name: set_ecs_fields
   - name: set_cloudflare_fields
 
@@ -35,6 +43,10 @@ stages:
           user.id: "{{json_event.message.ActorID}}"
 
       - set:
+          source.ip: "{{json_event.message.ActorIPAddress}}"
+        filter: "{{json_event.message.ActorIPAddress | is_ipaddress}}"
+
+      - set:
           source.ip: "{{json_event.message.ActorIP}}"
         filter: "{{json_event.message.ActorIP | is_ipaddress}}"
 
@@ -46,6 +58,11 @@ stages:
     actions:
       - set:
           cloudflare.ActionResult: "{{json_event.message.ActionResult}}"
+          cloudflare.ActionDescription: "{{json_event.message.ActionDescription}}"
+          cloudflare.ActorContext: "{{json_event.message.ActorContext}}"
+      - set:
+          cloudflare.ActionResult: "{{ true if json_event.message.ActionResult | lower == 'success' else false }}"
+        filter: '{{json_event.message.ActionResult | lower is in ["success", "failure"]}}'
       - set:
           cloudflare.ActorType: "{{json_event.message.ActorType}}"
         filter: '{{json_event.message.ActorType is not in [""]}}'
