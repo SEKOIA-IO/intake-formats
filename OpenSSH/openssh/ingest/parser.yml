@@ -11,6 +11,7 @@ pipeline:
           SSHD_TEXT: ((%{WORD}|,)%{SPACE})*
           SSHD_TWO_WORDS: "%{WORD}%{SPACE}%{WORD}"
           SSHD_MESSAGE_ACCEPTED_POSTPONED: Accepted|Postponed
+          SSHD_PREAUTH: '\[preauth\]'
           SSHD_MESSAGE_CONNECTION_CLOSED: Connection closed by
           SSHD_MESSAGE_CONNECTION_FROM: Connection from
           SSHD_MESSAGE_DISCONNECTED: Disconnected from
@@ -51,16 +52,16 @@ pipeline:
             ssh2: %{NOTSPACE} SHA256:%{NOTSPACE:file_hash_sha256}|%{GREEDYDATA}))?"
           SSHD_INFO_KEY_ACCEPTED: '%{SSHD_MESSAGE_ACCEPTED_POSTPONED:sshd_message} key %{DATA} %{DATA:public_key_hash} found at %{DATA:key_path}\:%{NUMBER}'
           SSHD_INFO_CONNECTION_CLOSED:
-            '%{SSHD_MESSAGE_CONNECTION_CLOSED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
-            %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port}( \[preauth\])?)?'
+            "%{SSHD_MESSAGE_CONNECTION_CLOSED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port}( %{SSHD_PREAUTH:preauth})?)?"
           SSHD_INFO_CONNECTION: "%{SSHD_MESSAGE_CONNECTION_FROM:sshd_message} %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port} on %{IP:destination_ip} port %{NUMBER:destination_port}"
           SSHD_INFO_DISCONNECTED:
-            '%{SSHD_MESSAGE_DISCONNECTED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
-            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
-          SSHD_INFO_RECEIVED_DISCONNECT: '%{SSHD_MESSAGE_RECEIVED_DISCONNECT:sshd_message} %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port})?:%{SPACE}?%{INT}:%{SPACE}%{SSHD_TEXT:outcome_reason}( \[preauth\])?'
+            "%{SSHD_MESSAGE_DISCONNECTED:sshd_message}(%{SPACE}%{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( %{SSHD_PREAUTH:preauth})?"
+          SSHD_INFO_RECEIVED_DISCONNECT: "%{SSHD_MESSAGE_RECEIVED_DISCONNECT:sshd_message} %{SSHD_CLIENT_ADDRESS}( port %{NUMBER:source_port})?:%{SPACE}?%{INT}:%{SPACE}%{SSHD_TEXT:outcome_reason}( %{SSHD_PREAUTH:preauth})?"
           SSHD_INFO_CONNECTION_RESET:
-            '%{SSHD_MESSAGE_CONNECTION_RESET:sshd_message}( %{SSHD_MESSAGE_USER})?
-            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( \[preauth\])?'
+            "%{SSHD_MESSAGE_CONNECTION_RESET:sshd_message}( %{SSHD_MESSAGE_USER})?
+            %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port}( %{SSHD_PREAUTH:preauth})?"
           SSHD_INFO_DISCONNECTION: "%{SSHD_INFO_CONNECTION_CLOSED}|%{SSHD_INFO_DISCONNECTED}|%{SSHD_INFO_RECEIVED_DISCONNECT}|%{SSHD_INFO_CONNECTION_RESET}"
           SSHD_INFO_SESSION_STARTING: "%{SSHD_MESSAGE_SESSION_STARTING:sshd_message}: command for %{SSHD_MESSAGE_USER} from %{SSHD_CLIENT_ADDRESS} port %{NUMBER:source_port} id %{NUMBER}"
           SSHD_INFO_USER_ON_PID: "%{SSHD_MESSAGE_USER2:sshd_message} %{SSHD_MESSAGE_USER} (?P<outcome_reason>is on pid %{NUMBER:pid})"
@@ -146,7 +147,6 @@ stages:
           observer.type: "server"
           process.name: "sshd"
           action.outcome_reason: "{{ event.message.SSHD_INFO or event.message.SSHD_ERROR }}"
-          event.outcome: "success" # legacy
 
       - set:
           source.domain: "{{event.message.source_domain}}"
@@ -233,6 +233,12 @@ stages:
           action.target: "user"
           action.outcome_reason: "reset"
         filter: "{{event.message.sshd_message == 'Connection reset by'}}"
+
+      # A connection that ends before authentication, or for an unknown user, is a failed login attempt
+      # event.outcome follows action.outcome
+      - set:
+          action.outcome: "failure"
+        filter: "{{event.message.sshd_message in ('Connection closed by', 'Disconnected from', 'Received disconnect from', 'Connection reset by') and (event.message.preauth != None or event.message.userquality in ('invalid user', 'illegal user'))}}"
 
       - set:
           event.category: ["session"]
@@ -349,7 +355,7 @@ stages:
 
           action.type: "check"
           action.name: "sshd:auth"
-          action.outcome: "success"
+          action.outcome: "failure"
           action.target: "user"
         filter: "{{event.message.sshd_message == 'pam_unix(sshd:auth): check pass;'}}"
 

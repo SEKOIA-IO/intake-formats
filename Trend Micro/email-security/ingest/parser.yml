@@ -24,7 +24,12 @@ stages:
             {%- if parse_event.message.attachments -%}
             [
               {%- for item in parse_event.message.attachments -%}
-                {"file": {"name": "{{item.fileName}}", "hash": {"sha256": "{{item.sha256}}"} }},
+                {%- set filename = item.fileName | basename -%}
+                {"file": {"name": "{{item.fileName}}", "hash": {"sha256": "{{item.sha256}}"}
+                  {%- if '.' in filename and filename.rsplit('.', 1)[0] and filename.rsplit('.', 1)[-1] -%}
+                  , "extension": {{ filename.rsplit('.', 1)[-1] | to_json }}
+                  {%- endif -%}
+                }},
               {%- endfor -%}
             ]
             {%- endif -%}
@@ -44,6 +49,23 @@ stages:
         filter: "{{ parse_event.message.deliveredTo not in [None, '', 'none'] }}"
 
       - set:
+          destination.domain: "{{ parse_event.message.deliveredTo.split('[')[0] }}"
+          destination.ip: "{{ parse_event.message.deliveredTo.split('[')[1].split(']')[0] }}"
+          destination.port: "{{ parse_event.message.deliveredTo.rsplit(':', 1)[1] | int }}"
+        filter: >-
+          {{ parse_event.message.deliveredTo is string
+            and parse_event.message.deliveredTo | re_match('^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\[[0-9A-Fa-f:.]+\]:[0-9]{1,5}$')
+            and parse_event.message.deliveredTo.split('[')[1].split(']')[0] | is_ipaddress
+            and 1 <= parse_event.message.deliveredTo.rsplit(':', 1)[1] | int <= 65535 }}
+
+      - set:
+          event.reason: "{{ parse_event.message.details.strip() }}"
+        filter: >-
+          {{ parse_event.message.action == 'Bounced'
+            and parse_event.message.details is string
+            and parse_event.message.details.strip() | lower not in ['', 'none'] }}
+
+      - set:
           email.to.address: "{{ parse_event.message.recipient }}"
         filter: "{{ parse_event.message.headerTo in [None, '', ['']] and '@' in parse_event.message.recipient }}"
 
@@ -51,3 +73,4 @@ stages:
     actions:
       - set:
           trendmicro.email.embedded_urls: "{{ parse_event.message.embeddedUrls }}"
+          trendmicro.email.recipient: "{{ parse_event.message.recipient }}"

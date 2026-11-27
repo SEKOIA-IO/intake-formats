@@ -111,6 +111,13 @@ class TestAnonymizationValidator:
             ("00000000-0000-0000-0000-000000000000", True),
             ("edouard", False),
             ("my-user", False),
+            ("host.example.com\\User1", True),
+            ("NT AUTHORITY\\SYSTEM", True),
+            ("EXAMPLE\\Jane.Doe", True),
+            ("EXAMPLE\\edouard", False),
+            ("CONTOSO\\User1", False),
+            ("EXAMPLE\\User1\\User2", False),
+            ("\\User1", False),
         ],
     )
     def test_validate_username(self, validator, username, expected):

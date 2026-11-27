@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-25
+
+### Added
+
+- Parse new custom fields:
+  - `cloudflare.ActionDescription`
+  - `cloudflare.ActorContext`
+
+### Changed
+
+- Extend parsing of existing ECS fields:
+  - `source.ip` from `ActorIPAddress`
+
+### Fixed
+
+- Fix existing custom fields:
+  - `cloudflare.ActionResult` set to `true` when the action result is `success`
+
 ## 2026-09-30
 
 ### Fixed

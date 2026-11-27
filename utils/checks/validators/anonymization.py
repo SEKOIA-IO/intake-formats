@@ -577,6 +577,12 @@ class AnonymizationValidator:
         Returns:
             bool: True if the username is properly anonymized, False otherwise.
         """
+        # Windows down-level logon names (DOMAIN\user): accept them only when both parts are anonymized
+        if username.count("\\") == 1:
+            domain, name = username.split("\\")
+            if domain and name:
+                return self.validate_domain(domain) and self.validate_username(name)
+
         # Check against accepted usernames
         if username in ACCEPTED_IPV4_ADDRESSES:
             return True

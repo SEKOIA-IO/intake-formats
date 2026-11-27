@@ -7,38 +7,46 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: output
 
-  - name: parsed_date
+  - name: parsed_derived
     external:
       name: date.parse
       properties:
         input_field: "{{json_event.output.TIMESTAMP_DERIVED}}"
         output_field: datetime
-    filter: "{{json_event.output.TIMESTAMP_DERIVED != None}}"
+    filter: '{{json_event.output.TIMESTAMP_DERIVED is string and json_event.output.TIMESTAMP_DERIVED | re_match("^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$") and (json_event.output.TIMESTAMP_DERIVED | to_iso8601) != ""}}'
 
-  - name: parsed_date
+  # A failing date.parse aborts the whole event, so each source is parsed only if it is ISO-shaped and to_iso8601 accepts it (calendar-valid).
+  # Compact YYYYMMDDHHMMSS[.fff]: date.parse would read it as epoch, so make it ISO first.
+  # The ISO expression in the filter and in input_field must stay identical.
+  - name: parsed_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: >-
+          {{json_event.output.TIMESTAMP[:4] ~ '-' ~ json_event.output.TIMESTAMP[4:6] ~ '-' ~
+          json_event.output.TIMESTAMP[6:8] ~ 'T' ~ json_event.output.TIMESTAMP[8:10] ~ ':' ~
+          json_event.output.TIMESTAMP[10:12] ~ ':' ~ json_event.output.TIMESTAMP[12:] ~ 'Z'}}
+        output_field: datetime
+    filter: >-
+      {{json_event.output.TIMESTAMP is string and json_event.output.TIMESTAMP | re_match("^\d{14}(\.\d+)?$") and
+      ((json_event.output.TIMESTAMP[:4] ~ '-' ~ json_event.output.TIMESTAMP[4:6] ~ '-' ~ json_event.output.TIMESTAMP[6:8] ~
+      'T' ~ json_event.output.TIMESTAMP[8:10] ~ ':' ~ json_event.output.TIMESTAMP[10:12] ~ ':' ~ json_event.output.TIMESTAMP[12:] ~ 'Z') | to_iso8601) != ""}}
+
+  - name: parsed_timestamp
     external:
       name: date.parse
       properties:
         input_field: "{{json_event.output.TIMESTAMP}}"
         output_field: datetime
-    filter: "{{json_event.output.TIMESTAMP != None and json_event.output.EVENT_TYPE != 'ApiTotalUsage'}}"
+    filter: '{{json_event.output.TIMESTAMP is string and json_event.output.TIMESTAMP | re_match("^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$") and (json_event.output.TIMESTAMP | to_iso8601) != ""}}'
 
-  - name: parsed_date
-    external:
-      name: date.parse
-      properties:
-        input_field: "{{json_event.output.TIMESTAMP}}"
-        output_field: datetime
-        format: "%y%m%d%H%M%S.%f"
-    filter: "{{json_event.output.TIMESTAMP != None and json_event.output.EVENT_TYPE == 'ApiTotalUsage'}}"
-
-  - name: parsed_date
+  - name: parsed_login_time
     external:
       name: date.parse
       properties:
         input_field: "{{json_event.output.LOGIN_TIME}}"
         output_field: datetime
-    filter: "{{json_event.output.LOGIN_TIME != None}}"
+    filter: '{{json_event.output.LOGIN_TIME is string and json_event.output.LOGIN_TIME | re_match("^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$") and (json_event.output.LOGIN_TIME | to_iso8601) != ""}}'
 
   - name: parsed_start_time
     external:
@@ -166,9 +174,20 @@ stages:
   set_common_fields:
     actions:
       # Default fields with predefined values
+      # Lowest to highest priority: a later valid source overrides, a failed parse falls back
       - set:
-          "@timestamp": "{{parsed_date.datetime}}"
+          "@timestamp": "{{parsed_login_time.datetime}}"
+        filter: "{{parsed_login_time.datetime != None}}"
 
+      - set:
+          "@timestamp": "{{parsed_timestamp.datetime}}"
+        filter: "{{parsed_timestamp.datetime != None}}"
+
+      - set:
+          "@timestamp": "{{parsed_derived.datetime}}"
+        filter: "{{parsed_derived.datetime != None}}"
+
+      - set:
           event.dataset: "{{json_event.output.EVENT_TYPE}}"
           event.reason: "{{json_event.output.MESSAGE}}"
           event.start: "{{ parsed_start_time.datetime }}"

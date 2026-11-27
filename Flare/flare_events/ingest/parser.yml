@@ -7,7 +7,16 @@ pipeline:
         input_field: "{{original.message}}"
         output_field: message
 
+  # Dated when Flare matched the item to the tenant (added by the connector), as in Flare's own feed:
+  # the item can be years old, e.g. the history Flare matches when a tenant is created
   - name: parsed_event_timestamp
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.metadata.matched_at or json_event.message.header.timestamp or json_event.message.metadata.estimated_created_at}}"
+        output_field: date
+
+  - name: parsed_item_created_at
     external:
       name: date.parse
       properties:
@@ -63,6 +72,8 @@ pipeline:
     filter: "{{json_event.message.header.type == 'social_media'}}"
   - name: set_experimental_fields
     filter: "{{json_event.message.header.type == 'experimental'}}"
+  - name: set_cc_fields
+    filter: "{{json_event.message.header.type == 'cc'}}"
 
 stages:
   set_common_fields:
@@ -71,6 +82,7 @@ stages:
           "@timestamp": "{{parsed_event_timestamp.date}}"
           event.start: "{{parsed_event_start.date}}"
           event.end: "{{parsed_event_end.date}}"
+          flare.events.created_at: "{{parsed_item_created_at.date}}"
           event.category: ["threat"]
           event.type: ["indicator"]
           event.kind: "alert"
@@ -82,7 +94,7 @@ stages:
           event.hash: "{{json_event.message.header.content_hash or json_event.message.metadata.payload_digest}}"
           event.reason: "{{json_event.message.header.title}}"
           event.provider: "{{json_event.message.header.source_name}}"
-          event.risk_score: "{{json_event.message.header.risk.score if json_event.message.header.risk is not none else none}}"
+          event.risk_score: "{{json_event.message.header.risk.score}}"
           event.url: "{{json_event.message.metadata.flare_url}}"
 
           flare.events.uid: "{{json_event.message.header.uid}}"
@@ -102,15 +114,17 @@ stages:
           flare.events.verb: "{{json_event.message.header.verb}}"
           flare.events.external_url: "{{json_event.message.header.external_url}}"
           flare.events.contains_secrets: "{{json_event.message.header.contains_secrets}}"
-          flare.events.severity_override: "{{json_event.message.header.tenant_metadata.severity.override if json_event.message.header.tenant_metadata is not none and json_event.message.header.tenant_metadata.severity is not none else none}}"
-          flare.events.severity_original: "{{json_event.message.header.tenant_metadata.severity.original if json_event.message.header.tenant_metadata is not none and json_event.message.header.tenant_metadata.severity is not none else none}}"
+          flare.events.severity_override: "{{json_event.message.header.tenant_metadata.severity.override}}"
+          flare.events.severity_original: "{{json_event.message.header.tenant_metadata.severity.original}}"
           flare.events.victim_name: "{{json_event.message.header.victim_name}}"
           flare.events.emails: "{{json_event.message.data.features.emails}}"
           flare.events.usernames: "{{json_event.message.data.features.usernames}}"
+          # Fields the connector cut to fit the intake size limit (from 0.6.7)
+          flare.events.truncated_fields: "{{json_event.message.data.truncated_fields}}"
           flare.events.identifiers.id: >
             {%- set ids = [] -%}
             {%- for identifier in json_event.message.identifiers or [] -%}
-              {%- if identifier.id is not none -%}
+              {%- if identifier.id -%}
                 {%- set _ = ids.append(identifier.id) -%}
               {%- endif -%}
             {%- endfor -%}
@@ -118,7 +132,7 @@ stages:
           flare.events.identifiers.name: >
             {%- set names = [] -%}
             {%- for identifier in json_event.message.identifiers or [] -%}
-              {%- if identifier.name is not none -%}
+              {%- if identifier.name -%}
                 {%- set _ = names.append(identifier.name) -%}
               {%- endif -%}
             {%- endfor -%}
@@ -127,31 +141,26 @@ stages:
 
       - set:
           threat.indicator.ip: "{{json_event.message.data.features.ip_addresses[0]}}"
-        filter: "{{json_event.message.data.features is not none and json_event.message.data.features.ip_addresses is not none and json_event.message.data.features.ip_addresses | length > 0}}"
 
       - set:
           threat.indicator.url.domain: "{{json_event.message.data.features.domains[0]}}"
-        filter: "{{json_event.message.data.features is not none and json_event.message.data.features.domains is not none and json_event.message.data.features.domains | length > 0}}"
 
       - set:
           threat.indicator.url.full: "{{json_event.message.data.features.urls[0]}}"
-        filter: "{{json_event.message.data.features is not none and json_event.message.data.features.urls is not none and json_event.message.data.features.urls | length > 0}}"
 
       - set:
           event.severity: "{{((json_event.message.header.risk.score | int) * 20) | int}}"
-        filter: "{{json_event.message.header.risk is not none}}"
 
       - set:
           event.action: "{{json_event.message.header.verb}}"
-        filter: "{{json_event.message.header.verb is not none}}"
 
       - set:
           event.outcome: "success"
-        filter: "{{json_event.message.header.remediated_at is not none}}"
+        filter: "{{json_event.message.header.remediated_at | default(none) is not none}}"
 
       - set:
           event.outcome: "failure"
-        filter: "{{json_event.message.header.ignored_at is not none and json_event.message.header.remediated_at is none}}"
+        filter: "{{json_event.message.header.ignored_at | default(none) is not none and json_event.message.header.remediated_at | default(none) is none}}"
 
       - set:
           event.outcome: "unknown"
@@ -198,8 +207,8 @@ stages:
           flare.events.listing.title: "{{json_event.message.data.title}}"
           flare.events.listing.price: "{{json_event.message.data.price}}"
           flare.events.listing.currency: "{{json_event.message.data.currency}}"
-          source.geo.country_name: "{{json_event.message.data.ship_from[0] if json_event.message.data.ship_from is not none and json_event.message.data.ship_from | length > 0 else none}}"
-          destination.geo.country_name: "{{json_event.message.data.ship_to[0] if json_event.message.data.ship_to is not none and json_event.message.data.ship_to | length > 0 else none}}"
+          source.geo.country_name: "{{json_event.message.data.ship_from[0]}}"
+          destination.geo.country_name: "{{json_event.message.data.ship_to[0]}}"
           flare.events.listing.ship_from: "{{json_event.message.data.ship_from}}"
           flare.events.listing.ship_to: "{{json_event.message.data.ship_to}}"
           flare.events.listing.escrow: "{{json_event.message.data.escrow}}"
@@ -235,7 +244,7 @@ stages:
     actions:
       - set:
           user.name: "{{json_event.message.data.identity_name or json_event.message.header.identity_name}}"
-          flare.events.leaked_credential.password_present: "{{(json_event.message.data.password or json_event.message.header.password) is not none}}"
+          flare.events.leaked_credential.password_present: "{{(json_event.message.data.password or json_event.message.header.password) | default(none) is not none}}"
           url.domain: "{{json_event.message.data.domain}}"
           flare.events.leaked_credential.imported_at: "{{json_event.message.data.imported_at}}"
           flare.events.leaked_credential.leak_id: "{{json_event.message.data.leak_id | string}}"
@@ -247,7 +256,7 @@ stages:
 
       - set:
           user.email: "{{json_event.message.data.identity_name}}"
-        filter: "{{json_event.message.data.identity_name is not none and '@' in json_event.message.data.identity_name}}"
+        filter: "{{'@' in (json_event.message.data.identity_name or '')}}"
 
   set_stealer_log_fields:
     actions:
@@ -261,27 +270,25 @@ stages:
           flare.events.stealer_log.timezone: "{{json_event.message.data.user_information.timezone}}"
           flare.events.stealer_log.hardware: "{{json_event.message.data.user_information.hardware}}"
           flare.events.stealer_log.anti_viruses: "{{json_event.message.data.user_information.anti_viruses}}"
-        filter: "{{json_event.message.data.user_information is not none}}"
 
       - set:
           flare.events.stealer_log.screen_resolution: "{{json_event.message.data.user_information.screensize_width}}x{{json_event.message.data.user_information.screensize_height}}"
-        filter: "{{json_event.message.data.user_information is not none and json_event.message.data.user_information.screensize_width is defined and json_event.message.data.user_information.screensize_height is defined and json_event.message.data.user_information.screensize_width is not none and json_event.message.data.user_information.screensize_height is not none}}"
+        filter: "{{json_event.message.data.user_information.screensize_width | default(none) is not none and json_event.message.data.user_information.screensize_height | default(none) is not none}}"
 
       - set:
           host.ip: ["{{json_event.message.data.user_information.ip_address}}"]
           source.ip: "{{json_event.message.data.user_information.ip_address}}"
-        filter: "{{json_event.message.data.user_information is not none and json_event.message.data.user_information.ip_address is not none}}"
+        filter: "{{json_event.message.data.user_information.ip_address | default(none) is not none}}"
 
       - set:
           threat.software.name: "{{json_event.message.data.malware_information.malware_family}}"
           flare.events.stealer_log.malware_family: "{{json_event.message.data.malware_information.malware_family}}"
           flare.events.stealer_log.build_id: "{{json_event.message.data.malware_information.build_id}}"
           flare.events.stealer_log.infection_date: "{{json_event.message.data.malware_information.infection_date or json_event.message.header.infection_date}}"
-        filter: "{{json_event.message.data.malware_information is not none}}"
 
       - set:
           flare.events.stealer_log.infection_date: "{{json_event.message.header.infection_date}}"
-        filter: "{{json_event.message.data.malware_information is none and json_event.message.header.infection_date is not none}}"
+        filter: "{{json_event.message.data.malware_information | default(none) is none and json_event.message.header.infection_date | default(none) is not none}}"
 
       - set:
           flare.events.stealer_log.installed_at: "{{json_event.message.data.installed_at}}"
@@ -290,8 +297,8 @@ stages:
           flare.events.stealer_log.price: "{{json_event.message.data.price}}"
           flare.events.stealer_log.currency: "{{json_event.message.data.currency}}"
           flare.events.stealer_log.credential_count: "{{json_event.message.header.credential_count}}"
-          flare.events.stealer_log.credentials_count: "{{json_event.message.data.credentials | length if json_event.message.data.credentials is not none else none}}"
-          flare.events.stealer_log.cookies_count: "{{json_event.message.data.cookies | length if json_event.message.data.cookies is not none else none}}"
+          flare.events.stealer_log.credentials_count: "{{json_event.message.data.credentials | length if json_event.message.data.credentials | default(none) is not none else none}}"
+          flare.events.stealer_log.cookies_count: "{{json_event.message.data.cookies | length if json_event.message.data.cookies | default(none) is not none else none}}"
           flare.events.stealer_log.files: "{{json_event.message.data.files}}"
           flare.events.stealer_log.sources: "{{json_event.message.data.sources}}"
 
@@ -310,7 +317,7 @@ stages:
           flare.events.source_code.tags: >
             {%- set tags = [] -%}
             {%- for tag in json_event.message.data.tag or [] -%}
-              {%- if tag.name is not none -%}
+              {%- if tag.name -%}
                 {%- set _ = tags.append(tag.name) -%}
               {%- endif -%}
             {%- endfor -%}
@@ -318,7 +325,7 @@ stages:
           flare.events.source_code.repositories: >
             {%- set repos = [] -%}
             {%- for tag in json_event.message.data.tag or [] -%}
-              {%- if tag.repository_name is not none -%}
+              {%- if tag.repository_name -%}
                 {%- set _ = repos.append(tag.repository_name) -%}
               {%- endif -%}
             {%- endfor -%}
@@ -416,3 +423,22 @@ stages:
     actions:
       - set:
           flare.events.experimental.raw: "{{json_event.message.data | tojson}}"
+
+  set_cc_fields:
+    actions:
+      - set:
+          flare.events.cc.bank: "{{json_event.message.data.bank or json_event.message.header.bank}}"
+          flare.events.cc.bin: "{{json_event.message.data.bin or json_event.message.header.bin}}"
+          flare.events.cc.brand: "{{json_event.message.data.brand or json_event.message.header.brand}}"
+          flare.events.cc.country: "{{json_event.message.data.country or json_event.message.header.country}}"
+          flare.events.cc.state: "{{json_event.message.data.state_code or json_event.message.header.state_code}}"
+          flare.events.cc.zip: "{{json_event.message.data.zip or json_event.message.header.zip}}"
+          flare.events.cc.expiration: "{{json_event.message.data.expiration or json_event.message.header.expiration}}"
+          flare.events.cc.has_cvv: "{{json_event.message.data.has_cvv}}"
+          flare.events.cc.has_date_of_birth: "{{json_event.message.data.has_date_of_birth}}"
+          flare.events.cc.has_mother_maiden_name: "{{json_event.message.data.has_mother_maiden_name}}"
+          flare.events.cc.has_phone: "{{json_event.message.data.has_phone}}"
+          flare.events.cc.has_pin: "{{json_event.message.data.has_pin}}"
+          flare.events.cc.has_ssn: "{{json_event.message.data.has_ssn}}"
+          flare.events.cc.has_track_1: "{{json_event.message.data.has_track_1}}"
+          flare.events.cc.has_vbv: "{{json_event.message.data.has_vbv}}"
