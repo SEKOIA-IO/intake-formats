@@ -1,0 +1,269 @@
+name: qe-secure
+ignored_values: null
+pipeline:
+  - name: json_event
+    description: ""
+    filter: ""
+    external:
+      name: json.parse-json
+      properties:
+        input_field: "{{original.message}}"
+        output_field: message
+  - name: parsed_date
+    description: ""
+    filter: ""
+    external:
+      name: date.parse
+      properties:
+        input_field: "{{json_event.message.event_original.timestamp}}"
+        output_field: datetime
+        format: null
+        timezone: UTC
+  - name: set_base_fields
+    description: ""
+    filter: ""
+    external: null
+stages:
+  set_base_fields:
+    actions:
+      - set:
+          dns.id: "{{json_event.message.event_original.dns.id}}"
+          dns.type: "{{json_event.message.event_original.dns.type}}"
+          source.ip: "{{json_event.message.event_original.src_ip}}"
+          "@timestamp": "{{parsed_date.datetime}}"
+          event.type: ["connection"]
+          url.domain: "{{json_event.message.event_original.http.hostname}}"
+          allentis.qe_secure.event_type: "{{json_event.message.event_original.event_type}}"
+          source.port: "{{json_event.message.event_original.src_port}}"
+          http.version: '{{json_event.message.event_original.http.protocol.split("/")[1]}}'
+          source.bytes: "{{json_event.message.event_original.flow.bytes_toserver}}"
+          url.original: "{{json_event.message.event_original.http.url}}"
+          destination.ip: "{{json_event.message.event_original.dest_ip}}"
+          event.category:
+            - network
+          event.severity: "{{json_event.message.event_original.alert.severity}}"
+          tls.client.ja3: "{{json_event.message.event_original.tls.ja3.hash}}"
+          destination.port: "{{json_event.message.event_original.dest_port}}"
+          network.transport: "{{json_event.message.event_original.proto | lower}}"
+          tls.server.issuer: "{{json_event.message.event_original.tls.issuerdn}}"
+          tls.server.subject: "{{json_event.message.event_original.tls.subject}}"
+          http.request.method: "{{json_event.message.event_original.http.http_method}}"
+          http.response.body.bytes: "{{json_event.message.event_original.http.length}}"
+          user_agent.original: "{{json_event.message.event_original.http.http_user_agent}}"
+          network.community_id: "{{json_event.message.event_original.community_id}}"
+          tls.server.not_after: "{{json_event.message.event_original.tls.notafter}}"
+          http.request.referrer: "{{json_event.message.event_original.http.http_refer}}"
+          tls.server.not_before: "{{json_event.message.event_original.tls.notbefore}}"
+          tls.client.server_name: "{{json_event.message.event_original.tls.sni}}"
+          allentis.qe_secure.http.content_type: "{{json_event.message.event_original.http.http_content_type}}"
+          http.response.status_code: "{{json_event.message.event_original.http.status}}"
+        filter: ""
+        name: set
+      - set:
+          event.type:
+            - info
+          event.action: "{{json_event.message.event_original.anomaly.event}}"
+        filter: '{{json_event.message.event_original.get("event_type") == "anomaly"}}'
+        name: set
+      - set:
+          event.kind: alert
+          event.category: ["network", "intrusion_detection"]
+          event.type: ["allowed"]
+          event.action: "{{json_event.message.event_original.alert.action}}"
+          rule.id: "{{json_event.message.event_original.alert.signature_id}}"
+          rule.name: "{{json_event.message.event_original.alert.signature}}"
+          rule.version: "{{json_event.message.event_original.alert.rev}}"
+          rule.category: "{{json_event.message.event_original.alert.category}}"
+          allentis.qe_secure.alert.signature_severity: "{{json_event.message.event_original.alert.metadata.signature_severity[0]}}"
+        filter: '{{json_event.message.event_original.get("event_type") == "alert"}}'
+        name: set
+      - set:
+          event.type: ["denied"]
+        filter: >-
+          {{json_event.message.event_original.get("event_type") == "alert" and
+          json_event.message.event_original.alert.get("action") == "blocked"}}
+        name: set
+      - set:
+          threat.framework: MITRE ATT&CK
+          threat.tactic.id: "{{json_event.message.event_original.alert.metadata.mitre_tactic_id[0]}}"
+          threat.tactic.name: '{{json_event.message.event_original.alert.metadata.mitre_tactic_name[0] | replace("_", " ")}}'
+          threat.technique.id: "{{json_event.message.event_original.alert.metadata.mitre_technique_id[0]}}"
+          threat.technique.name: '{{json_event.message.event_original.alert.metadata.mitre_technique_name[0] | replace("_", " ")}}'
+        filter: >-
+          {{json_event.message.event_original.get("event_type") == "alert" and
+          json_event.message.event_original.alert.get("metadata", {}).get("mitre_technique_id") != None}}
+        name: set
+      - set:
+          event.type: ["connection", "end"]
+        filter: '{{json_event.message.event_original.get("event_type") in ["flow", "netflow"]}}'
+        name: set
+      - set:
+          event.type: ["protocol"]
+        filter: >-
+          {{json_event.message.event_original.get("event_type") in
+          ["dns", "http", "tls", "ssh", "smb", "rdp", "ftp", "smtp", "fileinfo", "dhcp", "krb5", "nfs", "snmp", "sip", "quic"]}}
+        name: set
+      - set:
+          dns.question.name: "{{json_event.message.event_original.dns.rrname}}"
+          dns.question.type: "{{json_event.message.event_original.dns.rrtype}}"
+        filter: >-
+          {{json_event.message.event_original.get("dns") != None and
+          (json_event.message.event_original.dns.get("type") == "query" or
+          json_event.message.event_original.dns.get("version") == 2)}}
+        name: set
+      - set:
+          dns.response_code: "{{json_event.message.event_original.dns.rcode}}"
+        filter: >-
+          {{json_event.message.event_original.get("dns") != None and
+          json_event.message.event_original.dns.get("type") == "answer"}}
+        name: set
+      - set:
+          dns.answers: >
+            [ {"name": "{{json_event.message.event_original.dns.rrname}}",
+            "type": "{{json_event.message.event_original.dns.rrtype}}",
+            "data": "{{json_event.message.event_original.dns.rdata}}",
+            "ttl": {{json_event.message.event_original.dns.ttl | default(0)}}} ]
+        filter: >-
+          {{json_event.message.event_original.get("dns") != None and
+          json_event.message.event_original.dns.get("type") == "answer" and
+          json_event.message.event_original.dns.get("version") != 2 and
+          json_event.message.event_original.dns.get("rdata") != None}}
+        name: set
+      - set:
+          dns.answers: |
+            [
+                {% for item in json_event.message.event_original.dns.answers %}
+                {"name": "{{item.rrname}}", "type": "{{item.rrtype}}", "data": "{{item.get('rdata', '')}}", "ttl": {{item.get('ttl', 0)}}},
+                {% endfor %}
+            ]
+        filter: >-
+          {{json_event.message.event_original.get("dns") != None and
+          json_event.message.event_original.dns.get("answers") != None}}
+        name: set
+      - set:
+          dns.answers: |
+            [
+                {% for type, record in json_event.message.event_original.dns.grouped.items() %}
+                    {% for item in record %}
+                    {"type": "{{type}}", "data": "{{item}}"},
+                    {% endfor %}
+                {% endfor %}
+            ]
+          dns.resolved_ip: |
+            [
+                {% for item in json_event.message.event_original.dns.grouped.get("A", []) + json_event.message.event_original.dns.grouped.get("AAAA", []) %}
+                "{{item}}",
+                {% endfor %}
+            ]
+        filter: >-
+          {{json_event.message.event_original.get("dns") != None and
+          json_event.message.event_original.dns.get("grouped") != None and
+          json_event.message.event_original.dns.get("answers") == None}}
+        name: set
+      - set:
+          host.name: '{{json_event.message.event_original.get("host")}}'
+          event.kind: metric
+          event.type: ["info"]
+          allentis.qe_secure.event_type: '{{json_event.message.event_original.get("tags", [None])[0]}}'
+        filter: >-
+          {{json_event.message.event_original.get("tags", [None])[0] in ["metric", "beats_input_raw_event"]}}
+        name: set
+      - set:
+          allentis.qe_secure.dns.question.name_length: "{{json_event.message.event_original.dns.rrname | length}}"
+        filter: '{{json_event.message.event_original.get("dns") != None and json_event.message.event_original.dns.get("rrname") != None}}'
+        name: set
+      - set:
+          event.end: "{{json_event.message.event_original.flow.end}}"
+          event.start: "{{json_event.message.event_original.flow.start}}"
+          event.reason: "{{json_event.message.event_original.flow.reason}}"
+          allentis.qe_secure.icmp.code: "{{json_event.message.event_original.icmp_code}}"
+          allentis.qe_secure.icmp.type: "{{json_event.message.event_original.icmp_type}}"
+          observer.ingress.interface.name: "{{json_event.message.event_original.in_iface}}"
+          observer.vendor: Allentis
+          observer.product: QE-Secure
+          observer.type: ids
+          observer.hostname: '{{json_event.message.event_original.get("host")}}'
+        filter: ""
+        name: set
+      - set:
+          network.protocol: "{{json_event.message.event_original.app_proto | lower}}"
+        filter: >-
+          {{json_event.message.event_original.get("app_proto") not in [None, "", "failed", "unknown"]}}
+        name: set
+      - set:
+          source.packets: "{{json_event.message.event_original.flow.pkts_toserver}}"
+          destination.bytes: "{{json_event.message.event_original.flow.bytes_toclient}}"
+          destination.packets: "{{json_event.message.event_original.flow.pkts_toclient}}"
+          network.bytes: "{{json_event.message.event_original.flow.bytes_toserver + json_event.message.event_original.flow.bytes_toclient}}"
+          network.packets: "{{json_event.message.event_original.flow.pkts_toserver + json_event.message.event_original.flow.pkts_toclient}}"
+        filter: >-
+          {{json_event.message.event_original.get("flow") != None and
+          json_event.message.event_original.flow.get("bytes_toclient") != None}}
+        name: set
+      - set:
+          allentis.qe_secure.flow_id: "{{json_event.message.event_original.flow_id | string}}"
+        filter: '{{json_event.message.event_original.get("flow_id") != None}}'
+        name: set
+      - set:
+          tls.server.x509.serial_number: '{{json_event.message.event_original.tls.serial | replace(":", "") | upper}}'
+          tls.server.hash.sha1: '{{json_event.message.event_original.tls.fingerprint | replace(":", "") | upper}}'
+          tls.server.ja3s: "{{json_event.message.event_original.tls.ja3s.hash}}"
+          destination.domain: "{{json_event.message.event_original.tls.sni}}"
+        filter: '{{json_event.message.event_original.get("tls") != None}}'
+        name: set
+      - set:
+          tls.version_protocol: '{{"ssl" if json_event.message.event_original.tls.version.startswith("SSL") else "tls"}}'
+          tls.version: >-
+            {{ {"SSLv2": "2.0", "SSLv3": "3.0", "TLSv1": "1.0", "TLS 1.1": "1.1", "TLS 1.2": "1.2", "TLS 1.3": "1.3"}.get(json_event.message.event_original.tls.version) }}
+        filter: >-
+          {{json_event.message.event_original.get("tls") != None and
+          json_event.message.event_original.tls.get("version") not in [None, "", "UNDETERMINED"]}}
+        name: set
+      - set:
+          destination.domain: "{{json_event.message.event_original.http.hostname}}"
+          url.path: '{{json_event.message.event_original.http.url.split("?")[0]}}'
+        filter: >-
+          {{json_event.message.event_original.get("http") != None and
+          json_event.message.event_original.http.get("url") != None}}
+        name: set
+      - set:
+          url.query: '{{json_event.message.event_original.http.url.split("?", 1)[1]}}'
+        filter: >-
+          {{json_event.message.event_original.get("http") != None and
+          "?" in json_event.message.event_original.http.get("url", "")}}
+        name: set
+      - set:
+          file.path: "{{json_event.message.event_original.fileinfo.filename}}"
+          file.name: '{{json_event.message.event_original.fileinfo.filename.split("/")[-1]}}'
+          file.size: "{{json_event.message.event_original.fileinfo.size}}"
+          file.hash.md5: "{{json_event.message.event_original.fileinfo.md5}}"
+          file.hash.sha1: "{{json_event.message.event_original.fileinfo.sha1}}"
+          file.hash.sha256: "{{json_event.message.event_original.fileinfo.sha256}}"
+          allentis.qe_secure.fileinfo.magic: "{{json_event.message.event_original.fileinfo.magic}}"
+        filter: >-
+          {{json_event.message.event_original.get("fileinfo") != None and
+          json_event.message.event_original.fileinfo.get("filename") != None}}
+        name: set
+      - set:
+          allentis.qe_secure.ssh.client.software_version: "{{json_event.message.event_original.ssh.client.software_version}}"
+          allentis.qe_secure.ssh.client.proto_version: "{{json_event.message.event_original.ssh.client.proto_version}}"
+          allentis.qe_secure.ssh.server.software_version: "{{json_event.message.event_original.ssh.server.software_version}}"
+          allentis.qe_secure.ssh.server.proto_version: "{{json_event.message.event_original.ssh.server.proto_version}}"
+        filter: '{{json_event.message.event_original.get("ssh") != None}}'
+        name: set
+      - set:
+          allentis.qe_secure.smb.command: "{{json_event.message.event_original.smb.command}}"
+          allentis.qe_secure.smb.dialect: "{{json_event.message.event_original.smb.dialect}}"
+          file.name: "{{json_event.message.event_original.smb.filename}}"
+        filter: '{{json_event.message.event_original.get("smb") != None}}'
+        name: set
+      - set:
+          allentis.qe_secure.rdp.event_type: "{{json_event.message.event_original.rdp.event_type}}"
+          allentis.qe_secure.rdp.cookie: "{{json_event.message.event_original.rdp.cookie}}"
+        filter: '{{json_event.message.event_original.get("rdp") != None}}'
+        name: set
+      - set:
+          allentis.qe_secure.anomaly.type: "{{json_event.message.event_original.anomaly.type}}"
+          allentis.qe_secure.anomaly.layer: "{{json_event.message.event_original.anomaly.layer}}"
+        filter: '{{json_event.message.event_original.get("anomaly") != None}}'
+        name: set
