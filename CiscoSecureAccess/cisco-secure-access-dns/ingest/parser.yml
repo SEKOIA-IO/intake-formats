@@ -25,6 +25,15 @@ pipeline:
           - organization_id
         delimiter: ","
 
+  - name: get_user_email
+    filter: "{{'@' in parsed_dsv.message.most_granular_identity}}"
+    external:
+      name: grok.match
+      properties:
+        input_field: parsed_dsv.message.most_granular_identity
+        output_field: message
+        pattern: "%{GREEDYDATA:name} \\(%{EMAILADDRESS:mail}\\)"
+
   - name: set_ecs_fields
 
   - name: set_custom_fields
@@ -54,6 +63,16 @@ stages:
           destination.geo.country_iso_code: "{{parsed_dsv.message.destination_countries}}"
 
           organization.id: "{{parsed_dsv.message.organization_id}}"
+
+      - set:
+          host.name: "{{parsed_dsv.message.identities.split(',')[parsed_dsv.message.identity_types.split(',').index('Anyconnect Roaming Client')]}}"
+          host.hostname: "{{parsed_dsv.message.identities.split(',')[parsed_dsv.message.identity_types.split(',').index('Anyconnect Roaming Client')]}}"
+        filter: "{{'Anyconnect Roaming Client' in parsed_dsv.message.identity_types.split(',') and parsed_dsv.message.identities.split(',') | length == parsed_dsv.message.identity_types.split(',') | length}}"
+
+      - set:
+          user.full_name: "{{get_user_email.message.name}}"
+          user.email: "{{get_user_email.message.mail or parsed_dsv.message.most_granular_identity}}"
+        filter: "{{'@' in parsed_dsv.message.most_granular_identity}}"
 
       - translate:
         dictionary:
