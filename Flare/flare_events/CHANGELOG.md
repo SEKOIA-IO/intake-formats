@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Smart descriptions per event type: infected devices (malware, stolen credentials), compromised devices listed on markets, code platform mentions (project, issue, detected secret), leaked credentials (with or without password), lookalike domains, Docker images with secrets, exposed services, chat messages, attachments, forum posts (with the English title) and listings. The other types (blog posts, buckets, documents, pastes, social media…) keep the generic description
+
 ## 2026-11-25
 
 ### Added
