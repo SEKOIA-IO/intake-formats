@@ -48,6 +48,16 @@ pipeline:
         input_field: "{{(json_event.message.ModifiedProperties | selectattr('Name', 'equalto', 'AppId') | list)[0].NewValue}}"
         output_field: values
 
+  - name: parse_email_sending_limit_rs
+    filter: "{{json_event.message.RecordType == 40 and parse_data.ParsedData.op == 'EmailSendingLimitExceeded' and parse_data.ParsedData.rs != None}}"
+    external:
+      name: kv.parse-kv
+      properties:
+        input_field: "{{parse_data.ParsedData.rs}}"
+        output_field: result
+        value_sep: "="
+        item_sep: ";"
+
   - name: set_common_fields
   - name: set_office365_fields
   - name: parse_exchange_admin
@@ -1219,6 +1229,29 @@ stages:
           rule.category: "{{parse_data.ParsedData.mat}}"
           office365.alert.display_name: "{{parse_data.ParsedData.an}}"
         filter: "{{json_event.message.Source == 'Cloud App Security'}}"
+
+      - set:
+          event.reason: "{{parse_data.ParsedData.ad}}"
+        filter: "{{parse_data.ParsedData.op == 'EmailSendingLimitExceeded'}}"
+
+      - set:
+          office365.alert.last_message_trace_id: "{{parse_email_sending_limit_rs.result['Last MessagetraceId']}}"
+
+      - set:
+          office365.alert.internal_recipient_count_today: "{{parse_email_sending_limit_rs.result.InternalRecipientCountToday}}"
+        filter: "{{(parse_email_sending_limit_rs.result.InternalRecipientCountToday or '').isdigit()}}"
+
+      - set:
+          office365.alert.external_recipient_count_today: "{{parse_email_sending_limit_rs.result.ExternalRecipientCountToday}}"
+        filter: "{{(parse_email_sending_limit_rs.result.ExternalRecipientCountToday or '').isdigit()}}"
+
+      - set:
+          office365.alert.last_message_recipient_count: "{{parse_email_sending_limit_rs.result.LastMessageRcptCount}}"
+        filter: "{{(parse_email_sending_limit_rs.result.LastMessageRcptCount or '').isdigit()}}"
+
+      - set:
+          source.ip: "{{parse_email_sending_limit_rs.result.CIP}}"
+        filter: "{{(parse_email_sending_limit_rs.result.CIP | is_ipaddress) and final.get('source', {}).get('ip') == None}}"
 
       - set:
           source.user.email: "{{parse_data.ParsedData.f3u}}"

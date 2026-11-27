@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-27
+
+### Added
+
+- Parse new custom fields from the Security & Compliance `EmailSendingLimitExceeded` alert:
+  - `office365.alert.external_recipient_count_today`: parse `ExternalRecipientCountToday` from `Data.rs`
+  - `office365.alert.internal_recipient_count_today`: parse `InternalRecipientCountToday` from `Data.rs`
+  - `office365.alert.last_message_recipient_count`: parse `LastMessageRcptCount` from `Data.rs`
+  - `office365.alert.last_message_trace_id`: parse `Last MessagetraceId` from `Data.rs`
+
+### Changed
+
+- Extend parsing of existing ECS fields to the Security & Compliance `EmailSendingLimitExceeded` alert:
+  - `event.reason`: parse the alert description from `Data.ad`
+  - `source.ip`: parse `CIP` from `Data.rs` when it is a valid IP address and no other source IP is set
+
 ## [1.0.6] - 2026-11-03
 
 ### Fixed
