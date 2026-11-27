@@ -369,15 +369,13 @@ stages:
         filter: "{{json_load.message.dns.query is not defined and json_load.message.dns.answers.name is defined}}"
       - set:
           dns.answers: >-
-            {%- set answers = [] -%}
-            {%- for answer in json_load.message.dns.answers.data -%}
-              {%- set item = {"name": answer.rrname, "type": answer.rrtype, "ttl": answer.ttl} -%}
-              {%- if answer.rdata is defined and answer.rdata -%}
-                {%- set item = {"name": answer.rrname, "type": answer.rrtype, "ttl": answer.ttl, "data": answer.rdata} -%}
-              {%- endif -%}
-              {%- set _ = answers.append(item) -%}
-            {%- endfor -%}
-            {{ answers }}
+            {%- set answers -%}
+              {%- for answer in json_load.message.dns.answers.data -%}
+                {"name": {{ answer.rrname | default(none) | tojson }}, "type": {{ answer.rrtype | default(none) | tojson }}, "ttl": {{ answer.ttl | default(none) | tojson }}
+                {%- if answer.rdata is defined and answer.rdata -%}, "data": {{ answer.rdata | tojson }}{%- endif -%} },
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ answers[:-1] ~ ']') | from_json }}
         filter: "{{json_load.message.dns.answers.data is defined and json_load.message.dns.answers.data|length > 0}}"
   url:
     actions:
@@ -459,13 +457,14 @@ stages:
           and json_load.message.smtp.mail_from is string and json_load.message.smtp.mail_from|length > 0}}
       - set:
           email.to.address: >-
-            {%- set addresses = [] -%}
             {%- set recipients = json_load.message.smtp.rcpt_to -%}
             {%- if recipients is string -%}{%- set recipients = [recipients] -%}{%- endif -%}
-            {%- for recipient in recipients if recipient -%}
-              {%- set _ = addresses.append(recipient.split()[-1] | trim("<") | trim(">")) -%}
-            {%- endfor -%}
-            {{ addresses }}
+            {%- set addresses -%}
+              {%- for recipient in recipients if recipient -%}
+                {{ recipient.split()[-1] | trim("<") | trim(">") | tojson }},
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ addresses[:-1] ~ ']') | from_json }}
         filter: >-
           {{(json_load.message.email is not defined or json_load.message.email.to is not defined)
           and json_load.message.smtp.rcpt_to is defined and json_load.message.smtp.rcpt_to|length > 0}}
@@ -484,41 +483,45 @@ stages:
       # Addresses may be written as "Display Name <user@example.com>": keep only the address
       - set:
           email.from.address: >-
-            {%- set addresses = [] -%}
             {%- set values = json_load.message.email.from.address -%}
             {%- if values is string -%}{%- set values = [values] -%}{%- endif -%}
-            {%- for value in values if value -%}
-              {%- set _ = addresses.append(value.split()[-1] | trim("<") | trim(">")) -%}
-            {%- endfor -%}
-            {{ addresses }}
+            {%- set addresses -%}
+              {%- for value in values if value -%}
+                {{ value.split()[-1] | trim("<") | trim(">") | tojson }},
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ addresses[:-1] ~ ']') | from_json }}
         filter: "{{json_load.message.email.from.address is defined and json_load.message.email.from.address|length > 0}}"
       - set:
           email.to.address: >-
-            {%- set addresses = [] -%}
             {%- set values = json_load.message.email.to.address -%}
             {%- if values is string -%}{%- set values = [values] -%}{%- endif -%}
-            {%- for value in values if value -%}
-              {%- set _ = addresses.append(value.split()[-1] | trim("<") | trim(">")) -%}
-            {%- endfor -%}
-            {{ addresses }}
+            {%- set addresses -%}
+              {%- for value in values if value -%}
+                {{ value.split()[-1] | trim("<") | trim(">") | tojson }},
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ addresses[:-1] ~ ']') | from_json }}
         filter: "{{json_load.message.email.to.address is defined and json_load.message.email.to.address|length > 0}}"
       - set:
           email.reply_to.address: >-
-            {%- set addresses = [] -%}
             {%- set values = json_load.message.email.reply_to.address -%}
             {%- if values is string -%}{%- set values = [values] -%}{%- endif -%}
-            {%- for value in values if value -%}
-              {%- set _ = addresses.append(value.split()[-1] | trim("<") | trim(">")) -%}
-            {%- endfor -%}
-            {{ addresses }}
+            {%- set addresses -%}
+              {%- for value in values if value -%}
+                {{ value.split()[-1] | trim("<") | trim(">") | tojson }},
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ addresses[:-1] ~ ']') | from_json }}
         filter: "{{json_load.message.email.reply_to.address is defined and json_load.message.email.reply_to.address|length > 0}}"
       - set:
           email.attachments: >-
-            {%- set attachments = [] -%}
-            {%- for file in json_load.message.email.attachments -%}
-              {%- set _ = attachments.append({"file": {"name": file}}) -%}
-            {%- endfor -%}
-            {{ attachments }}
+            {%- set attachments -%}
+              {%- for file in json_load.message.email.attachments -%}
+                {"file": {"name": {{ file | tojson }} } },
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[' ~ attachments[:-1] ~ ']') | from_json }}
         filter: "{{json_load.message.email.attachments is defined and json_load.message.email.attachments|length > 0}}"
   smb:
     actions:
@@ -739,11 +742,12 @@ stages:
           gatewatcher.malcore.engines: >-
             {%- set engines = json_load.message.malcore.engine_id -%}
             {%- if engines is mapping -%}
-              {%- set result = [] -%}
-              {%- for index in engines.keys() | map("int") | sort -%}
-                {%- set _ = result.append(engines[index | string]) -%}
-              {%- endfor -%}
-              {{ result }}
+              {%- set result -%}
+                {%- for index in engines.keys() | map("int") | sort -%}
+                  {{ engines[index | string] | tojson }},
+                {%- endfor -%}
+              {%- endset -%}
+              {{ ('[' ~ result[:-1] ~ ']') | from_json }}
             {%- else -%}
               {{ engines }}
             {%- endif -%}
@@ -989,33 +993,27 @@ stages:
       - set:
           threat.framework: "MITRE ATT&CK"
           threat.technique.id: >-
-            {%- set values = [] -%}
-            {%- for technique in json_load.message.threat.techniques if technique.id -%}
-              {%- set _ = values.append(technique.id) -%}
-            {%- endfor -%}
-            {{ values }}
+            {{ json_load.message.threat.techniques | selectattr("id") | map(attribute="id") | list }}
           threat.technique.name: >-
-            {%- set values = [] -%}
-            {%- for technique in json_load.message.threat.techniques if technique.name -%}
-              {%- set _ = values.append(technique.name) -%}
-            {%- endfor -%}
-            {{ values }}
+            {{ json_load.message.threat.techniques | selectattr("name") | map(attribute="name") | list }}
           threat.tactic.id: >-
-            {%- set values = [] -%}
-            {%- for technique in json_load.message.threat.techniques -%}
-              {%- for tactic in technique.tactics or [] if tactic.id and tactic.id not in values -%}
-                {%- set _ = values.append(tactic.id) -%}
+            {%- set values -%}
+              {%- for technique in json_load.message.threat.techniques -%}
+                {%- for tactic in technique.tactics or [] if tactic.id -%}
+                  {{ tactic.id | tojson }},
+                {%- endfor -%}
               {%- endfor -%}
-            {%- endfor -%}
-            {{ values }}
+            {%- endset -%}
+            {{ ('[' ~ values[:-1] ~ ']') | from_json | unique(case_sensitive=true) | list }}
           threat.tactic.name: >-
-            {%- set values = [] -%}
-            {%- for technique in json_load.message.threat.techniques -%}
-              {%- for tactic in technique.tactics or [] if tactic.name and tactic.name not in values -%}
-                {%- set _ = values.append(tactic.name) -%}
+            {%- set values -%}
+              {%- for technique in json_load.message.threat.techniques -%}
+                {%- for tactic in technique.tactics or [] if tactic.name -%}
+                  {{ tactic.name | tojson }},
+                {%- endfor -%}
               {%- endfor -%}
-            {%- endfor -%}
-            {{ values }}
+            {%- endset -%}
+            {{ ('[' ~ values[:-1] ~ ']') | from_json | unique(case_sensitive=true) | list }}
         filter: "{{json_load.message.threat.techniques is defined and json_load.message.threat.techniques|length > 0}}"
   bittorrent_dht:
     actions:

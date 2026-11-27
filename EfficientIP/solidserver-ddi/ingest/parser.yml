@@ -175,38 +175,27 @@ stages:
       - set:
           dns.answers: >
             {%- set records = parse_event.message.dns_records.split() -%}
-            {%- set dns_answers = [] -%}
-            {%- set dns_record = {} -%}
-            {%- for record in records -%}
-              {%- if "." in record or "-" in record or record | is_ipaddress-%}
-                {%- if dns_record -%}
-                  {%- set new = dns_record.copy() -%}
-                  {%- set new_dict = {} -%}
-                  {%- for key, value in new|items -%}
-                    {%- if value != "" -%}
-                      {%- set _ = new_dict.update({key: value}) -%}
-                    {%- endif -%}
-                  {%- endfor -%}
-                  {%- set dns_answers = dns_answers.append(new_dict) -%}
-                {%- endif -%}   
-                {%- set _ = dns_record.update({"data": record}) -%}
-                {%- set _ = dns_record.update({"ttl": ""}) -%}
-                {%- set _ = dns_record.update({"type": ""}) -%}
-              {%- elif record|int(-1) != -1 and dns_record -%}
-                {%- set _ = dns_record.update({"ttl": record}) -%}
-              {%- elif dns_record -%}
-                {%- set _ = dns_record.update({"type": record}) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- set new = dns_record.copy() -%}
-            {%- set new_dict = {} -%}
-            {%- for key, value in new|items -%}
-              {%- if value != "" -%}
-                    {%- set _ = new_dict.update({key: value}) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- set _ = dns_answers.append(new_dict) -%}
-            {{dns_answers}}
+            {#- Index of the first data record: the tokens before it belong to no record -#}
+            {%- set data_indexes -%}
+              {%- for record in records -%}
+                {%- if "." in record or "-" in record or record | is_ipaddress -%}{{ loop.index0 | string }},{%- endif -%}
+              {%- endfor -%}
+            {%- endset -%}
+            {%- set first_data = data_indexes.split(",")[0] | int(-1) -%}
+            {%- set fields -%}
+              {%- for record in records -%}
+                {%- set seen = first_data != -1 and loop.index0 > first_data -%}
+                {%- if "." in record or "-" in record or record | is_ipaddress -%}
+                  {%- if seen -%} },{ {%- endif -%}
+                  "data": {{ record | tojson }}
+                {%- elif record|int(-1) != -1 and seen -%}
+                  , "ttl": {{ record | tojson }}
+                {%- elif seen -%}
+                  , "type": {{ record | tojson }}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endset -%}
+            {{ ('[{' ~ fields ~ '}]') | from_json }}
         filter: "{{parse_dns_https == null and parse_dns_rrsig == null and parse_event.message.dns_records.split()[0]|int(-1) == -1}}"
 
       - set:

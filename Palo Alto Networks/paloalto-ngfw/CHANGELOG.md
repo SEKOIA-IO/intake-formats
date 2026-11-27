@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-26
+
+### Fixed
+
+- Build lists and dicts without mutating them in place (`.append`, `.update`, ...), which not every Jinja engine supports
+- Set `url.original` for URL logs only when the URL or file name is present, instead of storing a bare `https://`
+
 ## [1.0.4] - 2026-10-20
 
 ### Changed

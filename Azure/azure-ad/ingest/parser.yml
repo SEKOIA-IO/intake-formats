@@ -105,28 +105,31 @@ stages:
     actions:
       - set:
           related.ip: >
-            {%- set seen = namespace(values=[]) -%}
-            {%- for candidate in [parsed_event.message.ipAddress, parsed_event.message.properties.ipAddress, parsed_event.message.callerIpAddress] -%}
-              {%- if candidate is string and candidate | is_ipaddress and candidate not in seen.values -%}
-                {%- set seen.values = seen.values + [candidate] -%}
+            {%- set candidates = [parsed_event.message.ipAddress, parsed_event.message.properties.ipAddress, parsed_event.message.callerIpAddress] -%}
+            {%- set values -%}
+            {%- for candidate in candidates -%}
+              {%- if candidate is string and candidate | is_ipaddress and candidate not in candidates[:loop.index0] -%}
+                {{ candidate | tojson }},
               {%- endif -%}
             {%- endfor -%}
-            {{ seen.values | to_json }}
+            {%- endset -%}
+            {{ ('[' ~ values[:-1] ~ ']') | from_json | to_json }}
         filter: "{{parsed_event.message.ipAddress | is_ipaddress or parsed_event.message.properties.ipAddress | is_ipaddress or parsed_event.message.callerIpAddress | is_ipaddress}}"
 
       - set:
           related.user: >
-            {%- set seen = namespace(values=[]) -%}
             {%- set candidates = [final.user.id, final.user.email, final.user.name if parsed_event.message.category == 'AuditLogs' else final.azuread.identity] -%}
             {%- if parsed_event.message.category == 'AuditLogs' and final.action.target == 'application' -%}
               {%- set candidates = [final.user.target.id, final.user.target.name, final.user.target.email] -%}
             {%- endif -%}
+            {%- set values -%}
             {%- for candidate in candidates -%}
-              {%- if candidate is string and candidate | length > 0 and candidate not in seen.values -%}
-                {%- set seen.values = seen.values + [candidate] -%}
+              {%- if candidate is string and candidate | length > 0 and candidate not in candidates[:loop.index0] -%}
+                {{ candidate | tojson }},
               {%- endif -%}
             {%- endfor -%}
-            {{ seen.values | to_json }}
+            {%- endset -%}
+            {{ ('[' ~ values[:-1] ~ ']') | from_json | to_json }}
         filter: "{{ final.user.id or final.user.email or final.azuread.identity or final.user.target.id or final.user.target.name or final.user.target.email }}"
 
   set_ecs_source_fields:

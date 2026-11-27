@@ -55,12 +55,14 @@ stages:
           observer.name: "Darktrace"
           observer.product: "Threat visualizer"
           host.ip: >
-            {%- set host_ips = [] -%}
+            {%- set host_ips_items -%}
             {%- for ip in json_event.message.device.ips -%}
               {%- if ip.get("ip") | is_ipaddress -%}
-                {%- set host_ips = host_ips.append(ip["ip"]) -%}
+                {{ ip["ip"] | tojson }},
               {%- endif -%}
             {%- endfor -%}
+            {%- endset -%}
+            {%- set host_ips = ('[' ~ host_ips_items[:-1] ~ ']') | from_json -%}
             {%- if host_ips | length > 0 -%}
               {{ host_ips }}
             {%- endif -%}
@@ -127,15 +129,21 @@ stages:
 
       - set:
           darktrace.threat_visualizer.components.filters: >
-            {% set filters = [] %}
+            {%- set filters_items -%}
             {%- if json_event.message.get('triggeredComponents')[0].get('triggeredFilters') -%}
-              {%- for val in json_event.message.get('triggeredComponents')[0].get('triggeredFilters') -%}
-                {%- if val.trigger.value and {"type":val.filterType,"trigger_value": val.trigger.value} not in filters-%}
-                  {% set _ = filters.append({"type":val.filterType,"trigger_value": val.trigger.value}) %}
+              {%- set triggered_filters = json_event.message.get('triggeredComponents')[0].get('triggeredFilters') -%}
+              {%- for val in triggered_filters -%}
+                {%- set previous = triggered_filters[:loop.index0] -%}
+                {%- set duplicate -%}
+                  {%- for prev in previous if prev.trigger.value and prev.filterType == val.filterType and prev.trigger.value == val.trigger.value -%}x{%- endfor -%}
+                {%- endset -%}
+                {%- if val.trigger.value and not duplicate -%}
+                  {"type": {{ val.filterType | default(none) | tojson }}, "trigger_value": {{ val.trigger.value | tojson }}},
                 {%- endif -%}
               {%- endfor -%}
             {%- endif -%}
-            {{filters}}
+            {%- endset -%}
+            {{ ('[' ~ filters_items[:-1] ~ ']') | from_json }}
 
   set_breach_devices_fields:
     actions:
@@ -187,34 +195,42 @@ stages:
           darktrace.threat_visualizer.title: "{{json_event.message.title}}"
           darktrace.threat_visualizer.summary: "{{json_event.message.summary}}"
           darktrace.threat_visualizer.details: >
-            {%- set new_details = [] -%}
+            {%- set new_details -%}
             {%- for group in json_event.message.details or [] -%}
               {%- set group_iter = group if group is sequence and group is not mapping else [group] -%}
-              {%- set new_group = [] -%}
+              [
               {%- for item in group_iter -%}
-                {%- set new_contents = [] -%}
+                {
+                {%- for key, value in item.items() if key != "contents" -%}
+                  {{ key | tojson }}: {{ value | tojson }},
+                {%- endfor -%}
+                "contents": [
                 {%- for content in item.get("contents") or [] -%}
-                  {%- set new_values = [] -%}
+                  {
+                  {%- for key, value in content.items() if key != "values" -%}
+                    {{ key | tojson }}: {{ value | tojson }},
+                  {%- endfor -%}
+                  "values": [
                   {%- for v in content.get("values") or [] -%}
                     {%- if v is string -%}
-                      {%- set _ = new_values.append(v) -%}
+                      {{ v | tojson }}
+                    {%- elif v is none -%}
+                      "null"
                     {%- else -%}
-                      {%- set _ = new_values.append(v | to_json) -%}
+                      {{ v | to_json | tojson }}
                     {%- endif -%}
+                    {%- if not loop.last -%},{%- endif -%}
                   {%- endfor -%}
-                  {%- set new_content = {} -%}
-                  {%- set _ = new_content.update(content) -%}
-                  {%- set _ = new_content.update({"values": new_values}) -%}
-                  {%- set _ = new_contents.append(new_content) -%}
+                  ]}
+                  {%- if not loop.last -%},{%- endif -%}
                 {%- endfor -%}
-                {%- set new_item = {} -%}
-                {%- set _ = new_item.update(item) -%}
-                {%- set _ = new_item.update({"contents": new_contents}) -%}
-                {%- set _ = new_group.append(new_item) -%}
+                ]}
+                {%- if not loop.last -%},{%- endif -%}
               {%- endfor -%}
-              {%- set _ = new_details.append(new_group) -%}
+              ],
             {%- endfor -%}
-            {{ new_details }}
+            {%- endset -%}
+            {{ ('[' ~ new_details[:-1] ~ ']') | from_json }}
           darktrace.threat_visualizer.summariser: "{{json_event.message.summariser}}"
 
   set_email_fields:
