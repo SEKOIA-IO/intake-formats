@@ -20,6 +20,7 @@
 ### Changed
 
 - Read a missing field like a `null` one, so that events keep the same parsing when the connector stops sending the fields set to `null`
+- `bot` events, which have no `credentials` or `cookies` list, no longer get `flare.events.stealer_log.credentials_count: 0` and `cookies_count: 0`: both are left unset
 
 ## 2026-11-18
 
