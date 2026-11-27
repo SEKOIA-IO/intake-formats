@@ -14,9 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix a syntax error in the `file.name` template (`json.event..winlog`)
 - Fix `winlog.event_data.Category` and `SubCategory`, which used the JavaScript `toUpperCase()` and printed a character of the GUID instead of the mapped name
 - Parse `powershell.command.invocation_details` from `param3` / `Payload`: the templates relied on `re` and `len`, which are not available
-- Split `process.args` from the command line, ignoring repeated spaces: the template relied on `range` and `len`, which are not available
+- Split `process.args` from the command line, ignoring repeated spaces and honoring the backslash-escaped quotes: the template relied on `range` and `len`, which are not available
 - Decode `winlog.event_data.AccessMaskDescription`, `NewUACList` and `TicketOptionsDescription` from their bitmasks: the templates relied on `range`, which is not available, and missed the flags sharing a hex digit (e.g. `0x15`)
 - Fix the mask of `STANDARD_RIGHTS_REQUIRED` (`0x000F0000`)
+- Describe the access mask of file objects (e.g. file share events 5140 and 5145) with the file access rights instead of the directory service rights, and only describe the access mask of directory service (4662) and file objects
 - Drop the empty arguments from the PowerShell `process.args` and `process.args_count`
 - Build lists and dicts without mutating them in place (`.append`, `.update`, ...), which not every Jinja engine supports
 

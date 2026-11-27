@@ -495,7 +495,7 @@ stages:
         filter: "{{json.event.winlog.event_data.get('SubcategoryGuid') != None}}"
       - set:
           winlog.event_data.AccessMaskDescription: >
-            {%- set mapping = {
+            {%- set ads_mapping = {
                 "0x00000001": "Create Child",
                 "0x00000002": "Delete Child",
                 "0x00000004": "List Contents",
@@ -520,6 +520,25 @@ stages:
                 "0x80000000": "ADS_RIGHT_GENERIC_READ"
                 }
             -%}
+            {%- set file_mapping = {
+                "0x00000001": "ReadData (or ListDirectory)",
+                "0x00000002": "WriteData (or AddFile)",
+                "0x00000004": "AppendData (or AddSubdirectory or CreatePipeInstance)",
+                "0x00000008": "ReadEA",
+                "0x00000010": "WriteEA",
+                "0x00000020": "Execute/Traverse",
+                "0x00000040": "DeleteChild",
+                "0x00000080": "ReadAttributes",
+                "0x00000100": "WriteAttributes",
+                "0x00010000": "DELETE",
+                "0x00020000": "READ_CONTROL",
+                "0x00040000": "WRITE_DAC",
+                "0x00080000": "WRITE_OWNER",
+                "0x00100000": "SYNCHRONIZE",
+                "0x01000000": "ACCESS_SYS_SEC"
+                }
+            -%}
+            {%- set mapping = file_mapping if json.event.winlog.event_data.get("ObjectType") == "File" else ads_mapping -%}
             {%- set hex_values = {"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "a": 10, "b": 11, "c": 12, "d": 13, "e": 14, "f": 15} -%}
             {%- set value = ('00000000' ~ (json.event.winlog.event_data.AccessMask.split('x')[-1] | lower))[-8:] -%}
             {%- set items -%}
@@ -541,7 +560,7 @@ stages:
             {%- if accessmask_list != [] -%}
             {{accessmask_list}}
             {%- endif -%}
-        filter: '{{json.event.winlog.event_data.get("AccessMask") != None}}'
+        filter: '{{json.event.winlog.event_data.get("AccessMask") != None and (json.event.event.get("code") == "4662" or json.event.winlog.event_data.get("ObjectType") == "File")}}'
       - set:
           winlog.event_data.NewUACList: >
             {% set mapping = {
@@ -719,16 +738,18 @@ stages:
       - set:
           process.args: >
             {%- set command_line = json.event.winlog.event_data.CommandLine -%}
+            {#- Hide escaped backslashes, then escaped quotes, so that only the unescaped quotes delimit the arguments -#}
+            {%- set masked = command_line.replace('\\\\', '\u0001').replace('\\"', '\u0002') -%}
             {%- set al -%}
-            {%- for segment in command_line.split('\"') -%}
+            {%- for segment in masked.split('"') -%}
               {%- if not loop.first -%}\"{%- endif -%}
               {%- if loop.index0 is even -%}
                 {%- for part in segment.split(" ") -%}
                   {%- if not loop.first -%}","{%- endif -%}
-                  {{ (part | tojson)[1:-1] }}
+                  {{ (part.replace('\u0002', '\\"').replace('\u0001', '\\\\') | tojson)[1:-1] }}
                 {%- endfor -%}
               {%- else -%}
-                {{ (segment | tojson)[1:-1] }}
+                {{ (segment.replace('\u0002', '\\"').replace('\u0001', '\\\\') | tojson)[1:-1] }}
               {%- endif -%}
             {%- endfor -%}
             {%- endset -%}
