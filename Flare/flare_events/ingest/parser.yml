@@ -64,6 +64,8 @@ pipeline:
     filter: "{{json_event.message.header.type in ['document', 'ransomleak']}}"
   - name: set_google_fields
     filter: "{{json_event.message.header.type in ['google', 'driller']}}"
+  - name: set_driller_fields
+    filter: "{{json_event.message.header.type == 'driller'}}"
   - name: set_seller_fields
     filter: "{{json_event.message.header.type == 'seller'}}"
   - name: set_service_fields
@@ -138,6 +140,14 @@ stages:
             {%- endfor -%}
             {%- if names | length > 0 -%}{{ names }}{%- endif -%}
           tags: "{{json_event.message.header.tags}}"
+          # The text that matched the tenant's identifiers
+          flare.events.content_preview: "{{json_event.message.header.content_preview}}"
+          flare.events.content_en: "{{json_event.message.data.content_en or json_event.message.data.message_en}}"
+          flare.events.title_en: "{{json_event.message.data.topic_title_en or json_event.message.header.parent_title_en}}"
+          flare.events.vulnerabilities: "{{json_event.message.data.features.vulnerabilities or none}}"
+          # Flare's classification of the conversation, e.g. "Ransomware & Extortion"
+          flare.events.topics: "{{(json_event.message.data.inherited_topics or []) | map(attribute='value') | select | list or none}}"
+          flare.events.intents: "{{(json_event.message.data.inherited_intents or []) | map(attribute='value') | select | list or none}}"
 
       - set:
           threat.indicator.ip: "{{json_event.message.data.features.ip_addresses[0]}}"
@@ -182,6 +192,11 @@ stages:
           flare.events.chat_message.sensitive_content: "{{json_event.message.data.sensitive_content}}"
           flare.events.chat_message.batch_id: "{{json_event.message.data.batch_id}}"
           flare.events.chat_message.attachments: "{{json_event.message.data.attachments}}"
+          flare.events.chat_message.message_link: "{{json_event.message.data.message_link}}"
+          file.name: "{{json_event.message.data.filename}}"
+          file.mime_type: "{{json_event.message.data.content_type}}"
+          flare.events.attachment.extracted_content: "{{json_event.message.data.extracted_content}}"
+          flare.events.attachment.url: "{{json_event.message.data.external_url}}"
 
   set_forum_fields:
     actions:
@@ -190,10 +205,10 @@ stages:
           user.id: "{{json_event.message.data.actor_id}}"
           url.full: "{{json_event.message.data.url}}"
           flare.events.forum.browser_url: "{{json_event.message.data.browser_url}}"
-          flare.events.forum.content: "{{json_event.message.data.content}}"
+          flare.events.forum.content: "{{json_event.message.data.content or json_event.message.data.first_post_preview}}"
           flare.events.forum.posted_at: "{{json_event.message.data.posted_at}}"
           flare.events.forum.topic_id: "{{json_event.message.data.topic_id}}"
-          flare.events.forum.topic_title: "{{json_event.message.data.topic_title}}"
+          flare.events.forum.topic_title: "{{json_event.message.data.topic_title or json_event.message.data.title}}"
           flare.events.forum.category_name: "{{json_event.message.data.category_name}}"
           flare.events.forum.category_path: "{{json_event.message.data.category_path_name}}"
 
@@ -271,6 +286,8 @@ stages:
           flare.events.stealer_log.hardware: "{{json_event.message.data.user_information.hardware}}"
           flare.events.stealer_log.anti_viruses: "{{json_event.message.data.user_information.anti_viruses}}"
 
+      # When `user_information` is missing, reading its fields fails and the filter is false: the `default(none)`
+      # only covers a missing field inside `user_information`. Same for `ip_address` below.
       - set:
           flare.events.stealer_log.screen_resolution: "{{json_event.message.data.user_information.screensize_width}}x{{json_event.message.data.user_information.screensize_height}}"
         filter: "{{json_event.message.data.user_information.screensize_width | default(none) is not none and json_event.message.data.user_information.screensize_height | default(none) is not none}}"
@@ -301,6 +318,35 @@ stages:
           flare.events.stealer_log.cookies_count: "{{json_event.message.data.cookies | length if json_event.message.data.cookies | default(none) is not none else none}}"
           flare.events.stealer_log.files: "{{json_event.message.data.files}}"
           flare.events.stealer_log.sources: "{{json_event.message.data.sources}}"
+          # What the stolen credentials open, e.g. "IdP", "VPN (Corporate)"
+          flare.events.stealer_log.applications: "{{json_event.message.data.applications or json_event.message.header.applications}}"
+          flare.events.stealer_log.access_types: "{{((json_event.message.data.access_types or json_event.message.header.access_types) or []) | map(attribute='value') | select | list or none}}"
+          flare.events.stealer_log.pii_types: "{{((json_event.message.data.pii_type or json_event.message.header.pii_type) or []) | map(attribute='value') | select | list or none}}"
+          # e.g. "Fake Infected Device"
+          flare.events.stealer_log.analysis_labels: "{{((json_event.message.data.analysis_labels or json_event.message.header.analysis_labels) or []) | map(attribute='value') | select | list or none}}"
+          flare.events.stealer_log.secrets_count: "{{json_event.message.data.secrets_count}}"
+          # The sites the stolen credentials are for
+          flare.events.stealer_log.credential_hosts: >
+            {%- set hosts = [] -%}
+            {%- for credential in json_event.message.data.credentials or [] -%}
+              {%- set authority = (credential.url or '').split('://', 1)[-1].split('/')[0].split('?')[0].split('#')[0].split('@')[-1] -%}
+              {%- if authority.startswith('[') -%}
+                {%- set host = authority[1:].split(']')[0] -%}
+              {%- else -%}
+                {%- set host = authority.split(':')[0] -%}
+              {%- endif -%}
+              {%- if host and host not in hosts -%}
+                {%- set _ = hosts.append(host) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if hosts | length > 0 -%}{{ hosts }}{%- endif -%}
+
+      - set:
+          host.geo.name: "{{json_event.message.data.location}}"
+          host.os.full: "{{json_event.message.data.os}}"
+          # The sites the bot holds access to
+          flare.events.stealer_log.credential_hosts: "{{json_event.message.data.resources}}"
+        filter: "{{json_event.message.header.type == 'bot'}}"
 
   set_source_code_fields:
     actions:
@@ -394,6 +440,23 @@ stages:
           flare.events.google.title: "{{json_event.message.data.title}}"
           flare.events.google.content: "{{json_event.message.data.snippet or json_event.message.data.content}}"
 
+  set_driller_fields:
+    actions:
+      - set:
+          url.full: "{{(json_event.message.data.html_url or json_event.message.data.resource_url or [none])[0]}}"
+          file.path: "{{(json_event.message.data.code or {}).path}}"
+          user.name: "{{(json_event.message.data.commit or {}).author_username or (json_event.message.data.code or {}).commit_name or (json_event.message.data.project or {}).owner_name}}"
+          user.email: "{{(json_event.message.data.commit or {}).author_email or (json_event.message.data.code or {}).commit_email or (json_event.message.data.user or {}).email}}"
+          user.full_name: "{{(json_event.message.data.commit or {}).author_name or (json_event.message.data.user or {}).full_name}}"
+          flare.events.driller.type: "{{json_event.message.data.drill_type}}"
+          flare.events.driller.project_name: "{{json_event.message.data.project_name}}"
+          flare.events.driller.dork_name: "{{json_event.message.data.dork_name}}"
+          flare.events.driller.commit_sha: "{{(json_event.message.data.commit or {}).sha}}"
+          flare.events.driller.issue_title: "{{(json_event.message.data.issue or {}).title}}"
+          flare.events.driller.snippets: "{{json_event.message.data.snippets}}"
+          flare.events.driller.secret_detected: "{{json_event.message.data.is_secret_detection_rule_match}}"
+          flare.events.driller.secret_detection_rule_ids: "{{json_event.message.data.secret_detection_rule_id}}"
+
   set_seller_fields:
     actions:
       - set:
@@ -406,11 +469,19 @@ stages:
   set_service_fields:
     actions:
       - set:
-          host.name: "{{json_event.message.data.host or json_event.message.header.host}}"
-          destination.address: "{{json_event.message.data.host or json_event.message.header.host}}"
+          host.name: "{{json_event.message.data.hostname or json_event.message.data.host or json_event.message.header.host}}"
+          destination.address: "{{json_event.message.data.ip_address or json_event.message.data.hostname or json_event.message.data.host or json_event.message.header.host}}"
+          destination.ip: "{{json_event.message.data.ip_address}}"
           destination.port: "{{json_event.message.data.port}}"
-          service.name: "{{json_event.message.data.service_name}}"
-          flare.events.service.banner: "{{json_event.message.data.banner}}"
+          destination.as.organization.name: "{{json_event.message.data.organization}}"
+          destination.geo.country_iso_code: "{{json_event.message.data.country_code}}"
+          service.name: "{{json_event.message.data.service or json_event.message.data.service_name}}"
+          flare.events.service.product: "{{json_event.message.data.product}}"
+          flare.events.service.banner: "{{json_event.message.data.banner or json_event.message.data.content}}"
+
+      - set:
+          destination.as.number: "{{json_event.message.data.asn | replace('AS', '') | int}}"
+        filter: "{{((json_event.message.data.asn or '') | replace('AS', '')).isdigit()}}"
 
   set_social_media_fields:
     actions:
