@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Parse APM session identifiers into the custom field `f5.bigip.apm.session_id` to correlate VPN session events.
+
 ### 2025-07-17 - 1.0.2
 
 #### Changes
