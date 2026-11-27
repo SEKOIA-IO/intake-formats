@@ -744,7 +744,7 @@ stages:
             {%- for segment in masked.split('"') -%}
               {%- if not loop.first -%}\"{%- endif -%}
               {%- if loop.index0 is even -%}
-                {%- for part in segment.split(" ") -%}
+                {%- for part in segment.replace("\t", " ").split(" ") -%}
                   {%- if not loop.first -%}","{%- endif -%}
                   {{ (part.replace('\u0002', '\\"').replace('\u0001', '\\\\') | tojson)[1:-1] }}
                 {%- endfor -%}
@@ -1970,25 +1970,23 @@ stages:
             {"value": {{ v | tojson }}},
             {%- else -%}
             {%- set detail = command_split[2][1:].lstrip() or none -%}
-            {%- set name_values -%}
-            {%- if type_split[0] == "ParameterBinding" and detail and detail[:5] == "name=" -%}
-            {%- set parts = detail[5:].split(";") -%}
+            {#- "name=<name>;<spaces>value=<value>": split at the last "value=" with a non-empty name before it and a non-empty value after it -#}
+            {%- set parts = detail[5:].split(";") if type_split[0] == "ParameterBinding" and detail and detail[:5] == "name=" else [] -%}
+            {%- set value_indexes -%}
             {%- for part in parts -%}
-            {%- set name = parts[:loop.index0] | join(";") -%}
-            {%- set value = (parts[loop.index0:] | join(";")).lstrip() -%}
-            {%- if name != "" and value[:6] == "value=" and value[6:] != "" -%}
-            [{{ name | tojson }}, {{ value[6:] | tojson }}],
+            {%- set value_part = part.lstrip() -%}
+            {%- if loop.index0 > 0 and value_part[:6] == "value=" and (value_part[6:] != "" or not loop.last) and (loop.index0 > 1 or parts[0] != "") -%}
+            {{ loop.index0 | string }},
             {%- endif -%}
             {%- endfor -%}
-            {%- endif -%}
             {%- endset -%}
-            {%- set name_values = ('[' ~ name_values[:-1] ~ ']') | from_json -%}
+            {%- set value_index = value_indexes[:-1].split(",") | last | int(-1) -%}
             {%- if type_split[0] != "ParameterBinding" -%}
             {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "value": {{ detail | tojson }}},
-            {%- elif name_values | length == 0 -%}
+            {%- elif value_index == -1 -%}
             {"value": {{ detail | tojson }}},
             {%- else -%}
-            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "name": {{ (name_values | last)[0] | tojson }}, "value": {{ (name_values | last)[1] | tojson }}},
+            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "name": {{ parts[:value_index] | join(";") | tojson }}, "value": {{ (parts[value_index:] | join(";")).lstrip()[6:] | tojson }}},
             {%- endif -%}
             {%- endif -%}
             {%- endfor -%}
@@ -2005,25 +2003,23 @@ stages:
             {"value": {{ v | tojson }}},
             {%- else -%}
             {%- set detail = command_split[2][1:].lstrip() or none -%}
-            {%- set name_values -%}
-            {%- if type_split[0] == "ParameterBinding" and detail and detail[:5] == "name=" -%}
-            {%- set parts = detail[5:].split(";") -%}
+            {#- "name=<name>;<spaces>value=<value>": split at the last "value=" with a non-empty name before it and a non-empty value after it -#}
+            {%- set parts = detail[5:].split(";") if type_split[0] == "ParameterBinding" and detail and detail[:5] == "name=" else [] -%}
+            {%- set value_indexes -%}
             {%- for part in parts -%}
-            {%- set name = parts[:loop.index0] | join(";") -%}
-            {%- set value = (parts[loop.index0:] | join(";")).lstrip() -%}
-            {%- if name != "" and value[:6] == "value=" and value[6:] != "" -%}
-            [{{ name | tojson }}, {{ value[6:] | tojson }}],
+            {%- set value_part = part.lstrip() -%}
+            {%- if loop.index0 > 0 and value_part[:6] == "value=" and (value_part[6:] != "" or not loop.last) and (loop.index0 > 1 or parts[0] != "") -%}
+            {{ loop.index0 | string }},
             {%- endif -%}
             {%- endfor -%}
-            {%- endif -%}
             {%- endset -%}
-            {%- set name_values = ('[' ~ name_values[:-1] ~ ']') | from_json -%}
+            {%- set value_index = value_indexes[:-1].split(",") | last | int(-1) -%}
             {%- if type_split[0] != "ParameterBinding" -%}
             {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "value": {{ detail | tojson }}},
-            {%- elif name_values | length == 0 -%}
+            {%- elif value_index == -1 -%}
             {"value": {{ detail | tojson }}},
             {%- else -%}
-            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "name": {{ (name_values | last)[0] | tojson }}, "value": {{ (name_values | last)[1] | tojson }}},
+            {"type": {{ type_split[0] | tojson }}, "related_command": {{ command_split[0] | tojson }}, "name": {{ parts[:value_index] | join(";") | tojson }}, "value": {{ (parts[value_index:] | join(";")).lstrip()[6:] | tojson }}},
             {%- endif -%}
             {%- endif -%}
             {%- endfor -%}
