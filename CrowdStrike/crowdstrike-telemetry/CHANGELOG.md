@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 2026-11-06
+
+### Added
+
+- Add support for the grandparent process name and the call stack module names
+
 ## 2023-10-02 - 1.1.0
 
 ### Changed
